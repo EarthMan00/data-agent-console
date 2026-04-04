@@ -1,0 +1,293 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fcfcf9;
+  --foreground: #1e2a3a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-jakarta);
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background: linear-gradient(180deg, #fefefc 0%, #fbfbf8 52%, #fafaf7 100%);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0) 34%),
+    linear-gradient(90deg, rgba(92, 116, 255, 0.02), rgba(92, 116, 255, 0) 16%, rgba(255, 196, 122, 0) 84%, rgba(255, 196, 122, 0.02));
+  opacity: 1;
+}
+
+::selection {
+  background: rgba(92, 116, 255, 0.2);
+  color: #142033;
+}
+
+a,
+button {
+  outline: none;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  box-shadow: 0 0 0 2px rgba(24, 24, 27, 0.08);
+  border-radius: 12px;
+}
+
+textarea:focus-visible {
+  box-shadow: none;
+}
+
+@keyframes ray-sweep-left {
+  0% {
+    transform: translate3d(-8px, 0, 0) rotate(-16deg) scaleY(0.96);
+    opacity: 0.38;
+  }
+  50% {
+    transform: translate3d(10px, 8px, 0) rotate(-10deg) scaleY(1.04);
+    opacity: 0.82;
+  }
+  100% {
+    transform: translate3d(-8px, 0, 0) rotate(-16deg) scaleY(0.96);
+    opacity: 0.38;
+  }
+}
+
+@keyframes ray-sweep-right {
+  0% {
+    transform: translate3d(8px, 0, 0) rotate(12deg) scaleY(0.98);
+    opacity: 0.34;
+  }
+  50% {
+    transform: translate3d(-12px, 10px, 0) rotate(7deg) scaleY(1.06);
+    opacity: 0.76;
+  }
+  100% {
+    transform: translate3d(8px, 0, 0) rotate(12deg) scaleY(0.98);
+    opacity: 0.34;
+  }
+}
+
+@keyframes ray-sweep-center {
+  0% {
+    transform: translateY(-2%) scaleY(0.98);
+    opacity: 0.32;
+  }
+  50% {
+    transform: translateY(3%) scaleY(1.04);
+    opacity: 0.76;
+  }
+  100% {
+    transform: translateY(-2%) scaleY(0.98);
+    opacity: 0.32;
+  }
+}
+
+@keyframes breathe-slow {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: translateX(-50%) scale(0.96);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translateX(-50%) scale(1.06);
+  }
+}
+
+@keyframes drift-up {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes sheen-pass {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(140%);
+  }
+}
+
+.animate-ray-sweep-left {
+  animation: ray-sweep-left 10s ease-in-out infinite;
+}
+
+.animate-ray-sweep-right {
+  animation: ray-sweep-right 12s ease-in-out infinite;
+}
+
+.animate-ray-sweep-center {
+  animation: ray-sweep-center 11s ease-in-out infinite;
+}
+
+.animate-breathe-slow {
+  animation: breathe-slow 10s ease-in-out infinite;
+}
+
+.animate-drift-up {
+  animation: drift-up 6s ease-in-out infinite;
+}
+
+.animate-sheen-pass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 0%, rgba(97, 126, 255, 0.12) 48%, transparent 100%);
+  transform: translateX(-120%);
+  animation: sheen-pass 5.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ray-sweep-left,
+  .animate-ray-sweep-right,
+  .animate-ray-sweep-center,
+  .animate-breathe-slow,
+  .animate-drift-up,
+  .animate-sheen-pass::after {
+    animation: none !important;
+  }
+}
+
+button[aria-label="Open Next.js Dev Tools"] {
+  display: none !important;
+}
+
+nextjs-portal,
+script[data-nextjs-dev-overlay] {
+  display: none !important;
+}
+
+.md-chat-theme {
+  --td-brand-color: #27272a;
+  --td-brand-color-2: rgba(24, 24, 27, 0.08);
+  --td-brand-color-5: #27272a;
+  --td-brand-color-6: #18181b;
+  --td-brand-color-hover: #18181b;
+  --td-bg-color-container: rgba(255, 255, 255, 0.98);
+  --td-bg-color-secondarycontainer: #f5f5f4;
+  --td-border-level-2-color: #e7e5e4;
+  --td-text-color-primary: #18181b;
+  --td-text-color-secondary: #52525b;
+  --td-gray-color-4: #f4f4f5;
+  --td-gray-color-7: #71717a;
+  --td-gray-color-9: #27272a;
+  --td-success-color-5: #0f766e;
+  --td-error-color-6: #b91c1c;
+  --td-font-family: var(--font-geist-sans), "SF Pro Text", "Segoe UI", "PingFang SC", sans-serif;
+  --td-chat-input-background: rgba(255, 255, 255, 0.98);
+  --td-chat-input-shadow: 0 0 0 2px rgba(24, 24, 27, 0.05);
+  --td-chat-input-hover-border: #d6d3d1;
+  --td-chat-input-content-default-border: #e7e5e4;
+  --td-chat-input-button-default-bg: #18181b;
+  --td-chat-input-button-default-color: #ffffff;
+  --td-chat-input-actions-item-color: #71717a;
+  --td-chat-input-actions-item-hover-bg: #f5f5f4;
+  --td-chat-item-default-bg: rgba(255, 255, 255, 0.98);
+  --td-chat-item-primary-bg: #18181b;
+  --td-chat-item-outline-border-color: #ebeef3;
+  --td-chat-item-user-text-color: #fafafa;
+  --td-chat-item-think-bg: #f5f5f4;
+  --td-chat-item-think-inner-border: solid 1px #e7e5e4;
+  --td-chat-item-actions-list-bg: rgba(255, 255, 255, 0.92);
+  --td-chat-item-actions-item-hover-bg: #f4f4f5;
+  --td-chat-item-search-link-color: #18181b;
+  --td-chat-item-search-link-hov-color: #27272a;
+  --td-chat-md-link-color: #18181b;
+  --td-chat-md-link-hover-color: #27272a;
+  --td-chat-md-code-header-bg: #f4f4f5;
+  --td-chat-md-code-body-bg: #fafafa;
+  --td-chat-md-table-th-bg: #f5f5f5;
+  --td-chat-md-table-td-bg-even: #fafafa;
+  --td-chat-font-size: 16px;
+}
+
+.md-chat-theme t-chat-message,
+.md-chat-theme t-chat-action,
+.md-chat-theme t-chat-thinking,
+.md-chat-theme t-attachments {
+  width: 100%;
+}
+
+/* 纵向可滚动但不显示滚动条（仍支持滚轮与触控），与 app-demo 工作台一致 */
+.hide-scrollbar-y {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar-y::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* 与 app-demo live-agent-workbench ThinkingRow / TaskRunningRow 对齐的等待动画 */
+@keyframes thinking-dot-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}
+
+.thinking-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 0;
+}
+
+.thinking-dots span {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: thinking-dot-bounce 1.15s ease-in-out infinite;
+}
+
+.thinking-dots span:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.thinking-dots span:nth-child(3) {
+  animation-delay: 0.28s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-dots span {
+    animation: none;
+    opacity: 0.65;
+  }
+}
