@@ -32,8 +32,7 @@ export function buildPlatformStepTimeline(
 
   for (let i = 0; i < n; i++) {
     const step = ordered[i]!;
-    const terminal = step.status === "done" || step.status === "error";
-    if (terminal) {
+    if (step.status === "done" || step.status === "error") {
       const snap = snapByIndex.get(i);
       if (snap) {
         items.push({ kind: "result", snap });

@@ -154,7 +154,8 @@ export function parseChatexcelArtifactText(raw: string): ChatexcelPreviewModel {
     if (!table) {
       const slim = { ...inner };
       if (typeof slim.output === "string" && slim.output.length > 8000) {
-        slim.output = `${slim.output.slice(0, 8000)}\n…（output 已截断，共 ${inner.output.length} 字符）`;
+        const truncated = slim.output;
+        slim.output = `${truncated.slice(0, 8000)}\n…（output 已截断，共 ${truncated.length} 字符）`;
       }
       jsonFallback = JSON.stringify({ ok, action, result: slim }, null, 2);
     }
