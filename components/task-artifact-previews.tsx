@@ -101,7 +101,15 @@ function ArtifactCard({
   const ext = extOf(artifact.original_name);
   const isChatexcelName = CHATEXCEL_RESULT_RE.test((artifact.original_name ?? "").trim());
   const mode =
-    ext === "csv" ? "csv" : isChatexcelName ? "chatexcel" : ext === "json" || ext === "jsonl" ? "json" : "binary";
+    ext === "csv"
+      ? "csv"
+      : isChatexcelName
+        ? "chatexcel"
+        : ext === "json" || ext === "jsonl"
+          ? "json"
+          : ext === "txt" || ext === "log"
+            ? "text"
+            : "binary";
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(mode !== "binary" && mode !== "csv");
@@ -155,6 +163,8 @@ function ArtifactCard({
             <Table className="h-4 w-4 shrink-0 text-[#15803d]" aria-hidden />
           ) : mode === "json" ? (
             <FileJson className="h-4 w-4 shrink-0 text-[#7c3aed]" aria-hidden />
+          ) : mode === "text" ? (
+            <FileJson className="h-4 w-4 shrink-0 text-[#0f766e]" aria-hidden />
           ) : (
             <FileJson className="h-4 w-4 shrink-0 text-[#64748b]" aria-hidden />
           )}
@@ -185,6 +195,11 @@ function ArtifactCard({
         </pre>
       ) : mode === "binary" ? (
         <p className="mt-3 text-[12px] text-[#6b7280]">该文件类型不在页面内预览；若有 CSV 可使用侧栏底部「下载 CSV」。</p>
+      ) : mode === "text" && text != null && text.length > 0 ? (
+        <pre className="mt-3 max-h-[320px] overflow-auto rounded-[10px] border border-[#e5e7eb] bg-white p-3 text-[11px] leading-5 text-[#475569]">
+          {text.slice(0, 120_000)}
+          {text.length > 120_000 ? "\n…（内容过长已截断）" : ""}
+        </pre>
       ) : text != null && text.length > 0 ? (
         <pre className="mt-3 max-h-[240px] overflow-auto rounded-[10px] border border-[#e5e7eb] bg-white p-3 text-[11px] leading-5 text-[#475569]">
           {text.slice(0, 120_000)}

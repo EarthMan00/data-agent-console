@@ -1,10 +1,13 @@
 import {
+  AgentApiError,
   getTask,
   getToolOrchestration,
   patchMockTaskExecution,
   postMockTaskExecution,
+  refreshAccessToken,
   sendChatMessage,
 } from "@/lib/agent-api/client";
+import { loadAgentSession, notifyAgentSessionChanged, saveAgentSession } from "@/lib/agent-api/session";
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { isAgentApiProxyEnabled, isAgentRealApiEnabled } from "@/lib/agent-api/config";
 import type { TaskResponse, ToolOrchestrationStatusApi } from "@/lib/agent-api/types";
@@ -42,6 +45,26 @@ export type AgentRoundInput = {
 export type StreamAgentRoundPlatformOptions = {
   withFreshToken: (run: (token: string) => Promise<void>) => Promise<void>;
 };
+
+class PlatformAuthExpiredError extends Error {
+  constructor() {
+    super("PLATFORM_AUTH_EXPIRED");
+    this.name = "PlatformAuthExpiredError";
+  }
+}
+
+async function refreshPlatformAccessToken(): Promise<string | null> {
+  const snap = loadAgentSession();
+  if (!snap?.refreshToken) return null;
+  try {
+    const next = await refreshAccessToken(snap.refreshToken);
+    saveAgentSession({ ...snap, accessToken: next });
+    notifyAgentSessionChanged();
+    return next;
+  } catch {
+    return null;
+  }
+}
 
 const RUNTIME_MODE = process.env.NEXT_PUBLIC_AGENT_RUNTIME_MODE === "mock" ? "mock" : "api";
 const API_BASE = process.env.NEXT_PUBLIC_AGENT_API_BASE_URL?.replace(/\/$/, "");
@@ -461,6 +484,23 @@ async function runPlatformRound(
   }
 
   await withFreshToken(async (token) => {
+    let accessToken = token;
+    const withAuthRetry = async <T,>(fn: (t: string) => Promise<T>): Promise<T> => {
+      try {
+        return await fn(accessToken);
+      } catch (e) {
+        if (e instanceof AgentApiError && e.status === 401) {
+          const next = await refreshPlatformAccessToken();
+          if (next) {
+            accessToken = next;
+            return await fn(accessToken);
+          }
+          throw new PlatformAuthExpiredError();
+        }
+        throw e;
+      }
+    };
+
     const mid = safeRandomUUID();
     const result = await sendChatMessage(token, chatSessionId, input.prompt, mid);
 
@@ -495,6 +535,7 @@ async function runPlatformRound(
       return;
     }
 
+    try {
     const executionSteps = result.execution_steps ?? [];
     const stepLabels =
       executionSteps.length > 0
@@ -522,7 +563,7 @@ async function runPlatformRound(
       steps: stepDefs.map((s) => ({ id: s.id, label: s.label })),
     });
 
-    const mockStepsMessageId = await postMockTaskExecution(token, chatSessionId, {
+    const mockStepsMessageId = await postMockTaskExecution(accessToken, chatSessionId, {
       round_id: input.roundId,
       task_id: result.task_id,
       steps: stepDefs.map((s) => ({
@@ -545,9 +586,9 @@ async function runPlatformRound(
           steps,
         };
         if (mockStepsMessageId) {
-          await patchMockTaskExecution(token, chatSessionId, mockStepsMessageId, body);
+          await patchMockTaskExecution(accessToken, chatSessionId, mockStepsMessageId, body);
         } else {
-          await postMockTaskExecution(token, chatSessionId, body);
+          await postMockTaskExecution(accessToken, chatSessionId, body);
         }
       } catch {
         /* 落库失败不影响主流程 */
@@ -575,7 +616,7 @@ async function runPlatformRound(
 
     const emittedSubtaskTaskIds = new Set<string>();
 
-    const emitFinishedOrchestrationSubtasks = async (orch: ToolOrchestrationStatusApi, tokenForFetch: string) => {
+    const emitFinishedOrchestrationSubtasks = async (orch: ToolOrchestrationStatusApi) => {
       for (let i = 0; i < orch.steps.length; i++) {
         const st = orch.steps[i]!;
         const tid = st.task_id;
@@ -587,9 +628,10 @@ async function runPlatformRound(
         const label = def?.label ?? st.label ?? `步骤 ${i + 1}`;
         const sid = def?.id ?? `${input.roundId}-step-${i + 1}`;
         try {
-          const t = await getTask(tokenForFetch, tid);
+          const t = await withAuthRetry((tk) => getTask(tk, tid));
           handlers.onEvent(mapTaskResponseToSubtaskEvent(input.roundId, i, sid, label, t));
-        } catch {
+        } catch (e) {
+          if (e instanceof PlatformAuthExpiredError) throw e;
           /* 单步任务查询失败不阻断整轮 */
         }
       }
@@ -611,7 +653,7 @@ async function runPlatformRound(
     };
 
     const orchestrationId = result.orchestration_id;
-    let sharedTask: TaskResponse = await getTask(token, result.task_id);
+    let sharedTask: TaskResponse = await withAuthRetry((t) => getTask(t, result.task_id));
     let orchFinished = false;
     let lastOrch: Awaited<ReturnType<typeof getToolOrchestration>> | null = null;
 
@@ -619,8 +661,9 @@ async function runPlatformRound(
       for (let polls = 0; polls < 4500; polls += 1) {
         await sleep(800);
         try {
-          lastOrch = await getToolOrchestration(token, orchestrationId);
-        } catch {
+          lastOrch = await withAuthRetry((t) => getToolOrchestration(t, orchestrationId));
+        } catch (e) {
+          if (e instanceof PlatformAuthExpiredError) throw e;
           lastOrch = null;
           continue;
         }
@@ -629,7 +672,7 @@ async function runPlatformRound(
           if (!def) return;
           emitStep(def.id, mapServerOrchestrationStepStatus(st.status));
         });
-        await emitFinishedOrchestrationSubtasks(lastOrch, token);
+        await emitFinishedOrchestrationSubtasks(lastOrch);
         if (lastOrch.finished) {
           orchFinished = true;
           break;
@@ -646,7 +689,7 @@ async function runPlatformRound(
           summaryTaskId = failed?.task_id ?? result.task_id;
         }
       }
-      sharedTask = await getTask(token, summaryTaskId);
+      sharedTask = await withAuthRetry((t) => getTask(t, summaryTaskId));
     } else {
       if (stepDefs.length > 0) {
         emitStep(stepDefs[0]!.id, "running");
@@ -654,7 +697,13 @@ async function runPlatformRound(
       let polls = 0;
       while (!sharedTask.finished_at && polls < 600) {
         await sleep(1000);
-        sharedTask = await getTask(token, result.task_id);
+        try {
+          sharedTask = await withAuthRetry((t) => getTask(t, result.task_id));
+        } catch (e) {
+          if (e instanceof PlatformAuthExpiredError) throw e;
+          polls += 1;
+          continue;
+        }
         polls += 1;
       }
       if (stepDefs.length > 0) {
@@ -713,6 +762,8 @@ async function runPlatformRound(
         return;
       }
 
+      pushPlatformSnapshot(task);
+
       const summary = buildTaskCompletionSummary(task);
       handlers.onEvent({ type: "final", roundId: input.roundId, text: summary });
       handlers.onEvent({
@@ -768,6 +819,8 @@ async function runPlatformRound(
     finalizeAllSteps("done");
     await persistMockStepsUniform("done");
 
+    pushPlatformSnapshot(task);
+
     const summary = buildTaskCompletionSummary(task);
     handlers.onEvent({ type: "final", roundId: input.roundId, text: summary });
     handlers.onEvent({
@@ -776,6 +829,17 @@ async function runPlatformRound(
       patch: buildReportPatch(input.prompt, sourceLabels, input.attachments),
     });
     handlers.onEvent({ type: "round_completed", roundId: input.roundId });
+    } catch (e) {
+      if (e instanceof PlatformAuthExpiredError) {
+        handlers.onEvent({
+          type: "error",
+          roundId: input.roundId,
+          message: humanizeTaskErrorMessage("登录已失效，请重新登录后再试。"),
+        });
+        return;
+      }
+      throw e;
+    }
   });
 }
 

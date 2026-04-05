@@ -1,3 +1,12 @@
+/** 长轮询内刷新 token 后通知 Provider 同步 React 状态（避免仍用内存里的旧 accessToken）。 */
+export const AGENT_SESSION_CHANGED_EVENT = "agent-platform-session-changed";
+
+export function notifyAgentSessionChanged() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AGENT_SESSION_CHANGED_EVENT));
+  }
+}
+
 const ACCESS_KEY = "agent_platform.access_token";
 const REFRESH_KEY = "agent_platform.refresh_token";
 const USER_ID_KEY = "agent_platform.user_id";

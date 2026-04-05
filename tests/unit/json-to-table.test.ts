@@ -162,6 +162,19 @@ describe("hasTabularTaskResultFiles", () => {
       ]),
     ).toBe(true);
   });
+
+  it("is true when only linkfox_result.txt exists", () => {
+    expect(
+      hasTabularTaskResultFiles([
+        {
+          artifact_id: "l",
+          artifact_type: "log",
+          original_name: "linkfox_result.txt",
+          download_api: "/l",
+        },
+      ]),
+    ).toBe(true);
+  });
 });
 
 describe("pickPrimaryTaskDataArtifact chatexcel fallback", () => {

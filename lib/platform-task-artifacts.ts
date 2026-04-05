@@ -1,6 +1,7 @@
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 
-const LINKFOX_RESULT_RE = /^linkfox_result\.txt$/i;
+/** LinkFox 文本汇总；参与「是否有真实产物可预览」判定（CSV/JSON 另从 stdout 解析复制）。 */
+export const LINKFOX_RESULT_RE = /^linkfox_result\.txt$/i;
 /** ChatExcel 主产物：侧栏可解析其中 JSON + CSV 输出为表格 */
 export const CHATEXCEL_RESULT_RE = /^chatexcel_result\.txt$/i;
 const CSV_RE = /\.csv$/i;
@@ -12,10 +13,11 @@ export function filterArtifactsForTaskResultPanel(artifacts: PlatformTaskArtifac
   return artifacts.filter((a) => !LINKFOX_RESULT_RE.test((a.original_name ?? "").trim()));
 }
 
-/** 是否存在可预览的表格/结构化文件（含 ChatExcel 文本产物） */
+/** 是否存在可预览的表格/结构化文件（含 ChatExcel / LinkFox 文本产物） */
 export function hasTabularTaskResultFiles(artifacts: PlatformTaskArtifactRef[] | undefined | null): boolean {
   if (!artifacts?.length) return false;
   if (artifacts.some((a) => CHATEXCEL_RESULT_RE.test((a.original_name ?? "").trim()))) return true;
+  if (artifacts.some((a) => LINKFOX_RESULT_RE.test((a.original_name ?? "").trim()))) return true;
   return filterArtifactsForTaskResultPanel(artifacts).some((a) =>
     TABULAR_RE.test((a.original_name ?? "").trim()),
   );
@@ -30,6 +32,8 @@ export function pickPrimaryTaskDataArtifact(artifacts: PlatformTaskArtifactRef[]
   if (json) return json;
   const chatexcel = list.find((a) => CHATEXCEL_RESULT_RE.test((a.original_name ?? "").trim()));
   if (chatexcel) return chatexcel;
+  const linkfoxTxt = artifacts.find((a) => LINKFOX_RESULT_RE.test((a.original_name ?? "").trim()));
+  if (linkfoxTxt) return linkfoxTxt;
   return null;
 }
 

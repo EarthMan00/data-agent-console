@@ -20,6 +20,7 @@ import {
 } from "@/lib/agent-api/client";
 import { isAgentRealApiEnabled } from "@/lib/agent-api/config";
 import {
+  AGENT_SESSION_CHANGED_EVENT,
   clearAgentSession,
   clearPlatformSessionId,
   loadAgentSession,
@@ -70,6 +71,12 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   useEffect(() => {
     setAuth(loadAgentSession());
     setPlatformSessionId(loadPlatformSessionId());
+  }, []);
+
+  useEffect(() => {
+    const sync = () => setAuth(loadAgentSession());
+    window.addEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
   }, []);
 
   const withFreshToken = useCallback(async (run: (token: string) => Promise<void>) => {
