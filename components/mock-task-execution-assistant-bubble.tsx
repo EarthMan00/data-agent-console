@@ -2,7 +2,7 @@
 
 import { Bot } from "lucide-react";
 
-import { ExecutionStepsMonitor } from "@/components/execution-steps-monitor";
+import { ExecutionStepsHistoryList } from "@/components/execution-steps-monitor";
 import type { TaskExecutionStep } from "@/lib/agent-events";
 
 const BUBBLE_MAX = "max-w-[min(100%,720px)]";
@@ -34,7 +34,7 @@ export function MockTaskExecutionAssistantBubble({
         </div>
         <div className="mt-2 text-[12px] font-medium text-[#64748b]">工具执行步骤</div>
         <div className="mt-3">
-          <ExecutionStepsMonitor steps={steps} />
+          <ExecutionStepsHistoryList steps={steps} />
         </div>
       </div>
     </div>

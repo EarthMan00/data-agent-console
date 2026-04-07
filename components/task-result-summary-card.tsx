@@ -44,7 +44,7 @@ export function TaskResultSummaryCard({
                 "hover:bg-[#27272a]",
               )}
             >
-              {expanded ? "收起" : "查看任务结果"}
+              {expanded ? "收起" : "查看"}
             </button>
           ) : null}
         </div>

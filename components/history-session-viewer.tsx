@@ -18,6 +18,8 @@ import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
 import { MockTaskExecutionAssistantBubble } from "@/components/mock-task-execution-assistant-bubble";
 import { parseMockTaskExecutionStepsFromMeta } from "@/lib/mock-task-execution-meta";
+import { messageIdsEligibleForTaskResultCard } from "@/lib/session-task-result-card-visibility";
+import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 
 const SIMPLE_CHAT_COLUMN_MAX = "max-w-[min(100%,800px)]";
 const SIMPLE_CHAT_BUBBLE_MAX = "max-w-[min(100%,720px)]";
@@ -61,7 +63,7 @@ function SimpleAssistantBubble({ body, datetime }: { body: string; datetime: str
           <div className="text-[11px] text-[#94a3b8]">{formatTime(datetime)}</div>
         </div>
         <div className="mt-2 text-sm text-[#0f172a]">
-          <ChatMarkdown>{body}</ChatMarkdown>
+          <ChatMarkdown>{stripModelThinkingForUi(body)}</ChatMarkdown>
         </div>
       </div>
     </div>
@@ -88,6 +90,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showResultPanel, setShowResultPanel] = useState(false);
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [currentArtifacts, setCurrentArtifacts] = useState<PlatformTaskArtifactRef[] | null>(null);
 
   const isLoggedIn = Boolean(platformAgent?.auth?.accessToken);
@@ -111,6 +114,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     // 切换会话时默认不展开右侧任务结果区
     setShowResultPanel(false);
+    setFocusedTaskId(null);
     setCurrentArtifacts(null);
   }, [sessionId]);
 
@@ -139,6 +143,8 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
 
   const title = useMemo(() => `历史对话`, []);
 
+  const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
+
   const openTaskResultPanel = useCallback(
     async (taskId: string) => {
       if (!platformAgent?.auth) {
@@ -156,6 +162,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
             download_api: a.download_api,
           }));
           setCurrentArtifacts(artifacts);
+          setFocusedTaskId(taskId);
           setShowResultPanel(true);
         });
       } catch (e) {
@@ -230,7 +237,10 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
           <AgentTaskResultPanel
             artifacts={currentArtifacts}
             withFreshToken={platformAgent.withFreshToken}
-            onClose={() => setShowResultPanel(false)}
+            onClose={() => {
+              setShowResultPanel(false);
+              setFocusedTaskId(null);
+            }}
           />
         ) : undefined
       }
@@ -248,10 +258,9 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                 {messages.map((m) => {
                   const meta = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
                   const mockSteps = parseMockTaskExecutionStepsFromMeta(meta);
+                  const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
                   const taskId =
-                    typeof m.meta?.task_id === "string" && m.meta?.kind !== "mock_task_execution"
-                      ? m.meta.task_id
-                      : undefined;
+                    m.role === "assistant" && rawTaskId && taskResultCardMessageIds.has(m.id) ? rawTaskId : undefined;
                   const key = m.id;
                   return (
                     <div key={key} className="space-y-2">
@@ -270,10 +279,11 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                         <TaskResultSummaryCard
                           title="任务结果"
                           summary="该轮任务已完成，可在右侧查看任务结果与数据文件。"
-                          expanded={showResultPanel}
+                          expanded={showResultPanel && focusedTaskId === taskId}
                           onToggle={() => {
-                            if (showResultPanel) {
+                            if (showResultPanel && focusedTaskId === taskId) {
                               setShowResultPanel(false);
+                              setFocusedTaskId(null);
                               return;
                             }
                             void openTaskResultPanel(taskId);

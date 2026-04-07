@@ -573,7 +573,10 @@ async function runPlatformRound(
       })),
     });
 
-    const persistMockStepsRows = async (statuses: TaskExecutionStepStatus[]) => {
+    const persistMockStepsRows = async (
+      statuses: TaskExecutionStepStatus[],
+      taskIdForMeta?: string,
+    ) => {
       try {
         const steps = stepDefs.map((s, i) => ({
           id: s.id,
@@ -582,7 +585,7 @@ async function runPlatformRound(
         }));
         const body = {
           round_id: input.roundId,
-          task_id: result.task_id,
+          task_id: taskIdForMeta ?? result.task_id,
           steps,
         };
         if (mockStepsMessageId) {
@@ -595,8 +598,11 @@ async function runPlatformRound(
       }
     };
 
-    const persistMockStepsUniform = async (finalStatus: TaskExecutionStepStatus) => {
-      await persistMockStepsRows(stepDefs.map(() => finalStatus));
+    const persistMockStepsUniform = async (
+      finalStatus: TaskExecutionStepStatus,
+      taskIdForMeta?: string,
+    ) => {
+      await persistMockStepsRows(stepDefs.map(() => finalStatus), taskIdForMeta);
     };
 
     const pushPlatformSnapshot = (t: Pick<TaskResponse, "task_id" | "artifacts" | "zip_download_api">) => {
@@ -751,7 +757,7 @@ async function runPlatformRound(
       const rowStatuses: TaskExecutionStepStatus[] =
         lastOrch?.steps.map((s) => mapServerOrchestrationStepStatus(s.status)) ??
         stepDefs.map(() => "error" as TaskExecutionStepStatus);
-      await persistMockStepsRows(rowStatuses);
+      await persistMockStepsRows(rowStatuses, task.task_id);
 
       if (!lastOrch?.success) {
         handlers.onEvent({
@@ -777,7 +783,7 @@ async function runPlatformRound(
 
     if (!task.finished_at) {
       finalizeAllSteps("error");
-      await persistMockStepsUniform("error");
+      await persistMockStepsUniform("error", task.task_id);
       pushPlatformSnapshot({
         task_id: result.task_id,
         artifacts: [],
@@ -793,7 +799,7 @@ async function runPlatformRound(
 
     if (task.status === "FAILED") {
       finalizeAllSteps("error");
-      await persistMockStepsUniform("error");
+      await persistMockStepsUniform("error", task.task_id);
       handlers.onEvent({
         type: "error",
         roundId: input.roundId,
@@ -804,7 +810,7 @@ async function runPlatformRound(
 
     if (task.status !== "SUCCESS") {
       finalizeAllSteps("error");
-      await persistMockStepsUniform("error");
+      await persistMockStepsUniform("error", task.task_id);
       const summary = buildTaskCompletionSummary(task);
       handlers.onEvent({ type: "final", roundId: input.roundId, text: summary });
       handlers.onEvent({
@@ -817,7 +823,7 @@ async function runPlatformRound(
     }
 
     finalizeAllSteps("done");
-    await persistMockStepsUniform("done");
+    await persistMockStepsUniform("done", task.task_id);
 
     pushPlatformSnapshot(task);
 

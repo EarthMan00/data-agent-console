@@ -158,7 +158,23 @@ export function StepResultPendingCard({
   );
 }
 
-/** @deprecated 历史会话等无快照场景请用 buildPlatformStepTimeline + 映射渲染 */
+/**
+ * 历史会话 / 仅持久化了步骤状态、无 PlatformSubtaskSnapshot 时：
+ * 只展示各步执行卡片，避免 buildPlatformStepTimeline(..., undefined) 产生永久的「结果加载中」占位。
+ */
+export function ExecutionStepsHistoryList({ steps }: { steps: TaskExecutionStep[] }) {
+  const ordered = [...steps].sort((a, b) => a.order - b.order);
+  const total = ordered.length;
+  return (
+    <div className="space-y-3">
+      {ordered.map((step, stepIndex) => (
+        <ExecutionStepCard key={step.id} step={step} stepIndex={stepIndex} total={total} />
+      ))}
+    </div>
+  );
+}
+
+/** @deprecated 历史会话请用 ExecutionStepsHistoryList；实时编排请用 buildPlatformStepTimeline + PlatformRoundStepTimeline */
 export function ExecutionStepsMonitor({ steps }: { steps: TaskExecutionStep[] }) {
   const items = buildPlatformStepTimeline(steps, undefined);
   return (

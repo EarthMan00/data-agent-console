@@ -36,10 +36,12 @@ import { demoActions, useDemoState } from "@/lib/mock/store";
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { filterArtifactsForTaskResultPanel, hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import { parseMockTaskExecutionStepsFromMeta } from "@/lib/mock-task-execution-meta";
+import { messageIdsEligibleForTaskResultCard } from "@/lib/session-task-result-card-visibility";
 import { cn } from "@/lib/utils";
 import { formatAgentApiErrorForUser, getTask, listSessionMessages, sendChatMessage } from "@/lib/agent-api/client";
 import type { SessionMessageItem } from "@/lib/agent-api/types";
 import { safeRandomUUID } from "@/lib/random-uuid";
+import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 
 const ChatAttachments = dynamic(
   () => import("@tdesign-react/aigc").then((mod) => mod.ChatAttachments),
@@ -266,7 +268,7 @@ function SimpleAssistantBubble({ body, datetime }: { body: string; datetime: str
         <div className="shrink-0 rounded-[16px] border border-[#e1e6ef] bg-white px-4 py-3 text-[#324357] shadow-sm">
           <div className="text-[11px] font-medium uppercase tracking-wide text-[#64748b] opacity-80">助手</div>
           <div className="mt-1 min-w-0">
-            <ChatMarkdown>{body}</ChatMarkdown>
+            <ChatMarkdown>{stripModelThinkingForUi(body)}</ChatMarkdown>
           </div>
         </div>
       </div>
@@ -1221,6 +1223,7 @@ function PlatformSessionAgentWorkspace({ sessionId }: { sessionId: string }) {
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesInnerRef = useRef<HTMLDivElement>(null);
   const [showResultPanel, setShowResultPanel] = useState(false);
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [currentArtifacts, setCurrentArtifacts] = useState<PlatformTaskArtifactRef[] | null>(null);
 
   const reload = useCallback(async () => {
@@ -1265,8 +1268,11 @@ function PlatformSessionAgentWorkspace({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     // 切换会话时默认不展开右侧任务结果区
     setShowResultPanel(false);
+    setFocusedTaskId(null);
     setCurrentArtifacts(null);
   }, [sessionId]);
+
+  const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
 
   const openTaskResultPanel = useCallback(
     async (taskId: string) => {
@@ -1285,6 +1291,7 @@ function PlatformSessionAgentWorkspace({ sessionId }: { sessionId: string }) {
             download_api: a.download_api,
           }));
           setCurrentArtifacts(artifacts);
+          setFocusedTaskId(taskId);
           setShowResultPanel(true);
         });
       } catch (e) {
@@ -1336,7 +1343,10 @@ function PlatformSessionAgentWorkspace({ sessionId }: { sessionId: string }) {
           <AgentTaskResultPanel
             artifacts={currentArtifacts}
             withFreshToken={platformAgent.withFreshToken}
-            onClose={() => setShowResultPanel(false)}
+            onClose={() => {
+              setShowResultPanel(false);
+              setFocusedTaskId(null);
+            }}
           />
         ) : undefined
       }
@@ -1355,10 +1365,9 @@ function PlatformSessionAgentWorkspace({ sessionId }: { sessionId: string }) {
                 {messages.map((m) => {
                   const meta = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
                   const mockSteps = parseMockTaskExecutionStepsFromMeta(meta);
+                  const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
                   const taskId =
-                    typeof m.meta?.task_id === "string" && m.meta?.kind !== "mock_task_execution"
-                      ? m.meta.task_id
-                      : undefined;
+                    m.role === "assistant" && rawTaskId && taskResultCardMessageIds.has(m.id) ? rawTaskId : undefined;
                   const key = m.id;
                   return (
                     <div key={key} className="space-y-2">
@@ -1377,10 +1386,11 @@ function PlatformSessionAgentWorkspace({ sessionId }: { sessionId: string }) {
                         <TaskResultSummaryCard
                           title="任务结果"
                           summary="该轮任务已完成，可在右侧查看任务结果与数据文件。"
-                          expanded={showResultPanel}
+                          expanded={showResultPanel && focusedTaskId === taskId}
                           onToggle={() => {
-                            if (showResultPanel) {
+                            if (showResultPanel && focusedTaskId === taskId) {
                               setShowResultPanel(false);
+                              setFocusedTaskId(null);
                               return;
                             }
                             void openTaskResultPanel(taskId);
