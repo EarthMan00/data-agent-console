@@ -2,13 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { BookOpen, Expand, FileText, ScanSearch, Sparkles, Workflow, X } from "lucide-react";
+import { BookOpen, ChevronDown, Expand, FileText, ScanSearch, Sparkles, Workflow, X } from "lucide-react";
 
 import { useDemoState } from "@/lib/mock/store";
 
 type ShareReplayPageProps = {
   shareId: string;
 };
+
+type SectionKey = "intent" | "split" | "execution" | "result";
 
 function pickRunId(shareId: string) {
   if (shareId === "yM2iGJyrFHeG8SfJojT9rP") return "run-default";
@@ -98,14 +100,31 @@ function buildShareStages(timeline: Array<{ type: "label" | "body" | "tool"; tex
   };
 }
 
-function StageHeader({ icon, title }: { icon: ReactNode; title: string }) {
+function StageHeader({
+  icon,
+  title,
+  expanded,
+  onToggle,
+}: {
+  icon: ReactNode;
+  title: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   return (
     <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold text-[#202124]">
       <span className="flex h-5 w-5 items-center justify-center rounded-[6px] bg-[#f4f5f7] text-[#4b4f4d]">
         {icon}
       </span>
       <span>{title}</span>
-      <span className="text-[#9aa39e]">^</span>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="ml-auto flex items-center gap-1 text-[11px] text-[#5e6763] transition hover:text-[#202124]"
+      >
+        <span>{expanded ? "收起" : "展开"}</span>
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? "-rotate-180" : ""}`} />
+      </button>
     </div>
   );
 }
@@ -272,6 +291,15 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
   const tabs = shareData?.tabs ?? ["竞品与关键词分析", "Listing文案生成", "查询竞品详情", "遍历查询关键词"];
   const summary = shareData?.summary ?? "我已完成分析。本次通过亚马逊商品详情工具成功获取了多条竞品记录，并补充了关键词、写作理论与结果汇总，可继续复看或做同款。";
   const [activeTab, setActiveTab] = useState(0);
+  const [focusedToolDetail, setFocusedToolDetail] = useState<string | null>(null);
+  const [sectionExpanded, setSectionExpanded] = useState<Record<SectionKey, boolean>>({
+    intent: true,
+    split: true,
+    execution: true,
+    result: true,
+  });
+  const [executionExpanded, setExecutionExpanded] = useState<Record<number, boolean>>({});
+
   const stagedFlow = useMemo(() => buildShareStages(timeline, summary), [summary, timeline]);
 
   useEffect(() => {
@@ -281,9 +309,209 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
   const activeTabLabel = tabs[activeTab] ?? tabs[0];
   const isInvalidShare = !shareData;
 
-  const selectTab = (index: number) => setActiveTab(Math.max(0, Math.min(index, tabs.length - 1)));
+  const selectTab = (index: number, clearFocus = true) => {
+    if (clearFocus) {
+      setFocusedToolDetail(null);
+    }
+    setActiveTab(Math.max(0, Math.min(index, tabs.length - 1)));
+  };
   const openReportView = () => selectTab(0);
-  const openToolView = (detail: string) => selectTab(getToolViewIndex(detail));
+  const openToolView = (detail: string) => {
+    setFocusedToolDetail(detail);
+    selectTab(getToolViewIndex(detail), false);
+  };
+
+  const getTabSubtitle = () => {
+    if (activeTab === 1) return "基于竞品、关键词和写作理论整理出的文案方向。";
+    if (activeTab === 2) return focusedToolDetail ? "已定位到竞品详情查询工具结果。" : reportSubtitle;
+    if (activeTab === 3) return focusedToolDetail ? "已定位到关键词遍历工具详情。" : reportSubtitle;
+    return reportSubtitle;
+  };
+
+  const getToolSectionItems = (keywords: string[], detail?: string) => {
+    const items = stagedFlow.execution.groups.flatMap((group) => group.tools ?? []);
+    if (detail) {
+      return items.filter((tool) => tool.detail === detail || tool.detail.includes(detail));
+    }
+    return items.filter((tool) => keywords.some((keyword) => tool.detail.includes(keyword)));
+  };
+
+  const renderActiveTabContent = () => {
+    if (activeTab === 1) {
+      return (
+        <div className="space-y-5 bg-white px-6 py-6 text-[13px] leading-7 text-[#39403c]">
+          <div className="rounded-[14px] border border-[#e5e7eb] bg-[#fafafa] px-4 py-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8380]">推荐标题结构</div>
+            <div className="mt-3 text-[15px] font-medium text-[#1f2421]">
+              40 oz Leakproof Tumbler with Handle, Flip Straw Lid, Vacuum Insulated Stainless Steel Cup for Daily Hydration
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {[
+              "先强调 Leakproof 和 Straw Lid，优先回应评论里的防漏焦虑。",
+              "材质和保冷能力放在前两条卖点里，减少高客单用户的犹豫。",
+              "兼容场景和随身携带体验放在中段，适合做主图与五点联动。",
+              "避免直接复刻竞品品牌词，把高价值通用词埋入标题和五点描述。",
+            ].map((point) => (
+              <div key={point} className="rounded-[14px] border border-[#e5e7eb] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                {point}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    const isDetailMode = Boolean(focusedToolDetail);
+    const detailTitle = focusedToolDetail ? focusedToolDetail : activeTabLabel;
+
+    if (activeTab === 2) {
+      const items = getToolSectionItems(["ASIN", "五点描述", "标题"], focusedToolDetail ?? undefined);
+      return (
+        <div className="space-y-6 bg-white px-6 py-6 text-[13px] leading-7 text-[#39403c]">
+          <div className="rounded-[14px] border border-[#e5e7eb] bg-[#fafafa] px-4 py-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8380]">{isDetailMode ? "当前查询" : "查询竞品详情"}</div>
+            <div className="mt-3 text-[15px] font-medium text-[#1f2421]">{detailTitle}</div>
+          </div>
+          {items.length > 0 ? (
+            <div className="space-y-3">
+              {items.map((tool) => (
+                <div key={tool.detail} className="rounded-[14px] border border-[#e5e7eb] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                  <div className="text-[12px] font-semibold text-[#3f4542]">{tool.title}</div>
+                  <div className="mt-2 text-[12px] leading-6 text-[#5e6763]">{tool.detail}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[14px] border border-[#e5e7eb] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <StageParagraph>当前暂无更详细的竞品查询工具数据，已展示基础报告数据。</StageParagraph>
+            </div>
+          )}
+          <div className="grid grid-cols-4 gap-3 border-t border-[#edf1ef] pt-4 text-[12px] text-[#313734]">
+            {reportColumns.map((cell, index) => (
+              <div key={`${cell}-${index}`} className="font-medium">{cell}</div>
+            ))}
+          </div>
+          {reportRows.map((row, rowIndex) => (
+            <div key={rowIndex} className="grid grid-cols-4 gap-3 border-b border-[#e5e7eb] py-3 text-[12px] text-[#444b47]">
+              <div>{row.title}</div>
+              <div>{row.price}</div>
+              <div>{row.rating}</div>
+              <div>{row.points.join("; ")}</div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (activeTab === 3) {
+      const items = getToolSectionItems(["关键词"], focusedToolDetail ?? undefined);
+      return (
+        <div className="space-y-6 bg-white px-6 py-6 text-[13px] leading-7 text-[#39403c]">
+          <div className="rounded-[14px] border border-[#e5e7eb] bg-[#fafafa] px-4 py-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8380]">{isDetailMode ? "当前关键词检索" : "遍历查询关键词"}</div>
+            <div className="mt-3 text-[15px] font-medium text-[#1f2421]">{detailTitle}</div>
+          </div>
+          {items.length > 0 ? (
+            <div className="space-y-3">
+              {items.map((tool) => (
+                <div key={tool.detail} className="rounded-[14px] border border-[#e5e7eb] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                  <div className="text-[12px] font-semibold text-[#3f4542]">{tool.title}</div>
+                  <div className="mt-2 text-[12px] leading-6 text-[#5e6763]">{tool.detail}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[14px] border border-[#e5e7eb] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <StageParagraph>当前暂无关键词查询工具数据，已展示高价值关键词列表。</StageParagraph>
+            </div>
+          )}
+          <div className="grid grid-cols-4 border-b border-[#edf1ef] bg-white text-[12px] font-medium text-[#313734]">
+            {keywordColumns.map((cell, index) => (
+              <div key={`${cell}-${index}`} className="border-r border-[#e5e7eb] px-3 py-3 last:border-r-0">
+                {cell}
+              </div>
+            ))}
+          </div>
+          {keywordRows.map((row, rowIndex) => (
+            <div key={`keyword-${rowIndex}`} className="grid grid-cols-4 border-b border-[#e5e7eb] text-[12px] text-[#444b47]">
+              {row.map((cell, cellIndex) => (
+                <div key={`${cell}-${cellIndex}`} className="min-h-[44px] border-r border-[#e5e7eb] px-3 py-3 last:border-r-0">
+                  {cell}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <>
+        <div className="grid grid-cols-4 border-b border-[#edf1ef] bg-white text-[12px] font-medium text-[#313734]">
+          {reportColumns.map((cell, index) => (
+            <div key={`${cell}-${index}`} className="border-r border-[#e5e7eb] px-3 py-3 last:border-r-0">
+              {cell}
+            </div>
+          ))}
+        </div>
+
+        {reportRows.map((row, rowIndex) => (
+          <div key={rowIndex} className="grid grid-cols-4 border-b border-[#e5e7eb] text-[12px] text-[#444b47]">
+            <div className="min-h-[66px] border-r border-[#e5e7eb] px-3 py-3 leading-5">
+              <div className="flex items-start gap-3">
+                <div className={`h-14 w-10 shrink-0 rounded-[10px] bg-gradient-to-b ${row.tint} shadow-[inset_0_0_0_1px_rgba(255,255,255,0.55)]`} />
+                <div className="min-w-0">
+                  <div className="font-medium text-[#414744]">{row.title}</div>
+                  <div className="mt-1 text-[10px] text-[#9aa39e]">ASIN: {row.asin}</div>
+                </div>
+              </div>
+            </div>
+            <div className="min-h-[66px] border-r border-[#e5e7eb] px-3 py-3 leading-6">{row.price}</div>
+            <div className="min-h-[66px] border-r border-[#e5e7eb] px-3 py-3 leading-6">{row.rating}</div>
+            <div className="min-h-[66px] px-3 py-3 leading-5">
+              {row.points.map((point) => (
+                <div key={point}>{point}</div>
+              ))}
+              <div className="mt-1 text-[10px] text-[#7e8782]">(来源: [亚马逊前端商品详情模拟])</div>
+            </div>
+          </div>
+        ))}
+
+        <div className="border-b border-[#e5e7eb] bg-white px-3 py-3 text-[12px] font-semibold text-[#39403c]">
+          高价值关键词挖掘 (Top 10)
+        </div>
+        <div className="grid grid-cols-4 border-b border-[#edf1ef] bg-white text-[12px] font-medium text-[#313734]">
+          {keywordColumns.map((cell, index) => (
+            <div key={`${cell}-${index}`} className="border-r border-[#e5e7eb] px-3 py-3 last:border-r-0">
+              {cell}
+            </div>
+          ))}
+        </div>
+        {keywordRows.map((row, rowIndex) => (
+          <div key={`keyword-${rowIndex}`} className="grid grid-cols-4 border-b border-[#e5e7eb] text-[12px] text-[#444b47]">
+            {row.map((cell, cellIndex) => (
+              <div key={`${cell}-${cellIndex}`} className="min-h-[44px] border-r border-[#e5e7eb] px-3 py-3 last:border-r-0">
+                {cell}
+              </div>
+            ))}
+          </div>
+        ))}
+      </>
+    );
+  };
+
+  const toggleSection = (section: SectionKey) =>
+    setSectionExpanded((current) => ({ ...current, [section]: !current[section] }));
+
+  const toggleExecutionGroup = (groupIndex: number) =>
+    setExecutionExpanded((current) => ({
+      ...current,
+      [groupIndex]: !current[groupIndex],
+    }));
+
+  const isExecutionGroupExpanded = (groupIndex: number) =>
+    executionExpanded[groupIndex] ?? true;
 
   return (
     <div className="min-h-screen bg-[#f7f7f8] text-[#202124]">
@@ -308,7 +536,7 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
 
       <div className="grid h-[calc(100vh-44px)] grid-cols-[360px_minmax(0,1fr)] overflow-hidden">
         <aside className="flex min-h-0 flex-col overflow-hidden border-r border-[#e5e7eb] bg-[linear-gradient(180deg,#fcfcfd,#f5f5f5)]" data-testid="share-timeline">
-          <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
+          <div className="min-h-0 flex-1 overflow-auto px-4 py-4 max-h-[calc(100vh-125px)]">
             {isInvalidShare ? (
               <div className="mb-4 rounded-[12px] border border-[#f2d8d8] bg-[#fff6f6] px-3 py-3 text-[12px] leading-6 text-[#8e4b4b]">
                 当前分享链接不存在或已失效，以下内容为默认示例回放。
@@ -334,69 +562,120 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
 
                 <div className="space-y-4">
                   <div>
-                    <StageHeader icon={<ScanSearch className="h-3.5 w-3.5" />} title={stagedFlow.intent.title} />
-                    <div className="rounded-[14px] border border-[#e5e7eb] bg-[#fafafa] px-4 py-4">
-                      <StageParagraph>{stagedFlow.intent.body}</StageParagraph>
+                    <StageHeader
+                      icon={<ScanSearch className="h-3.5 w-3.5" />}
+                      title={stagedFlow.intent.title}
+                      expanded={sectionExpanded.intent}
+                      onToggle={() => toggleSection("intent")}
+                    />
+                    <div className={`rounded-[14px] border px-4 py-4 ${sectionExpanded.intent ? "border-[#e5e7eb] bg-[#fafafa]" : "border-[#e5e7eb] bg-white/90"}`}>
+                      <StageParagraph>
+                        {sectionExpanded.intent
+                          ? stagedFlow.intent.body
+                          : `${stagedFlow.intent.body.slice(0, 90)}...`}
+                      </StageParagraph>
                     </div>
                   </div>
 
                   <div>
-                    <StageHeader icon={<Workflow className="h-3.5 w-3.5" />} title={stagedFlow.split.title} />
-                    <div className="rounded-[14px] border border-[#e5e7eb] bg-white px-4 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-                      <div className="space-y-2 text-[12px] leading-6 text-[#5e6763]">
-                        {stagedFlow.split.splitItems?.map((item) => (
-                          <p key={item}>{item}</p>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <StageHeader icon={<Sparkles className="h-3.5 w-3.5" />} title={stagedFlow.execution.title} />
-                    <div className="space-y-4">
-                      {stagedFlow.execution.groups?.map((group) => (
-                        <div key={group.title} className="space-y-3">
-                          <div className="text-[13px] font-semibold text-[#202124]">{group.title} ^</div>
-                          {group.body ? <StageParagraph>{group.body}</StageParagraph> : null}
-                          {group.tools?.map((tool) => (
-                            <div
-                              key={`${group.title}-${tool.detail}`}
-                              className="rounded-[12px] border border-[#eceef1] bg-white px-3 py-2.5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]"
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-2 text-[12px] font-medium text-[#3f4542]">
-                                  <div className="flex h-5 w-5 items-center justify-center rounded-full border border-[#e5e7eb] bg-[#fafafa]">
-                                    <FileText className="h-3 w-3" />
-                                  </div>
-                                  调用工具
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => openToolView(tool.detail)}
-                                  aria-label={getToolViewLabel(tool.detail, tabs)}
-                                  className={`rounded-[8px] border px-2 py-0.5 text-[11px] font-medium ${
-                                    activeTabLabel === tabs[3] && tool.detail.includes("关键词")
-                                      ? "border-[#171717] bg-[#171717] text-white"
-                                      : activeTabLabel === tabs[2] && (tool.detail.includes("ASIN") || tool.detail.includes("五点描述") || tool.detail.includes("标题"))
-                                        ? "border-[#171717] bg-[#171717] text-white"
-                                        : activeTabLabel === tabs[1] && (tool.detail.includes("写作要求") || tool.detail.includes("算法") || tool.detail.includes("FABE"))
-                                          ? "border-[#171717] bg-[#171717] text-white"
-                                          : "border-[#e5e7eb] bg-[#fafafa] text-[#3a403d]"
-                                  }`}
-                                >
-                                  查看
-                                </button>
-                              </div>
-                              <div className="mt-2 text-[11px] leading-5 text-[#6c7571]">{tool.detail}</div>
-                            </div>
+                    <StageHeader
+                      icon={<Workflow className="h-3.5 w-3.5" />}
+                      title={stagedFlow.split.title}
+                      expanded={sectionExpanded.split}
+                      onToggle={() => toggleSection("split")}
+                    />
+                    {sectionExpanded.split ? (
+                      <div className="rounded-[14px] border border-[#e5e7eb] bg-white px-4 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+                        <div className="space-y-2 text-[12px] leading-6 text-[#5e6763]">
+                          {stagedFlow.split.splitItems?.map((item) => (
+                            <p key={item}>{item}</p>
                           ))}
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-[14px] border border-[#e5e7eb] bg-white/90 px-4 py-4">
+                        <StageParagraph>展开以查看任务拆解后的执行步骤。</StageParagraph>
+                      </div>
+                    )}
                   </div>
 
                   <div>
-                    <StageHeader icon={<FileText className="h-3.5 w-3.5" />} title={stagedFlow.result.title} />
+                    <StageHeader
+                      icon={<Sparkles className="h-3.5 w-3.5" />}
+                      title={stagedFlow.execution.title}
+                      expanded={sectionExpanded.execution}
+                      onToggle={() => toggleSection("execution")}
+                    />
+                    {sectionExpanded.execution ? (
+                      <div className="space-y-4">
+                        {stagedFlow.execution.groups?.map((group, index) => (
+                          <div
+                            key={`${group.title}-${index}`}
+                            className="rounded-[14px] border border-[#e5e7eb] bg-white px-4 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]"
+                          >
+                            <div className="mb-3 flex items-center justify-between gap-3">
+                              <div className="text-[13px] font-semibold text-[#202124]">{group.title}</div>
+                              <button
+                                type="button"
+                                onClick={() => toggleExecutionGroup(index)}
+                                className="inline-flex items-center gap-1 rounded-[8px] border border-[#e5e7eb] bg-[#fafafa] px-2 py-1 text-[11px] text-[#5e6763] transition hover:text-[#202124]"
+                              >
+                                <span>{isExecutionGroupExpanded(index) ? "收起" : "展开"}</span>
+                                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isExecutionGroupExpanded(index) ? "-rotate-180" : ""}`} />
+                              </button>
+                            </div>
+                            {isExecutionGroupExpanded(index) ? (
+                              <>
+                                {group.body ? <StageParagraph>{group.body}</StageParagraph> : null}
+                                {group.tools?.map((tool) => (
+                                  <div
+                                    key={`${group.title}-${tool.detail}`}
+                                    className="mb-3 rounded-[12px] border border-[#eceef1] bg-[#fafafa] px-3 py-2.5"
+                                  >
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="flex items-center gap-2 text-[12px] font-medium text-[#3f4542]">
+                                        <div className="flex h-5 w-5 items-center justify-center rounded-full border border-[#e5e7eb] bg-white">
+                                          <FileText className="h-3 w-3" />
+                                        </div>
+                                        调用工具
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => openToolView(tool.detail)}
+                                        aria-label={getToolViewLabel(tool.detail, tabs)}
+                                        className={`rounded-[8px] border px-2 py-0.5 text-[11px] font-medium ${
+                                          focusedToolDetail === tool.detail
+                                            ? "border-[#171717] bg-[#171717] text-white"
+                                            : "border-[#e5e7eb] bg-[#fafafa] text-[#3a403d]"
+                                        }`}
+                                      >
+                                        查看
+                                      </button>
+                                    </div>
+                                    <div className="mt-2 text-[11px] leading-5 text-[#6c7571]">{tool.detail}</div>
+                                  </div>
+                                ))}
+                              </>
+                            ) : (
+                              <StageParagraph>展开以查看该阶段的工具调用详情。</StageParagraph>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-[14px] border border-[#e5e7eb] bg-white/90 px-4 py-4">
+                        <StageParagraph>展开以查看任务执行阶段的分步结果和工具调用。</StageParagraph>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <StageHeader
+                      icon={<FileText className="h-3.5 w-3.5" />}
+                      title={stagedFlow.result.title}
+                      expanded={sectionExpanded.result}
+                      onToggle={() => toggleSection("result")}
+                    />
                     <div className="mb-3 rounded-[12px] border border-[#d8ebe2] bg-[linear-gradient(180deg,#f6fffb,#eff9f4)] px-3 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -417,8 +696,7 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
                         </button>
                       </div>
                     </div>
-
-                    <StageParagraph>{stagedFlow.result.body}</StageParagraph>
+                    {sectionExpanded.result ? <StageParagraph>{stagedFlow.result.body}</StageParagraph> : null}
                   </div>
                 </div>
               </div>
@@ -463,86 +741,13 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
 
               <div>
                 <div className="border-b border-[#e5e7eb] bg-[linear-gradient(90deg,#18181b,#27272a)] px-6 py-8 text-center text-white">
-                  <div className="text-[16px] font-semibold md:text-[22px]">{activeTab === 1 ? "Listing 文案建议" : reportTitle}</div>
+                  <div className="text-[16px] font-semibold md:text-[22px]">{activeTab === 1 ? "Listing 文案建议" : activeTabLabel}</div>
                   <div className="mt-3 text-[11px] text-white/90 md:text-[13px]">
-                    {activeTab === 1 ? "基于竞品、关键词和写作理论整理出的文案方向。" : reportSubtitle}
+                    {getTabSubtitle()}
                   </div>
                 </div>
 
-                {activeTab === 1 ? (
-                  <div className="space-y-5 bg-white px-6 py-6 text-[13px] leading-7 text-[#39403c]">
-                    <div className="rounded-[14px] border border-[#e5e7eb] bg-[#fafafa] px-4 py-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8380]">推荐标题结构</div>
-                      <div className="mt-3 text-[15px] font-medium text-[#1f2421]">
-                        40 oz Leakproof Tumbler with Handle, Flip Straw Lid, Vacuum Insulated Stainless Steel Cup for Daily Hydration
-                      </div>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {[
-                        "先强调 Leakproof 和 Straw Lid，优先回应评论里的防漏焦虑。",
-                        "材质和保冷能力放在前两条卖点里，减少高客单用户的犹豫。",
-                        "兼容场景和随身携带体验放在中段，适合做主图与五点联动。",
-                        "避免直接复刻竞品品牌词，把高价值通用词埋入标题和五点描述。",
-                      ].map((point) => (
-                        <div key={point} className="rounded-[14px] border border-[#e5e7eb] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                          {point}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-4 border-b border-[#edf1ef] bg-white text-[12px] font-medium text-[#313734]">
-                      {reportColumns.map((cell, index) => (
-                        <div key={`${cell}-${index}`} className="border-r border-[#e5e7eb] px-3 py-3 last:border-r-0">
-                          {cell}
-                        </div>
-                      ))}
-                    </div>
-
-                    {reportRows.map((row, rowIndex) => (
-                      <div key={rowIndex} className="grid grid-cols-4 border-b border-[#e5e7eb] text-[12px] text-[#444b47]">
-                        <div className="min-h-[66px] border-r border-[#e5e7eb] px-3 py-3 leading-5">
-                          <div className="flex items-start gap-3">
-                            <div className={`h-14 w-10 shrink-0 rounded-[10px] bg-gradient-to-b ${row.tint} shadow-[inset_0_0_0_1px_rgba(255,255,255,0.55)]`} />
-                            <div className="min-w-0">
-                              <div className="font-medium text-[#414744]">{row.title}</div>
-                              <div className="mt-1 text-[10px] text-[#9aa39e]">ASIN: {row.asin}</div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="min-h-[66px] border-r border-[#e5e7eb] px-3 py-3 leading-6">{row.price}</div>
-                        <div className="min-h-[66px] border-r border-[#e5e7eb] px-3 py-3 leading-6">{row.rating}</div>
-                        <div className="min-h-[66px] px-3 py-3 leading-5">
-                          {row.points.map((point) => (
-                            <div key={point}>{point}</div>
-                          ))}
-                          <div className="mt-1 text-[10px] text-[#7e8782]">(来源: [亚马逊前端商品详情模拟])</div>
-                        </div>
-                      </div>
-                    ))}
-
-                    <div className="border-b border-[#e5e7eb] bg-white px-3 py-3 text-[12px] font-semibold text-[#39403c]">
-                      {activeTab === 3 ? "关键词趋势与竞争摘要" : "高价值关键词挖掘 (Top 10)"}
-                    </div>
-                    <div className="grid grid-cols-4 border-b border-[#edf1ef] bg-white text-[12px] font-medium text-[#313734]">
-                      {keywordColumns.map((cell, index) => (
-                        <div key={`${cell}-${index}`} className="border-r border-[#e5e7eb] px-3 py-3 last:border-r-0">
-                          {cell}
-                        </div>
-                      ))}
-                    </div>
-                    {keywordRows.map((row, rowIndex) => (
-                      <div key={`keyword-${rowIndex}`} className="grid grid-cols-4 border-b border-[#e5e7eb] text-[12px] text-[#444b47]">
-                        {row.map((cell, cellIndex) => (
-                          <div key={`${cell}-${cellIndex}`} className="min-h-[44px] border-r border-[#e5e7eb] px-3 py-3 last:border-r-0">
-                            {cell}
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </>
-                )}
+                {renderActiveTabContent()}
               </div>
             </div>
           </div>
