@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 
 import { ChatexcelArtifactPreview } from "@/components/chatexcel-artifact-preview";
 import { LazyCsvArtifactTable } from "@/components/lazy-csv-artifact-table";
@@ -77,14 +78,18 @@ export function TaskSingleDataArtifactPreview({ artifact, withFreshToken }: Task
   const ext = extOf(artifact.original_name);
   const isCsv = ext === "csv";
   const isJson = ext === "json" || ext === "jsonl";
+  const isMd = ext === "md" || ext === "markdown";
+  const isHtml = ext === "html" || ext === "htm";
+  const isPdf = ext === "pdf";
   const isChatexcel = CHATEXCEL_RESULT_RE.test((artifact.original_name ?? "").trim());
 
+  const needsTextFetch = !isCsv && !isPdf;
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(!isCsv);
+  const [loading, setLoading] = useState(needsTextFetch);
 
   const load = useCallback(async () => {
-    if (isCsv) return;
+    if (isCsv || isPdf) return;
     setLoading(true);
     setError(null);
     try {
@@ -97,11 +102,11 @@ export function TaskSingleDataArtifactPreview({ artifact, withFreshToken }: Task
     } finally {
       setLoading(false);
     }
-  }, [artifact.download_api, isCsv, withFreshToken]);
+  }, [artifact.download_api, isCsv, isPdf, withFreshToken]);
 
   useEffect(() => {
-    if (!isCsv) void load();
-  }, [isCsv, load]);
+    if (needsTextFetch) void load();
+  }, [needsTextFetch, load]);
 
   const jsonTable = useMemo(() => {
     if (!isJson || text == null) return null;
@@ -125,6 +130,14 @@ export function TaskSingleDataArtifactPreview({ artifact, withFreshToken }: Task
     );
   }
 
+  if (isPdf) {
+    return (
+      <p className="text-[12px] leading-relaxed text-[#64748b]">
+        PDF 文件无法在侧栏内嵌预览，请使用下方「下载文件」在本地查看。
+      </p>
+    );
+  }
+
   if (error) {
     return <p className="text-[12px] text-[#b91c1c]">{error}</p>;
   }
@@ -142,6 +155,25 @@ export function TaskSingleDataArtifactPreview({ artifact, withFreshToken }: Task
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ChatexcelArtifactPreview model={chatexcelModel} />
+      </div>
+    );
+  }
+
+  if (isHtml && text != null) {
+    return (
+      <iframe
+        title="HTML 预览"
+        sandbox=""
+        className="min-h-[280px] w-full flex-1 rounded-[10px] border border-[#e5e7eb] bg-white"
+        srcDoc={text}
+      />
+    );
+  }
+
+  if (isMd && text != null) {
+    return (
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-[10px] border border-[#e5e7eb] bg-white px-3 py-2 text-[13px] leading-relaxed text-[#31405a] [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-[13px] [&_h3]:font-semibold [&_li]:my-0.5 [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_code]:rounded [&_code]:bg-[#f1f5f9] [&_code]:px-1 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-[#f8fafc] [&_pre]:p-2 [&_table]:w-full [&_th]:border [&_th]:border-[#e5e7eb] [&_th]:bg-[#f8fafc] [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_td]:border [&_td]:border-[#e5e7eb] [&_td]:px-2 [&_td]:py-1">
+        <ReactMarkdown>{text}</ReactMarkdown>
       </div>
     );
   }

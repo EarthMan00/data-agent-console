@@ -6,7 +6,11 @@ export const LINKFOX_RESULT_RE = /^linkfox_result\.txt$/i;
 export const CHATEXCEL_RESULT_RE = /^chatexcel_result\.txt$/i;
 const CSV_RE = /\.csv$/i;
 const JSON_RE = /\.(json|jsonl)$/i;
-const TABULAR_RE = /\.(csv|json|jsonl)$/i;
+const MD_RE = /\.(md|markdown)$/i;
+const HTML_RE = /\.(html|htm)$/i;
+const PDF_RE = /\.pdf$/i;
+/** 侧栏可展示或下载的任务数据/报告类文件 */
+const TABULAR_RE = /\.(csv|json|jsonl|md|markdown|html|htm|pdf)$/i;
 
 /** 右侧任务结果区不展示 linkfox 中间产物（保留 chatexcel_result.txt 供解析展示） */
 export function filterArtifactsForTaskResultPanel(artifacts: PlatformTaskArtifactRef[]): PlatformTaskArtifactRef[] {
@@ -23,9 +27,15 @@ export function hasTabularTaskResultFiles(artifacts: PlatformTaskArtifactRef[] |
   );
 }
 
-/** 侧栏仅展示一个数据文件：优先 CSV，其次 JSON/JSONL，再次 chatexcel_result.txt */
+/** 侧栏仅展示一个主文件：优先 Markdown/HTML/PDF 报告，其次 CSV，再次 JSON，再次 chatexcel_result.txt */
 export function pickPrimaryTaskDataArtifact(artifacts: PlatformTaskArtifactRef[]): PlatformTaskArtifactRef | null {
   const list = filterArtifactsForTaskResultPanel(artifacts);
+  const md = list.find((a) => MD_RE.test((a.original_name ?? "").trim()));
+  if (md) return md;
+  const html = list.find((a) => HTML_RE.test((a.original_name ?? "").trim()));
+  if (html) return html;
+  const pdf = list.find((a) => PDF_RE.test((a.original_name ?? "").trim()));
+  if (pdf) return pdf;
   const csv = list.find((a) => CSV_RE.test((a.original_name ?? "").trim()));
   if (csv) return csv;
   const json = list.find((a) => JSON_RE.test((a.original_name ?? "").trim()));

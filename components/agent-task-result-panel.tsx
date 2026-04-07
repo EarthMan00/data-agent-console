@@ -38,7 +38,7 @@ export function AgentTaskResultPanel({ onClose, artifacts, withFreshToken }: Age
           <TaskSingleDataArtifactPreview artifact={primary} withFreshToken={withFreshToken} />
         ) : (
           <p className="text-[13px] leading-6 text-[#64748b]">
-            暂无 CSV/JSON/ChatExcel 结果文件可展示。
+            暂无数据或报告类结果文件（CSV/JSON/Markdown/HTML/PDF/ChatExcel）可展示。
           </p>
         )}
       </div>

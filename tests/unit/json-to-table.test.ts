@@ -29,6 +29,24 @@ describe("parseJsonToTableData", () => {
 });
 
 describe("pickPrimaryTaskDataArtifact", () => {
+  it("prefers markdown over csv", () => {
+    const p = pickPrimaryTaskDataArtifact([
+      {
+        artifact_id: "c",
+        artifact_type: "csv",
+        original_name: "out.csv",
+        download_api: "/c",
+      },
+      {
+        artifact_id: "m",
+        artifact_type: "md",
+        original_name: "report.md",
+        download_api: "/m",
+      },
+    ]);
+    expect(p?.original_name).toBe("report.md");
+  });
+
   it("prefers csv over json", () => {
     const p = pickPrimaryTaskDataArtifact([
       {
