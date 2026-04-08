@@ -17,7 +17,8 @@ export async function POST(request: Request) {
     const entry = await createFeedbackEntry(payload, request.headers.get("user-agent"));
     return NextResponse.json({ success: true, entry });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "反馈提交失败。";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[feedback] createFeedbackEntry failed", error);
+    // 不向客户端返回 Error.message，避免泄露内部实现/数据库细节
+    return NextResponse.json({ error: "反馈暂无法提交，请稍后重试。" }, { status: 500 });
   }
 }

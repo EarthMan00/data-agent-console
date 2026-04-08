@@ -98,7 +98,8 @@ export function MoreDataHomePage() {
         setNotice("已连接 Data Agent Server，正在执行任务。");
         router.replace(`/?runId=${runId}`);
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : "发起任务失败。");
+        console.error("[home] platform task launch failed", error);
+        setNotice("发起任务失败，请稍后重试。");
       } finally {
         setLaunching(false);
       }
@@ -119,7 +120,8 @@ export function MoreDataHomePage() {
       demoActions.upsertRunSnapshot(snapshot.run, snapshot.report);
       router.replace(`/?runId=${snapshot.run.id}`);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "发起任务失败，请检查会话后端接口。");
+      console.error("[home] agent run create failed", error);
+      setNotice("发起任务失败，请检查会话后端配置或稍后重试。");
     } finally {
       setLaunching(false);
     }

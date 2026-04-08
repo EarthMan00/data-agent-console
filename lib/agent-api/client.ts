@@ -595,10 +595,14 @@ export async function getTask(accessToken: string, taskId: string): Promise<Task
   return data as unknown as TaskResponse;
 }
 
-export function buildTaskWsUrl(taskId: string, accessToken: string): string {
+/** 任务事件 WebSocket URL（勿再把 token 放在 query，以免进入代理/浏览器日志）。连接成功后应立刻发送 {@link taskWebSocketAuthPayload}。 */
+export function buildTaskWsUrl(taskId: string): string {
   const root = getAgentWsOrigin();
   const base = root.endsWith("/") ? root.slice(0, -1) : root;
-  const url = new URL(`${base}/ws/tasks/${taskId}`);
-  url.searchParams.set("access_token", accessToken);
-  return url.toString();
+  return `${base}/ws/tasks/${taskId}`;
+}
+
+/** 浏览器 WebSocket 无法自定义 Header 时，在 onopen 后发送此字符串完成鉴权。 */
+export function taskWebSocketAuthPayload(accessToken: string): string {
+  return JSON.stringify({ type: "auth", access_token: accessToken });
 }

@@ -2,6 +2,8 @@
  * 解析 chatexcel_result.txt：前置为 runtime 导入日志，正文为单行或多行 JSON。
  */
 
+import { parseCsvLoose } from "@/lib/parse-csv-loose";
+
 export type ChatexcelPreviewTable = { columns: string[]; rows: string[][] };
 
 export type ChatexcelPreviewModel = {
@@ -71,9 +73,8 @@ export function parseCsvLine(line: string): string[] {
 }
 
 export function parseCsvTextToTable(text: string): ChatexcelPreviewTable | null {
-  const lines = text.split(/\r?\n/).filter((l) => l.length > 0);
-  if (lines.length === 0) return null;
-  const rowCells = lines.map(parseCsvLine);
+  const rowCells = parseCsvLoose(text.trim());
+  if (rowCells.length === 0) return null;
   const width = Math.max(...rowCells.map((r) => r.length), 0);
   if (width === 0) return null;
   const normalized = rowCells.map((r) => {

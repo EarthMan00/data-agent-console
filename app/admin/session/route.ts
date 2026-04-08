@@ -14,11 +14,10 @@ export async function POST(request: Request) {
     return NextResponse.redirect(new URL(`/admin/login?error=1&next=${encodeURIComponent(nextPath)}`, baseUrl));
   }
 
-  const requestUrl = new URL(request.url);
+  const redirectBase = new URL(baseUrl);
   const secureCookie =
-    process.env.NODE_ENV === "production" &&
-    requestUrl.hostname !== "localhost" &&
-    requestUrl.hostname !== "127.0.0.1";
+    redirectBase.protocol === "https:" ||
+    process.env.ADMIN_COOKIE_SECURE?.trim() === "1";
 
   const response = NextResponse.redirect(
     new URL(nextPath.startsWith("/admin") ? nextPath : "/admin/feedback", baseUrl),

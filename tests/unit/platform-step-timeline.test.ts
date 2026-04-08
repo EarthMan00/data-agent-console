@@ -9,7 +9,7 @@ function step(
   label: string,
   status: TaskExecutionStep["status"],
 ): TaskExecutionStep {
-  return { id, order, label, status };
+  return { id, roundId: "test-round", order, label, status };
 }
 
 function snap(stepIndex: number, taskId: string): PlatformSubtaskSnapshot {

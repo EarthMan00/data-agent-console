@@ -63,8 +63,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginBanner, setLoginBanner] = useState("");
 
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
 
@@ -119,8 +119,11 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       if (prevSnap?.accessToken && prevSid) {
         try {
           await releaseSession(prevSnap.accessToken, prevSid);
-        } catch {
-          /* ignore */
+        } catch (e) {
+          console.warn("[platform-agent] release_session_after_login_failed", {
+            session_id: prevSid,
+            error: e instanceof Error ? e.message : String(e),
+          });
         }
       }
       const snap: AgentSessionSnapshot = {
@@ -153,8 +156,12 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     if (snap?.accessToken && sid) {
       try {
         await releaseSession(snap.accessToken, sid);
-      } catch {
-        /* ignore */
+      } catch (e) {
+        console.warn("[platform-agent] release_session_on_logout_failed", {
+          session_id: sid,
+          error: e instanceof Error ? e.message : String(e),
+          status: e instanceof AgentApiError ? e.status : undefined,
+        });
       }
     }
     clearAgentSession();
@@ -176,8 +183,12 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
         if (sid) {
           try {
             await releaseSession(token, sid);
-          } catch {
-            /* ignore */
+          } catch (e) {
+            console.warn("[platform-agent] release_session_before_new_home_failed", {
+              session_id: sid,
+              error: e instanceof Error ? e.message : String(e),
+              status: e instanceof AgentApiError ? e.status : undefined,
+            });
           }
         }
         const created = await createSession(token);

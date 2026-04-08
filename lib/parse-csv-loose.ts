@@ -37,8 +37,13 @@ export function parseCsvLoose(text: string): string[][] {
       continue;
     }
 
+    // RFC4180：仅字段开头的 " 表示进入引号字段；行中非起始的 " 视为字面量
     if (c === '"') {
-      inQuotes = true;
+      if (cell.length === 0) {
+        inQuotes = true;
+        continue;
+      }
+      cell += c;
       continue;
     }
     if (c === ",") {

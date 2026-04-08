@@ -1,99 +1,37 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Bot, UserRound } from "lucide-react";
 
-import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
-import { formatAgentApiErrorForUser, getTask, listSessionMessages, sendChatMessage } from "@/lib/agent-api/client";
-import type { ChatSendResult, SessionMessageItem } from "@/lib/agent-api/types";
-import { safeRandomUUID } from "@/lib/random-uuid";
-import { ChatMarkdown } from "@/components/chat-markdown";
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
+import { InlineNotice } from "@/components/inline-notice";
+import { MockTaskExecutionAssistantBubble } from "@/components/mock-task-execution-assistant-bubble";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
-import { Button } from "@/components/ui/button";
-import { TaskComposer } from "@/components/task-composer";
-import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
-import { MockTaskExecutionAssistantBubble } from "@/components/mock-task-execution-assistant-bubble";
+import { TaskComposer } from "@/components/task-composer";
+import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
+import { formatAgentApiErrorForUser, getTask, listSessionMessages, sendChatMessage } from "@/lib/agent-api/client";
+import type { SessionMessageItem } from "@/lib/agent-api/types";
 import { parseMockTaskExecutionStepsFromMeta } from "@/lib/mock-task-execution-meta";
 import { messageIdsEligibleForTaskResultCard } from "@/lib/session-task-result-card-visibility";
-import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
+import { safeRandomUUID } from "@/lib/random-uuid";
+import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
+import { cn } from "@/lib/utils";
 
-const SIMPLE_CHAT_COLUMN_MAX = "max-w-[min(100%,800px)]";
-const SIMPLE_CHAT_BUBBLE_MAX = "max-w-[min(100%,720px)]";
+import { SIMPLE_CHAT_COLUMN_MAX, SimpleAssistantBubble, SimpleSystemBubble, SimpleUserBubble } from "./chat-bubbles";
 
-function formatTime(iso: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString();
-}
-
-function SimpleUserBubble({ text, datetime }: { text: string; datetime: string }) {
-  return (
-    <div className="flex w-full justify-end">
-      <div className={`rounded-[18px] border border-[#e5e7eb] bg-white px-4 py-3 shadow-sm ${SIMPLE_CHAT_BUBBLE_MAX}`}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs font-semibold text-[#475569]">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#0f172a] text-white">
-              <UserRound className="h-3.5 w-3.5" />
-            </span>
-            你
-          </div>
-          <div className="text-[11px] text-[#94a3b8]">{formatTime(datetime)}</div>
-        </div>
-        <div className="mt-2 whitespace-pre-wrap break-words text-sm text-[#0f172a]">{text}</div>
-      </div>
-    </div>
-  );
-}
-
-function SimpleAssistantBubble({ body, datetime }: { body: string; datetime: string }) {
-  return (
-    <div className="flex w-full justify-start">
-      <div className={`rounded-[18px] border border-[#e5e7eb] bg-white px-4 py-3 shadow-sm ${SIMPLE_CHAT_BUBBLE_MAX}`}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs font-semibold text-[#475569]">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#171717] text-white">
-              <Bot className="h-3.5 w-3.5" />
-            </span>
-            MData Agent
-          </div>
-          <div className="text-[11px] text-[#94a3b8]">{formatTime(datetime)}</div>
-        </div>
-        <div className="mt-2 text-sm text-[#0f172a]">
-          <ChatMarkdown>{stripModelThinkingForUi(body)}</ChatMarkdown>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SimpleSystemBubble({ message }: { message: string }) {
-  return (
-    <div className="flex w-full justify-center">
-      <div className={`rounded-[14px] border border-[#fee2e2] bg-[#fef2f2] px-4 py-3 text-sm text-[#991b1b] ${SIMPLE_CHAT_BUBBLE_MAX}`}>
-        {message}
-      </div>
-    </div>
-  );
-}
-
-export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
-  const router = useRouter();
+export function PlatformSessionAgentWorkspace({ sessionId }: { sessionId: string }) {
   const platformAgent = useOptionalPlatformAgent();
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
-  const [messages, setMessages] = useState<SessionMessageItem[]>([]);
   const [draft, setDraft] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [messages, setMessages] = useState<SessionMessageItem[]>([]);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const messagesInnerRef = useRef<HTMLDivElement>(null);
   const [showResultPanel, setShowResultPanel] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [currentArtifacts, setCurrentArtifacts] = useState<PlatformTaskArtifactRef[] | null>(null);
-
-  const isLoggedIn = Boolean(platformAgent?.auth?.accessToken);
 
   const reload = useCallback(async () => {
     if (!platformAgent?.auth) return;
@@ -101,7 +39,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     setError("");
     try {
       await platformAgent.withFreshToken(async (token) => {
-        const res = await listSessionMessages(token, sessionId, 200);
+        const res = await listSessionMessages(token, sessionId, 100);
         setMessages(res.messages ?? []);
       });
     } catch (e) {
@@ -112,36 +50,32 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   }, [platformAgent, sessionId]);
 
   useEffect(() => {
-    // 切换会话时默认不展开右侧任务结果区
+    if (!platformAgent) return;
+    if (!platformAgent.auth) return;
+    platformAgent.setActivePlatformSession(sessionId);
+    void reload();
+  }, [platformAgent, reload, sessionId]);
+
+  useEffect(() => {
+    const outer = messagesScrollRef.current;
+    const inner = messagesInnerRef.current;
+    if (!outer || !inner) return;
+    const scrollToBottom = () => {
+      requestAnimationFrame(() => {
+        outer.scrollTop = outer.scrollHeight;
+      });
+    };
+    scrollToBottom();
+    const ro = new ResizeObserver(scrollToBottom);
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, [busy, error, messages, sending]);
+
+  useEffect(() => {
     setShowResultPanel(false);
     setFocusedTaskId(null);
     setCurrentArtifacts(null);
   }, [sessionId]);
-
-  useEffect(() => {
-    if (!sessionId) {
-      router.replace("/");
-      return;
-    }
-    if (!platformAgent) return;
-    if (!platformAgent.auth) {
-      platformAgent.openLogin("请先登录后查看历史对话。");
-      router.replace("/");
-      return;
-    }
-    platformAgent.setActivePlatformSession(sessionId);
-    void reload();
-  }, [platformAgent, reload, router, sessionId]);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
-    });
-  }, [busy, messages, sending]);
-
-  const title = useMemo(() => `历史对话`, []);
 
   const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
 
@@ -181,48 +115,24 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     }
     setSending(true);
     setError("");
-    const nowIso = new Date().toISOString();
-    const optimisticUser: SessionMessageItem = {
+    const optimistic: SessionMessageItem = {
       id: `optimistic_user_${safeRandomUUID()}`,
       role: "user",
       content: text,
-      created_at: nowIso,
+      created_at: new Date().toISOString(),
       message_index: 0,
       meta: {},
     };
-    setMessages((cur) => [...cur, optimisticUser]);
+    setMessages((cur) => [...cur, optimistic]);
     setDraft("");
     try {
       await platformAgent.withFreshToken(async (token) => {
         const mid = safeRandomUUID();
-        const res: ChatSendResult = await sendChatMessage(token, sessionId, text, mid);
-        if (res.kind === "completed") {
-          await reload();
-          return;
-        }
-        if (res.kind === "accepted") {
-          // 工具任务异步执行：先提示用户，再刷新一次消息（后端已写入 assistant 文本）
-          setMessages((cur) => [
-            ...cur,
-            {
-              id: `optimistic_sys_${safeRandomUUID()}`,
-              role: "system",
-              content: `任务已受理：${res.task_id}（后台执行中）`,
-              created_at: new Date().toISOString(),
-              message_index: 0,
-              meta: {},
-            },
-          ]);
-          await reload();
-          return;
-        }
-        if (res.kind === "blocked") {
-          await reload();
-        }
+        await sendChatMessage(token, sessionId, text, mid);
       });
+      await reload();
     } catch (e) {
       setError(formatAgentApiErrorForUser(e));
-      // 即使 500，后端也会把“用户消息 + 错误提示”写入 session_messages，所以这里刷新即可看到真实落库结果
       await reload();
     } finally {
       setSending(false);
@@ -231,9 +141,9 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
 
   return (
     <MoreDataShell
-      currentPath={`/history/${sessionId}`}
-      currentRunLabel={title}
+      currentPath="/agent"
       contentScrollMode="child"
+      currentRunLabel="对话"
       rightRail={
         showResultPanel && currentArtifacts && platformAgent?.withFreshToken ? (
           <AgentTaskResultPanel
@@ -248,15 +158,16 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
       }
     >
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
-        <div ref={scrollRef} className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-4 pt-6 sm:px-6">
-          <div className={`mx-auto w-full ${SIMPLE_CHAT_COLUMN_MAX}`}>
+        <div
+          ref={messagesScrollRef}
+          className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-4 pt-6 sm:px-6"
+        >
+          <div ref={messagesInnerRef} className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
             <div className="space-y-5">
-              {error ? <SimpleSystemBubble message={`加载/发送失败：${error}`} /> : null}
-              {!isLoggedIn ? <SimpleSystemBubble message="未登录" /> : null}
-              {busy ? <SimpleSystemBubble message="加载中…" /> : null}
-              {!busy && isLoggedIn && messages.length === 0 ? <SimpleSystemBubble message="该会话暂无消息" /> : null}
-
-              <div className="space-y-4">
+              {error ? <InlineNotice message={`加载/发送失败：${error}`} /> : null}
+              {busy ? <InlineNotice message="加载中…" /> : null}
+              {!busy && messages.length === 0 ? <InlineNotice message="该会话暂无消息" /> : null}
+              <div className="space-y-3">
                 {messages.map((m) => {
                   const meta = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
                   const mockSteps = parseMockTaskExecutionStepsFromMeta(meta);
@@ -302,7 +213,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
         </div>
 
         <div className="bg-[rgba(255,255,255,0.86)] px-4 py-4 backdrop-blur-xl sm:px-6">
-          <div className={`mx-auto w-full ${SIMPLE_CHAT_COLUMN_MAX}`}>
+          <div className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
             <TaskComposer
               value={draft}
               onValueChange={setDraft}
@@ -324,4 +235,3 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     </MoreDataShell>
   );
 }
-

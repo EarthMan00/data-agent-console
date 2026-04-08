@@ -39,6 +39,7 @@ export type SessionMessageItem = {
   role: "user" | "assistant" | "system" | string;
   content: string;
   created_at: string;
+  message_index: number;
   message_id?: string | null;
   meta?: Record<string, unknown>;
 };
