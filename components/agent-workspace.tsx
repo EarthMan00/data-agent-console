@@ -37,7 +37,7 @@ import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { isPlatformBackendEnabled, streamAgentRound } from "@/lib/agent-runtime";
 import { homeCapabilityItems } from "@/lib/mock/demo-data";
 import { demoActions, useDemoState } from "@/lib/mock/store";
-import { filterArtifactsForTaskResultPanel, hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
+import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import { cn } from "@/lib/utils";
 import { formatAgentApiErrorForUser } from "@/lib/agent-api/client";
 import {
@@ -192,10 +192,6 @@ export function AgentWorkspace() {
     prevLatestSubtasksCountRef.current = latestSubtasksCount;
   }, [latestSubtasksCount]);
 
-  const filteredPlatformArtifacts = useMemo(
-    () => filterArtifactsForTaskResultPanel(effectivePanelArtifacts ?? []),
-    [effectivePanelArtifacts],
-  );
   const taskPanelOpen = showTaskResultPanel;
 
   useEffect(() => {
@@ -359,7 +355,7 @@ export function AgentWorkspace() {
         showRightRail ? (
           showTaskResultPanel ? (
             <AgentTaskResultPanel
-              artifacts={filteredPlatformArtifacts}
+              artifacts={effectivePanelArtifacts ?? []}
               withFreshToken={platformAgent?.withFreshToken}
               onClose={() =>
                 setPanelVisibility((current) => ({

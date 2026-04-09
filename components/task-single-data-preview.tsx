@@ -11,7 +11,7 @@ import { fetchAuthorizedText } from "@/lib/agent-api/client";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { parseChatexcelArtifactText } from "@/lib/chatexcel-artifact";
 import { parseJsonToTableData } from "@/lib/json-to-table";
-import { CHATEXCEL_RESULT_RE } from "@/lib/platform-task-artifacts";
+import { CHATEXCEL_RESULT_RE, LINKFOX_RESULT_RE } from "@/lib/platform-task-artifacts";
 
 function extOf(name: string) {
   const i = name.lastIndexOf(".");
@@ -82,6 +82,7 @@ export function TaskSingleDataArtifactPreview({ artifact, withFreshToken }: Task
   const isHtml = ext === "html" || ext === "htm";
   const isPdf = ext === "pdf";
   const isChatexcel = CHATEXCEL_RESULT_RE.test((artifact.original_name ?? "").trim());
+  const isLinkfoxResult = LINKFOX_RESULT_RE.test((artifact.original_name ?? "").trim());
 
   const needsTextFetch = !isCsv && !isPdf;
   const [text, setText] = useState<string | null>(null);
@@ -156,6 +157,14 @@ export function TaskSingleDataArtifactPreview({ artifact, withFreshToken }: Task
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ChatexcelArtifactPreview model={chatexcelModel} />
       </div>
+    );
+  }
+
+  if (isLinkfoxResult && text != null) {
+    return (
+      <pre className="min-h-0 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-[#e5e7eb] bg-[#f8fafc] p-3 text-[12px] leading-relaxed text-[#31405a]">
+        {text}
+      </pre>
     );
   }
 
