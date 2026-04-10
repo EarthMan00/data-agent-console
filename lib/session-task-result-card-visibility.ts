@@ -2,7 +2,7 @@ import type { SessionMessageItem } from "@/lib/agent-api/types";
 
 /**
  * 按消息时间顺序，每个 task_id 仅在第一条携带 meta.task_id 的 assistant 消息下展示「任务结果」卡片。
- * 多步编排时 mock 步骤消息与后续总结消息可能共用同一 task_id，避免重复入口。
+ * 多步编排时「任务步骤条」消息与后续总结消息可能共用同一 task_id，避免重复入口。
  */
 export function messageIdsEligibleForTaskResultCard(messages: SessionMessageItem[]): Set<string> {
   const seenTaskIds = new Set<string>();

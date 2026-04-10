@@ -2,8 +2,8 @@ import {
   AgentApiError,
   getTask,
   getToolOrchestration,
-  patchMockTaskExecution,
-  postMockTaskExecution,
+  patchTaskExecutionSteps,
+  postTaskExecutionSteps,
   sendChatMessage,
 } from "@/lib/agent-api/client";
 import type { TaskResponse, ToolOrchestrationStatusApi } from "@/lib/agent-api/types";
@@ -121,7 +121,7 @@ export async function runPlatformRound(
         steps: stepDefs.map((s) => ({ id: s.id, label: s.label })),
       });
 
-      const mockStepsMessageId = await postMockTaskExecution(accessToken, chatSessionId, {
+      const taskExecutionStepsMessageId = await postTaskExecutionSteps(accessToken, chatSessionId, {
         round_id: input.roundId,
         task_id: result.task_id,
         steps: stepDefs.map((s) => ({
@@ -131,7 +131,7 @@ export async function runPlatformRound(
         })),
       });
 
-      const persistMockStepsRows = async (statuses: TaskExecutionStepStatus[], taskIdForMeta?: string) => {
+      const persistTaskExecutionStepsRows = async (statuses: TaskExecutionStepStatus[], taskIdForMeta?: string) => {
         try {
           const steps = stepDefs.map((s, i) => ({
             id: s.id,
@@ -143,25 +143,25 @@ export async function runPlatformRound(
             task_id: taskIdForMeta ?? result.task_id,
             steps,
           };
-          if (mockStepsMessageId) {
-            await patchMockTaskExecution(accessToken, chatSessionId, mockStepsMessageId, body);
+          if (taskExecutionStepsMessageId) {
+            await patchTaskExecutionSteps(accessToken, chatSessionId, taskExecutionStepsMessageId, body);
           } else {
-            await postMockTaskExecution(accessToken, chatSessionId, body);
+            await postTaskExecutionSteps(accessToken, chatSessionId, body);
           }
         } catch (e) {
-          console.warn("[agent-runtime] mock_task_execution_persist_failed", {
+          console.warn("[agent-runtime] task_execution_steps_persist_failed", {
             session_id: chatSessionId,
             round_id: input.roundId,
             task_id: taskIdForMeta ?? result.task_id,
-            mock_message_id: mockStepsMessageId ?? null,
+            steps_message_id: taskExecutionStepsMessageId ?? null,
             error: e instanceof Error ? e.message : String(e),
             status: e instanceof AgentApiError ? e.status : undefined,
           });
         }
       };
 
-      const persistMockStepsUniform = async (finalStatus: TaskExecutionStepStatus, taskIdForMeta?: string) => {
-        await persistMockStepsRows(stepDefs.map(() => finalStatus), taskIdForMeta);
+      const persistTaskExecutionStepsUniform = async (finalStatus: TaskExecutionStepStatus, taskIdForMeta?: string) => {
+        await persistTaskExecutionStepsRows(stepDefs.map(() => finalStatus), taskIdForMeta);
       };
 
       const pushPlatformSnapshot = (t: Pick<TaskResponse, "task_id" | "artifacts" | "zip_download_api">) => {
@@ -299,7 +299,7 @@ export async function runPlatformRound(
       if (orchestrationId) {
         if (!orchFinished) {
           finalizeAllSteps("error");
-          await persistMockStepsUniform("error");
+          await persistTaskExecutionStepsUniform("error");
           pushPlatformSnapshot({
             task_id: result.task_id,
             artifacts: [],
@@ -316,7 +316,7 @@ export async function runPlatformRound(
         const rowStatuses: TaskExecutionStepStatus[] =
           lastOrch?.steps.map((s) => mapServerOrchestrationStepStatus(s.status)) ??
           stepDefs.map(() => "error" as TaskExecutionStepStatus);
-        await persistMockStepsRows(rowStatuses, task.task_id);
+        await persistTaskExecutionStepsRows(rowStatuses, task.task_id);
 
         if (!lastOrch?.success) {
           handlers.onEvent({
@@ -342,7 +342,7 @@ export async function runPlatformRound(
 
       if (!task.finished_at) {
         finalizeAllSteps("error");
-        await persistMockStepsUniform("error", task.task_id);
+        await persistTaskExecutionStepsUniform("error", task.task_id);
         pushPlatformSnapshot({
           task_id: result.task_id,
           artifacts: [],
@@ -358,7 +358,7 @@ export async function runPlatformRound(
 
       if (task.status === "FAILED") {
         finalizeAllSteps("error");
-        await persistMockStepsUniform("error", task.task_id);
+        await persistTaskExecutionStepsUniform("error", task.task_id);
         handlers.onEvent({
           type: "error",
           roundId: input.roundId,
@@ -369,7 +369,7 @@ export async function runPlatformRound(
 
       if (task.status !== "SUCCESS") {
         finalizeAllSteps("error");
-        await persistMockStepsUniform("error", task.task_id);
+        await persistTaskExecutionStepsUniform("error", task.task_id);
         const summary = buildTaskCompletionSummary(task);
         handlers.onEvent({ type: "final", roundId: input.roundId, text: summary });
         handlers.onEvent({
@@ -382,7 +382,7 @@ export async function runPlatformRound(
       }
 
       finalizeAllSteps("done");
-      await persistMockStepsUniform("done", task.task_id);
+      await persistTaskExecutionStepsUniform("done", task.task_id);
 
       pushPlatformSnapshot(task);
 

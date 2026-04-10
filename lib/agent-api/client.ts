@@ -290,25 +290,25 @@ export async function listSessionMessages(
   return data as SessionMessagesPageResponse;
 }
 
-export type MockTaskExecutionStepPersistPayload = {
+export type TaskExecutionStepPersistPayload = {
   id: string;
   label: string;
   status: TaskExecutionStepStatus;
 };
 
-export type MockTaskExecutionPersistBody = {
+export type TaskExecutionStepsPersistBody = {
   round_id: string;
   task_id: string;
-  steps: MockTaskExecutionStepPersistPayload[];
+  steps: TaskExecutionStepPersistPayload[];
 };
 
-/** 任务受理后尽早插入 mock 步骤占位（pending），使 message_index 早于任务结果消息。 */
-export async function postMockTaskExecution(
+/** 任务受理后尽早插入步骤占位（pending），使 message_index 早于任务结果消息。 */
+export async function postTaskExecutionSteps(
   accessToken: string,
   sessionId: string,
-  body: MockTaskExecutionPersistBody,
+  body: TaskExecutionStepsPersistBody,
 ): Promise<string | null> {
-  const res = await fetch(apiUrl(`/api/sessions/${sessionId}/messages/mock-task-execution`), {
+  const res = await fetch(apiUrl(`/api/sessions/${sessionId}/messages/task-execution-steps`), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -326,21 +326,24 @@ export async function postMockTaskExecution(
   return null;
 }
 
-/** 任务结束时更新同一条 mock 消息的 steps（不改变排序位置）。 */
-export async function patchMockTaskExecution(
+/** 任务结束时更新同一条步骤消息的 steps（不改变排序位置）。 */
+export async function patchTaskExecutionSteps(
   accessToken: string,
   sessionId: string,
   messageId: string,
-  body: MockTaskExecutionPersistBody,
+  body: TaskExecutionStepsPersistBody,
 ): Promise<boolean> {
-  const res = await fetch(apiUrl(`/api/sessions/${sessionId}/messages/${messageId}/mock-task-execution`), {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
+  const res = await fetch(
+    apiUrl(`/api/sessions/${sessionId}/messages/${messageId}/task-execution-steps`),
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+  );
   if (res.status === 503) return false;
   return res.ok;
 }

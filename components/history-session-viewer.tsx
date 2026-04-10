@@ -16,8 +16,8 @@ import { Button } from "@/components/ui/button";
 import { TaskComposer } from "@/components/task-composer";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
-import { MockTaskExecutionAssistantBubble } from "@/components/mock-task-execution-assistant-bubble";
-import { parseMockTaskExecutionStepsFromMeta } from "@/lib/mock-task-execution-meta";
+import { TaskExecutionStepsAssistantBubble } from "@/components/task-execution-steps-assistant-bubble";
+import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import { messageIdsEligibleForTaskResultCard } from "@/lib/session-task-result-card-visibility";
 import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 
@@ -259,7 +259,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
               <div className="space-y-4">
                 {messages.map((m) => {
                   const meta = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
-                  const mockSteps = parseMockTaskExecutionStepsFromMeta(meta);
+                  const taskSteps = parseTaskExecutionStepsFromMeta(meta);
                   const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
                   const taskId =
                     m.role === "assistant" && rawTaskId && taskResultCardMessageIds.has(m.id) ? rawTaskId : undefined;
@@ -269,8 +269,8 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                       {m.role === "user" ? (
                         <SimpleUserBubble text={m.content} datetime={m.created_at} />
                       ) : m.role === "assistant" ? (
-                        mockSteps ? (
-                          <MockTaskExecutionAssistantBubble steps={mockSteps} datetime={m.created_at} />
+                        taskSteps ? (
+                          <TaskExecutionStepsAssistantBubble steps={taskSteps} datetime={m.created_at} />
                         ) : (
                           <SimpleAssistantBubble body={m.content} datetime={m.created_at} />
                         )

@@ -13,7 +13,7 @@ function formatTime(iso: string) {
   return d.toLocaleString();
 }
 
-export function MockTaskExecutionAssistantBubble({
+export function TaskExecutionStepsAssistantBubble({
   steps,
   datetime,
 }: {

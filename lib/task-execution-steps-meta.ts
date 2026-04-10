@@ -1,16 +1,22 @@
 import type { TaskExecutionStep, TaskExecutionStepStatus } from "@/lib/agent-events";
 
-export const MOCK_TASK_EXECUTION_META_KIND = "mock_task_execution" as const;
+/** 当前写入库中的 meta.kind */
+export const TASK_EXECUTION_STEPS_META_KIND = "task_execution_steps" as const;
+
+/** 历史数据兼容（旧端点写入） */
+const LEGACY_TASK_STEPS_META_KIND = "mock_task_execution" as const;
 
 function isStepStatus(v: unknown): v is TaskExecutionStepStatus {
   return v === "pending" || v === "running" || v === "done" || v === "error";
 }
 
-/** 从 session_messages.meta 解析持久化的 mock 执行步骤（供历史/平台会话时间线渲染）。 */
-export function parseMockTaskExecutionStepsFromMeta(
+/** 从 session_messages.meta 解析持久化的任务步骤条（供历史/平台会话时间线渲染）。 */
+export function parseTaskExecutionStepsFromMeta(
   meta: Record<string, unknown> | undefined,
 ): TaskExecutionStep[] | null {
-  if (!meta || meta.kind !== MOCK_TASK_EXECUTION_META_KIND) return null;
+  if (!meta) return null;
+  const k = meta.kind;
+  if (k !== TASK_EXECUTION_STEPS_META_KIND && k !== LEGACY_TASK_STEPS_META_KIND) return null;
   const roundId = typeof meta.round_id === "string" ? meta.round_id : "";
   const raw = meta.steps;
   if (!Array.isArray(raw)) return null;

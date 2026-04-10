@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { InlineNotice } from "@/components/inline-notice";
-import { MockTaskExecutionAssistantBubble } from "@/components/mock-task-execution-assistant-bubble";
+import { TaskExecutionStepsAssistantBubble } from "@/components/task-execution-steps-assistant-bubble";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
 import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
@@ -12,7 +12,7 @@ import { TaskComposer } from "@/components/task-composer";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { formatAgentApiErrorForUser, getTask, listSessionMessages, sendChatMessage } from "@/lib/agent-api/client";
 import type { SessionMessageItem } from "@/lib/agent-api/types";
-import { parseMockTaskExecutionStepsFromMeta } from "@/lib/mock-task-execution-meta";
+import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import { messageIdsEligibleForTaskResultCard } from "@/lib/session-task-result-card-visibility";
 import { safeRandomUUID } from "@/lib/random-uuid";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
@@ -170,7 +170,7 @@ export function PlatformSessionAgentWorkspace({ sessionId }: { sessionId: string
               <div className="space-y-3">
                 {messages.map((m) => {
                   const meta = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
-                  const mockSteps = parseMockTaskExecutionStepsFromMeta(meta);
+                  const taskSteps = parseTaskExecutionStepsFromMeta(meta);
                   const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
                   const taskId =
                     m.role === "assistant" && rawTaskId && taskResultCardMessageIds.has(m.id) ? rawTaskId : undefined;
@@ -180,8 +180,8 @@ export function PlatformSessionAgentWorkspace({ sessionId }: { sessionId: string
                       {m.role === "user" ? (
                         <SimpleUserBubble text={m.content} datetime={m.created_at} />
                       ) : m.role === "assistant" ? (
-                        mockSteps ? (
-                          <MockTaskExecutionAssistantBubble steps={mockSteps} datetime={m.created_at} />
+                        taskSteps ? (
+                          <TaskExecutionStepsAssistantBubble steps={taskSteps} datetime={m.created_at} />
                         ) : (
                           <SimpleAssistantBubble body={m.content} datetime={m.created_at} />
                         )
