@@ -104,6 +104,7 @@ export const homeCapabilityItems: CapabilityItem[] = [
   { id: "patent", label: "专利检索", promptHint: "在推进前先补一轮专利检索，避开高风险方向。", accent: "#7f8b99", icon: "patent" },
 ];
 
+/** 首页推荐卡片：在已配置 `NEXT_PUBLIC_AGENT_API_ORIGIN`（或代理）且库中有数据时，由 GET /api/home-prompt-recommendations 覆盖；此处为回退数据。 */
 export const homePromptCards: HomePromptCard[] = [
   {
     id: "h1",

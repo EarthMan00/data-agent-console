@@ -115,3 +115,16 @@ export type TaskListResult = {
   page: number;
   page_size: number;
 };
+
+/** GET /api/home-prompt-recommendations 单条（snake_case 与 OpenAPI 一致） */
+export type HomePromptRecommendationDto = {
+  id: string;
+  title: string;
+  description: string;
+  prompt: string;
+  meta: string;
+  capability_ids: string[];
+  replay_run_id: string | null;
+  replay_share_id: string | null;
+  sort_order: number;
+};

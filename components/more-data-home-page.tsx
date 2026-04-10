@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Check, Copy } from "lucide-react";
+import { fetchHomePromptRecommendations } from "@/lib/agent-api/home-prompts";
+import type { HomePromptCard } from "@/lib/mock/demo-data";
 import { homeCapabilityItems, homePromptCards } from "@/lib/mock/demo-data";
 import { AgentWorkspace } from "@/components/agent-workspace";
 import { MoreDataShell } from "@/components/more-data-shell";
@@ -34,13 +36,38 @@ export function MoreDataHomePage() {
   const [notice, setNotice] = useState("");
   const [launching, setLaunching] = useState(false);
   const [promptCopied, setPromptCopied] = useState(false);
+  const [remotePromptCards, setRemotePromptCards] = useState<HomePromptCard[] | null>(null);
   const activeRunId = searchParams.get("runId");
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const rows = await fetchHomePromptRecommendations();
+      if (cancelled || !rows) return;
+      setRemotePromptCards(
+        rows.map((r) => ({
+          id: r.id,
+          title: r.title,
+          body: r.description,
+          prompt: r.prompt,
+          meta: r.meta,
+          capabilityIds: r.capability_ids,
+          replayRunId: r.replay_run_id ?? undefined,
+          replayShareId: r.replay_share_id ?? undefined,
+        })),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const cards = useMemo(() => {
-    if (!activeCapabilityId || activeCapabilityId === "scenarios") return homePromptCards;
-    const filtered = homePromptCards.filter((card) => card.capabilityIds.includes(activeCapabilityId));
-    return filtered.length > 0 ? filtered : homePromptCards;
-  }, [activeCapabilityId]);
+    const source = remotePromptCards ?? homePromptCards;
+    if (!activeCapabilityId || activeCapabilityId === "scenarios") return source;
+    const filtered = source.filter((card) => card.capabilityIds.includes(activeCapabilityId));
+    return filtered.length > 0 ? filtered : source;
+  }, [activeCapabilityId, remotePromptCards]);
 
   const launchAgent = async (seed?: string) => {
     const nextQuery = sanitizeObjective(seed ?? query);
@@ -199,7 +226,7 @@ export function MoreDataHomePage() {
   }, []);
 
 
-  const applyPromptCard = (card: (typeof homePromptCards)[number]) => {
+  const applyPromptCard = (card: HomePromptCard) => {
     setQuery(card.prompt);
     setSelectedSourceIds(card.capabilityIds);
     setActiveCapabilityId(card.capabilityIds[0] ?? "scenarios");
