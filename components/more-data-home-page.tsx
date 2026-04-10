@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Check, Copy } from "lucide-react";
 import { homeCapabilityItems, homePromptCards } from "@/lib/mock/demo-data";
@@ -157,12 +157,47 @@ export function MoreDataHomePage() {
     setNotice(`已添加附件：${names}。`);
   };
 
+  const HEADER_HEIGHT = 58;
+  const capabilityAnchorRef = useRef<HTMLDivElement | null>(null);
+  const pageContentRef = useRef<HTMLDivElement | null>(null);
+  const [composerFloating, setComposerFloating] = useState(false);
+  const [fixedComposerStyle, setFixedComposerStyle] = useState<{ left: number; width: number } | null>(null);
+
   const selectedPrompt = cards.find((card) => card.id === selectedPromptId) ?? null;
 
   const openPromptCard = (cardId: string) => {
     setPromptCopied(false);
     setSelectedPromptId(cardId);
   };
+
+  const updateComposerFloating = () => {
+    const anchor = capabilityAnchorRef.current;
+    if (!anchor) {
+      setComposerFloating(false);
+    } else {
+      const rect = anchor.getBoundingClientRect();
+      setComposerFloating(rect.top <= HEADER_HEIGHT);
+    }
+
+    const pageContent = pageContentRef.current;
+    if (!pageContent) {
+      setFixedComposerStyle(null);
+      return;
+    }
+    const contentRect = pageContent.getBoundingClientRect();
+    setFixedComposerStyle({ left: contentRect.left, width: contentRect.width });
+  };
+
+  useEffect(() => {
+    updateComposerFloating();
+    window.addEventListener("scroll", updateComposerFloating, { passive: true });
+    window.addEventListener("resize", updateComposerFloating);
+    return () => {
+      window.removeEventListener("scroll", updateComposerFloating);
+      window.removeEventListener("resize", updateComposerFloating);
+    };
+  }, []);
+
 
   const applyPromptCard = (card: (typeof homePromptCards)[number]) => {
     setQuery(card.prompt);
@@ -228,41 +263,91 @@ export function MoreDataHomePage() {
         </>
       }
     >
-      <div className="px-8 pb-8 pt-8">
-        <div className="mx-auto w-full max-w-[1180px] pt-4">
-          <div className="mx-auto max-w-[760px] pt-18 text-center md:pt-24">
+      <div className="flex flex-col pb-8">
+        <div className="px-8 pt-8">
+          <div ref={pageContentRef} className="mx-auto w-full max-w-[1180px] pt-4">
+            <div className="mx-auto max-w-[760px] pt-18 text-center md:pt-24">
             <h1 className="font-[family:var(--font-jakarta)] text-[48px] font-semibold tracking-[-0.065em] text-[#18181b] md:text-[66px]">
               跨境运营助手
             </h1>
             <p className="mt-3 text-[15px] leading-[1.7] text-[#585d66] md:text-[16px]">数据、选品、调研、分析...</p>
           </div>
 
-          <div className="mx-auto mt-12 max-w-[820px]">
-            <TaskComposer
-              value={query}
-              onValueChange={setQuery}
-              placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
-              mode={composerMode}
-              onModeChange={setComposerMode}
-              templates={templates}
-              selectedSourceIds={selectedSourceIds}
-              onToolSelect={applyComposerTool}
-              onSourceRemove={removeComposerTool}
-              onTemplateSelect={applyTemplate}
-              onFilesSelected={handleFilesSelected}
-              onSubmit={() => {
-                if (!launching) {
-                  void launchAgent();
-                }
-              }}
-              visualStyle="heroMinimal"
-            />
+          <div className={`mx-auto mt-12 max-w-[820px] ${composerFloating ? "pb-36" : ""}`}>
+            {!composerFloating ? (
+              <div id="sym:TaskComposer" className="transition">
+                <TaskComposer
+                  value={query}
+                  onValueChange={setQuery}
+                  placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
+                  mode={composerMode}
+                  onModeChange={setComposerMode}
+                  templates={templates}
+                  selectedSourceIds={selectedSourceIds}
+                  onToolSelect={applyComposerTool}
+                  onSourceRemove={removeComposerTool}
+                  onTemplateSelect={applyTemplate}
+                  onFilesSelected={handleFilesSelected}
+                  onSubmit={() => {
+                    if (!launching) {
+                      void launchAgent();
+                    }
+                  }}
+                  visualStyle="heroMinimal"
+                />
+              </div>
+            ) : null}
             <p className="sr-only" aria-live="polite">
               {notice}
             </p>
           </div>
+          {composerFloating ? (
+            <div
+              id="sym:TaskComposer"
+              className="fixed bottom-0 z-30 flex justify-center pb-4"
+              style={
+                fixedComposerStyle
+                  ? { left: fixedComposerStyle.left, width: fixedComposerStyle.width }
+                  : { left: 0, right: 0 }
+              }
+            >
+              <div className="w-full max-w-[820px] rounded-[34px] border border-[#e5e7eb] bg-white/96 p-4 shadow-[0_28px_70px_rgba(15,23,42,0.14)] backdrop-blur-xl">
+                <TaskComposer
+                  value={query}
+                  onValueChange={setQuery}
+                  placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
+                  mode={composerMode}
+                  onModeChange={setComposerMode}
+                  templates={templates}
+                  selectedSourceIds={selectedSourceIds}
+                  onToolSelect={applyComposerTool}
+                  onSourceRemove={removeComposerTool}
+                  onTemplateSelect={applyTemplate}
+                  onFilesSelected={handleFilesSelected}
+                  onSubmit={() => {
+                    if (!launching) {
+                      void launchAgent();
+                    }
+                  }}
+                  visualStyle="heroMinimal"
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
 
-          <div className="mx-auto mt-10 flex max-w-[920px] flex-wrap items-center justify-center gap-x-1.5 gap-y-2 text-[12px] text-[#8f949d] opacity-70">
+      <div
+        id="sym:homeCapabilityItems"
+        ref={capabilityAnchorRef}
+        className={`sticky top-[58px] z-20 mt-10 transition-all ${
+          composerFloating
+            ? "w-full border-b border-[#e5e7eb] bg-white/90 pb-3 pt-3 opacity-95 backdrop-blur-sm"
+            : "mx-auto w-full max-w-[920px] rounded-[28px] bg-white/90 px-2 py-3 opacity-95 backdrop-blur-sm"
+        }`}
+      >
+        <div className="mx-auto flex w-full max-w-[1180px] justify-center px-8">
+          <div className={`flex w-full ${composerFloating ? 'max-w-[840px]' : 'max-w-[920px]'} flex-wrap items-center justify-center gap-x-1.5 gap-y-2 text-[12px] text-[#8f949d]`}>
             {homeCapabilityItems.map((item) => {
               const active = item.id === activeCapabilityId;
               return (
@@ -283,8 +368,12 @@ export function MoreDataHomePage() {
               );
             })}
           </div>
+        </div>
+      </div>
 
-          <div className="mt-18 pb-2 text-center text-[12px] font-medium tracking-[0.02em] text-[#b1b5bc]">探索精选提示词</div>
+      <div className="px-8 pt-8">
+        <div className="mx-auto w-full max-w-[1180px]">
+          <div className="mt-10 pb-2 text-center text-[12px] font-medium tracking-[0.02em] text-[#b1b5bc]">探索精选提示词</div>
 
           <div className="mt-5 grid gap-3 pb-6 md:grid-cols-2 xl:grid-cols-4">
             {cards.map((card) => (
@@ -320,6 +409,7 @@ export function MoreDataHomePage() {
             ))}
           </div>
         </div>
+      </div>
       </div>
 
       <Dialog open={Boolean(selectedPrompt)} onOpenChange={(open) => (!open ? setSelectedPromptId(null) : null)}>

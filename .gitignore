@@ -47,3 +47,4 @@ next-env.d.ts
 # tooling / editor
 .eslintcache
 .idea/
+.copilot-specs-cache/

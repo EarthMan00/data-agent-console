@@ -170,7 +170,7 @@ export function MoreDataShell({
         className={childManagedScroll ? "grid h-screen overflow-hidden bg-[rgba(250,249,245,0.82)]" : "grid min-h-screen bg-[rgba(250,249,245,0.82)]"}
         style={{ gridTemplateColumns: sidebarCollapsed ? "80px minmax(0,1fr)" : "272px minmax(0,1fr)" }}
       >
-        <aside className={`relative border-r border-[#e2e7ef] bg-[rgba(255,255,255,0.76)] py-7 backdrop-blur-xl transition-[padding,width] ${sidebarCollapsed ? "px-4" : "px-6"}`}>
+        <aside className={`sticky top-0 self-start h-screen min-h-0 overflow-y-auto border-r border-[#e2e7ef] bg-[rgba(255,255,255,0.76)] py-7 backdrop-blur-xl transition-[padding,width] ${sidebarCollapsed ? "px-4" : "px-6"}`}>
           <div className="relative">
             {sidebarCollapsed ? (
               <div className="flex justify-center">
@@ -323,7 +323,7 @@ export function MoreDataShell({
         </aside>
 
         <main className={childManagedScroll ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-transparent" : "flex min-h-screen min-w-0 flex-col bg-transparent"}>
-          <header className="flex h-[58px] items-center justify-between border-b border-[#e3e8ef] bg-[rgba(255,255,255,0.68)] px-6 backdrop-blur-xl">
+          <header className="sticky top-0 z-50 flex h-[58px] items-center justify-between border-b border-[#e3e8ef] bg-[rgba(255,255,255,0.95)] px-6 backdrop-blur-xl">
             <div className="flex min-w-0 items-center gap-3">
               <Button aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"} variant="ghost" size="icon" className="h-8 w-8 rounded-[10px] text-[#7e8da0]" onClick={() => setSidebarCollapsed((current) => !current)}>
                 <PanelLeft className="h-4 w-4" />
