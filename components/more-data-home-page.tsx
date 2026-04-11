@@ -219,9 +219,26 @@ export function MoreDataHomePage() {
     updateComposerFloating();
     window.addEventListener("scroll", updateComposerFloating, { passive: true });
     window.addEventListener("resize", updateComposerFloating);
+
+    const observerTarget = pageContentRef.current;
+    let resizeObserver: ResizeObserver | null = null;
+
+    if (observerTarget && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        updateComposerFloating();
+      });
+      resizeObserver.observe(observerTarget);
+      if (observerTarget.parentElement) {
+        resizeObserver.observe(observerTarget.parentElement);
+      }
+    }
+
     return () => {
       window.removeEventListener("scroll", updateComposerFloating);
       window.removeEventListener("resize", updateComposerFloating);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
     };
   }, []);
 
