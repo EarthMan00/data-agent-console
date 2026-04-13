@@ -997,7 +997,7 @@ export function TaskComposer({
             </div>
 
             <div className="flex items-center gap-2.5">
-              <Popover open={modeOpen} onOpenChange={setModeOpen}>
+              {/* <Popover open={modeOpen} onOpenChange={setModeOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
@@ -1044,7 +1044,7 @@ export function TaskComposer({
                     ))}
                   </div>
                 </PopoverContent>
-              </Popover>
+              </Popover> */}
 
               <Button
                 type="button"
