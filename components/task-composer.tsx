@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUp, ArrowUpRight, ChevronDown, LibraryBig, Paperclip } from "lucide-react";
+import { ArrowUpRight, ChevronDown, LibraryBig, Paperclip, Send } from "lucide-react";
 
 import { homeCapabilityItems } from "@/lib/mock/demo-data";
 import type { Template } from "@/lib/mock/store";
@@ -284,6 +284,7 @@ export function TaskComposer({
   sendButtonClassName,
 }: TaskComposerProps) {
   const isHeroMinimal = visualStyle === "heroMinimal";
+  const hasText = value.trim().length > 0;
   const fileInputId = useId();
   const textboxRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -1055,11 +1056,15 @@ export function TaskComposer({
                 className={
                   sendButtonClassName ??
                   (isHeroMinimal
-                    ? "h-[34px] w-[34px] rounded-[12px] border border-[#e2e5ea] bg-[#f3f4f6] text-[#9ca3af] shadow-none transition hover:border-[#d1d5db] hover:bg-[#eceef1] hover:text-[#4b5563]"
-                    : "h-[38px] w-[38px] rounded-[14px] border border-[#111111] bg-[linear-gradient(180deg,#1b1b1d,#111113)] text-white shadow-[0_12px_24px_rgba(15,15,18,0.18)] transition hover:-translate-y-0.5 hover:bg-[linear-gradient(180deg,#26262a,#121214)] hover:shadow-[0_16px_30px_rgba(15,15,18,0.24)]")
+                    ? hasText
+                      ? "h-[34px] w-[34px] rounded-[12px] bg-[#2563eb] text-white shadow-[0_10px_24px_rgba(37,99,235,0.25)] transition hover:bg-[#1d4ed8]"
+                      : "h-[34px] w-[34px] rounded-[12px] border border-[#e2e5ea] bg-[#f3f4f6] text-[#9ca3af] shadow-none transition hover:border-[#d1d5db] hover:bg-[#eceef1] hover:text-[#4b5563]"
+                    : hasText
+                      ? "h-[38px] w-[38px] rounded-[14px] border border-transparent bg-[#2563eb] text-white shadow-[0_12px_24px_rgba(37,99,235,0.25)] transition hover:-translate-y-0.5 hover:bg-[#1d4ed8] hover:shadow-[0_16px_30px_rgba(37,99,235,0.24)]"
+                      : "h-[38px] w-[38px] rounded-[14px] border border-[#111111] bg-[linear-gradient(180deg,#1b1b1d,#111113)] text-white shadow-[0_12px_24px_rgba(15,15,18,0.18)] transition hover:-translate-y-0.5 hover:bg-[linear-gradient(180deg,#26262a,#121214)] hover:shadow-[0_16px_30px_rgba(15,15,18,0.24)]" )
                 }
               >
-                <ArrowUp className="h-[14px] w-[14px]" />
+                <Send className="h-[14px] w-[14px]" />
               </Button>
             </div>
           </div>
