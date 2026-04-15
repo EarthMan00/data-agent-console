@@ -28,7 +28,7 @@ export function TaskExecutionStepsAssistantBubble({
             <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#171717] text-white">
               <Bot className="h-3.5 w-3.5" />
             </span>
-            MData Agent
+            LinkData
           </div>
           <div className="text-[11px] text-[#94a3b8]">{formatTime(datetime)}</div>
         </div>

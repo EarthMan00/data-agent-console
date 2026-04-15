@@ -447,7 +447,7 @@ export function AgentWorkspace() {
                           <Bot className="h-4 w-4" />
                         </div>
                         <div>
-                          <div className="text-[15px] font-semibold text-[#1f2421]">MData Agent</div>
+                          <div className="text-[15px] font-semibold text-[#1f2421]">LinkData</div>
                         </div>
                       </div>
 

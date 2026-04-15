@@ -293,7 +293,7 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
             <div className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-[#171717] text-white">
               <FileText className="h-3.5 w-3.5" />
             </div>
-            <div className="text-[13px] font-semibold tracking-[-0.01em] text-[#171717]">MData Agent</div>
+            <div className="text-[13px] font-semibold tracking-[-0.01em] text-[#171717]">LinkData</div>
           </div>
           <div className="h-4 w-px bg-[#e5e7eb]" />
           <div className="truncate text-[12px] font-medium text-[#27272a]">{topTitle}</div>
@@ -329,7 +329,7 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
                   <div className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-[#171717] text-white">
                     <FileText className="h-4 w-4" />
                   </div>
-                  MData Agent
+                  LinkData
                 </div>
 
                 <div className="space-y-4">
@@ -573,7 +573,7 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
               <div className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-[#f4f5f7] text-[#171717]">
                 <FileText className="h-4 w-4" />
               </div>
-              <div className="text-[12px] text-[#474d4a]">MData Agent 任务回放完成。</div>
+              <div className="text-[12px] text-[#474d4a]">LinkData 任务回放完成。</div>
               <button type="button" className="rounded-[8px] bg-[#52525b] px-3 py-1.5 text-[12px] font-medium text-white">
                 重看
               </button>

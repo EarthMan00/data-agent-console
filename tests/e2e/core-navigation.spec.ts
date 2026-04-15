@@ -17,7 +17,7 @@ test.describe.serial("core navigation", () => {
 
   test("navigates through the shell", async () => {
     await expectSingleWindowModel(context);
-    await expect(appPage.getByText("MData Agent")).toBeVisible();
+    await expect(appPage.getByText("LinkData")).toBeVisible();
     await appPage.getByRole("link", { name: "指令库" }).click();
     await expect(appPage).toHaveURL(/\/templates/);
     await appPage.getByRole("link", { name: "定时任务" }).click();
