@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/", label: "新的对话", icon: PlusCircle },
   { href: "/templates", label: "指令库", icon: LibraryBig },
-  { href: "/schedules", label: "定时任务", icon: Clock3 },
+  // { href: "/schedules", label: "定时任务", icon: Clock3 },
   { href: "/artifacts", label: "收藏夹", icon: FolderHeart },
 ];
 
