@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import "tdesign-web-components/lib/style/index.css";
 import "./globals.css";
 import { PlatformAgentProvider } from "@/components/platform-agent-provider";
+import { MoreDataShellRoot } from "@/components/more-data-shell";
 import { SuppressNextDevOverlay } from "@/components/suppress-next-dev-overlay";
 
 export const metadata: Metadata = {
@@ -29,7 +30,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <SuppressNextDevOverlay />
-        <PlatformAgentProvider>{children}</PlatformAgentProvider>
+        <PlatformAgentProvider>
+          <MoreDataShellRoot>{children}</MoreDataShellRoot>
+        </PlatformAgentProvider>
       </body>
     </html>
   );

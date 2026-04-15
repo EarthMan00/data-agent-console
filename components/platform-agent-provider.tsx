@@ -58,8 +58,8 @@ export function useOptionalPlatformAgent(): PlatformAgentContextValue | null {
 
 function PlatformAgentInner({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [auth, setAuth] = useState<AgentSessionSnapshot | null>(null);
-  const [platformSessionId, setPlatformSessionId] = useState<string | null>(null);
+  const [auth, setAuth] = useState<AgentSessionSnapshot | null>(() => loadAgentSession());
+  const [platformSessionId, setPlatformSessionId] = useState<string | null>(() => loadPlatformSessionId());
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginBanner, setLoginBanner] = useState("");
 
@@ -67,11 +67,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const [password, setPassword] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
-
-  useEffect(() => {
-    setAuth(loadAgentSession());
-    setPlatformSessionId(loadPlatformSessionId());
-  }, []);
 
   useEffect(() => {
     const sync = () => setAuth(loadAgentSession());

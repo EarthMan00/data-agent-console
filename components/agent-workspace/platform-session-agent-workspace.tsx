@@ -141,7 +141,7 @@ export function PlatformSessionAgentWorkspace({ sessionId }: { sessionId: string
 
   return (
     <MoreDataShell
-      currentPath="/agent"
+      currentPath="/agent/history"
       contentScrollMode="child"
       currentRunLabel="对话"
       rightRail={

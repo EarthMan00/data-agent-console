@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ChevronDown,
-  Clock3,
   FolderHeart,
   LibraryBig,
   PanelLeft,
@@ -45,40 +44,56 @@ type MoreDataShellProps = {
   contentScrollMode?: "shell" | "child";
 };
 
-export function MoreDataShell({
-  currentPath,
-  children,
-  rightRail,
-  currentRunLabel,
-  mainDecoration,
-  contentScrollMode = "shell",
-}: MoreDataShellProps) {
-  const router = useRouter();
+type ShellMeta = Pick<MoreDataShellProps, "currentPath" | "rightRail" | "currentRunLabel" | "mainDecoration" | "contentScrollMode">;
+
+type ShellMetaContextValue = {
+  meta: ShellMeta;
+  setMeta: (next: ShellMeta) => void;
+};
+
+const ShellMetaContext = createContext<ShellMetaContextValue | null>(null);
+
+function ShellMetaProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const [meta, setMeta] = useState<ShellMeta>({ currentPath: pathname ?? "/", contentScrollMode: "shell" });
+
+  return <ShellMetaContext.Provider value={{ meta, setMeta }}>{children}</ShellMetaContext.Provider>;
+}
+
+function useShellMetaContext() {
+  const context = useContext(ShellMetaContext);
+  if (!context) {
+    throw new Error("useShellMetaContext must be used within ShellMetaProvider");
+  }
+  return context;
+}
+
+type HistoryEntry = SessionListItem & {
+  firstMessage?: string | null;
+  firstAt?: string | null;
+};
+
+type MoreDataShellStateValue = {
+  historySessions: HistoryEntry[];
+  historyBusy: boolean;
+  historyError: string;
+  refreshHistory: () => Promise<void>;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (next: boolean | ((current: boolean) => boolean)) => void;
+  setHistoryError: (next: string) => void;
+};
+
+const MoreDataShellStateContext = createContext<MoreDataShellStateValue | null>(null);
+
+export function MoreDataShellStateProvider({ children }: { children: ReactNode }) {
   const platformAgent = useOptionalPlatformAgent();
-
-  type HistoryEntry = SessionListItem & {
-    firstMessage?: string | null;
-    firstAt?: string | null;
-  };
-
   const [historySessions, setHistorySessions] = useState<HistoryEntry[]>([]);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyError, setHistoryError] = useState("");
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [historyPurgeConfirmId, setHistoryPurgeConfirmId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const childManagedScroll = contentScrollMode === "child";
+  const [historyWasLoaded, setHistoryWasLoaded] = useState(false);
 
   const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
-  const activeSessionId = platformAgent?.platformSessionId ?? null;
-
-  const sidebarNavItems = useMemo(() => {
-    const base = [...navItems];
-    if (isLoggedIn && platformAgent?.auth?.userRole === "admin") {
-      base.push({ href: "/user-management", label: "用户管理", icon: Users });
-    }
-    return base;
-  }, [isLoggedIn, platformAgent?.auth?.userRole]);
 
   const refreshHistory = useCallback(async () => {
     if (!platformAgent?.auth?.accessToken) return;
@@ -109,6 +124,7 @@ export function MoreDataShell({
           }),
         );
         setHistorySessions(enriched);
+        setHistoryWasLoaded(true);
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -116,16 +132,133 @@ export function MoreDataShell({
     } finally {
       setHistoryBusy(false);
     }
-  }, [platformAgent]);
+  }, [platformAgent, setHistoryError]);
 
-  // 登录成功 / token 刷新后拉历史会话
   useEffect(() => {
     if (!isLoggedIn) {
       setHistorySessions([]);
+      setHistoryWasLoaded(false);
       return;
     }
-    void refreshHistory();
-  }, [isLoggedIn, platformAgent, refreshHistory]);
+    if (!historyWasLoaded) {
+      void refreshHistory();
+    }
+  }, [historyWasLoaded, isLoggedIn, refreshHistory]);
+
+  const value = useMemo(
+    () => ({
+      historySessions,
+      historyBusy,
+      historyError,
+      refreshHistory,
+      sidebarCollapsed,
+      setSidebarCollapsed,
+      setHistoryError,
+    }),
+    [historySessions, historyBusy, historyError, refreshHistory, sidebarCollapsed, setHistoryError],
+  );
+
+  return <MoreDataShellStateContext.Provider value={value}>{children}</MoreDataShellStateContext.Provider>;
+}
+
+export function useMoreDataShellState() {
+  const context = useContext(MoreDataShellStateContext);
+  if (!context) {
+    throw new Error("useMoreDataShellState must be used within MoreDataShellStateProvider");
+  }
+  return context;
+}
+
+export function MoreDataShell({
+  currentPath,
+  children,
+  rightRail,
+  currentRunLabel,
+  mainDecoration,
+  contentScrollMode = "shell",
+}: MoreDataShellProps) {
+  const { setMeta } = useShellMetaContext();
+
+  useEffect(() => {
+    setMeta({
+      currentPath,
+      rightRail,
+      currentRunLabel,
+      mainDecoration,
+      contentScrollMode,
+    });
+  }, [currentPath, rightRail, currentRunLabel, mainDecoration, contentScrollMode, setMeta]);
+
+  return <>{children}</>;
+}
+
+export function MoreDataShellRoot({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const isAdminRoute = pathname?.startsWith("/admin");
+  const isShareRoute = pathname?.startsWith("/share");
+
+  if (isAdminRoute || isShareRoute) {
+    return <>{children}</>;
+  }
+
+  return (
+    <ShellMetaProvider>
+      <MoreDataShellStateProvider>
+        <MoreDataShellInner>{children}</MoreDataShellInner>
+      </MoreDataShellStateProvider>
+    </ShellMetaProvider>
+  );
+}
+
+function MoreDataShellInner({ children }: { children: ReactNode }) {
+  const { meta } = useShellMetaContext();
+  return (
+    <MoreDataShellComponent
+      currentPath={meta.currentPath}
+      rightRail={meta.rightRail}
+      currentRunLabel={meta.currentRunLabel}
+      mainDecoration={meta.mainDecoration}
+      contentScrollMode={meta.contentScrollMode}
+    >
+      {children}
+    </MoreDataShellComponent>
+  );
+}
+
+function MoreDataShellComponent({
+  currentPath,
+  children,
+  rightRail,
+  currentRunLabel,
+  mainDecoration,
+  contentScrollMode = "shell",
+}: MoreDataShellProps) {
+  const router = useRouter();
+  const platformAgent = useOptionalPlatformAgent();
+
+  const {
+    historySessions,
+    historyBusy,
+    historyError,
+    refreshHistory,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    setHistoryError,
+  } = useMoreDataShellState();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [historyPurgeConfirmId, setHistoryPurgeConfirmId] = useState<string | null>(null);
+  const childManagedScroll = contentScrollMode === "child";
+
+  const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
+  const activeSessionId = platformAgent?.platformSessionId ?? null;
+
+  const sidebarNavItems = useMemo(() => {
+    const base = [...navItems];
+    if (isLoggedIn && platformAgent?.auth?.userRole === "admin") {
+      base.push({ href: "/user-management", label: "用户管理", icon: Users });
+    }
+    return base;
+  }, [isLoggedIn, platformAgent?.auth?.userRole]);
 
   const formatTime = (iso: string | null | undefined) => {
     if (!iso) return "";
@@ -161,7 +294,7 @@ export function MoreDataShell({
         setDeletingId(null);
       }
     },
-    [activeSessionId, platformAgent, refreshHistory, router],
+    [activeSessionId, platformAgent, refreshHistory, router, setHistoryError],
   );
 
   return (
@@ -192,6 +325,7 @@ export function MoreDataShell({
                     key={href}
                     href={href}
                     onClick={(e) => {
+                      platformAgent?.clearActivePlatformSession();
                       if (!platformAgent || href === "/") return;
                       if (!platformAgent.auth) {
                         e.preventDefault();
@@ -270,7 +404,7 @@ export function MoreDataShell({
                           <PopoverTrigger asChild>
                             <button
                               type="button"
-                              className="inline-flex w-9 shrink-0 items-center justify-center rounded-r-[12px] text-[#94a3b8] transition hover:bg-[#fee2e2] hover:text-red-600 disabled:opacity-40 data-[state=open]:bg-[#fee2e2] data-[state=open]:text-red-600"
+                              className="inline-flex w-9 shrink-0 items-center justify-center rounded-r-xl text-[#94a3b8] transition hover:bg-[#fee2e2] hover:text-red-600 disabled:opacity-40 data-[state=open]:bg-[#fee2e2] data-[state=open]:text-red-600"
                               aria-label="删除该历史会话"
                               aria-expanded={historyPurgeConfirmId === s.session_id}
                               disabled={deletingId === s.session_id}
@@ -293,7 +427,7 @@ export function MoreDataShell({
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                className="h-8 rounded-[8px] px-3 text-xs"
+                                className="h-8 rounded-lg px-3 text-xs"
                                 disabled={deletingId === s.session_id}
                                 onClick={() => setHistoryPurgeConfirmId(null)}
                               >
@@ -303,7 +437,7 @@ export function MoreDataShell({
                                 type="button"
                                 variant="default"
                                 size="sm"
-                                className="h-8 rounded-[8px] bg-red-600 px-3 text-xs hover:bg-red-700"
+                                className="h-8 rounded-lg bg-red-600 px-3 text-xs hover:bg-red-700"
                                 disabled={deletingId === s.session_id}
                                 onClick={() => void executePurgeHistorySession(s.session_id)}
                               >
@@ -323,7 +457,7 @@ export function MoreDataShell({
         </aside>
 
         <main className={childManagedScroll ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-transparent" : "flex min-h-screen min-w-0 flex-col bg-transparent"}>
-          <header className="sticky top-0 z-50 flex h-[58px] items-center justify-between border-b border-[#e3e8ef] bg-[rgba(255,255,255,0.95)] px-6 backdrop-blur-xl">
+          <header className="sticky top-0 z-50 flex h-14.5 items-center justify-between border-b border-[#e3e8ef] bg-[rgba(255,255,255,0.95)] px-6 backdrop-blur-xl">
             <div className="flex min-w-0 items-center gap-3">
               <Button aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"} variant="ghost" size="icon" className="h-8 w-8 rounded-[10px] text-[#7e8da0]" onClick={() => setSidebarCollapsed((current) => !current)}>
                 <PanelLeft className="h-4 w-4" />
@@ -342,7 +476,7 @@ export function MoreDataShell({
                     <PopoverTrigger asChild>
                       <button
                         type="button"
-                        className="flex h-9 max-w-[220px] items-center gap-2 rounded-full border border-[#e2e8f0] bg-white px-1.5 py-1 pr-2.5 text-left shadow-sm transition hover:bg-[#f8fafc]"
+                        className="flex h-9 max-w-55 items-center gap-2 rounded-full border border-[#e2e8f0] bg-white px-1.5 py-1 pr-2.5 text-left shadow-sm transition hover:bg-[#f8fafc]"
                         aria-label="用户中心"
                       >
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#18181b] text-xs font-semibold text-white">
@@ -407,7 +541,7 @@ export function MoreDataShell({
               {mainDecoration ? <div className="pointer-events-none absolute inset-0">{mainDecoration}</div> : null}
               <div
                 className={cn(
-                  "relative z-[1] min-h-0",
+                  "relative z-1 min-h-0",
                   childManagedScroll ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "h-full",
                 )}
               >
