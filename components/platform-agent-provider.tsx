@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type SyntheticEvent,
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -251,6 +252,14 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const handleLoginFormSubmit = useCallback(
+    (event: SyntheticEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      void loginWithPassword(username, password);
+    },
+    [username, password, loginWithPassword],
+  );
+
   const logout = useCallback(async () => {
     const snap = auth ?? loadAgentSession();
     const sid = platformSessionId ?? loadPlatformSessionId();
@@ -386,7 +395,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
         <DialogContent className="max-w-md rounded-[14px] sm:rounded-[14px]" aria-describedby={undefined}>
           <DialogTitle className="text-lg text-[#1d2a3b]">登录</DialogTitle>
           {loginBanner ? <p className="text-sm text-[#64748b]">{loginBanner}</p> : null}
-          <div className="grid gap-3 pt-2">
+          <form className="grid gap-3 pt-2" onSubmit={handleLoginFormSubmit}>
             <div className="grid gap-1">
               <label className="text-xs text-[#7e8da0]">用户名</label>
               <Input
@@ -408,14 +417,13 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
             </div>
             {loginError ? <p className="text-sm text-red-600">{loginError}</p> : null}
             <Button
-              type="button"
+              type="submit"
               className="rounded-[10px]"
               disabled={loginBusy}
-              onClick={() => void loginWithPassword(username, password)}
             >
               {loginBusy ? "登录中…" : "登录"}
             </Button>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
     </PlatformAgentContext.Provider>
