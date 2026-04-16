@@ -93,7 +93,11 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [historyWasLoaded, setHistoryWasLoaded] = useState(false);
 
-  const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
+  const isLoggedIn = Boolean(
+    isPlatformBackendEnabled() &&
+      platformAgent?.auth?.accessToken &&
+      platformAgent?.authValidated,
+  );
 
   const refreshHistory = useCallback(async () => {
     if (!platformAgent?.auth?.accessToken) return;
@@ -249,7 +253,11 @@ function MoreDataShellComponent({
   const [historyPurgeConfirmId, setHistoryPurgeConfirmId] = useState<string | null>(null);
   const childManagedScroll = contentScrollMode === "child";
 
-  const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
+  const isLoggedIn = Boolean(
+    isPlatformBackendEnabled() &&
+      platformAgent?.auth?.accessToken &&
+      platformAgent?.authValidated,
+  );
   const activeSessionId = platformAgent?.platformSessionId ?? null;
 
   const sidebarNavItems = useMemo(() => {
@@ -471,7 +479,7 @@ function MoreDataShellComponent({
 
             <div className="flex items-center gap-2 text-sm text-[#7c8ca0]">
               {isPlatformBackendEnabled() && platformAgent ? (
-                platformAgent.auth ? (
+                platformAgent.auth && platformAgent.authValidated ? (
                   <Popover>
                     <PopoverTrigger asChild>
                       <button

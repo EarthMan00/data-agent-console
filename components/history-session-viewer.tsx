@@ -93,10 +93,13 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [currentArtifacts, setCurrentArtifacts] = useState<PlatformTaskArtifactRef[] | null>(null);
 
-  const isLoggedIn = Boolean(platformAgent?.auth?.accessToken);
+  const isLoggedIn = Boolean(
+    platformAgent?.auth?.accessToken &&
+    platformAgent?.authValidated,
+  );
 
   const reload = useCallback(async () => {
-    if (!platformAgent?.auth) return;
+    if (!platformAgent?.authValidated) return;
     setBusy(true);
     setError("");
     try {
@@ -124,7 +127,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
       return;
     }
     if (!platformAgent) return;
-    if (!platformAgent.auth) {
+    if (!platformAgent.authValidated) {
       platformAgent.openLogin("请先登录后查看历史对话。");
       router.replace("/");
       return;
@@ -147,7 +150,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
 
   const openTaskResultPanel = useCallback(
     async (taskId: string) => {
-      if (!platformAgent?.auth) {
+      if (!platformAgent?.authValidated) {
         platformAgent?.openLogin("请先登录后再查看任务结果。");
         return;
       }
@@ -175,7 +178,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   const send = useCallback(async () => {
     const text = draft.trim();
     if (!text || sending) return;
-    if (!platformAgent?.auth) {
+    if (!platformAgent?.authValidated) {
       platformAgent?.openLogin("请先登录后再发送消息。");
       return;
     }

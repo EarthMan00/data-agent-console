@@ -6,13 +6,15 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import {
   AgentApiError,
+  checkAccessToken,
   createSession,
   login,
   refreshAccessToken,
@@ -35,6 +37,7 @@ import { Input } from "@/components/ui/input";
 
 export type PlatformAgentContextValue = {
   auth: AgentSessionSnapshot | null;
+  authValidated: boolean;
   platformSessionId: string | null;
   openLogin: (banner?: string) => void;
   closeLogin: () => void;
@@ -58,41 +61,38 @@ export function useOptionalPlatformAgent(): PlatformAgentContextValue | null {
 
 function PlatformAgentInner({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [auth, setAuth] = useState<AgentSessionSnapshot | null>(() => loadAgentSession());
   const [platformSessionId, setPlatformSessionId] = useState<string | null>(() => loadPlatformSessionId());
   const [loginOpen, setLoginOpen] = useState(false);
+  const [authValidated, setAuthValidated] = useState(false);
   const [loginBanner, setLoginBanner] = useState("");
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const sync = () => setAuth(loadAgentSession());
-    window.addEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
-    return () => window.removeEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
+    return () => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
   }, []);
 
-  const withFreshToken = useCallback(async (run: (token: string) => Promise<void>) => {
-    const snap = auth ?? loadAgentSession();
-    if (!snap) {
-      throw new Error("请先登录。");
+  const showToast = useCallback((message: string) => {
+    setToastMessage(message);
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
     }
-    try {
-      await run(snap.accessToken);
-    } catch (e) {
-      if (e instanceof AgentApiError && e.status === 401) {
-        const nextAccess = await refreshAccessToken(snap.refreshToken);
-        const next: AgentSessionSnapshot = { ...snap, accessToken: nextAccess };
-        saveAgentSession(next);
-        setAuth(next);
-        await run(nextAccess);
-        return;
-      }
-      throw e;
-    }
-  }, [auth]);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMessage(null);
+      toastTimerRef.current = null;
+    }, 5000);
+  }, []);
 
   const openLogin = useCallback((banner?: string) => {
     setLoginBanner(banner?.trim() || "登录后即可连接 agent_web_platform。");
@@ -103,6 +103,111 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const closeLogin = useCallback(() => {
     setLoginOpen(false);
   }, []);
+
+  const handleAuthExpired = useCallback(
+    (banner?: string) => {
+      clearAgentSession();
+      setAuth(null);
+      setAuthValidated(false);
+      setPlatformSessionId(null);
+      const message = banner || "登录已失效，请重新登录。";
+      showToast(message);
+      openLogin(message);
+      if (pathname && /^(?:\/agent|\/artifacts|\/history|\/user-management|\/schedules|\/report|\/admin)(?:\/|$)/.test(pathname)) {
+        router.push("/");
+      }
+    },
+    [openLogin, pathname, router, showToast],
+  );
+
+  useEffect(() => {
+    const sync = () => {
+      setAuthValidated(false);
+      setAuth(loadAgentSession());
+    };
+    window.addEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
+  }, []);
+
+  useEffect(() => {
+    if (!auth?.accessToken) return;
+
+    let cancelled = false;
+
+    const validate = async () => {
+      const snap = loadAgentSession();
+      if (!snap) {
+        setAuth(null);
+        setAuthValidated(false);
+        return;
+      }
+      try {
+        await checkAccessToken(snap.accessToken);
+        if (!cancelled) {
+          setAuth(snap);
+          setAuthValidated(true);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          const refreshToken = snap.refreshToken;
+          if (e instanceof AgentApiError && e.status === 401 && refreshToken) {
+            try {
+              const nextAccess = await refreshAccessToken(refreshToken);
+              const next: AgentSessionSnapshot = { ...snap, accessToken: nextAccess };
+              saveAgentSession(next);
+              setAuth(next);
+              setAuthValidated(true);
+              return;
+            } catch {
+              // token refresh failed
+            }
+          }
+          handleAuthExpired("登录已失效，请重新登录。需要重新登录后继续使用。");
+        }
+      }
+    };
+
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === "visible") {
+        void validate();
+      }
+    };
+
+    void validate();
+    window.addEventListener("focus", onFocusOrVisible);
+    window.addEventListener("visibilitychange", onFocusOrVisible);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocusOrVisible);
+      window.removeEventListener("visibilitychange", onFocusOrVisible);
+    };
+  }, [auth?.accessToken, handleAuthExpired]);
+
+  const withFreshToken = useCallback(async (run: (token: string) => Promise<void>) => {
+    const snap = auth ?? loadAgentSession();
+    if (!snap) {
+      throw new Error("请先登录。");
+    }
+    try {
+      await run(snap.accessToken);
+    } catch (e) {
+      if (e instanceof AgentApiError && e.status === 401) {
+        try {
+          const nextAccess = await refreshAccessToken(snap.refreshToken);
+          const next: AgentSessionSnapshot = { ...snap, accessToken: nextAccess };
+          saveAgentSession(next);
+          setAuth(next);
+          setAuthValidated(true);
+          await run(nextAccess);
+          return;
+        } catch {
+          handleAuthExpired("登录已失效，请重新登录。需要重新登录后继续使用。");
+        }
+      }
+      throw e;
+    }
+  }, [auth, handleAuthExpired]);
 
   const loginWithPassword = useCallback(async (u: string, p: string) => {
     setLoginBusy(true);
@@ -129,6 +234,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       };
       saveAgentSession(snap);
       setAuth(snap);
+      setAuthValidated(true);
       clearPlatformSessionId();
       setPlatformSessionId(null);
       setLoginOpen(false);
@@ -161,6 +267,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     }
     clearAgentSession();
     setAuth(null);
+    setAuthValidated(false);
     setPlatformSessionId(null);
     router.push("/");
   }, [auth, platformSessionId, router]);
@@ -237,6 +344,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const value = useMemo<PlatformAgentContextValue>(
     () => ({
       auth,
+      authValidated,
       platformSessionId,
       openLogin,
       closeLogin,
@@ -250,6 +358,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     }),
     [
       auth,
+      authValidated,
       beginNewHomeTaskSession,
       clearActivePlatformSession,
       closeLogin,
@@ -266,9 +375,16 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   return (
     <PlatformAgentContext.Provider value={value}>
       {children}
+      {toastMessage ? (
+        <div className="pointer-events-none fixed right-4 top-4 z-50 w-[min(320px,calc(100%-2rem))]">
+          <div className="rounded-[14px] border border-[#e2e8ef] bg-white px-4 py-3 text-sm text-[#0f172a] shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+            {toastMessage}
+          </div>
+        </div>
+      ) : null}
       <Dialog open={loginOpen} onOpenChange={(o) => !o && closeLogin()}>
         <DialogContent className="max-w-md rounded-[14px] sm:rounded-[14px]" aria-describedby={undefined}>
-          <DialogTitle className="font-[family:var(--font-jakarta)] text-lg text-[#1d2a3b]">登录</DialogTitle>
+          <DialogTitle className="text-lg text-[#1d2a3b]">登录</DialogTitle>
           {loginBanner ? <p className="text-sm text-[#64748b]">{loginBanner}</p> : null}
           <div className="grid gap-3 pt-2">
             <div className="grid gap-1">

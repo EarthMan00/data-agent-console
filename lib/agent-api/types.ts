@@ -7,6 +7,13 @@ export type LoginResponse = {
   user_role?: string;
 };
 
+export type TokenCheckResponse = {
+  valid: boolean;
+  user_id?: string;
+  username?: string;
+  user_role?: string;
+};
+
 export type AdminUserRow = {
   user_id: string;
   username: string;
