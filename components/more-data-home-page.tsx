@@ -234,13 +234,39 @@ export function MoreDataHomePage() {
 
   const copyPromptCard = async () => {
     if (!selectedPrompt) return;
+
+    const fallbackCopyText = (text: string) => {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "absolute";
+      textarea.style.left = "-9999px";
+      textarea.style.top = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
+      const success = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      return success;
+    };
+
     try {
-      await navigator.clipboard.writeText(selectedPrompt.prompt);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(selectedPrompt.prompt);
+      } else if (!fallbackCopyText(selectedPrompt.prompt)) {
+        throw new Error("clipboard fallback failed");
+      }
       setPromptCopied(true);
       setNotice(`已复制示例任务「${selectedPrompt.title}」内容。`);
       window.setTimeout(() => setPromptCopied(false), 1500);
     } catch {
-      setNotice("复制失败，请稍后重试。");
+      if (fallbackCopyText(selectedPrompt.prompt)) {
+        setPromptCopied(true);
+        setNotice(`已复制示例任务「${selectedPrompt.title}」内容。`);
+        window.setTimeout(() => setPromptCopied(false), 1500);
+      } else {
+        setNotice("复制失败，请稍后重试。");
+      }
     }
   };
 
@@ -407,7 +433,7 @@ export function MoreDataHomePage() {
                   <button
                     type="button"
                     onClick={copyPromptCard}
-                    className="inline-flex items-center gap-1.5 text-[13px] text-[#26272b] transition hover:text-[#111111]"
+                    className="inline-flex cursor-pointer items-center gap-1.5 text-[13px] text-[#26272b] transition hover:text-[#111111]"
                   >
                     {promptCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                     {promptCopied ? "已复制" : "复制"}
