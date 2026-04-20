@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Download, Ellipsis, Expand, Share2 } from "lucide-react";
 
-import { InlineNotice } from "@/components/inline-notice";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { Button } from "@/components/ui/button";
 import { demoActions, useDemoState } from "@/lib/mock/store";
@@ -59,7 +58,7 @@ export function ReportView() {
         </div>
 
         <div className="px-8 py-6">
-          {notice ? <div className="mb-5"><InlineNotice message={notice} /></div> : null}
+          {notice ? <p className="mb-5 text-sm text-[#52525b]">{notice}</p> : null}
 
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2">

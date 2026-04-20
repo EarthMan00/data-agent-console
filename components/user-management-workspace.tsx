@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { InlineNotice } from "@/components/inline-notice";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
@@ -153,11 +152,7 @@ export function UserManagementWorkspace() {
           </div>
         </div>
 
-        {notice ? (
-          <div className="mt-4">
-            <InlineNotice message={notice} />
-          </div>
-        ) : null}
+        {notice ? <p className="mt-4 text-sm text-red-600">{notice}</p> : null}
 
         <div className="mt-6 overflow-hidden rounded-[14px] border border-[#e2e8f0] bg-white shadow-sm">
           <table className="w-full text-left text-sm">

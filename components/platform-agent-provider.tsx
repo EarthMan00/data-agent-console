@@ -35,6 +35,8 @@ import { Input } from "@/components/ui/input";
 
 export type PlatformAgentContextValue = {
   auth: AgentSessionSnapshot | null;
+  /** 已在浏览器读取 sessionStorage；首帧为 false，与 SSR 一致，避免 hydration 与 Require* 分支不一致 */
+  authHydrated: boolean;
   platformSessionId: string | null;
   openLogin: (banner?: string) => void;
   closeLogin: () => void;
@@ -58,8 +60,9 @@ export function useOptionalPlatformAgent(): PlatformAgentContextValue | null {
 
 function PlatformAgentInner({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [auth, setAuth] = useState<AgentSessionSnapshot | null>(() => loadAgentSession());
-  const [platformSessionId, setPlatformSessionId] = useState<string | null>(() => loadPlatformSessionId());
+  const [auth, setAuth] = useState<AgentSessionSnapshot | null>(null);
+  const [platformSessionId, setPlatformSessionId] = useState<string | null>(null);
+  const [authHydrated, setAuthHydrated] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginBanner, setLoginBanner] = useState("");
 
@@ -69,6 +72,9 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const [loginError, setLoginError] = useState("");
 
   useEffect(() => {
+    setAuth(loadAgentSession());
+    setPlatformSessionId(loadPlatformSessionId());
+    setAuthHydrated(true);
     const sync = () => setAuth(loadAgentSession());
     window.addEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
     return () => window.removeEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
@@ -237,6 +243,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const value = useMemo<PlatformAgentContextValue>(
     () => ({
       auth,
+      authHydrated,
       platformSessionId,
       openLogin,
       closeLogin,
@@ -250,6 +257,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     }),
     [
       auth,
+      authHydrated,
       beginNewHomeTaskSession,
       clearActivePlatformSession,
       closeLogin,

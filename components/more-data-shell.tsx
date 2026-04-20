@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  Bookmark,
   ChevronDown,
   FolderHeart,
   LibraryBig,
@@ -30,6 +31,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/", label: "新的对话", icon: PlusCircle },
+  { href: "/prompt-library", label: "提示词库", icon: Bookmark },
   { href: "/templates", label: "指令库", icon: LibraryBig },
   // { href: "/schedules", label: "定时任务", icon: Clock3 },
   { href: "/artifacts", label: "收藏夹", icon: FolderHeart },
@@ -247,18 +249,27 @@ function MoreDataShellComponent({
   } = useMoreDataShellState();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [historyPurgeConfirmId, setHistoryPurgeConfirmId] = useState<string | null>(null);
+  /** 首屏与服务端 HTML 一致：认证态来自客户端存储，仅在 mount 后再按登录态渲染侧栏，避免 hydration mismatch */
+  const [clientMounted, setClientMounted] = useState(false);
+  useEffect(() => {
+    setClientMounted(true);
+  }, []);
   const childManagedScroll = contentScrollMode === "child";
 
   const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
   const activeSessionId = platformAgent?.platformSessionId ?? null;
+  const showAuthSidebar = clientMounted && isLoggedIn;
+  /** 顶栏用户区：与侧栏同理，mount 前固定为「登录」，避免 token 仅在客户端存在时 hydration 不一致 */
+  const headerAuth = platformAgent?.auth;
+  const showHeaderUserMenu = clientMounted && Boolean(headerAuth);
 
   const sidebarNavItems = useMemo(() => {
     const base = [...navItems];
-    if (isLoggedIn && platformAgent?.auth?.userRole === "admin") {
+    if (showAuthSidebar && platformAgent?.auth?.userRole === "admin") {
       base.push({ href: "/user-management", label: "用户管理", icon: Users });
     }
     return base;
-  }, [isLoggedIn, platformAgent?.auth?.userRole]);
+  }, [showAuthSidebar, platformAgent?.auth?.userRole]);
 
   const formatTime = (iso: string | null | undefined) => {
     if (!iso) return "";
@@ -350,7 +361,7 @@ function MoreDataShellComponent({
               })}
             </nav>
 
-            {!sidebarCollapsed && isLoggedIn ? (
+            {!sidebarCollapsed && showAuthSidebar ? (
               <div className="mt-10">
                 <div className="flex items-center justify-between px-2 text-xs text-[#7f8da0]">
                   <span>历史对话</span>
@@ -471,7 +482,7 @@ function MoreDataShellComponent({
 
             <div className="flex items-center gap-2 text-sm text-[#7c8ca0]">
               {isPlatformBackendEnabled() && platformAgent ? (
-                platformAgent.auth ? (
+                showHeaderUserMenu && headerAuth ? (
                   <Popover>
                     <PopoverTrigger asChild>
                       <button
@@ -480,10 +491,10 @@ function MoreDataShellComponent({
                         aria-label="用户中心"
                       >
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#18181b] text-xs font-semibold text-white">
-                          {(platformAgent.auth.userId || "?").slice(0, 1).toUpperCase()}
+                          {(headerAuth.userId || "?").slice(0, 1).toUpperCase()}
                         </span>
-                        <span className="hidden min-w-0 flex-1 truncate text-[13px] font-medium text-[#334155] sm:inline" title={platformAgent.auth.userId}>
-                          {platformAgent.auth.userId}
+                        <span className="hidden min-w-0 flex-1 truncate text-[13px] font-medium text-[#334155] sm:inline" title={headerAuth.userId}>
+                          {headerAuth.userId}
                         </span>
                         <ChevronDown className="h-4 w-4 shrink-0 text-[#94a3b8]" aria-hidden />
                       </button>
@@ -491,8 +502,8 @@ function MoreDataShellComponent({
                     <PopoverContent align="end" className="w-72 space-y-3 p-4">
                       <div>
                         <div className="text-[13px] font-semibold text-[#1e293b]">用户中心</div>
-                        <div className="mt-1 truncate text-xs text-[#64748b]" title={platformAgent.auth.userId}>
-                          {platformAgent.auth.userId}
+                        <div className="mt-1 truncate text-xs text-[#64748b]" title={headerAuth.userId}>
+                          {headerAuth.userId}
                         </div>
                       </div>
                       <div className="flex flex-col gap-2">

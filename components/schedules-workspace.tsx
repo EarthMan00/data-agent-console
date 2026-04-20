@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronDown, List, Plus, Search } from "lucide-react";
 
-import { InlineNotice } from "@/components/inline-notice";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -128,7 +127,7 @@ export function SchedulesWorkspace() {
       <MoreDataShell currentPath="/schedules">
         <div className="px-8 pb-12 pt-8">
           <div className="mx-auto max-w-[760px]">
-            {notice ? <div className="mb-6"><InlineNotice message={notice} /></div> : null}
+            {notice ? <p className="mb-6 text-sm text-[#52525b]">{notice}</p> : null}
             <button
               onClick={() => router.push("/schedules")}
               className="inline-flex items-center gap-2 text-sm text-[#52525b]"
@@ -312,7 +311,7 @@ export function SchedulesWorkspace() {
             </div>
           </div>
 
-          {notice ? <div className="mt-6"><InlineNotice message={notice} /></div> : null}
+          {notice ? <p className="mt-6 text-sm text-[#52525b]">{notice}</p> : null}
 
           {primaryTab === "已定时" && filteredScheduled.length === 0 ? (
             <div className="mt-10 flex min-h-[480px] flex-col items-center justify-center rounded-[24px] text-center">

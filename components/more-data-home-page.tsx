@@ -12,6 +12,7 @@ import { PlatformLogo } from "@/components/platform-logo";
 import { sanitizeObjective } from "@/lib/agent-attachments";
 import { demoActions, useDemoState } from "@/lib/mock/store";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
+import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import {
   createAgentRun,
   isAgentRuntimeConfigured,
@@ -38,6 +39,18 @@ export function MoreDataHomePage() {
   const [promptCopied, setPromptCopied] = useState(false);
   const [remotePromptCards, setRemotePromptCards] = useState<HomePromptCard[] | null>(null);
   const activeRunId = searchParams.get("runId");
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
+      if (raw) {
+        setQuery(raw);
+        sessionStorage.removeItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -237,10 +250,9 @@ export function MoreDataHomePage() {
     try {
       await navigator.clipboard.writeText(selectedPrompt.prompt);
       setPromptCopied(true);
-      setNotice(`已复制示例任务「${selectedPrompt.title}」内容。`);
       window.setTimeout(() => setPromptCopied(false), 1500);
     } catch {
-      setNotice("复制失败，请稍后重试。");
+      /* 静默失败 */
     }
   };
 

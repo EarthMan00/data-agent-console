@@ -11,14 +11,20 @@ export function RequirePlatformLogin({ children }: { children: React.ReactNode }
   const platformAgent = useOptionalPlatformAgent();
 
   useEffect(() => {
-    if (!isPlatformBackendEnabled() || !platformAgent) return;
+    if (!isPlatformBackendEnabled() || !platformAgent?.authHydrated) return;
     if (!platformAgent.auth) {
       platformAgent.openLogin("请先登录后再继续操作。");
       router.replace("/");
     }
   }, [platformAgent, router]);
 
-  if (isPlatformBackendEnabled() && platformAgent && !platformAgent.auth) {
+  if (!platformAgent) {
+    return children;
+  }
+  if (!platformAgent.authHydrated) {
+    return null;
+  }
+  if (isPlatformBackendEnabled() && !platformAgent.auth) {
     return null;
   }
   return children;

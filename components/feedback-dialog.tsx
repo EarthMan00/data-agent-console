@@ -3,7 +3,6 @@
 import { LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { InlineNotice } from "@/components/inline-notice";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -124,7 +123,7 @@ export function FeedbackDialog({
             />
           </div>
 
-          {notice ? <div className="mt-4"><InlineNotice message={notice} /></div> : null}
+          {notice ? <p className="mt-4 text-sm text-red-600">{notice}</p> : null}
 
           <div className="mt-6 flex justify-end gap-3">
             <Button variant="outline" className="rounded-[10px]" onClick={() => onOpenChange(false)} disabled={submitting}>

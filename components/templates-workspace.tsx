@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Search } from "lucide-react";
 
-import { InlineNotice } from "@/components/inline-notice";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -124,7 +123,7 @@ export function TemplatesWorkspace() {
             </div>
           </div>
 
-          {notice ? <div className="mt-6"><InlineNotice message={notice} /></div> : null}
+          {notice ? <p className="mt-6 text-sm text-[#52525b]">{notice}</p> : null}
 
           <div className="mt-8 grid max-w-[720px] gap-4">
             {filteredCards.length > 0 ? (

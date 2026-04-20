@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
-import { InlineNotice } from "@/components/inline-notice";
 import { TaskExecutionStepsAssistantBubble } from "@/components/task-execution-steps-assistant-bubble";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
@@ -11,6 +10,7 @@ import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
 import { TaskComposer } from "@/components/task-composer";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { formatAgentApiErrorForUser, getTask, listSessionMessages, sendChatMessage } from "@/lib/agent-api/client";
+import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import type { SessionMessageItem } from "@/lib/agent-api/types";
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import { messageIdsEligibleForTaskResultCard } from "@/lib/session-task-result-card-visibility";
@@ -55,6 +55,18 @@ export function PlatformSessionAgentWorkspace({ sessionId }: { sessionId: string
     platformAgent.setActivePlatformSession(sessionId);
     void reload();
   }, [platformAgent, reload, sessionId]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
+      if (raw) {
+        setDraft(raw);
+        sessionStorage.removeItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [sessionId]);
 
   useEffect(() => {
     const outer = messagesScrollRef.current;
@@ -164,9 +176,9 @@ export function PlatformSessionAgentWorkspace({ sessionId }: { sessionId: string
         >
           <div ref={messagesInnerRef} className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
             <div className="space-y-5">
-              {error ? <InlineNotice message={`加载/发送失败：${error}`} /> : null}
-              {busy ? <InlineNotice message="加载中…" /> : null}
-              {!busy && messages.length === 0 ? <InlineNotice message="该会话暂无消息" /> : null}
+              {error ? <p className="text-sm text-red-600">加载/发送失败：{error}</p> : null}
+              {busy ? <p className="text-sm text-[#71717a]">加载中…</p> : null}
+              {!busy && messages.length === 0 ? <p className="text-sm text-[#71717a]">该会话暂无消息</p> : null}
               <div className="space-y-3">
                 {messages.map((m) => {
                   const meta = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;

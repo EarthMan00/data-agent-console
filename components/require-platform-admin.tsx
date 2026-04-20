@@ -13,7 +13,7 @@ export function RequirePlatformAdmin({ children }: { children: React.ReactNode }
   const isAdmin = platformAgent?.auth?.userRole === "admin";
 
   useEffect(() => {
-    if (!isPlatformBackendEnabled() || !platformAgent) return;
+    if (!isPlatformBackendEnabled() || !platformAgent?.authHydrated) return;
     if (!platformAgent.auth) {
       platformAgent.openLogin("请先登录后再继续操作。");
       router.replace("/");
@@ -24,7 +24,13 @@ export function RequirePlatformAdmin({ children }: { children: React.ReactNode }
     }
   }, [isAdmin, platformAgent, router]);
 
-  if (isPlatformBackendEnabled() && platformAgent && (!platformAgent.auth || !isAdmin)) {
+  if (!platformAgent) {
+    return children;
+  }
+  if (!platformAgent.authHydrated) {
+    return null;
+  }
+  if (isPlatformBackendEnabled() && (!platformAgent.auth || !isAdmin)) {
     return null;
   }
   return children;

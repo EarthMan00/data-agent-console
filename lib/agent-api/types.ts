@@ -128,3 +128,37 @@ export type HomePromptRecommendationDto = {
   replay_share_id: string | null;
   sort_order: number;
 };
+
+/** 用户自定义提示词分组 */
+export type UserPromptGroupDto = {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UserPromptGroupListDto = {
+  items: UserPromptGroupDto[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+/** 用户自定义提示词 */
+export type UserPromptDto = {
+  id: string;
+  group_id: string | null;
+  group_name: string | null;
+  title: string;
+  description: string;
+  prompt_text: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UserPromptListDto = {
+  items: UserPromptDto[];
+  total: number;
+  page: number;
+  page_size: number;
+};

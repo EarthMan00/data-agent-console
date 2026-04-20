@@ -64,3 +64,6 @@ export function savePlatformSessionId(sessionId: string): void {
 export function clearPlatformSessionId(): void {
   sessionStorage.removeItem(PLATFORM_SESSION_KEY);
 }
+
+/** 提示词库「使用」写入，PlatformSessionAgentWorkspace 挂载时读入 composer 并清除 */
+export const AGENT_COMPOSER_PREFILL_STORAGE_KEY = "agent_platform.composer_prefill_text_v1";

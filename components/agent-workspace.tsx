@@ -11,7 +11,6 @@ import type {
   PlatformTaskArtifactRef,
   TaskExecutionStep,
 } from "@/lib/agent-events";
-import { InlineNotice } from "@/components/inline-notice";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
@@ -388,9 +387,11 @@ export function AgentWorkspace() {
           <div ref={messagesInnerRef} className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
             <div className="space-y-5">
               {isPlatformBackendEnabled() && !run.platformSessionId ? (
-                <InlineNotice message="当前为内置演示任务，消息不会发往 Data Agent Server。请打开首页重新输入并发送以创建真实会话；避免使用地址栏 /agent（无 runId）或侧栏中的演示历史对话。" />
+                <p className="text-sm leading-relaxed text-[#92400e]">
+                  当前为内置演示任务，消息不会发往 Data Agent Server。请打开首页重新输入并发送以创建真实会话；避免使用地址栏 /agent（无 runId）或侧栏中的演示历史对话。
+                </p>
               ) : null}
-              {notice ? <InlineNotice message={notice} /> : null}
+              {notice ? <p className="text-sm text-[#52525b]">{notice}</p> : null}
 
             <div className="space-y-7">
               {roundModels.map((round, index) => {
@@ -567,7 +568,7 @@ export function AgentWorkspace() {
                         </>
                       )}
 
-                      {round.errorMessage ? <InlineNotice message={round.errorMessage} /> : null}
+                      {round.errorMessage ? <p className="text-sm text-red-600">{round.errorMessage}</p> : null}
 
                       {round.showTaskResultInChat && (run.activePreviewId || latestRoundWantsTaskPanel) ? (
                         <TaskResultSummaryCard
