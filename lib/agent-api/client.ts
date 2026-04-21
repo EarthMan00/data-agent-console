@@ -9,6 +9,7 @@ import type {
   SessionListResponse,
   TaskListResult,
   TaskResponse,
+  TokenCheckResponse,
   ToolOrchestrationStatusApi,
 } from "@/lib/agent-api/types";
 
@@ -209,6 +210,21 @@ export async function refreshAccessToken(refreshToken: string): Promise<string> 
     throw new AgentApiError("invalid refresh response shape", res.status, data);
   }
   return access_token;
+}
+
+export async function checkAccessToken(accessToken: string): Promise<TokenCheckResponse> {
+  const res = await fetch(apiUrl("/api/auth/token/check"), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await parseJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("token check failed", res.status, data);
+  }
+  assertJsonObject(data);
+  if (data.valid !== true) {
+    throw new AgentApiError("invalid token", res.status, data);
+  }
+  return data as TokenCheckResponse;
 }
 
 export async function createSession(accessToken: string): Promise<CreateSessionResponse> {
