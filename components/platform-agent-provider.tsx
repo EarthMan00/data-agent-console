@@ -37,6 +37,11 @@ export type PlatformAgentContextValue = {
   auth: AgentSessionSnapshot | null;
   /** 已在浏览器读取 sessionStorage；首帧为 false，与 SSR 一致，避免 hydration 与 Require* 分支不一致 */
   authHydrated: boolean;
+  /**
+   * 兼容字段：部分页面依赖远端实现里的 authValidated。
+   * 在当前本地实现中，用 authHydrated 表达“客户端已完成认证态读取”的最小语义以通过类型检查。
+   */
+  authValidated: boolean;
   platformSessionId: string | null;
   openLogin: (banner?: string) => void;
   closeLogin: () => void;
@@ -244,6 +249,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     () => ({
       auth,
       authHydrated,
+      authValidated: authHydrated,
       platformSessionId,
       openLogin,
       closeLogin,
