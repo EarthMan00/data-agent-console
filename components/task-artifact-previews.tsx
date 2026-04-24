@@ -176,7 +176,7 @@ function ArtifactCard({
       </div>
 
       {!withFreshToken ? (
-        <p className="mt-3 text-[12px] text-[#6b7280]">当前为演示数据或未登录，无法拉取平台文件内容。</p>
+        <p className="mt-3 text-[12px] text-[#6b7280]">未登录时无法拉取平台文件内容。</p>
       ) : mode === "csv" ? (
         <LazyCsvArtifactTable downloadApi={artifact.download_api} withFreshToken={withFreshToken!} />
       ) : loading ? (

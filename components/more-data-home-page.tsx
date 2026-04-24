@@ -4,31 +4,30 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Check, Copy } from "lucide-react";
 import { fetchHomePromptRecommendations } from "@/lib/agent-api/home-prompts";
-import type { HomePromptCard } from "@/lib/mock/demo-data";
-import { homeCapabilityItems, homePromptCards } from "@/lib/mock/demo-data";
+import type { HomePromptCard } from "@/lib/workspace-domain-types";
+import { homeCapabilityItems } from "@/lib/home-capability-items";
 import { AgentWorkspace } from "@/components/agent-workspace";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { PlatformLogo } from "@/components/platform-logo";
 import { sanitizeObjective } from "@/lib/agent-attachments";
-import { demoActions, useDemoState } from "@/lib/mock/store";
+import { demoActions } from "@/lib/workspace-store";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import {
   createAgentRun,
   isAgentRuntimeConfigured,
-  isMockRuntimeEnabled,
   isPlatformBackendEnabled,
 } from "@/lib/agent-runtime";
 import { TaskComposer } from "@/components/task-composer";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { FlickeringGrid } from "@/components/ui/flickering-grid";
+import { copyTextToClipboard } from "@/lib/clipboard";
 
 export function MoreDataHomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
-  const { templates } = useDemoState();
   const [query, setQuery] = useState("");
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [activeCapabilityId, setActiveCapabilityId] = useState(homeCapabilityItems[0]?.id ?? "scenarios");
@@ -37,18 +36,15 @@ export function MoreDataHomePage() {
   const [notice, setNotice] = useState("");
   const [launching, setLaunching] = useState(false);
   const [promptCopied, setPromptCopied] = useState(false);
-  const [remotePromptCards, setRemotePromptCards] = useState<HomePromptCard[] | null>(null);
+  const [remotePromptCards, setRemotePromptCards] = useState<HomePromptCard[]>([]);
   const activeRunId = searchParams.get("runId");
 
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
-      if (raw) {
-        setQuery(raw);
-        sessionStorage.removeItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
-      }
-    } catch {
-      /* ignore */
+    if (typeof sessionStorage === "undefined") return;
+    const raw = sessionStorage.getItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
+    if (raw) {
+      setQuery(raw);
+      sessionStorage.removeItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
     }
   }, []);
 
@@ -56,7 +52,7 @@ export function MoreDataHomePage() {
     let cancelled = false;
     void (async () => {
       const rows = await fetchHomePromptRecommendations();
-      if (cancelled || !rows) return;
+      if (cancelled) return;
       setRemotePromptCards(
         rows.map((r) => ({
           id: r.id,
@@ -76,7 +72,7 @@ export function MoreDataHomePage() {
   }, []);
 
   const cards = useMemo(() => {
-    const source = remotePromptCards ?? homePromptCards;
+    const source = remotePromptCards;
     if (!activeCapabilityId || activeCapabilityId === "scenarios") return source;
     const filtered = source.filter((card) => card.capabilityIds.includes(activeCapabilityId));
     return filtered.length > 0 ? filtered : source;
@@ -93,22 +89,6 @@ export function MoreDataHomePage() {
       : activeCapabilityId === "scenarios"
         ? []
         : [activeCapabilityId];
-
-    if (isMockRuntimeEnabled()) {
-      setLaunching(true);
-      try {
-        const runId = demoActions.startTaskRun({
-          objective: nextQuery,
-          mode: composerMode === "深度模式" ? "专业模式" : "轻量模式",
-          selectedCapabilities,
-        });
-        setNotice(`已进入 mock 演示会话：${nextQuery}`);
-        router.replace(`/?runId=${runId}`);
-      } finally {
-        setLaunching(false);
-      }
-      return;
-    }
 
     if (isPlatformBackendEnabled()) {
       if (!isAgentRuntimeConfigured()) {
@@ -137,9 +117,6 @@ export function MoreDataHomePage() {
         });
         setNotice("已连接 Data Agent Server，正在执行任务。");
         router.replace(`/?runId=${runId}`);
-      } catch (error) {
-        console.error("[home] platform task launch failed", error);
-        setNotice("发起任务失败，请稍后重试。");
       } finally {
         setLaunching(false);
       }
@@ -159,9 +136,6 @@ export function MoreDataHomePage() {
       });
       demoActions.upsertRunSnapshot(snapshot.run, snapshot.report);
       router.replace(`/?runId=${snapshot.run.id}`);
-    } catch (error) {
-      console.error("[home] agent run create failed", error);
-      setNotice("发起任务失败，请检查会话后端配置或稍后重试。");
     } finally {
       setLaunching(false);
     }
@@ -183,13 +157,6 @@ export function MoreDataHomePage() {
 
   const removeComposerTool = (capabilityId: string) => {
     setSelectedSourceIds((current) => current.filter((id) => id !== capabilityId));
-  };
-
-  const applyTemplate = (templateId: string) => {
-    const template = templates.find((item) => item.id === templateId);
-    if (!template) return;
-    setQuery(template.body);
-    setNotice(`已从任务指令库载入「${template.title}」。`);
   };
 
   const handleFilesSelected = (files: FileList) => {
@@ -241,18 +208,26 @@ export function MoreDataHomePage() {
   const previewPromptRun = () => {
     if (!selectedPrompt) return;
     setSelectedPromptId(null);
-    demoActions.setCurrentRun(selectedPrompt.replayRunId ?? "run-default");
-    window.open(`/share/${selectedPrompt.replayShareId ?? selectedPrompt.replayRunId ?? "run-default"}`, "_blank", "noopener,noreferrer");
+    const runId = selectedPrompt.replayRunId;
+    const shareId = selectedPrompt.replayShareId ?? selectedPrompt.replayRunId;
+    if (!shareId) {
+      setNotice("该推荐未配置回放或分享 ID。");
+      return;
+    }
+    if (runId) {
+      demoActions.setCurrentRun(runId);
+    }
+    window.open(`/share/${shareId}`, "_blank", "noopener,noreferrer");
   };
 
   const copyPromptCard = async () => {
     if (!selectedPrompt) return;
-    try {
-      await navigator.clipboard.writeText(selectedPrompt.prompt);
+    const ok = await copyTextToClipboard(selectedPrompt.prompt);
+    if (ok) {
       setPromptCopied(true);
       window.setTimeout(() => setPromptCopied(false), 1500);
-    } catch {
-      /* 静默失败 */
+    } else {
+      setNotice("复制失败，请改为选中提示词后手动复制，或为站点启用 HTTPS。");
     }
   };
 
@@ -306,11 +281,9 @@ export function MoreDataHomePage() {
                 placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
                 mode={composerMode}
                 onModeChange={setComposerMode}
-                templates={templates}
                 selectedSourceIds={selectedSourceIds}
                 onToolSelect={applyComposerTool}
                 onSourceRemove={removeComposerTool}
-                onTemplateSelect={applyTemplate}
                 onFilesSelected={handleFilesSelected}
                 onSubmit={() => {
                   if (!launching) {

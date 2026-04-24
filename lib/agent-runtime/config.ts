@@ -1,6 +1,6 @@
 import { isAgentApiProxyEnabled, isAgentRealApiEnabled } from "@/lib/agent-api/config";
 
-import { API_BASE, RUNTIME_MODE } from "./constants";
+import { API_BASE } from "./constants";
 
 export function isPlatformBackendEnabled() {
   return isAgentRealApiEnabled();
@@ -14,9 +14,9 @@ export function isAgentRuntimeConfigured() {
   return Boolean(API_BASE);
 }
 
+/** 项目规则（见仓库 readme.txt）：console 只使用真实数据，不开启本地 mock 推理运行模式。 */
 export function isMockRuntimeEnabled() {
-  if (isAgentRealApiEnabled()) return false;
-  return RUNTIME_MODE === "mock";
+  return false;
 }
 
 export function getApiBase() {

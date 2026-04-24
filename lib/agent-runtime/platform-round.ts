@@ -48,7 +48,12 @@ export async function runPlatformRound(
         return await fn(accessToken);
       } catch (e) {
         if (e instanceof AgentApiError && e.status === 401) {
-          const next = await refreshPlatformAccessToken();
+          let next: string | null;
+          try {
+            next = await refreshPlatformAccessToken();
+          } catch {
+            throw new PlatformAuthExpiredError();
+          }
           if (next) {
             accessToken = next;
             return await fn(accessToken);
@@ -132,31 +137,20 @@ export async function runPlatformRound(
       });
 
       const persistTaskExecutionStepsRows = async (statuses: TaskExecutionStepStatus[], taskIdForMeta?: string) => {
-        try {
-          const steps = stepDefs.map((s, i) => ({
-            id: s.id,
-            label: s.label,
-            status: statuses[i] ?? ("pending" as TaskExecutionStepStatus),
-          }));
-          const body = {
-            round_id: input.roundId,
-            task_id: taskIdForMeta ?? result.task_id,
-            steps,
-          };
-          if (taskExecutionStepsMessageId) {
-            await patchTaskExecutionSteps(accessToken, chatSessionId, taskExecutionStepsMessageId, body);
-          } else {
-            await postTaskExecutionSteps(accessToken, chatSessionId, body);
-          }
-        } catch (e) {
-          console.warn("[agent-runtime] task_execution_steps_persist_failed", {
-            session_id: chatSessionId,
-            round_id: input.roundId,
-            task_id: taskIdForMeta ?? result.task_id,
-            steps_message_id: taskExecutionStepsMessageId ?? null,
-            error: e instanceof Error ? e.message : String(e),
-            status: e instanceof AgentApiError ? e.status : undefined,
-          });
+        const steps = stepDefs.map((s, i) => ({
+          id: s.id,
+          label: s.label,
+          status: statuses[i] ?? ("pending" as TaskExecutionStepStatus),
+        }));
+        const body = {
+          round_id: input.roundId,
+          task_id: taskIdForMeta ?? result.task_id,
+          steps,
+        };
+        if (taskExecutionStepsMessageId) {
+          await patchTaskExecutionSteps(accessToken, chatSessionId, taskExecutionStepsMessageId, body);
+        } else {
+          await postTaskExecutionSteps(accessToken, chatSessionId, body);
         }
       };
 

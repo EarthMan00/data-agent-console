@@ -3,6 +3,7 @@
 import { LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { RequiredAsterisk } from "@/components/required-mark";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -69,20 +70,27 @@ export function FeedbackDialog({
         }),
       });
 
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: string; success?: boolean }
-        | null;
+      let payload: { error?: string; success?: boolean } | null = null;
+      const text = await response.text();
+      if (text) {
+        try {
+          payload = JSON.parse(text) as { error?: string; success?: boolean };
+        } catch (e) {
+          setNotice(`反馈响应非 JSON：${e instanceof Error ? e.message : String(e)}`);
+          return;
+        }
+      }
 
       if (!response.ok) {
-        setNotice(payload?.error ?? "反馈提交失败，请稍后再试。");
+        setNotice(typeof payload?.error === "string" && payload.error ? payload.error : `反馈提交失败 (HTTP ${response.status})`);
         return;
       }
 
       setMessage("");
       onOpenChange(false);
       onSuccess?.("问题反馈已提交。");
-    } catch {
-      setNotice("反馈提交失败，请检查网络或服务配置。");
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
     }
@@ -114,7 +122,9 @@ export function FeedbackDialog({
           </div>
 
           <div className="mt-5">
-            <label className="mb-2 block text-sm font-medium text-[#3f3f46]">反馈内容 *</label>
+            <label className="mb-2 block text-sm font-medium text-[#3f3f46]">
+              反馈内容 <RequiredAsterisk />
+            </label>
             <Textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}

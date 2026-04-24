@@ -1,5 +1,5 @@
 import type { AgentAttachment } from "@/lib/agent-events";
-import type { Report, TaskRun } from "@/lib/mock/store";
+import type { Report, TaskRun } from "@/lib/workspace-store";
 
 export type AgentRunSnapshot = {
   run: TaskRun;

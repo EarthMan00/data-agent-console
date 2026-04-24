@@ -312,11 +312,9 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
               placeholder="基于历史对话继续追问…"
               mode="普通模式"
               onModeChange={() => {}}
-              templates={[]}
               selectedSourceIds={[]}
               onToolSelect={() => {}}
               onSourceRemove={() => {}}
-              onTemplateSelect={() => {}}
               onFilesSelected={() => {}}
               onSubmit={() => void send()}
               visualStyle="default"

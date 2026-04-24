@@ -1,4 +1,4 @@
-import type { Report, TaskRun } from "@/lib/mock/store";
+import type { Report, TaskRun } from "@/lib/workspace-store";
 
 export function upsertRunCollection(runs: TaskRun[], nextRun: TaskRun) {
   const exists = runs.some((run) => run.id === nextRun.id);

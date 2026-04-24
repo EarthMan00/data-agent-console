@@ -6,7 +6,7 @@ import { Download, Ellipsis, Expand, Share2 } from "lucide-react";
 
 import { MoreDataShell } from "@/components/more-data-shell";
 import { Button } from "@/components/ui/button";
-import { demoActions, useDemoState } from "@/lib/mock/store";
+import { useDemoState } from "@/lib/workspace-store";
 
 const standaloneReportTabs = [
   { id: "overview", label: "报告摘要" },
@@ -18,17 +18,22 @@ export function ReportView() {
   const searchParams = useSearchParams();
   const { currentRunId, reports, runs } = useDemoState();
   const reportId = searchParams.get("reportId");
-  const report = reports.find((item) => item.id === reportId) ?? reports.find((item) => item.runId === currentRunId) ?? reports[0];
-  const run = runs.find((item) => item.id === report.runId) ?? runs[0];
+  const report =
+    reports.find((item) => item.id === reportId) ??
+    reports.find((item) => item.runId === currentRunId) ??
+    null;
+  const run = report ? (runs.find((item) => item.id === report.runId) ?? null) : null;
 
   const [activeTab, setActiveTab] = useState(standaloneReportTabs[0].id);
   const [notice, setNotice] = useState("");
 
-  const handleSaveTemplate = () => {
-    const templateId = demoActions.saveTemplateFromRun(run.id);
-    setNotice("已从当前结果页保存模板，可继续转为定时任务。");
-    router.push(`/templates?templateId=${templateId}`);
-  };
+  if (!report || !run) {
+    return (
+      <MoreDataShell currentPath="/report" currentRunLabel="未找到报告" mainDecoration={null}>
+        <div className="p-8 text-sm text-slate-600">未找到报告。请从运行列表或带 reportId 的链接进入。</div>
+      </MoreDataShell>
+    );
+  }
 
   return (
     <MoreDataShell currentPath="/report" currentRunLabel={run.title}>
@@ -41,16 +46,16 @@ export function ReportView() {
             <div className="mt-1 text-[11px] text-[#8b9490]">{report.subtitle}</div>
           </div>
           <div className="flex items-center gap-2 text-[#7b8797]">
-            <Button aria-label="分享结果页" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setNotice("已生成 mock 分享结果。")}>
+            <Button aria-label="分享结果页" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setNotice("分享能力待接入。")}>
               <Share2 className="h-4 w-4" />
             </Button>
-            <Button aria-label="下载结果页" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setNotice("下载动作已预留，联调后可替换为真实导出。")}>
+            <Button aria-label="下载结果页" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setNotice("导出能力待接入。")}>
               <Download className="h-4 w-4" />
             </Button>
             <Button aria-label="展开结果页" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setNotice("当前结果页已是全宽展开状态。")}>
               <Expand className="h-4 w-4" />
             </Button>
-            <Button aria-label="更多结果页操作" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setNotice("更多动作后续可接入真实评论、分享和导出能力。")}
+            <Button aria-label="更多结果页操作" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setNotice("更多操作待接入。")}
             >
               <Ellipsis className="h-4 w-4" />
             </Button>
@@ -75,9 +80,6 @@ export function ReportView() {
               ))}
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="secondary" className="rounded-[10px]" onClick={handleSaveTemplate}>
-                保存为模板
-              </Button>
               <Button className="rounded-[10px]" onClick={() => router.push(`/agent?runId=${run.id}`)}>
                 返回任务页
               </Button>

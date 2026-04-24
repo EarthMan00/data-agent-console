@@ -169,3 +169,92 @@ export type UserPromptListDto = {
   page: number;
   page_size: number;
 };
+
+/** 定时任务分组，对应 `/api/user-scheduled-task-groups` */
+export type UserScheduledTaskGroupDto = {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UserScheduledTaskGroupListDto = {
+  items: UserScheduledTaskGroupDto[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+/** 定时任务，对应 `/api/user-scheduled-tasks` */
+export type UserScheduledTaskItemApi = {
+  id: string;
+  group_id: string | null;
+  group_name: string | null;
+  title: string;
+  prompt_text: string;
+  enabled: boolean;
+  recurrence: "daily" | "weekly" | "monthly" | "once" | string;
+  time_hhmm: string;
+  weekday: number | null;
+  day_of_month: number | null;
+  run_once_date: string | null;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UserScheduledTaskListDto = {
+  items: UserScheduledTaskItemApi[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+export type UserScheduledTaskCreateBody = {
+  title: string;
+  prompt_text: string;
+  group_id?: string | null;
+  enabled?: boolean;
+  recurrence: "daily" | "weekly" | "monthly" | "once";
+  time_hhmm: string;
+  weekday?: number | null;
+  day_of_month?: number | null;
+  run_once_date?: string | null;
+};
+
+export type UserScheduledTaskPatchBody = {
+  title?: string;
+  prompt_text?: string;
+  group_id?: string | null;
+  enabled?: boolean | null;
+  recurrence?: "daily" | "weekly" | "monthly" | "once";
+  time_hhmm?: string;
+  weekday?: number | null;
+  day_of_month?: number | null;
+  run_once_date?: string | null;
+};
+
+/** 定时任务运行记录 `/api/scheduled-task-runs` */
+export type ScheduledTaskRunItemApi = {
+  id: string;
+  task_id: string | null;
+  trigger_type: string;
+  status: string;
+  session_id: string | null;
+  started_at: string;
+  finished_at: string | null;
+  error_message: string | null;
+  task_title_snapshot: string;
+  prompt_snapshot: string;
+  group_name_snapshot: string | null;
+  meta: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type ScheduledTaskRunListDto = {
+  items: ScheduledTaskRunItemApi[];
+  total: number;
+  page: number;
+  page_size: number;
+};

@@ -11,15 +11,10 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 
-import {
-  AgentApiError,
-  createSession,
-  login,
-  refreshAccessToken,
-  releaseSession,
-} from "@/lib/agent-api/client";
+import { AgentApiError, createSession, login, refreshAccessToken, releaseSession } from "@/lib/agent-api/client";
 import { isAgentRealApiEnabled } from "@/lib/agent-api/config";
 import {
+  AGENT_AUTH_EXPIRED_EVENT,
   AGENT_SESSION_CHANGED_EVENT,
   clearAgentSession,
   clearPlatformSessionId,
@@ -29,6 +24,7 @@ import {
   savePlatformSessionId,
   type AgentSessionSnapshot,
 } from "@/lib/agent-api/session";
+import { invalidateSessionAndRequestLogin } from "@/lib/agent-runtime/auth";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -85,26 +81,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
   }, []);
 
-  const withFreshToken = useCallback(async (run: (token: string) => Promise<void>) => {
-    const snap = auth ?? loadAgentSession();
-    if (!snap) {
-      throw new Error("请先登录。");
-    }
-    try {
-      await run(snap.accessToken);
-    } catch (e) {
-      if (e instanceof AgentApiError && e.status === 401) {
-        const nextAccess = await refreshAccessToken(snap.refreshToken);
-        const next: AgentSessionSnapshot = { ...snap, accessToken: nextAccess };
-        saveAgentSession(next);
-        setAuth(next);
-        await run(nextAccess);
-        return;
-      }
-      throw e;
-    }
-  }, [auth]);
-
   const openLogin = useCallback((banner?: string) => {
     setLoginBanner(banner?.trim() || "登录后即可连接 agent_web_platform。");
     setLoginError("");
@@ -114,6 +90,42 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const closeLogin = useCallback(() => {
     setLoginOpen(false);
   }, []);
+
+  const withFreshToken = useCallback(async (run: (token: string) => Promise<void>) => {
+    const snap = auth ?? loadAgentSession();
+    if (!snap) {
+      throw new Error("请先登录。");
+    }
+    try {
+      await run(snap.accessToken);
+    } catch (e) {
+      if (e instanceof AgentApiError && e.status === 401) {
+        try {
+          const nextAccess = await refreshAccessToken(snap.refreshToken);
+          const next: AgentSessionSnapshot = { ...snap, accessToken: nextAccess };
+          saveAgentSession(next);
+          setAuth(next);
+          await run(nextAccess);
+          return;
+        } catch (refreshErr) {
+          invalidateSessionAndRequestLogin();
+          throw new AgentApiError("登录已失效，请重新登录。", 401, refreshErr);
+        }
+      }
+      throw e;
+    }
+  }, [auth]);
+
+  useEffect(() => {
+    const onExpired = () => {
+      setAuth(null);
+      setPlatformSessionId(null);
+      openLogin("登录已失效，请重新登录。");
+      router.replace("/");
+    };
+    window.addEventListener(AGENT_AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(AGENT_AUTH_EXPIRED_EVENT, onExpired);
+  }, [openLogin, router]);
 
   const loginWithPassword = useCallback(async (u: string, p: string) => {
     setLoginBusy(true);
@@ -284,7 +296,13 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
         <DialogContent className="max-w-md rounded-[14px] sm:rounded-[14px]" aria-describedby={undefined}>
           <DialogTitle className="font-[family:var(--font-jakarta)] text-lg text-[#1d2a3b]">登录</DialogTitle>
           {loginBanner ? <p className="text-sm text-[#64748b]">{loginBanner}</p> : null}
-          <div className="grid gap-3 pt-2">
+          <form
+            className="grid gap-3 pt-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void loginWithPassword(username, password);
+            }}
+          >
             <div className="grid gap-1">
               <label className="text-xs text-[#7e8da0]">用户名</label>
               <Input
@@ -305,15 +323,10 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
               />
             </div>
             {loginError ? <p className="text-sm text-red-600">{loginError}</p> : null}
-            <Button
-              type="button"
-              className="rounded-[10px]"
-              disabled={loginBusy}
-              onClick={() => void loginWithPassword(username, password)}
-            >
+            <Button type="submit" className="rounded-[10px]" disabled={loginBusy}>
               {loginBusy ? "登录中…" : "登录"}
             </Button>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
     </PlatformAgentContext.Provider>

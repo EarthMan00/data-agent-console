@@ -8,7 +8,7 @@ import { MoreDataShell } from "@/components/more-data-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { useDemoState } from "@/lib/mock/store";
+import { useDemoState } from "@/lib/workspace-store";
 
 const chips = ["全部", "默认"] as const;
 

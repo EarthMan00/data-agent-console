@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, ChevronDown, LibraryBig, Paperclip, Send } from "lucide-react";
+import { ArrowUpRight, ChevronDown, Paperclip, Send } from "lucide-react";
 
-import { homeCapabilityItems } from "@/lib/mock/demo-data";
-import type { Template } from "@/lib/mock/store";
+import { homeCapabilityItems } from "@/lib/home-capability-items";
 import { PlatformLogo } from "@/components/platform-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,11 +24,9 @@ type TaskComposerProps = {
   placeholder: string;
   mode: ComposerMode;
   onModeChange: (mode: ComposerMode) => void;
-  templates: Template[];
   selectedSourceIds?: string[];
   onToolSelect: (capabilityId: string) => void;
   onSourceRemove: (capabilityId: string) => void;
-  onTemplateSelect: (templateId: string) => void;
   onFilesSelected: (files: FileList) => void;
   onSubmit: () => void;
   visualStyle?: "default" | "heroMinimal";
@@ -271,11 +268,9 @@ export function TaskComposer({
   placeholder,
   mode,
   onModeChange,
-  templates,
   selectedSourceIds = [],
   onToolSelect,
   onSourceRemove,
-  onTemplateSelect,
   onFilesSelected,
   onSubmit,
   visualStyle = "default",
@@ -304,7 +299,6 @@ export function TaskComposer({
     width: 520,
     maxHeight: 312,
   });
-  const [templateOpen, setTemplateOpen] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
   const [highlightedToolIndex, setHighlightedToolIndex] = useState(-1);
   const [attachmentNames, setAttachmentNames] = useState<string[]>([]);
@@ -432,7 +426,6 @@ export function TaskComposer({
     const anchorTop = editor ? getCaretAnchorTop(editor) : 36;
     updateMentionMenuPosition(anchorTop);
     setSourceButtonOpen(false);
-    setTemplateOpen(false);
     setModeOpen(false);
     setMentionRange({ start: prefix.lastIndexOf("@"), end: caret });
     setMentionAnchorTop(anchorTop);
@@ -566,7 +559,6 @@ export function TaskComposer({
 
   const openSourceButtonMenu = () => {
     closeMentionMenu();
-    setTemplateOpen(false);
     setModeOpen(false);
     setSourceButtonOpen(true);
   };
@@ -900,58 +892,6 @@ export function TaskComposer({
                 </PopoverContent>
               </Popover>
 
-              <Popover open={templateOpen} onOpenChange={setTemplateOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className={cn(
-                      "h-[30px] rounded-[10px] border px-[11px] text-[12px] font-medium",
-                      isHeroMinimal
-                        ? "border-transparent text-[#6b7280] hover:border-[#e5e7eb] hover:bg-[#fafafa] hover:text-[#27272a]"
-                        : "border-transparent text-[#6f7783] hover:border-[#e8e2d8] hover:bg-[#faf8f4] hover:text-[#27272a]",
-                    )}
-                    type="button"
-                    onClick={() => {
-                      setSourceButtonOpen(false);
-                      closeMentionMenu();
-                      setModeOpen(false);
-                    }}
-                    aria-label="打开任务指令库"
-                  >
-                    <LibraryBig className="h-[13px] w-[13px]" />
-                    指令
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  onOpenAutoFocus={(event) => event.preventDefault()}
-                  onCloseAutoFocus={(event) => event.preventDefault()}
-                  className="w-[360px] rounded-[20px] border-[#e7e5e4] p-2 shadow-[0_16px_34px_rgba(24,24,27,0.08)]"
-                >
-                  <div className="px-2 pb-2 pt-1">
-                    <div className="text-sm font-medium text-[#18181b]">任务指令库</div>
-                  </div>
-                  <div className="grid gap-1">
-                    {templates.slice(0, 6).map((template) => (
-                      <button
-                        key={template.id}
-                        type="button"
-                        onClick={() => {
-                          onTemplateSelect(template.id);
-                          setTemplateOpen(false);
-                          focusEditor();
-                        }}
-                        className="rounded-[12px] px-3 py-3 text-left transition hover:bg-[#f5f5f4]"
-                      >
-                        <div className="text-sm font-medium text-[#27272a]">{template.title}</div>
-                        <div className="mt-1 line-clamp-2 text-xs leading-5 text-[#71717a]">{template.body}</div>
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-
               <input
                 ref={fileInputRef}
                 id={fileInputId}
@@ -980,7 +920,6 @@ export function TaskComposer({
                 onClick={() => {
                   setSourceButtonOpen(false);
                   closeMentionMenu();
-                  setTemplateOpen(false);
                   setModeOpen(false);
                   const input = fileInputRef.current;
                   if (!input) return;
@@ -1013,7 +952,6 @@ export function TaskComposer({
                     onClick={() => {
                       setSourceButtonOpen(false);
                       closeMentionMenu();
-                      setTemplateOpen(false);
                     }}
                   >
                     {composerModeLabel[mode]}

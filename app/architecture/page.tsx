@@ -133,7 +133,7 @@ export default function BusinessArchitecture() {
                 <ul className="space-y-2 text-sm text-slate-600">
                   <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> LLM 提示词组装</li>
                   <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 实体抽取 (NER)</li>
-                  <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 路由决策 (走Mock还是真实API)</li>
+                  <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 路由决策 (LLM / 工具 / 外部服务)</li>
                 </ul>
               </div>
 

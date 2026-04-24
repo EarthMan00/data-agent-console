@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { BookOpen, Expand, FileText, ScanSearch, Sparkles, Workflow, X } from "lucide-react";
 
-import { useDemoState } from "@/lib/mock/store";
+import { useDemoState } from "@/lib/workspace-store";
 
 type ShareReplayPageProps = {
   shareId: string;

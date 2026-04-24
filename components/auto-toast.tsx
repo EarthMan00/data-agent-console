@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check } from "lucide-react";
+import { AlertCircle, Check } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -13,12 +13,20 @@ type AutoToastProps = {
   /** 默认 2000ms */
   durationMs?: number;
   className?: string;
+  /** 成功为左侧黑底勾；错误为黑底感叹号（与「已存在同名分组」等提示一致） */
+  variant?: "default" | "error";
 };
 
 /**
  * 顶部居中浮层：白底、圆角、左侧黑底白勾 + 文案，`durationMs` 后自动关闭。
  */
-export function AutoToast({ message, onDismiss, durationMs = 2000, className }: AutoToastProps) {
+export function AutoToast({
+  message,
+  onDismiss,
+  durationMs = 2000,
+  className,
+  variant = "default",
+}: AutoToastProps) {
   const dismissRef = useRef(onDismiss);
   dismissRef.current = onDismiss;
   const [mounted, setMounted] = useState(false);
@@ -49,7 +57,11 @@ export function AutoToast({ message, onDismiss, durationMs = 2000, className }: 
     >
       <div className="pointer-events-auto flex max-w-full items-center gap-2.5 rounded-[12px] border border-[#e8e8ea] bg-white px-4 py-3 shadow-[0_12px_40px_rgba(15,23,42,0.12)]">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#18181b] text-white">
-          <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+          {variant === "error" ? (
+            <AlertCircle className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+          ) : (
+            <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+          )}
         </span>
         <span className="text-[14px] font-medium leading-tight text-[#18181b]">{message}</span>
       </div>

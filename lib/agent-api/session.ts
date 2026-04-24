@@ -1,5 +1,7 @@
 /** 长轮询内刷新 token 后通知 Provider 同步 React 状态（避免仍用内存里的旧 accessToken）。 */
 export const AGENT_SESSION_CHANGED_EVENT = "agent-platform-session-changed";
+/** 刷新 token 失败或会话被判定无效：请求 UI 清状态并回登录/首页。 */
+export const AGENT_AUTH_EXPIRED_EVENT = "agent-platform-auth-expired";
 
 export function notifyAgentSessionChanged() {
   if (typeof window !== "undefined") {

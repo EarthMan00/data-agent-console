@@ -4,8 +4,7 @@ import { useMemo, useState } from "react";
 import { Download, Ellipsis, Expand, Minimize2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { previewResults } from "@/lib/mock/demo-data";
-import type { Report } from "@/lib/mock/store";
+import type { Report } from "@/lib/workspace-store";
 
 type ReportPreviewPanelProps = {
   previewId: string;
@@ -25,11 +24,25 @@ export function ReportPreviewPanel({
 }: ReportPreviewPanelProps) {
   const preview = useMemo(() => {
     if (report && report.previewKey === previewId) return report;
-    return previewResults.find((item) => item.id === previewId) ?? previewResults[0];
+    return null;
   }, [previewId, report]);
   const [selectedTabs, setSelectedTabs] = useState<Record<string, string>>({});
   const [actionNotice, setActionNotice] = useState("");
-  const activeTab = selectedTabs[preview.id] ?? preview.sheetTabs[0]?.id ?? "";
+  const activeTab = preview ? (selectedTabs[preview.id] ?? preview.sheetTabs[0]?.id ?? "") : "";
+
+  if (!preview) {
+    return (
+      <div
+        className="flex h-full min-h-0 flex-col items-center justify-center gap-4 bg-white p-8 text-[#64748b]"
+        data-testid={dataTestId === false ? undefined : dataTestId}
+      >
+        <p className="text-sm">无匹配的预览内容</p>
+        <Button type="button" variant="outline" className="rounded-[10px]" onClick={onClose}>
+          关闭
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -44,13 +57,13 @@ export function ReportPreviewPanel({
           <div className="mt-1 text-[11px] text-[#8b9490]">{preview.subtitle}</div>
         </div>
         <div className="flex items-center gap-2 text-[#7b8797]">
-          <Button aria-label="下载预览结果" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setActionNotice("已生成 mock 下载结果，联调后可替换为真实导出。")}>
+          <Button aria-label="下载预览结果" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setActionNotice("导出能力待接入。")}>
             <Download className="h-4 w-4" />
           </Button>
-          <Button aria-label="展开预览结果" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setActionNotice("已触发 mock 展开视图，联调后可切换全屏预览。")}>
+          <Button aria-label="展开预览结果" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setActionNotice("全屏预览待接入。")}>
             <Expand className="h-4 w-4" />
           </Button>
-          <Button aria-label="更多预览操作" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setActionNotice("更多操作入口已预留，联调后可接分享、复制与导出。")}>
+          <Button aria-label="更多预览操作" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setActionNotice("更多操作待接入。")}>
             <Ellipsis className="h-4 w-4" />
           </Button>
           <Button aria-label="关闭预览面板" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={onClose}>

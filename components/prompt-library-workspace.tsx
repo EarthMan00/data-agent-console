@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowRightLeft,
   Copy,
   Eye,
   MoreVertical,
+  Package,
   Pencil,
   Plus,
   Search,
@@ -16,6 +17,7 @@ import {
 
 import { AutoToast } from "@/components/auto-toast";
 import { MoreDataShell } from "@/components/more-data-shell";
+import { RequiredAsterisk } from "@/components/required-mark";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,6 +25,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { AgentApiError, parseFastApiDetail } from "@/lib/agent-api/client";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import type { UserPromptDto, UserPromptGroupDto } from "@/lib/agent-api/types";
@@ -43,6 +46,20 @@ function formatDateTime(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString();
+}
+
+/** 参考稿：浅灰空箱 + 点缀圆点，居中空白态 */
+function PromptLibraryEmptyIllustration() {
+  return (
+    <div className="relative mx-auto mb-7 flex h-[112px] w-[112px] shrink-0 items-center justify-center" aria-hidden>
+      <span className="absolute left-1 top-3 h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
+      <span className="absolute right-2 top-5 h-1 w-1 rounded-full bg-[#e5e7eb]" />
+      <span className="absolute bottom-5 left-0 h-1 w-1 rounded-full bg-[#e5e7eb]" />
+      <span className="absolute bottom-8 right-1 h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
+      <span className="absolute left-2 top-[46%] h-1 w-1 -translate-y-1/2 rounded-full bg-[#e5e7eb]" />
+      <Package className="relative h-[72px] w-[72px] text-[#d4d4d8]" strokeWidth={1.15} />
+    </div>
+  );
 }
 
 async function fetchAllGroups(token: string): Promise<UserPromptGroupDto[]> {
@@ -87,6 +104,7 @@ export function PromptLibraryWorkspace() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastVariant, setToastVariant] = useState<"default" | "error">("default");
   const [groups, setGroups] = useState<UserPromptGroupDto[]>([]);
   const [prompts, setPrompts] = useState<UserPromptDto[]>([]);
   const [search, setSearch] = useState("");
@@ -94,6 +112,8 @@ export function PromptLibraryWorkspace() {
 
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+  const newGroupInputRef = useRef<HTMLInputElement | null>(null);
+  const skipNewGroupBlurRef = useRef(false);
 
   const [saveOpen, setSaveOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -207,11 +227,28 @@ export function PromptLibraryWorkspace() {
     }
   };
 
-  const submitNewGroup = async () => {
+  const commitNewGroupInput = useCallback(async () => {
+    if (!addGroupOpen) return;
+    const name = newGroupName.trim();
+    if (!name) {
+      setAddGroupOpen(false);
+      setNewGroupName("");
+      return;
+    }
     if (!platformAgent?.auth) return;
+
+    const duplicate = groups.some((g) => (g.name || "").trim() === name);
+    if (duplicate) {
+      setToastMessage("已存在同名分组");
+      setToastVariant("error");
+      window.requestAnimationFrame(() => newGroupInputRef.current?.focus());
+      return;
+    }
+
+    setError("");
     try {
       await platformAgent.withFreshToken(async (token) => {
-        const g = await createUserPromptGroup(token, newGroupName.trim());
+        const g = await createUserPromptGroup(token, name);
         setGroups((prev) => [g, ...prev.filter((x) => x.id !== g.id)]);
         setTab({ kind: "group", id: g.id });
         setAddGroupOpen(false);
@@ -226,7 +263,7 @@ export function PromptLibraryWorkspace() {
             : String(e);
       setError(msg || "创建分组失败");
     }
-  };
+  }, [addGroupOpen, newGroupName, groups, platformAgent]);
 
   const handleDeleteGroup = async (id: string) => {
     if (!platformAgent?.auth) return;
@@ -264,11 +301,13 @@ export function PromptLibraryWorkspace() {
   };
 
   const copyText = async (t: string) => {
-    try {
-      await navigator.clipboard.writeText(t);
+    const ok = await copyTextToClipboard(t);
+    if (ok) {
+      setToastVariant("default");
       setToastMessage("复制成功");
-    } catch {
-      /* 静默失败 */
+    } else {
+      setToastVariant("default");
+      setToastMessage("复制失败，请手动选中复制或为站点启用 HTTPS");
     }
   };
 
@@ -300,6 +339,7 @@ export function PromptLibraryWorkspace() {
         await patchUserPrompt(token, moveTarget.id, { group_id: moveGroupId });
       });
       setMoveTarget(null);
+      setToastVariant("default");
       setToastMessage("移动成功");
       await refresh();
     } catch (e) {
@@ -317,7 +357,11 @@ export function PromptLibraryWorkspace() {
     <MoreDataShell currentPath="/prompt-library">
       <AutoToast
         message={toastMessage}
-        onDismiss={() => setToastMessage(null)}
+        variant={toastVariant}
+        onDismiss={() => {
+          setToastMessage(null);
+          setToastVariant("default");
+        }}
         durationMs={2000}
       />
       <div className="px-8 pb-12 pt-8">
@@ -352,22 +396,36 @@ export function PromptLibraryWorkspace() {
                 {addGroupOpen ? (
                   <div className="flex items-center gap-1">
                     <Input
+                      ref={newGroupInputRef}
                       autoFocus
                       value={newGroupName}
                       onChange={(e) => setNewGroupName(e.target.value)}
                       placeholder="请输入分组名称"
                       className="h-8 w-[160px] rounded-[8px] border-[#d4d4d8] text-sm"
+                      onBlur={() => {
+                        window.setTimeout(() => {
+                          if (skipNewGroupBlurRef.current) {
+                            skipNewGroupBlurRef.current = false;
+                            return;
+                          }
+                          void commitNewGroupInput();
+                        }, 0);
+                      }}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") void submitNewGroup();
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          skipNewGroupBlurRef.current = true;
+                          void commitNewGroupInput();
+                          return;
+                        }
                         if (e.key === "Escape") {
+                          e.preventDefault();
+                          skipNewGroupBlurRef.current = true;
                           setAddGroupOpen(false);
                           setNewGroupName("");
                         }
                       }}
                     />
-                    <Button type="button" size="sm" variant="ghost" className="h-8 px-2" onClick={() => void submitNewGroup()}>
-                      确定
-                    </Button>
                   </div>
                 ) : (
                   <Button
@@ -411,108 +469,132 @@ export function PromptLibraryWorkspace() {
           ) : null}
           {busy ? <div className="mt-6 text-sm text-[#71717a]">加载中…</div> : null}
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredPrompts.map((p) => (
-              <Card key={p.id} className="overflow-hidden border-[#e5e7eb]">
-                <div className="min-h-[140px] bg-[#f5f5f5] px-4 py-4 text-[13px] leading-relaxed text-[#3f3f46]">
-                  <p className="line-clamp-6 whitespace-pre-wrap">{p.prompt_text}</p>
-                </div>
-                <CardContent className="border-t border-[#e5e7eb] px-4 py-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-[#18181b]">{p.title}</div>
-                      <div className="mt-1 text-xs text-[#a1a1aa]">{formatDateTime(p.updated_at)}</div>
-                    </div>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-[8px]">
-                          <MoreVertical className="h-4 w-4 text-[#71717a]" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-48 p-1" align="end">
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
-                          onClick={() => openEdit(p)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                          编辑
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
-                          onClick={() => {
-                            setMoveTarget(p);
-                            setMoveGroupId(p.group_id);
-                          }}
-                        >
-                          <ArrowRightLeft className="h-4 w-4" />
-                          移动到
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
-                          onClick={() => {
-                            setRenamePromptId(p.id);
-                            setRenameTitle(p.title);
-                            setRenameOpen(true);
-                          }}
-                        >
-                          <Pencil className="h-4 w-4" />
-                          重命名
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
-                          onClick={() => void copyText(p.prompt_text)}
-                        >
-                          <Copy className="h-4 w-4" />
-                          复制提示词
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                          onClick={() => setDeletePromptId(p.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          删除
-                        </button>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  <div className="mt-3 flex flex-wrap justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="rounded-[8px]"
-                      onClick={() => setPreview(p)}
-                    >
-                      <Eye className="mr-1 h-3.5 w-3.5" />
-                      预览
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="rounded-[8px] bg-[#1f2b1f] text-white hover:bg-[#283728]"
-                      onClick={() => void handleUsePrompt(p.prompt_text)}
-                    >
-                      使用
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
           {!busy && filteredPrompts.length === 0 ? (
-            <Card className="mt-8 border-dashed border-[#d4d4d8] bg-[#fafafa]">
-              <CardContent className="px-5 py-8">
-                <div className="text-[15px] font-medium text-[#18181b]">暂无提示词</div>
-                <p className="mt-2 text-sm leading-6 text-[#71717a]">切换分组或点击「创建提示词」添加一条。</p>
-              </CardContent>
-            </Card>
-          ) : null}
+            prompts.length === 0 ? (
+              <div className="mt-6 flex min-h-[min(420px,calc(100vh-280px))] flex-col items-center justify-center bg-white px-4 py-12">
+                <PromptLibraryEmptyIllustration />
+                <p className="max-w-md text-center text-[15px] leading-relaxed text-[#71717a]">
+                  {tab.kind === "all"
+                    ? "暂无提示词"
+                    : tab.kind === "default"
+                      ? "默认分组下暂无提示词"
+                      : "该分组下暂无提示词"}{" "}
+                  <button
+                    type="button"
+                    className="text-[#18181b] underline decoration-[#a1a1aa] underline-offset-[5px] transition hover:text-[#27272a] hover:decoration-[#71717a]"
+                    onClick={openCreate}
+                  >
+                    马上创建提示词
+                  </button>
+                </p>
+              </div>
+            ) : (
+              <div className="mt-16 flex flex-col items-center justify-center px-4 text-center">
+                <p className="text-[15px] text-[#71717a]">未找到匹配的提示词</p>
+                <button
+                  type="button"
+                  className="mt-3 text-sm text-[#18181b] underline decoration-[#d4d4d8] underline-offset-4 transition hover:text-[#27272a]"
+                  onClick={() => setSearch("")}
+                >
+                  清空搜索条件
+                </button>
+              </div>
+            )
+          ) : (
+            <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredPrompts.map((p) => (
+                <Card key={p.id} className="overflow-hidden border-[#e5e7eb]">
+                  <div className="min-h-[140px] bg-[#f5f5f5] px-4 py-4 text-[13px] leading-relaxed text-[#3f3f46]">
+                    <p className="line-clamp-6 whitespace-pre-wrap">{p.prompt_text}</p>
+                  </div>
+                  <CardContent className="border-t border-[#e5e7eb] px-4 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-[#18181b]">{p.title}</div>
+                        <div className="mt-1 text-xs text-[#a1a1aa]">{formatDateTime(p.updated_at)}</div>
+                      </div>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-[8px]">
+                            <MoreVertical className="h-4 w-4 text-[#71717a]" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-48 p-1" align="end">
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
+                            onClick={() => openEdit(p)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            编辑
+                          </button>
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
+                            onClick={() => {
+                              setMoveTarget(p);
+                              setMoveGroupId(p.group_id);
+                            }}
+                          >
+                            <ArrowRightLeft className="h-4 w-4" />
+                            移动到
+                          </button>
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
+                            onClick={() => {
+                              setRenamePromptId(p.id);
+                              setRenameTitle(p.title);
+                              setRenameOpen(true);
+                            }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            重命名
+                          </button>
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
+                            onClick={() => void copyText(p.prompt_text)}
+                          >
+                            <Copy className="h-4 w-4" />
+                            复制提示词
+                          </button>
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                            onClick={() => setDeletePromptId(p.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            删除
+                          </button>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    <div className="mt-3 flex flex-wrap justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="rounded-[8px]"
+                        onClick={() => setPreview(p)}
+                      >
+                        <Eye className="mr-1 h-3.5 w-3.5" />
+                        预览
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="rounded-[8px] bg-[#1f2b1f] text-white hover:bg-[#283728]"
+                        onClick={() => void handleUsePrompt(p.prompt_text)}
+                      >
+                        使用
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -527,7 +609,9 @@ export function PromptLibraryWorkspace() {
             </DialogDescription>
             <div className="mt-6 space-y-5">
               <div className="space-y-2">
-                <label className="text-sm text-[#52525b]">标题 *</label>
+                <label className="text-sm text-[#52525b]">
+                  标题 <RequiredAsterisk />
+                </label>
                 <Input
                   value={formTitle}
                   onChange={(e) => setFormTitle(e.target.value)}
@@ -560,7 +644,9 @@ export function PromptLibraryWorkspace() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-[#52525b]">提示词 prompt *</label>
+                <label className="text-sm text-[#52525b]">
+                  提示词 prompt <RequiredAsterisk />
+                </label>
                 <Textarea
                   value={formPrompt}
                   onChange={(e) => setFormPrompt(e.target.value)}

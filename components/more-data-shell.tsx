@@ -6,8 +6,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import {
   Bookmark,
   ChevronDown,
+  Clock3,
   FolderHeart,
-  LibraryBig,
   PanelLeft,
   PlusCircle,
   Trash2,
@@ -32,8 +32,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/", label: "新的对话", icon: PlusCircle },
   { href: "/prompt-library", label: "提示词库", icon: Bookmark },
-  { href: "/templates", label: "指令库", icon: LibraryBig },
-  // { href: "/schedules", label: "定时任务", icon: Clock3 },
+  { href: "/schedules", label: "定时任务", icon: Clock3 },
   { href: "/artifacts", label: "收藏夹", icon: FolderHeart },
 ];
 
@@ -314,21 +313,22 @@ function MoreDataShellComponent({
         className={childManagedScroll ? "grid h-screen overflow-hidden bg-[rgba(250,249,245,0.82)]" : "grid min-h-screen bg-[rgba(250,249,245,0.82)]"}
         style={{ gridTemplateColumns: sidebarCollapsed ? "80px minmax(0,1fr)" : "272px minmax(0,1fr)" }}
       >
-        <aside className={`sticky top-0 self-start h-screen min-h-0 overflow-y-auto border-r border-[#e2e7ef] bg-[rgba(255,255,255,0.76)] py-7 backdrop-blur-xl transition-[padding,width] ${sidebarCollapsed ? "px-4" : "px-6"}`}>
-          <div className="relative">
-            {sidebarCollapsed ? (
-              <div className="flex justify-center">
-                <BrandLogo compact />
-              </div>
-            ) : (
-              <div>
-                <div className="px-1">
-                  <BrandLogo />
+        <aside className={`sticky top-0 self-start flex h-screen min-h-0 flex-col overflow-hidden border-r border-[#e2e7ef] bg-[rgba(255,255,255,0.76)] py-7 backdrop-blur-xl transition-[padding,width] ${sidebarCollapsed ? "px-4" : "px-6"}`}>
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <div className="shrink-0">
+              {sidebarCollapsed ? (
+                <div className="flex justify-center">
+                  <BrandLogo compact />
                 </div>
-              </div>
-            )}
+              ) : (
+                <div>
+                  <div className="px-1">
+                    <BrandLogo />
+                  </div>
+                </div>
+              )}
 
-            <nav className="mt-6 space-y-2">
+              <nav className="mt-6 space-y-2">
               {sidebarNavItems.map(({ href, label, icon: Icon }) => {
                 const active = currentPath === href || (href === "/" && currentPath === "/agent");
                 return (
@@ -359,11 +359,12 @@ function MoreDataShellComponent({
                   </Link>
                 );
               })}
-            </nav>
+              </nav>
+            </div>
 
             {!sidebarCollapsed && showAuthSidebar ? (
-              <div className="mt-10">
-                <div className="flex items-center justify-between px-2 text-xs text-[#7f8da0]">
+              <div className="mt-10 flex min-h-0 flex-1 flex-col">
+                <div className="flex shrink-0 items-center justify-between px-2 text-xs text-[#7f8da0]">
                   <span>历史对话</span>
                   <button
                     type="button"
@@ -372,7 +373,8 @@ function MoreDataShellComponent({
                     onClick={() => void refreshHistory()}
                   />
                 </div>
-                <div className="mt-2 space-y-2">
+                <div className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                  <div className="space-y-2">
                   {historyBusy ? (
                     <div className="px-3 py-2 text-xs text-[#94a3b8]">加载中…</div>
                   ) : historyError ? (
@@ -460,6 +462,7 @@ function MoreDataShellComponent({
                       </div>
                     ))
                   )}
+                  </div>
                 </div>
               </div>
             ) : null}

@@ -1,55 +1,24 @@
-export type HomePromptCard = {
-  id: string;
-  title: string;
-  body: string;
-  prompt: string;
-  meta: string;
-  capabilityIds: string[];
-  replayRunId?: string;
-  replayShareId?: string;
-};
+import type {
+  FavoriteItem,
+  HomePromptCard,
+  PromptCard,
+  ResultPreview,
+  RunRecord,
+  ScheduleItem,
+  SheetTab,
+} from "@/lib/workspace-domain-types";
 
-export type CapabilityItem = {
-  id: string;
-  label: string;
-  promptHint: string;
-  accent: string;
-  icon: string;
-};
+export type {
+  FavoriteItem,
+  HomePromptCard,
+  PromptCard,
+  ResultPreview,
+  RunRecord,
+  ScheduleItem,
+  SheetTab,
+} from "@/lib/workspace-domain-types";
 
-export type PromptCard = {
-  id: string;
-  title: string;
-  body: string;
-  scope: "全部" | "默认";
-  createdAt: string;
-};
-
-export type ScheduleItem = {
-  id: string;
-  title: string;
-  frequency: string;
-  nextRun: string;
-  status: "运行中" | "已暂停";
-  scope: "全部" | "默认";
-};
-
-export type RunRecord = {
-  id: string;
-  title: string;
-  startedAt: string;
-  result: string;
-  status: "成功" | "失败";
-};
-
-export type FavoriteItem = {
-  id: string;
-  title: string;
-  body: string;
-  scope: "全部" | "默认";
-  type: "报告" | "表格";
-  createdAt: string;
-};
+export { DEFAULT_RESULT_SUMMARY_TITLE as resultSummaryTitle, WORKSPACE_DISPLAY_NAME as workspaceName } from "@/lib/workspace-constants";
 
 export type ToolInvocation = {
   id: string;
@@ -66,43 +35,14 @@ export type ConversationSection = {
   tools: ToolInvocation[];
 };
 
-export type SheetTab = {
-  id: string;
-  label: string;
-};
-
-export type ResultPreview = {
-  id: string;
-  title: string;
-  subtitle: string;
-  mode: "sheet" | "report";
-  summary: string[];
-  sheetTabs: SheetTab[];
-  sheetRows: string[][];
-};
-
-export const workspaceName = "我的工作空间";
 
 export const recentRuns = [
   "监控关键词并分析",
   "美国站keyboard tablet case调研",
 ];
 
-export const homeCapabilityItems: CapabilityItem[] = [
-  { id: "scenarios", label: "应用场景", promptHint: "从应用场景模板出发，快速发起一轮跨平台研究。", accent: "#8b9bb0", icon: "grid" },
-  { id: "keepa", label: "Keepa", promptHint: "围绕价格波动、BSR 趋势和历史曲线做跟踪分析。", accent: "#f08a36", icon: "keepa" },
-  { id: "amazon", label: "亚马逊前台", promptHint: "从亚马逊前台搜索结果、类目页和竞品结构出发调研。", accent: "#ff9900", icon: "amazon" },
-  { id: "store-scan", label: "Sif数据分析工具", promptHint: "先扫描店铺商品结构、主卖点与价格带，再做机会判断。", accent: "#6ca8ff", icon: "store" },
-  { id: "seller-sprite", label: "卖家精灵", promptHint: "结合关键词和竞品监控能力做一轮赛道摸底。", accent: "#ff6b00", icon: "sprite" },
-  { id: "web-search", label: "实时与全网检索", promptHint: "补全站外信息、趋势证据与竞品背景。", accent: "#89a7ff", icon: "search" },
-  { id: "google", label: "谷歌趋势", promptHint: "先验证关键词趋势与区域热度，再决定是否继续深挖。", accent: "#4285f4", icon: "google" },
-  { id: "alibaba", label: "店雷达(1688)", promptHint: "从 1688 供给与货源变化判断款式成熟度和价格空间。", accent: "#ff6a00", icon: "alibaba" },
-  { id: "tiktok", label: "TikTok电商数据助手", promptHint: "先看 TikTok 热门视频和达人线索，确认内容热度。", accent: "#111111", icon: "tiktok" },
-  { id: "jimu", label: "极目系列", promptHint: "调用细分市场、评论和竞品工具，做结构化行业分析。", accent: "#8affc8", icon: "jimu" },
-  { id: "walmart", label: "Walmart前台", promptHint: "切到 Walmart 前台验证站外迁移机会和竞品差异。", accent: "#0071ce", icon: "walmart" },
-  { id: "ebay", label: "eBay前台", promptHint: "补充 eBay 前台结果，验证多平台供给与需求结构。", accent: "#e53238", icon: "ebay" },
-  { id: "patent", label: "专利检索", promptHint: "在推进前先补一轮专利检索，避开高风险方向。", accent: "#7f8b99", icon: "patent" },
-];
+export type { HomeCapabilityItem as CapabilityItem } from "@/lib/home-capability-items";
+export { homeCapabilityItems } from "@/lib/home-capability-items";
 
 /** 首页推荐卡片：在已配置 `NEXT_PUBLIC_AGENT_API_ORIGIN`（或代理）且库中有数据时，由 GET /api/home-prompt-recommendations 覆盖；此处为回退数据。 */
 export const homePromptCards: HomePromptCard[] = [
@@ -278,10 +218,18 @@ export const promptCards: PromptCard[] = [
 export const scheduleItems: ScheduleItem[] = [
   {
     id: "s1",
+    title: "测试任务",
+    frequency: "每天",
+    nextRun: "2026-04-18 21:30",
+    status: "已完结",
+    scope: "默认",
+  },
+  {
+    id: "s2",
     title: "美国站平板键盘套周监控",
     frequency: "每周一 09:00",
     nextRun: "2026-03-30 09:00",
-    status: "运行中",
+    status: "生效中",
     scope: "默认",
   },
 ];
@@ -289,17 +237,22 @@ export const scheduleItems: ScheduleItem[] = [
 export const runRecords: RunRecord[] = [
   {
     id: "r1",
-    title: "美国站keyboard tablet case监控",
-    startedAt: "2026-03-23 10:30:00",
+    title: "亚马逊搜索computer desk并返回前100条数据",
+    startedAt: "2026-04-21 09:30:00",
+    completedAt: "2026-04-21 09:32:06",
     result: "生成 1 份结构化竞品报告",
     status: "成功",
+    summary:
+      "I have completed the search task for the keyword \"computer desk\" on Amazon US. I browsed 5 pages of search results and fetched 276 product records including title, price, rating and BSR for your analysis.",
   },
   {
     id: "r2",
     title: "平板键盘套评论痛点扫描",
     startedAt: "2026-03-22 09:00:00",
+    completedAt: "2026-03-22 09:18:22",
     result: "关键词无结果，建议调整型号词",
     status: "失败",
+    summary: "扫描未返回足够评论样本，建议缩小 ASIN 范围或更换关键词后重试。",
   },
 ];
 
@@ -365,8 +318,6 @@ export const conversationSections: ConversationSection[] = [
     ],
   },
 ];
-
-export const resultSummaryTitle = "任务执行结果";
 
 export const resultSummaryBody =
   "我已完成对美国站 iPad keyboard case、Samsung tablet keyboard case 及 keyboard case 三组关键词的深度分析。本次调研通过极目工具获取了 150 个细分市场的容量、趋势及 180 条核心评论痛点数据，并结合 SIF 工具分析了各关键词的竞品分布与供需概览。数据已涵盖需求变化、竞争格局及消费者反馈等核心维度，能够为您提供持续跟踪的机会方向参考。";

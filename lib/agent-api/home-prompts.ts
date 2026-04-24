@@ -1,14 +1,14 @@
 import { getAgentHttpApiBase } from "@/lib/agent-api/config";
 import type { HomePromptRecommendationDto } from "@/lib/agent-api/types";
 
-/** 拉取首页推荐提示词；无 API 配置、失败或空列表时返回 null（由调用方回退本地静态数据）。 */
-export async function fetchHomePromptRecommendations(): Promise<HomePromptRecommendationDto[] | null> {
+/** 拉取首页推荐提示词；无数据或请求失败时返回空数组（不调本地静态「示例卡片」作为数据）。 */
+export async function fetchHomePromptRecommendations(): Promise<HomePromptRecommendationDto[]> {
   try {
     const base = getAgentHttpApiBase();
     const res = await fetch(`${base}/api/home-prompt-recommendations`);
-    if (!res.ok) return null;
+    if (!res.ok) return [];
     const data = (await res.json()) as { items?: unknown };
-    if (!Array.isArray(data.items) || data.items.length === 0) return null;
+    if (!Array.isArray(data.items) || data.items.length === 0) return [];
     const out: HomePromptRecommendationDto[] = [];
     for (const raw of data.items) {
       if (!raw || typeof raw !== "object") continue;
@@ -34,8 +34,8 @@ export async function fetchHomePromptRecommendations(): Promise<HomePromptRecomm
         sort_order: typeof o.sort_order === "number" ? o.sort_order : 0,
       });
     }
-    return out.length > 0 ? out : null;
+    return out;
   } catch {
-    return null;
+    return [];
   }
 }

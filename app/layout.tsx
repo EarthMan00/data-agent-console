@@ -8,7 +8,7 @@ import { SuppressNextDevOverlay } from "@/components/suppress-next-dev-overlay";
 
 export const metadata: Metadata = {
   title: "More Data Agent",
-  description: "More Data Agent mock-first research workspace demo",
+  description: "More Data Agent 运营与研究工作台",
 };
 
 export default function RootLayout({

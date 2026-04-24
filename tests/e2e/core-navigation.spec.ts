@@ -18,8 +18,8 @@ test.describe.serial("core navigation", () => {
   test("navigates through the shell", async () => {
     await expectSingleWindowModel(context);
     await expect(appPage.getByText("LinkData")).toBeVisible();
-    await appPage.getByRole("link", { name: "指令库" }).click();
-    await expect(appPage).toHaveURL(/\/templates/);
+    await appPage.getByRole("link", { name: "提示词库" }).click();
+    await expect(appPage).toHaveURL(/\/prompt-library/);
     await appPage.getByRole("link", { name: "定时任务" }).click();
     await expect(appPage).toHaveURL(/\/schedules/);
     await appPage.getByRole("link", { name: "收藏夹" }).click();

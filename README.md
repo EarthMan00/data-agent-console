@@ -26,7 +26,6 @@
 - 首页 `/`
 - 会话页 `/agent`
 - 结果页 `/report`
-- 任务指令库 `/templates`
 - 定时任务 `/schedules`
 - 报告中心 `/artifacts`
 - 反馈后台 `/admin/login`、`/admin/feedback`

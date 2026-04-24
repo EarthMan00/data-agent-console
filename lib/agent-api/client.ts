@@ -25,6 +25,17 @@ async function parseJson(res: Response): Promise<unknown> {
   return JSON.parse(text) as unknown;
 }
 
+/** 在 !res.ok 时读取 body：优先解析 JSON，失败时返回含原文片段的占位对象，便于排障。 */
+export async function readErrorResponseBody(res: Response): Promise<unknown> {
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { _nonJsonBody: text.length > 2000 ? `${text.slice(0, 2000)}…` : text };
+  }
+}
+
 export class AgentApiError extends Error {
   readonly status: number;
   readonly body: unknown;
@@ -80,12 +91,9 @@ function assertJsonObject(v: unknown): asserts v is Record<string, unknown> {
   }
 }
 
+/** 读取响应 JSON；非法 JSON 时抛出，由调用方处理（不再吞掉解析错误）。 */
 async function safeJson(res: Response): Promise<unknown> {
-  try {
-    return await parseJson(res);
-  } catch {
-    return null;
-  }
+  return parseJson(res);
 }
 
 export async function login(username: string, password: string): Promise<LoginResponse> {
@@ -496,7 +504,7 @@ export async function downloadAuthorizedFile(
   const path = downloadPath.startsWith("/") ? downloadPath : `/${downloadPath}`;
   const res = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
-    const body = await parseJson(res).catch(() => null);
+    const body = await readErrorResponseBody(res);
     throw new AgentApiError("download failed", res.status, body);
   }
   const blob = await res.blob();
@@ -526,7 +534,7 @@ export async function fetchAuthorizedText(accessToken: string, downloadPath: str
   const path = downloadPath.startsWith("/") ? downloadPath : `/${downloadPath}`;
   const res = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
-    const body = await parseJson(res).catch(() => null);
+    const body = await readErrorResponseBody(res);
     throw new AgentApiError("fetch text failed", res.status, body);
   }
   return res.text();
@@ -543,7 +551,7 @@ export async function openAuthorizedUtf8TextStream(
   const path = downloadPath.startsWith("/") ? downloadPath : `/${downloadPath}`;
   const res = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
-    const body = await parseJson(res).catch(() => null);
+    const body = await readErrorResponseBody(res);
     throw new AgentApiError("open text stream failed", res.status, body);
   }
   if (!res.body) {

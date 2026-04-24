@@ -1,18 +1,10 @@
-import type { AgentAttachment, DataSourceChain } from "@/lib/agent-events";
-import { previewResults } from "@/lib/mock/demo-data";
+import type { AgentAttachment } from "@/lib/agent-events";
+import { createMinimalResultPreview, DEFAULT_RESULT_PREVIEW_KEY } from "@/lib/report-defaults";
 
 import { capabilityLabelMap } from "./constants";
-import type { AgentRoundInput } from "./types";
 
 export function getSourceLabel(sourceId: string) {
   return capabilityLabelMap.get(sourceId) ?? sourceId;
-}
-
-function pickPreviewKey(sourceId: string, index: number) {
-  if (["amazon", "keepa", "store-scan", "walmart", "ebay"].includes(sourceId)) return "market-report";
-  if (["jimu", "seller-sprite", "google"].includes(sourceId)) return "review-report";
-  if (["web-search", "alibaba", "tiktok", "patent"].includes(sourceId)) return "competition-report";
-  return previewResults[index % previewResults.length]?.id ?? "market-report";
 }
 
 function formatDate(date = new Date()) {
@@ -58,13 +50,15 @@ export function buildStreamChunks(prompt: string, sourceLabels: string[], attach
 }
 
 export function buildReportPatch(prompt: string, sourceLabels: string[], attachments: AgentAttachment[]) {
-  const previewKey =
-    sourceLabels.length > 1 ? "market-report" : sourceLabels[0]?.includes("极目") ? "review-report" : "competition-report";
-  const base = previewResults.find((item) => item.id === previewKey) ?? previewResults[0];
-  return {
-    previewKey,
+  const base = createMinimalResultPreview({
+    id: DEFAULT_RESULT_PREVIEW_KEY,
     title: prompt.length > 24 ? `${prompt.slice(0, 24)}...` : prompt,
     subtitle: `最后生成时间：${formatShortDate()} · ${sourceLabels.join("、") || "默认数据源"}`,
+  });
+  return {
+    previewKey: base.id,
+    title: base.title,
+    subtitle: base.subtitle,
     generatedAt: formatDate(),
     mode: base.mode,
     summary: [
@@ -78,18 +72,4 @@ export function buildReportPatch(prompt: string, sourceLabels: string[], attachm
     sheetRows: base.sheetRows.map((row) => [...row]),
     summaryBody: `系统已按 ${sourceLabels.join("、") || "默认数据源"} 并行完成多逻辑链分析，并将结果同步到当前会话与右侧预览。`,
   };
-}
-
-export function buildMockChains(input: AgentRoundInput): DataSourceChain[] {
-  const sources = input.selectedCapabilities.length > 0 ? input.selectedCapabilities : ["amazon"];
-  return sources.map((sourceId, index) => ({
-    id: `${input.roundId}-chain-${index + 1}`,
-    roundId: input.roundId,
-    sourceId,
-    sourceLabel: getSourceLabel(sourceId),
-    status: "queued",
-    intent: `围绕“${input.prompt}”查询 ${getSourceLabel(sourceId)} 的结构化结果。`,
-    progressText: "等待启动数据源链...",
-    resultPreviewId: pickPreviewKey(sourceId, index),
-  }));
 }

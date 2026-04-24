@@ -34,8 +34,8 @@ import { Button } from "@/components/ui/button";
 import { sanitizeObjective } from "@/lib/agent-attachments";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { isPlatformBackendEnabled, streamAgentRound } from "@/lib/agent-runtime";
-import { homeCapabilityItems } from "@/lib/mock/demo-data";
-import { demoActions, useDemoState } from "@/lib/mock/store";
+import { homeCapabilityItems } from "@/lib/home-capability-items";
+import { demoActions, useDemoState, type Report, type TaskRun } from "@/lib/workspace-store";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import { cn } from "@/lib/utils";
 import { formatAgentApiErrorForUser } from "@/lib/agent-api/client";
@@ -62,10 +62,10 @@ export function AgentWorkspace() {
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
   const historySessionId = searchParams.get("sessionId") ?? "";
-  const { currentRunId, reports, runs, templates } = useDemoState();
+  const { currentRunId, reports, runs } = useDemoState();
   const runId = searchParams.get("runId") ?? currentRunId;
-  const run = runs.find((item) => item.id === runId) ?? runs[0];
-  const report = reports.find((item) => item.id === run?.reportId) ?? reports[0];
+  const run = runId ? (runs.find((item) => item.id === runId) ?? null) : null;
+  const report = run ? (reports.find((item) => item.id === run.reportId) ?? null) : null;
   const isPlatformSession = isPlatformBackendEnabled() && Boolean(platformAgent) && Boolean(historySessionId);
 
   useEffect(() => {
@@ -77,6 +77,36 @@ export function AgentWorkspace() {
     }
   }, [pathname, router, searchParams, historySessionId]);
 
+  if (isPlatformSession) {
+    return (
+      <PlatformSessionAgentWorkspace
+        sessionId={historySessionId}
+        scheduleTrial={searchParams.get("scheduleTrial") === "1"}
+      />
+    );
+  }
+
+  if (!run || !report) {
+    return (
+      <MoreDataShell currentPath="/agent" contentScrollMode="child" currentRunLabel="未找到任务" mainDecoration={null}>
+        <div className="p-6 text-sm text-slate-600">未在本地状态中找到该任务。请从首页发起研究，或确认 URL 中 runId 有效。</div>
+      </MoreDataShell>
+    );
+  }
+
+  return <AgentRunWorkspaceView run={run} report={report} platformAgent={platformAgent} />;
+}
+
+function AgentRunWorkspaceView({
+  run,
+  report,
+  platformAgent,
+}: {
+  run: TaskRun;
+  report: Report;
+  platformAgent: ReturnType<typeof useOptionalPlatformAgent>;
+}) {
+  const { currentRunId } = useDemoState();
   const [previewOverrides, setPreviewOverrides] = useState<Record<string, string | null>>({});
   const [panelVisibility, setPanelVisibility] = useState<Record<string, boolean>>({});
   /** 右侧任务结果区：点击某张步骤结果卡片时锁定该步产物；新一轮步骤快照到达时自动清除以跟随最新一步 */
@@ -321,13 +351,6 @@ export function AgentWorkspace() {
     }));
   };
 
-  const applyTemplate = (templateId: string) => {
-    const template = templates.find((item) => item.id === templateId);
-    if (!template) return;
-    setDraft(template.body);
-    setNotice(`已载入任务指令「${template.title}」。`);
-  };
-
   const handleFilesSelected = (files: FileList) => {
     const attachmentItems = buildAttachmentItems(files);
     setQueuedAttachments((current) => ({
@@ -340,10 +363,6 @@ export function AgentWorkspace() {
   const handleFeedback = (kind: "喜欢" | "不喜欢" | "需要继续") => {
     setNotice(`已记录反馈：${kind}。`);
   };
-
-  if (isPlatformSession) {
-    return <PlatformSessionAgentWorkspace sessionId={historySessionId} />;
-  }
 
   return (
     <MoreDataShell
@@ -388,7 +407,7 @@ export function AgentWorkspace() {
             <div className="space-y-5">
               {isPlatformBackendEnabled() && !run.platformSessionId ? (
                 <p className="text-sm leading-relaxed text-[#92400e]">
-                  当前为内置演示任务，消息不会发往 Data Agent Server。请打开首页重新输入并发送以创建真实会话；避免使用地址栏 /agent（无 runId）或侧栏中的演示历史对话。
+                  当前任务无有效平台会话，消息不会发往 Data Agent Server。请从首页重新发起任务以创建真实会话；勿直接打开 /agent 且无 runId，或仅依赖侧栏中无后端关联的历史项。
                 </p>
               ) : null}
               {notice ? <p className="text-sm text-[#52525b]">{notice}</p> : null}
@@ -630,11 +649,9 @@ export function AgentWorkspace() {
                   [run.id]: mode,
                 }))
               }
-              templates={templates}
               selectedSourceIds={selectedSourceIds}
               onToolSelect={applyCapability}
               onSourceRemove={removeCapability}
-              onTemplateSelect={applyTemplate}
               onFilesSelected={handleFilesSelected}
               onSubmit={() => {
                 if (run.status !== "running") {
