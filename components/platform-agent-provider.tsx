@@ -6,12 +6,22 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
 
-import { AgentApiError, createSession, login, refreshAccessToken, releaseSession } from "@/lib/agent-api/client";
+import {
+  AgentApiError,
+  checkUsernameAvailable,
+  createSession,
+  login,
+  refreshAccessToken,
+  registerByEmail,
+  releaseSession,
+  sendRegisterEmailOtp,
+} from "@/lib/agent-api/client";
 import { isAgentRealApiEnabled } from "@/lib/agent-api/config";
 import {
   AGENT_AUTH_EXPIRED_EVENT,
@@ -41,7 +51,7 @@ export type PlatformAgentContextValue = {
   platformSessionId: string | null;
   openLogin: (banner?: string) => void;
   closeLogin: () => void;
-  loginWithPassword: (username: string, password: string) => Promise<void>;
+  loginWithPassword: (account: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   /** 从首页发起新研究：释放旧平台会话并创建新会话，返回新 session_id */
   beginNewHomeTaskSession: () => Promise<string | null>;
@@ -65,12 +75,54 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const [platformSessionId, setPlatformSessionId] = useState<string | null>(null);
   const [authHydrated, setAuthHydrated] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [registerOpen, setRegisterOpen] = useState(false);
   const [loginBanner, setLoginBanner] = useState("");
 
-  const [username, setUsername] = useState("");
+  const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
+
+  const [regUsername, setRegUsername] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regCode, setRegCode] = useState("");
+  const [regBusy, setRegBusy] = useState(false);
+  const [regError, setRegError] = useState("");
+  const [regUsernameOk, setRegUsernameOk] = useState<boolean | null>(null);
+  const [regCooldownLeft, setRegCooldownLeft] = useState(0);
+  const regNameTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (regCooldownLeft <= 0) return;
+    const t = window.setInterval(() => {
+      setRegCooldownLeft((v) => (v <= 1 ? 0 : v - 1));
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [regCooldownLeft]);
+
+  useEffect(() => {
+    if (!registerOpen) return;
+    const u = (regUsername || "").trim();
+    if (u.length < 2) {
+      setRegUsernameOk(null);
+      return;
+    }
+    if (regNameTimer.current) window.clearTimeout(regNameTimer.current);
+    regNameTimer.current = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const ok = await checkUsernameAvailable(u);
+          setRegUsernameOk(ok);
+        } catch {
+          setRegUsernameOk(null);
+        }
+      })();
+    }, 350) as unknown as number;
+    return () => {
+      if (regNameTimer.current) window.clearTimeout(regNameTimer.current);
+    };
+  }, [regUsername, registerOpen]);
 
   useEffect(() => {
     setAuth(loadAgentSession());
@@ -84,6 +136,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const openLogin = useCallback((banner?: string) => {
     setLoginBanner(banner?.trim() || "登录后即可连接 agent_web_platform。");
     setLoginError("");
+    setRegisterOpen(false);
     setLoginOpen(true);
   }, []);
 
@@ -91,35 +144,39 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setLoginOpen(false);
   }, []);
 
-  const withFreshToken = useCallback(async (run: (token: string) => Promise<void>) => {
-    const snap = auth ?? loadAgentSession();
-    if (!snap) {
-      throw new Error("请先登录。");
-    }
-    try {
-      await run(snap.accessToken);
-    } catch (e) {
-      if (e instanceof AgentApiError && e.status === 401) {
-        try {
-          const nextAccess = await refreshAccessToken(snap.refreshToken);
-          const next: AgentSessionSnapshot = { ...snap, accessToken: nextAccess };
-          saveAgentSession(next);
-          setAuth(next);
-          await run(nextAccess);
-          return;
-        } catch (refreshErr) {
-          invalidateSessionAndRequestLogin();
-          throw new AgentApiError("登录已失效，请重新登录。", 401, refreshErr);
-        }
+  const withFreshToken = useCallback(
+    async (run: (token: string) => Promise<void>) => {
+      const snap = auth ?? loadAgentSession();
+      if (!snap) {
+        throw new Error("请先登录。");
       }
-      throw e;
-    }
-  }, [auth]);
+      try {
+        await run(snap.accessToken);
+      } catch (e) {
+        if (e instanceof AgentApiError && e.status === 401) {
+          try {
+            const nextAccess = await refreshAccessToken(snap.refreshToken);
+            const next: AgentSessionSnapshot = { ...snap, accessToken: nextAccess };
+            saveAgentSession(next);
+            setAuth(next);
+            await run(nextAccess);
+            return;
+          } catch (refreshErr) {
+            invalidateSessionAndRequestLogin();
+            throw new AgentApiError("登录已失效，请重新登录。", 401, refreshErr);
+          }
+        }
+        throw e;
+      }
+    },
+    [auth],
+  );
 
   useEffect(() => {
     const onExpired = () => {
       setAuth(null);
       setPlatformSessionId(null);
+      setRegisterOpen(false);
       openLogin("登录已失效，请重新登录。");
       router.replace("/");
     };
@@ -127,13 +184,10 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(AGENT_AUTH_EXPIRED_EVENT, onExpired);
   }, [openLogin, router]);
 
-  const loginWithPassword = useCallback(async (u: string, p: string) => {
-    setLoginBusy(true);
-    setLoginError("");
-    try {
+  const applyLoginResponse = useCallback(
+    async (res: { access_token: string; refresh_token: string; user_id: string; user_role?: string | undefined }) => {
       const prevSnap = loadAgentSession();
       const prevSid = loadPlatformSessionId();
-      const res = await login(u, p);
       if (prevSnap?.accessToken && prevSid) {
         try {
           await releaseSession(prevSnap.accessToken, prevSid);
@@ -155,18 +209,64 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       clearPlatformSessionId();
       setPlatformSessionId(null);
       setLoginOpen(false);
+      setRegisterOpen(false);
+    },
+    [],
+  );
+
+  const loginWithPassword = useCallback(
+    async (a: string, p: string) => {
+      setLoginBusy(true);
+      setLoginError("");
+      try {
+        const res = await login(a, p);
+        await applyLoginResponse(res);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        const hint =
+          /failed to fetch|load failed|networkerror/i.test(msg) && (process.env.NEXT_PUBLIC_AGENT_API_USE_PROXY ?? "").trim() !== "1"
+            ? " 若为从其它电脑访问，请在 .env.local 设置 NEXT_PUBLIC_AGENT_API_USE_PROXY=1 并重启 dev。"
+            : "";
+        setLoginError(msg + hint);
+      } finally {
+        setLoginBusy(false);
+      }
+    },
+    [applyLoginResponse],
+  );
+
+  const requestRegisterEmailOtp = useCallback(async () => {
+    if (regCooldownLeft > 0) return;
+    setRegError("");
+    try {
+      const r = await sendRegisterEmailOtp((regUsername || "").trim(), (regEmail || "").trim());
+      if (r.retryAfterSeconds != null) {
+        setRegCooldownLeft(Math.max(1, Math.floor(r.retryAfterSeconds)));
+      } else {
+        setRegCooldownLeft(60);
+      }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      const hint =
-        /failed to fetch|load failed|networkerror/i.test(msg) &&
-        (process.env.NEXT_PUBLIC_AGENT_API_USE_PROXY ?? "").trim() !== "1"
-          ? " 若为从其它电脑访问，请在 .env.local 设置 NEXT_PUBLIC_AGENT_API_USE_PROXY=1 并重启 dev。"
-          : "";
-      setLoginError(msg + hint);
-    } finally {
-      setLoginBusy(false);
+      setRegError(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  }, [regCooldownLeft, regEmail, regUsername]);
+
+  const completeRegister = useCallback(async () => {
+    setRegBusy(true);
+    setRegError("");
+    try {
+      const res = await registerByEmail({
+        username: (regUsername || "").trim(),
+        email: (regEmail || "").trim(),
+        password: regPassword,
+        code: (regCode || "").trim(),
+      });
+      await applyLoginResponse(res);
+    } catch (e) {
+      setRegError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRegBusy(false);
+    }
+  }, [applyLoginResponse, regCode, regEmail, regPassword, regUsername]);
 
   const logout = useCallback(async () => {
     const snap = auth ?? loadAgentSession();
@@ -185,6 +285,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     clearAgentSession();
     setAuth(null);
     setPlatformSessionId(null);
+    setRegisterOpen(false);
     router.push("/");
   }, [auth, platformSessionId, router]);
 
@@ -292,7 +393,12 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   return (
     <PlatformAgentContext.Provider value={value}>
       {children}
-      <Dialog open={loginOpen} onOpenChange={(o) => !o && closeLogin()}>
+      <Dialog
+        open={loginOpen}
+        onOpenChange={(o) => {
+          if (!o) closeLogin();
+        }}
+      >
         <DialogContent className="max-w-md rounded-[14px] sm:rounded-[14px]" aria-describedby={undefined}>
           <DialogTitle className="font-[family:var(--font-jakarta)] text-lg text-[#1d2a3b]">登录</DialogTitle>
           {loginBanner ? <p className="text-sm text-[#64748b]">{loginBanner}</p> : null}
@@ -300,16 +406,17 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
             className="grid gap-3 pt-2"
             onSubmit={(e) => {
               e.preventDefault();
-              void loginWithPassword(username, password);
+              void loginWithPassword(account, password);
             }}
           >
             <div className="grid gap-1">
-              <label className="text-xs text-[#7e8da0]">用户名</label>
+              <label className="text-xs text-[#7e8da0]">账号</label>
               <Input
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                value={account}
+                onChange={(e) => setAccount(e.target.value)}
                 className="h-9 rounded-[10px]"
                 autoComplete="username"
+                placeholder="用户名或邮箱"
               />
             </div>
             <div className="grid gap-1">
@@ -320,13 +427,120 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                 onChange={(e) => setPassword(e.target.value)}
                 className="h-9 rounded-[10px]"
                 autoComplete="current-password"
+                placeholder="请输入密码"
               />
             </div>
             {loginError ? <p className="text-sm text-red-600">{loginError}</p> : null}
-            <Button type="submit" className="rounded-[10px]" disabled={loginBusy}>
-              {loginBusy ? "登录中…" : "登录"}
-            </Button>
+            <div className="flex items-center justify-between gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-9 rounded-[10px] px-2 text-[#64748b] hover:text-[#1d2a3b]"
+                onClick={() => {
+                  setLoginError("");
+                  setRegError("");
+                  setRegUsernameOk(null);
+                  setRegisterOpen(true);
+                }}
+              >
+                注册
+              </Button>
+              <Button type="submit" className="rounded-[10px]" disabled={loginBusy}>
+                {loginBusy ? "登录中…" : "登录"}
+              </Button>
+            </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={registerOpen}
+        onOpenChange={(o) => {
+          setRegisterOpen(o);
+        }}
+      >
+        <DialogContent className="max-w-md rounded-[14px] sm:rounded-[14px]" aria-describedby={undefined}>
+          <DialogTitle className="font-[family:var(--font-jakarta)] text-lg text-[#1d2a3b]">注册</DialogTitle>
+          <p className="text-sm text-[#64748b]">通过邮箱验证码完成注册；注册成功后将自动登录。</p>
+
+          <div className="grid gap-3 pt-1">
+            <div className="grid gap-1">
+              <label className="text-xs text-[#7e8da0]">用户名</label>
+              <Input
+                value={regUsername}
+                onChange={(e) => setRegUsername(e.target.value)}
+                className="h-9 rounded-[10px]"
+                autoComplete="off"
+                placeholder="2-64 个字符"
+              />
+              {regUsernameOk === true ? <p className="text-xs text-emerald-700">用户名可用</p> : null}
+              {regUsernameOk === false ? <p className="text-xs text-red-600">用户名已存在</p> : null}
+            </div>
+
+            <div className="grid gap-1">
+              <label className="text-xs text-[#7e8da0]">邮箱</label>
+              <Input
+                value={regEmail}
+                onChange={(e) => setRegEmail(e.target.value)}
+                className="h-9 rounded-[10px]"
+                inputMode="email"
+                autoComplete="email"
+                placeholder="name@example.com"
+              />
+            </div>
+
+            <div className="grid gap-1">
+              <label className="text-xs text-[#7e8da0]">密码</label>
+              <Input
+                type="password"
+                value={regPassword}
+                onChange={(e) => setRegPassword(e.target.value)}
+                className="h-9 rounded-[10px]"
+                autoComplete="new-password"
+                placeholder="至少 4 位"
+              />
+            </div>
+
+            <div className="grid gap-1">
+              <label className="text-xs text-[#7e8da0]">邮箱验证码</label>
+              <div className="flex gap-2">
+                <Input
+                  value={regCode}
+                  onChange={(e) => setRegCode(e.target.value)}
+                  className="h-9 flex-1 rounded-[10px]"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="6 位验证码"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 rounded-[10px] px-3"
+                  onClick={() => void requestRegisterEmailOtp()}
+                  disabled={regCooldownLeft > 0 || regBusy}
+                >
+                  {regCooldownLeft > 0 ? `${regCooldownLeft}s` : "获取验证码"}
+                </Button>
+              </div>
+            </div>
+
+            {regError ? <p className="text-sm text-red-600">{regError}</p> : null}
+
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className="rounded-[10px]"
+                onClick={() => setRegisterOpen(false)}
+                disabled={regBusy}
+              >
+                返回登录
+              </Button>
+              <Button type="button" className="rounded-[10px]" disabled={regBusy} onClick={() => void completeRegister()}>
+                {regBusy ? "处理中…" : "完成注册并登录"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </PlatformAgentContext.Provider>

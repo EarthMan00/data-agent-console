@@ -69,6 +69,8 @@ export function PlatformSessionAgentWorkspace({
   const [showResultPanel, setShowResultPanel] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [currentArtifacts, setCurrentArtifacts] = useState<PlatformTaskArtifactRef[] | null>(null);
+  const [currentBundleDownloadApi, setCurrentBundleDownloadApi] = useState<string | null>(null);
+  const [currentBundleDownloadName, setCurrentBundleDownloadName] = useState<string | null>(null);
   const [lastTaskSnapshot, setLastTaskSnapshot] = useState<TaskResponse | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const [trialRunInFlight, setTrialRunInFlight] = useState(() => {
@@ -317,7 +319,7 @@ export function PlatformSessionAgentWorkspace({
   }, [scheduleTrial, trialRunInFlight, sending, messages, firstAssistantIndex, sessionId]);
 
   const openTaskResultPanel = useCallback(
-    async (taskId: string) => {
+    async (taskId: string, bundleTaskIds?: string[]) => {
       if (!platformAgent?.auth) {
         platformAgent?.openLogin("请先登录后再查看任务结果。");
         return;
@@ -333,6 +335,13 @@ export function PlatformSessionAgentWorkspace({
             download_api: a.download_api,
           }));
           setCurrentArtifacts(artifacts);
+          const ids = (bundleTaskIds ?? []).map((x) => (x || "").trim()).filter(Boolean);
+          const api =
+            ids.length > 0
+              ? `/api/tasks/download?` + ids.map((id) => `task_ids=${encodeURIComponent(id)}`).join("&")
+              : `/api/tasks/${encodeURIComponent(taskId)}/download`;
+          setCurrentBundleDownloadApi(api);
+          setCurrentBundleDownloadName(ids.length > 1 ? `${taskId}.zip` : null);
           setFocusedTaskId(taskId);
           setShowResultPanel(true);
         });
@@ -386,9 +395,14 @@ export function PlatformSessionAgentWorkspace({
           <AgentTaskResultPanel
             artifacts={currentArtifacts}
             withFreshToken={platformAgent.withFreshToken}
+            bundleDownloadApi={currentBundleDownloadApi}
+            bundleDownloadName={currentBundleDownloadName}
+            taskId={focusedTaskId}
             onClose={() => {
               setShowResultPanel(false);
               setFocusedTaskId(null);
+              setCurrentBundleDownloadApi(null);
+              setCurrentBundleDownloadName(null);
             }}
           />
         ) : undefined
@@ -430,6 +444,12 @@ export function PlatformSessionAgentWorkspace({
                       : null;
                   const taskStepsToShow = taskStepsFromMessage ?? syntheticForTrial;
                   const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+                  const rawBundle = Array.isArray(meta?.orchestration_step_task_ids)
+                    ? (meta?.orchestration_step_task_ids as unknown[])
+                    : [];
+                  const bundleTaskIds = rawBundle
+                    .map((x) => (typeof x === "string" ? x.trim() : ""))
+                    .filter((x) => x.length > 0);
                   const taskId =
                     m.role === "assistant" && rawTaskId && taskResultCardMessageIds.has(m.id) ? rawTaskId : undefined;
                   const key = m.id;
@@ -457,7 +477,7 @@ export function PlatformSessionAgentWorkspace({
                               setFocusedTaskId(null);
                               return;
                             }
-                            void openTaskResultPanel(taskId);
+                            void openTaskResultPanel(taskId, bundleTaskIds.length > 0 ? bundleTaskIds : undefined);
                           }}
                         />
                       ) : null}

@@ -375,6 +375,8 @@ function AgentRunWorkspaceView({
             <AgentTaskResultPanel
               artifacts={effectivePanelArtifacts ?? []}
               withFreshToken={platformAgent?.withFreshToken}
+              taskId={panelSubtaskFocus?.taskId ?? run.platformTaskId ?? null}
+              zipDownloadApi={run.platformTaskZipDownloadApi ?? null}
               onClose={() =>
                 setPanelVisibility((current) => ({
                   ...current,

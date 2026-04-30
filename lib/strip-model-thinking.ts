@@ -44,7 +44,7 @@ export function stripModelThinkingForUi(text: string): string {
   t = t.replace(/＜/g, "<").replace(/＞/g, ">");
   t = t.replace(/`[\s\S]*?`[\s\S]*?`[\s\S]*?`/g, "");
   t = t.replace(/``[\s\S]*?``/g, "");
-  const tags = ["redacted_reasoning", "redacted_thinking", "thinking"] as const;
+  const tags = ["redacted_reasoning", "redacted_thinking", "thinking", "think"] as const;
   for (const tag of tags) {
     const open = new RegExp(`<${tag}\\b[^>]*>[\\s\S]*?<\\/\\s*${tag}\\s*>`, "gi");
     t = t.replace(open, "");

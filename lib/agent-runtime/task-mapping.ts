@@ -32,6 +32,6 @@ export function mapTaskResponseToSubtaskEvent(
       original_name: a.original_name,
       download_api: a.download_api,
     })),
-    zipDownloadApi: task.zip_download_api ?? null,
+    zipDownloadApi: task.zip_download_api ?? `/api/tasks/${encodeURIComponent(task.task_id)}/download`,
   };
 }

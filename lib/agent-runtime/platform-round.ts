@@ -20,6 +20,27 @@ import { mapServerOrchestrationStepStatus, mapTaskResponseToSubtaskEvent } from 
 import { sleep } from "./util";
 import type { AgentRoundInput, StreamAgentRoundPlatformOptions } from "./types";
 
+/** 右侧「下载全部文件」：多步聚合 zip API，否则单任务级下载 API */
+function buildPlatformSnapshotZipDownloadApi(
+  task: Pick<TaskResponse, "task_id">,
+  orch: ToolOrchestrationStatusApi | null | undefined,
+): string | null {
+  const selfId = (task.task_id || "").trim();
+  const ids = (orch?.steps ?? [])
+    .map((s) => s.task_id)
+    .filter((id): id is string => typeof id === "string" && id.trim().length > 0);
+  if (ids.length > 1) {
+    return `/api/tasks/download?${ids.map((id) => `task_ids=${encodeURIComponent(id)}`).join("&")}`;
+  }
+  if (ids.length === 1) {
+    return `/api/tasks/${encodeURIComponent(ids[0]!)}/download`;
+  }
+  if (selfId) {
+    return `/api/tasks/${encodeURIComponent(selfId)}/download`;
+  }
+  return null;
+}
+
 export async function runPlatformRound(
   input: AgentRoundInput,
   handlers: { onEvent: (event: AgentRoundRuntimeEvent) => void },
@@ -321,7 +342,10 @@ export async function runPlatformRound(
           return;
         }
 
-        pushPlatformSnapshot(task);
+        pushPlatformSnapshot({
+          ...task,
+          zip_download_api: buildPlatformSnapshotZipDownloadApi(task, lastOrch),
+        });
 
         const summary = buildTaskCompletionSummary(task);
         handlers.onEvent({ type: "final", roundId: input.roundId, text: summary });
@@ -378,7 +402,10 @@ export async function runPlatformRound(
       finalizeAllSteps("done");
       await persistTaskExecutionStepsUniform("done", task.task_id);
 
-      pushPlatformSnapshot(task);
+      pushPlatformSnapshot({
+        ...task,
+        zip_download_api: buildPlatformSnapshotZipDownloadApi(task, null),
+      });
 
       const summary = buildTaskCompletionSummary(task);
       handlers.onEvent({ type: "final", roundId: input.roundId, text: summary });

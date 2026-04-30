@@ -1681,19 +1681,9 @@ function ApiRunRecordRow({
     setDownloading(true);
     try {
       await platformAgent.withFreshToken(async (token) => {
-        const task = await getTask(token, taskId);
-        const arts = task.artifacts ?? [];
-        if (arts.length === 0) {
-          onNotify("暂无可下载的报告文件", "error");
-          return;
-        }
-        for (const a of arts) {
-          await downloadAuthorizedFile(token, a.download_api, a.original_name || "file");
-          await new Promise((res) => {
-            setTimeout(res, 350);
-          });
-        }
-        onNotify("已开始下载，若浏览器未拦截，将逐一下载各文件", "default");
+        // 后端统一按规则处理：单文件直下，多文件打包 zip，且过滤所有 *result.txt
+        await downloadAuthorizedFile(token, `/api/tasks/${taskId}/download`, `${taskId}.zip`);
+        onNotify("已开始下载", "default");
       });
     } catch (e) {
       onApiError(formatAgentApiErrorForUser(e) || "下载失败");

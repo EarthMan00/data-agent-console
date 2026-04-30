@@ -12,11 +12,41 @@ type AgentTaskResultPanelProps = {
   onClose: () => void;
   artifacts?: PlatformTaskArtifactRef[];
   withFreshToken?: (run: (token: string) => Promise<void>) => Promise<void>;
+  /** 多步整体下载（如 /api/tasks/download?...） */
+  bundleDownloadApi?: string | null;
+  bundleDownloadName?: string | null;
+  /** 主会话 run 上同步的下载 API（如平台轮次写入的 zip 或聚合 URL） */
+  zipDownloadApi?: string | null;
+  /** 回退：单任务级 /api/tasks/{id}/download */
+  taskId?: string | null;
 };
 
-export function AgentTaskResultPanel({ onClose, artifacts, withFreshToken }: AgentTaskResultPanelProps) {
+function effectiveDownloadPath(p: {
+  bundleDownloadApi?: string | null;
+  zipDownloadApi?: string | null;
+  taskId?: string | null;
+}): string | null {
+  const a = (p.bundleDownloadApi ?? "").trim();
+  if (a) return a;
+  const z = (p.zipDownloadApi ?? "").trim();
+  if (z) return z;
+  const tid = (p.taskId ?? "").trim();
+  if (tid) return `/api/tasks/${encodeURIComponent(tid)}/download`;
+  return null;
+}
+
+export function AgentTaskResultPanel({
+  onClose,
+  artifacts,
+  withFreshToken,
+  bundleDownloadApi,
+  bundleDownloadName,
+  zipDownloadApi,
+  taskId,
+}: AgentTaskResultPanelProps) {
   const primary = pickPrimaryTaskDataArtifact(artifacts ?? []);
-  const canDownload = Boolean(primary && withFreshToken);
+  const downloadPath = effectiveDownloadPath({ bundleDownloadApi, zipDownloadApi, taskId });
+  const canDownload = Boolean(withFreshToken && downloadPath);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white text-[#31405a]" data-testid="agent-preview-panel">
@@ -52,13 +82,15 @@ export function AgentTaskResultPanel({ onClose, artifacts, withFreshToken }: Age
             className="h-9 gap-2 text-xs"
             onClick={() =>
               void withFreshToken!(async (token) => {
-                const name = primary!.original_name?.trim() || "task-result";
-                await downloadAuthorizedFile(token, primary!.download_api, name);
+                const name =
+                  (bundleDownloadName ?? "").trim() ||
+                  ((downloadPath ?? "").includes("task_ids=") ? `${(taskId ?? "task").trim() || "task"}.zip` : "download");
+                await downloadAuthorizedFile(token, downloadPath!, name);
               })
             }
           >
             <Download className="h-4 w-4" />
-            下载文件
+            下载全部文件
           </Button>
         </div>
       ) : null}

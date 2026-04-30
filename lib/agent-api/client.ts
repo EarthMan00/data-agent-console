@@ -96,11 +96,14 @@ async function safeJson(res: Response): Promise<unknown> {
   return parseJson(res);
 }
 
-export async function login(username: string, password: string): Promise<LoginResponse> {
+export async function login(account: string, password: string): Promise<LoginResponse> {
+  const a = (account || "").trim();
+  const isEmail = a.includes("@");
+  const body = isEmail ? { email: a, password } : { username: a, password };
   const res = await fetch(apiUrl("/api/auth/login"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify(body),
   });
   const rawText = await res.text();
   let data: unknown;
@@ -129,6 +132,121 @@ export async function login(username: string, password: string): Promise<LoginRe
     typeof plan_code !== "string"
   ) {
     throw new AgentApiError("invalid login response shape", res.status, data);
+  }
+  const user_role = data.user_role;
+  return {
+    access_token,
+    refresh_token,
+    user_id,
+    plan_code,
+    user_role: typeof user_role === "string" ? user_role : undefined,
+  };
+}
+
+export async function sendSmsLoginCode(phone: string): Promise<{ retryAfterSeconds: number | null }> {
+  const res = await fetch(apiUrl("/api/auth/login/sms/send"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone }),
+  });
+  if (res.status === 429) {
+    const ra = (res.headers.get("Retry-After") || "").trim();
+    const seconds = ra ? Number(ra) : NaN;
+    return { retryAfterSeconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 60 };
+  }
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError(formatHttpErrorMessage(res, data, "获取验证码失败"), res.status, data);
+  }
+  return { retryAfterSeconds: null };
+}
+
+export async function loginBySms(phone: string, code: string): Promise<LoginResponse> {
+  const res = await fetch(apiUrl("/api/auth/login/sms"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone, code }),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError(formatHttpErrorMessage(res, data, "短信登录失败"), res.status, data);
+  }
+  assertJsonObject(data);
+  const access_token = data.access_token;
+  const refresh_token = data.refresh_token;
+  const user_id = data.user_id;
+  const plan_code = data.plan_code;
+  if (
+    typeof access_token !== "string" ||
+    typeof refresh_token !== "string" ||
+    typeof user_id !== "string" ||
+    typeof plan_code !== "string"
+  ) {
+    throw new AgentApiError("invalid login response shape", res.status, data);
+  }
+  const user_role = data.user_role;
+  return {
+    access_token,
+    refresh_token,
+    user_id,
+    plan_code,
+    user_role: typeof user_role === "string" ? user_role : undefined,
+  };
+}
+
+export async function checkUsernameAvailable(username: string): Promise<boolean> {
+  const sp = new URLSearchParams();
+  sp.set("username", username);
+  const res = await fetch(apiUrl(`/api/auth/register/username-availability?${sp.toString()}`));
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("username availability check failed", res.status, data);
+  }
+  assertJsonObject(data);
+  const av = (data as Record<string, unknown>).available;
+  return av === true;
+}
+
+export async function sendRegisterEmailOtp(username: string, email: string): Promise<{ retryAfterSeconds: number | null }> {
+  const res = await fetch(apiUrl("/api/auth/register/email/send"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, email }),
+  });
+  if (res.status === 429) {
+    const ra = (res.headers.get("Retry-After") || "").trim();
+    const seconds = ra ? Number(ra) : NaN;
+    return { retryAfterSeconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 60 };
+  }
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError(formatHttpErrorMessage(res, data, "获取邮箱验证码失败"), res.status, data);
+  }
+  return { retryAfterSeconds: null };
+}
+
+export async function registerByEmail(args: { username: string; email: string; password: string; code: string }): Promise<LoginResponse> {
+  const res = await fetch(apiUrl("/api/auth/register/email"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError(formatHttpErrorMessage(res, data, "注册失败"), res.status, data);
+  }
+  assertJsonObject(data);
+  const access_token = data.access_token;
+  const refresh_token = data.refresh_token;
+  const user_id = data.user_id;
+  const plan_code = data.plan_code;
+  if (
+    typeof access_token !== "string" ||
+    typeof refresh_token !== "string" ||
+    typeof user_id !== "string" ||
+    typeof plan_code !== "string"
+  ) {
+    throw new AgentApiError("invalid register response shape", res.status, data);
   }
   const user_role = data.user_role;
   return {
