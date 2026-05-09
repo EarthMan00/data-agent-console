@@ -134,7 +134,7 @@ export function TaskSingleDataArtifactPreview({ artifact, withFreshToken }: Task
   if (isPdf) {
     return (
       <p className="text-[12px] leading-relaxed text-[#64748b]">
-        PDF 文件无法在侧栏内嵌预览，请使用下方「下载文件」在本地查看。
+        PDF 文件无法在侧栏内嵌预览，请使用顶部「下载」在本地查看。
       </p>
     );
   }

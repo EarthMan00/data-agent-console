@@ -20,6 +20,9 @@ export type AdminUserRow = {
   email: string | null;
   role: string;
   status: string;
+  /** GET /admin/users 扩展字段：当前生效套餐与是否可使用工具 */
+  plan_code?: string;
+  can_use_tools?: boolean;
 };
 
 export type CreateSessionResponse = {
@@ -257,4 +260,61 @@ export type ScheduledTaskRunListDto = {
   total: number;
   page: number;
   page_size: number;
+};
+
+/** `/api/user/favorite-folders` */
+export type FavoriteFolderDto = {
+  id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FavoriteFolderListDto = {
+  items: FavoriteFolderDto[];
+};
+
+/** `/api/user/favorites` 列表项 */
+export type UserFavoriteListItemDto = {
+  id: string;
+  folder_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  source_task_id: string | null;
+  result_kind: string | null;
+  card_preview: string | null;
+};
+
+export type UserFavoriteListDto = {
+  items: UserFavoriteListItemDto[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+/** `/api/user/favorites/{id}` */
+export type UserFavoriteDetailDto = {
+  id: string;
+  folder_id: string;
+  title: string;
+  snapshot: Record<string, unknown>;
+  stored_file_path: string | null;
+  source_task_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UserFavoriteByTaskDto = {
+  favorited: boolean;
+  favorite_id: string | null;
+};
+
+export type UserFavoriteCreateBody = {
+  title: string;
+  folder_id?: string | null;
+  source_task_id?: string | null;
+  snapshot: Record<string, unknown>;
+  copy_artifact_id?: string | null;
 };

@@ -17,6 +17,12 @@ import {
 } from "@/lib/agent-api/client";
 import type { AdminUserRow } from "@/lib/agent-api/types";
 
+function describeUserKind(row: AdminUserRow): string {
+  if (row.role === "admin") return "管理员";
+  if (row.can_use_tools === true) return "高级用户";
+  return "普通用户";
+}
+
 export function UserManagementWorkspace() {
   const platformAgent = useOptionalPlatformAgent();
   const [users, setUsers] = useState<AdminUserRow[]>([]);
@@ -26,7 +32,7 @@ export function UserManagementWorkspace() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [newRole, setNewRole] = useState<"user" | "admin">("user");
+  const [newAccountKind, setNewAccountKind] = useState<"standard" | "premium">("standard");
   const [createBusy, setCreateBusy] = useState(false);
 
   const [pwdTarget, setPwdTarget] = useState<AdminUserRow | null>(null);
@@ -73,14 +79,14 @@ export function UserManagementWorkspace() {
         await adminCreateUser(token, {
           username: u,
           password: p,
-          role: newRole,
+          account_kind: newAccountKind,
           status: "active",
         });
       });
       setCreateOpen(false);
       setNewUsername("");
       setNewPassword("");
-      setNewRole("user");
+      setNewAccountKind("standard");
       await refresh();
     } catch (e) {
       setNotice(
@@ -140,7 +146,9 @@ export function UserManagementWorkspace() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold text-[#1e293b]">用户管理</h1>
-            <p className="mt-1 text-sm text-[#64748b]">查看、新增账号，重置密码或删除非管理员账号。</p>
+            <p className="mt-1 text-sm text-[#64748b]">
+              查看账号与类型；仅管理员可访问本页。新建账号可选择普通用户或高级用户（不可创建管理员）。
+            </p>
           </div>
           <div className="flex gap-2">
             <Button type="button" variant="outline" size="sm" className="rounded-[10px]" onClick={() => void refresh()}>
@@ -161,7 +169,7 @@ export function UserManagementWorkspace() {
                 <th className="px-4 py-3">用户名</th>
                 <th className="px-4 py-3">用户 ID</th>
                 <th className="px-4 py-3">邮箱</th>
-                <th className="px-4 py-3">角色</th>
+                <th className="px-4 py-3">用户类型</th>
                 <th className="px-4 py-3">状态</th>
                 <th className="px-4 py-3 text-right">操作</th>
               </tr>
@@ -182,6 +190,7 @@ export function UserManagementWorkspace() {
               ) : (
                 users.map((row) => {
                   const isAdminRole = row.role === "admin";
+                  const kindLabel = describeUserKind(row);
                   return (
                     <tr key={row.user_id} className="border-b border-[#f1f5f9] last:border-0">
                       <td className="px-4 py-3 font-medium text-[#334155]">{row.username}</td>
@@ -192,10 +201,14 @@ export function UserManagementWorkspace() {
                       <td className="px-4 py-3">
                         <span
                           className={`rounded-full px-2 py-0.5 text-xs ${
-                            isAdminRole ? "bg-violet-100 text-violet-800" : "bg-slate-100 text-slate-700"
+                            isAdminRole
+                              ? "bg-violet-100 text-violet-800"
+                              : kindLabel === "高级用户"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-slate-100 text-slate-700"
                           }`}
                         >
-                          {row.role}
+                          {kindLabel}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-[#64748b]">{row.status}</td>
@@ -252,14 +265,14 @@ export function UserManagementWorkspace() {
               />
             </div>
             <div className="grid gap-1">
-              <label className="text-xs text-[#64748b]">角色</label>
+              <label className="text-xs text-[#64748b]">用户类型</label>
               <select
-                value={newRole}
-                onChange={(e) => setNewRole(e.target.value as "user" | "admin")}
+                value={newAccountKind}
+                onChange={(e) => setNewAccountKind(e.target.value as "standard" | "premium")}
                 className="h-9 rounded-[10px] border border-[#e2e8f0] bg-white px-3 text-sm"
               >
-                <option value="user">user</option>
-                <option value="admin">admin</option>
+                <option value="standard">普通用户（仅对话，不含工具能力）</option>
+                <option value="premium">高级用户（可使用工具）</option>
               </select>
             </div>
             <div className="flex justify-end gap-2 pt-2">

@@ -4,6 +4,8 @@ import type {
   AdminUserRow,
   ChatSendResult,
   CreateSessionResponse,
+  FavoriteFolderDto,
+  FavoriteFolderListDto,
   LoginResponse,
   SessionMessagesPageResponse,
   SessionListResponse,
@@ -11,6 +13,10 @@ import type {
   TaskResponse,
   TokenCheckResponse,
   ToolOrchestrationStatusApi,
+  UserFavoriteByTaskDto,
+  UserFavoriteCreateBody,
+  UserFavoriteDetailDto,
+  UserFavoriteListDto,
 } from "@/lib/agent-api/types";
 
 function apiUrl(path: string): string {
@@ -273,7 +279,14 @@ export async function adminListUsers(accessToken: string): Promise<AdminUsersLis
 
 export async function adminCreateUser(
   accessToken: string,
-  body: { username: string; password: string; role: string; email?: string | null; status?: string },
+  body: {
+    username: string;
+    password: string;
+    /** standard=普通用户，premium=高级用户（由服务端绑定对应套餐） */
+    account_kind: "standard" | "premium";
+    email?: string | null;
+    status?: string;
+  },
 ): Promise<Record<string, unknown>> {
   const res = await fetch(apiUrl("/admin/users"), {
     method: "POST",
@@ -658,6 +671,137 @@ export async function fetchAuthorizedText(accessToken: string, downloadPath: str
   return res.text();
 }
 
+export async function listFavoriteFolders(accessToken: string): Promise<FavoriteFolderListDto> {
+  const res = await fetch(apiUrl("/api/user/favorite-folders"), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("list favorite folders failed", res.status, data);
+  }
+  return data as FavoriteFolderListDto;
+}
+
+export async function createFavoriteFolder(accessToken: string, name: string): Promise<FavoriteFolderDto> {
+  const res = await fetch(apiUrl("/api/user/favorite-folders"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("create favorite folder failed", res.status, data);
+  }
+  const raw = data as Record<string, unknown>;
+  return {
+    id: String(raw.id ?? ""),
+    name: String(raw.name ?? ""),
+    sort_order: typeof raw.sort_order === "number" ? raw.sort_order : 0,
+    created_at: String(raw.created_at ?? ""),
+    updated_at: String(raw.updated_at ?? ""),
+  };
+}
+
+export async function deleteFavoriteFolder(accessToken: string, folderId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/api/user/favorite-folders/${encodeURIComponent(folderId)}`), {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.ok) return;
+  const data = await parseJson(res);
+  throw new AgentApiError("delete favorite folder failed", res.status, data);
+}
+
+export async function getFavoriteByTask(accessToken: string, taskId: string): Promise<UserFavoriteByTaskDto> {
+  const res = await fetch(apiUrl(`/api/user/favorites/by-task/${encodeURIComponent(taskId)}`), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("get favorite by task failed", res.status, data);
+  }
+  return data as UserFavoriteByTaskDto;
+}
+
+export async function listUserFavorites(
+  accessToken: string,
+  opts?: { folderId?: string | null; page?: number; pageSize?: number },
+): Promise<UserFavoriteListDto> {
+  const sp = new URLSearchParams();
+  if (opts?.folderId) sp.set("folder_id", opts.folderId);
+  sp.set("page", String(opts?.page ?? 1));
+  sp.set("page_size", String(opts?.pageSize ?? 50));
+  const qs = sp.toString();
+  const res = await fetch(apiUrl(`/api/user/favorites?${qs}`), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("list user favorites failed", res.status, data);
+  }
+  return data as UserFavoriteListDto;
+}
+
+export async function getUserFavorite(accessToken: string, favoriteId: string): Promise<UserFavoriteDetailDto> {
+  const res = await fetch(apiUrl(`/api/user/favorites/${encodeURIComponent(favoriteId)}`), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("get user favorite failed", res.status, data);
+  }
+  return data as UserFavoriteDetailDto;
+}
+
+export async function createUserFavorite(accessToken: string, body: UserFavoriteCreateBody): Promise<UserFavoriteDetailDto> {
+  const res = await fetch(apiUrl("/api/user/favorites"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("create user favorite failed", res.status, data);
+  }
+  return data as UserFavoriteDetailDto;
+}
+
+export async function patchUserFavoriteTitle(accessToken: string, favoriteId: string, title: string): Promise<UserFavoriteDetailDto> {
+  const res = await fetch(apiUrl(`/api/user/favorites/${encodeURIComponent(favoriteId)}`), {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("patch favorite title failed", res.status, data);
+  }
+  return data as UserFavoriteDetailDto;
+}
+
+export async function moveUserFavorite(accessToken: string, favoriteId: string, folderId: string): Promise<UserFavoriteDetailDto> {
+  const res = await fetch(apiUrl(`/api/user/favorites/${encodeURIComponent(favoriteId)}/move`), {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ folder_id: folderId }),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("move favorite failed", res.status, data);
+  }
+  return data as UserFavoriteDetailDto;
+}
+
+export async function deleteUserFavorite(accessToken: string, favoriteId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/api/user/favorites/${encodeURIComponent(favoriteId)}`), {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.ok) return;
+  const data = await parseJson(res);
+  throw new AgentApiError("delete favorite failed", res.status, data);
+}
+
 /**
  * 带 Bearer 打开 UTF-8 文本流（用于大 CSV 懒加载预览）。
  * 调用方负责 `reader.read()` / `reader.cancel()`。
@@ -726,6 +870,17 @@ export async function getToolOrchestration(
     success,
     steps: parsedSteps,
   };
+}
+
+export async function cancelToolOrchestration(accessToken: string, orchestrationId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/api/tool-orchestrations/${encodeURIComponent(orchestrationId)}/cancel`), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const raw = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("cancel orchestration failed", res.status, raw);
+  }
 }
 
 export async function getTask(accessToken: string, taskId: string): Promise<TaskResponse> {

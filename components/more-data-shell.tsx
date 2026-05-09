@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Bookmark,
@@ -10,6 +10,7 @@ import {
   FolderHeart,
   PanelLeft,
   PlusCircle,
+  Star,
   Trash2,
   Users,
 } from "lucide-react";
@@ -28,6 +29,7 @@ import {
 } from "@/lib/agent-api/client";
 import type { SessionListItem, SessionMessageItem } from "@/lib/agent-api/types";
 import { cn } from "@/lib/utils";
+import { demoActions, useDemoState } from "@/lib/workspace-store";
 
 const navItems = [
   { href: "/", label: "新的对话", icon: PlusCircle },
@@ -197,8 +199,9 @@ export function MoreDataShellRoot({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const isAdminRoute = pathname?.startsWith("/admin");
   const isShareRoute = pathname?.startsWith("/share");
+  const isFavoriteReportRoute = pathname?.startsWith("/favorite/report");
 
-  if (isAdminRoute || isShareRoute) {
+  if (isAdminRoute || isShareRoute || isFavoriteReportRoute) {
     return <>{children}</>;
   }
 
@@ -235,7 +238,9 @@ function MoreDataShellComponent({
   contentScrollMode = "shell",
 }: MoreDataShellProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
+  const { runs, currentRunId } = useDemoState();
 
   const {
     historySessions,
@@ -287,10 +292,34 @@ function MoreDataShellComponent({
           await purgeSessionData(token, sessionId);
         });
         setHistoryPurgeConfirmId(null);
+
+        const sid = (sessionId || "").trim();
+        const matchingRunIds = runs
+          .filter((r) => ((r.platformSessionId ?? "").trim() === sid))
+          .map((r) => r.id);
+        for (const rid of matchingRunIds) {
+          demoActions.removeRunById(rid);
+        }
+
+        const urlRunId = searchParams.get("runId");
+        const urlSessionId = (searchParams.get("sessionId") ?? "").trim();
+        const urlHitsDeletedRun = Boolean(urlRunId && matchingRunIds.includes(urlRunId));
+        const currentHitsDeletedRun = matchingRunIds.includes(currentRunId);
+        const urlHitsDeletedSession = urlSessionId !== "" && urlSessionId === sid;
+
         if (activeSessionId === sessionId) {
           platformAgent.clearActivePlatformSession();
-          router.push("/");
         }
+
+        if (
+          activeSessionId === sessionId ||
+          urlHitsDeletedRun ||
+          currentHitsDeletedRun ||
+          urlHitsDeletedSession
+        ) {
+          router.replace("/");
+        }
+
         await refreshHistory();
       } catch (e) {
         const msg =
@@ -304,7 +333,16 @@ function MoreDataShellComponent({
         setDeletingId(null);
       }
     },
-    [activeSessionId, platformAgent, refreshHistory, router, setHistoryError],
+    [
+      activeSessionId,
+      currentRunId,
+      platformAgent,
+      refreshHistory,
+      router,
+      runs,
+      searchParams,
+      setHistoryError,
+    ],
   );
 
   return (
@@ -336,8 +374,14 @@ function MoreDataShellComponent({
                     key={href}
                     href={href}
                     onClick={(e) => {
+                      if (href === "/") {
+                        e.preventDefault();
+                        platformAgent?.clearActivePlatformSession();
+                        router.replace("/");
+                        return;
+                      }
                       platformAgent?.clearActivePlatformSession();
-                      if (!platformAgent || href === "/") return;
+                      if (!platformAgent) return;
                       if (!platformAgent.auth) {
                         e.preventDefault();
                         platformAgent.openLogin("请先登录后再继续操作。");
@@ -484,6 +528,16 @@ function MoreDataShellComponent({
             </div>
 
             <div className="flex items-center gap-2 text-sm text-[#7c8ca0]">
+              {showHeaderUserMenu && headerAuth ? (
+                <Link
+                  href="/artifacts"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#64748b] transition hover:bg-[#f4f4f5]"
+                  title="我的收藏夹"
+                  aria-label="我的收藏夹"
+                >
+                  <Star className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                </Link>
+              ) : null}
               {isPlatformBackendEnabled() && platformAgent ? (
                 showHeaderUserMenu && headerAuth ? (
                   <Popover>

@@ -34,6 +34,7 @@ import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta
 import { messageIdsEligibleForTaskResultCard } from "@/lib/session-task-result-card-visibility";
 import { safeRandomUUID } from "@/lib/random-uuid";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
+import { fetchArtifactsForResultPanel } from "@/lib/merge-orchestration-task-artifacts";
 import { cn } from "@/lib/utils";
 
 import { SIMPLE_CHAT_COLUMN_MAX, SimpleAssistantBubble, SimpleSystemBubble, SimpleUserBubble } from "./chat-bubbles";
@@ -71,6 +72,7 @@ export function PlatformSessionAgentWorkspace({
   const [currentArtifacts, setCurrentArtifacts] = useState<PlatformTaskArtifactRef[] | null>(null);
   const [currentBundleDownloadApi, setCurrentBundleDownloadApi] = useState<string | null>(null);
   const [currentBundleDownloadName, setCurrentBundleDownloadName] = useState<string | null>(null);
+  const [currentTaskFinishedAt, setCurrentTaskFinishedAt] = useState<string | null>(null);
   const [lastTaskSnapshot, setLastTaskSnapshot] = useState<TaskResponse | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const [trialRunInFlight, setTrialRunInFlight] = useState(() => {
@@ -295,6 +297,7 @@ export function PlatformSessionAgentWorkspace({
     setShowResultPanel(false);
     setFocusedTaskId(null);
     setCurrentArtifacts(null);
+    setCurrentTaskFinishedAt(null);
   }, [sessionId]);
 
   const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
@@ -327,13 +330,7 @@ export function PlatformSessionAgentWorkspace({
       setError("");
       try {
         await platformAgent.withFreshToken(async (token) => {
-          const task = await getTask(token, taskId);
-          const artifacts: PlatformTaskArtifactRef[] = (task.artifacts ?? []).map((a) => ({
-            artifact_id: a.artifact_id,
-            artifact_type: a.artifact_type,
-            original_name: a.original_name,
-            download_api: a.download_api,
-          }));
+          const { artifacts, finishedAt } = await fetchArtifactsForResultPanel(token, taskId, bundleTaskIds);
           setCurrentArtifacts(artifacts);
           const ids = (bundleTaskIds ?? []).map((x) => (x || "").trim()).filter(Boolean);
           const api =
@@ -342,6 +339,7 @@ export function PlatformSessionAgentWorkspace({
               : `/api/tasks/${encodeURIComponent(taskId)}/download`;
           setCurrentBundleDownloadApi(api);
           setCurrentBundleDownloadName(ids.length > 1 ? `${taskId}.zip` : null);
+          setCurrentTaskFinishedAt(finishedAt);
           setFocusedTaskId(taskId);
           setShowResultPanel(true);
         });
@@ -398,11 +396,13 @@ export function PlatformSessionAgentWorkspace({
             bundleDownloadApi={currentBundleDownloadApi}
             bundleDownloadName={currentBundleDownloadName}
             taskId={focusedTaskId}
+            resultGeneratedAt={currentTaskFinishedAt}
             onClose={() => {
               setShowResultPanel(false);
               setFocusedTaskId(null);
               setCurrentBundleDownloadApi(null);
               setCurrentBundleDownloadName(null);
+              setCurrentTaskFinishedAt(null);
             }}
           />
         ) : undefined

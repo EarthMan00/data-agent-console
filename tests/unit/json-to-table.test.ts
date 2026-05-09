@@ -148,7 +148,7 @@ describe("filterArtifactsForTaskResultPanel", () => {
     expect(out[0]?.original_name).toBe("data.csv");
   });
 
-  it("keeps chatexcel_result.txt for ChatExcel preview", () => {
+  it("removes chatexcel_result.txt like other *_result.txt", () => {
     const out = filterArtifactsForTaskResultPanel([
       {
         artifact_id: "1",
@@ -163,12 +163,13 @@ describe("filterArtifactsForTaskResultPanel", () => {
         download_api: "/b",
       },
     ]);
-    expect(out).toHaveLength(2);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.original_name).toBe("data.csv");
   });
 });
 
 describe("hasTabularTaskResultFiles", () => {
-  it("is true when only chatexcel_result.txt exists", () => {
+  it("is false when only *_result.txt exists", () => {
     expect(
       hasTabularTaskResultFiles([
         {
@@ -178,10 +179,10 @@ describe("hasTabularTaskResultFiles", () => {
           download_api: "/x",
         },
       ]),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it("is true when only linkfox_result.txt exists", () => {
+  it("is false when only linkfox_result.txt exists", () => {
     expect(
       hasTabularTaskResultFiles([
         {
@@ -191,12 +192,31 @@ describe("hasTabularTaskResultFiles", () => {
           download_api: "/l",
         },
       ]),
+    ).toBe(false);
+  });
+
+  it("is true when csv exists alongside filtered logs", () => {
+    expect(
+      hasTabularTaskResultFiles([
+        {
+          artifact_id: "l",
+          artifact_type: "log",
+          original_name: "linkfox_result.txt",
+          download_api: "/l",
+        },
+        {
+          artifact_id: "c",
+          artifact_type: "csv",
+          original_name: "data.csv",
+          download_api: "/c",
+        },
+      ]),
     ).toBe(true);
   });
 });
 
-describe("pickPrimaryTaskDataArtifact chatexcel fallback", () => {
-  it("picks chatexcel_result when no csv/json", () => {
+describe("pickPrimaryTaskDataArtifact", () => {
+  it("returns null when only *_result.txt exists", () => {
     const p = pickPrimaryTaskDataArtifact([
       {
         artifact_id: "x",
@@ -205,7 +225,7 @@ describe("pickPrimaryTaskDataArtifact chatexcel fallback", () => {
         download_api: "/x",
       },
     ]);
-    expect(p?.original_name).toBe("chatexcel_result.txt");
+    expect(p).toBeNull();
   });
 
   it("prefers csv over chatexcel_result", () => {

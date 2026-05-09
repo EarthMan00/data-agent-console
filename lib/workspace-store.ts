@@ -886,6 +886,33 @@ export const demoActions = {
     updateState((current) => ({ ...current, currentRunId: runId }));
   },
 
+  /** 服务端会话删除后，移除本地与之关联的 run（含报告、收藏条目等） */
+  removeRunById(runId: string) {
+    updateState((current) => {
+      const runToRemove = current.runs.find((r) => r.id === runId);
+      if (!runToRemove) return current;
+      const draftId = runToRemove.taskDraftId;
+      const remainingRuns = current.runs.filter((r) => r.id !== runId);
+      const remainingReports = current.reports.filter((r) => r.runId !== runId);
+      const remainingArtifacts = current.artifacts.filter((a) => a.sourceRunId !== runId);
+      const remainingDrafts = current.taskDrafts.filter((d) => d.id !== draftId);
+      const remainingRecords = current.runRecords.filter((rr) => rr.runId !== runId);
+      let nextCurrentRunId = current.currentRunId;
+      if (current.currentRunId === runId) {
+        nextCurrentRunId = remainingRuns[0]?.id ?? "";
+      }
+      return {
+        ...current,
+        runs: remainingRuns,
+        reports: remainingReports,
+        artifacts: remainingArtifacts,
+        taskDrafts: remainingDrafts,
+        runRecords: remainingRecords,
+        currentRunId: nextCurrentRunId,
+      };
+    });
+  },
+
   setActivePreview(runId: string, previewId: string) {
     updateState((current) => ({
       ...current,

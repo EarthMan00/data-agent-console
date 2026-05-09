@@ -4,7 +4,7 @@ import type { AgentRoundRuntimeEvent, TaskExecutionStepStatus } from "@/lib/agen
 export function mapServerOrchestrationStepStatus(status: string): TaskExecutionStepStatus {
   const s = (status || "").toUpperCase();
   if (s === "SUCCESS") return "done";
-  if (s === "FAILED") return "error";
+  if (s === "FAILED" || s === "CANCELLED") return "error";
   if (s === "RUNNING") return "running";
   return "pending";
 }

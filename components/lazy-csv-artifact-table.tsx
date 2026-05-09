@@ -13,8 +13,10 @@ const PAGE_SIZE = 100;
 const MAX_DISPLAY_ROWS = 25_000;
 
 type LazyCsvArtifactTableProps = {
-  downloadApi: string;
-  withFreshToken: (run: (token: string) => Promise<void>) => Promise<void>;
+  downloadApi?: string;
+  withFreshToken?: (run: (token: string) => Promise<void>) => Promise<void>;
+  /** 已内联的 CSV 全文（收藏快照等场景），与 downloadApi 二选一 */
+  inlineUtf8Text?: string;
   /** 右侧任务栏：占满中间区域高度；表头单行 …；单元格最多 3 行换行后 …；title 悬停全文 */
   sidePanel?: boolean;
 };
@@ -63,7 +65,7 @@ const bodyCellSidePanelInner =
 const bodyCellDefault =
   "max-w-[300px] min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-top";
 
-export function LazyCsvArtifactTable({ downloadApi, withFreshToken, sidePanel }: LazyCsvArtifactTableProps) {
+export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Text, sidePanel }: LazyCsvArtifactTableProps) {
   const [header, setHeader] = useState<string[] | null>(null);
   const [dataRows, setDataRows] = useState<string[][]>([]);
   const [initLoading, setInitLoading] = useState(true);
@@ -135,6 +137,53 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, sidePanel }:
   );
 
   useEffect(() => {
+    if (inlineUtf8Text !== undefined) {
+      aliveRef.current = true;
+      parserRef.current = null;
+      headerRef.current = null;
+      dataRef.current = [];
+      readerRef.current = null;
+      setInitLoading(true);
+      setError(null);
+      setStreamDone(false);
+      setHitCap(false);
+
+      try {
+        const normalized = inlineUtf8Text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+        if (!normalized.trim()) {
+          setError("CSV 为空");
+          setInitLoading(false);
+          return;
+        }
+        const firstNl = normalized.indexOf("\n");
+        const firstLine = firstNl >= 0 ? normalized.slice(0, firstNl) : normalized;
+        const delimiter = pickDelimiterFromFirstCsvLine(firstLine.replace(/\r$/, ""));
+        const parser = new CsvIncrementalParser(delimiter);
+        const emitted = parser.push(normalized);
+        mergeCsvRowsIntoState(emitted, headerRef, dataRef);
+        const tail = parser.end();
+        mergeCsvRowsIntoState(tail, headerRef, dataRef);
+        if (dataRef.current.length > MAX_DISPLAY_ROWS) {
+          dataRef.current = dataRef.current.slice(0, MAX_DISPLAY_ROWS);
+          setHitCap(true);
+        }
+        flushUi();
+        setStreamDone(true);
+        setInitLoading(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        setInitLoading(false);
+      }
+
+      return () => {
+        aliveRef.current = false;
+      };
+    }
+
+    if (!downloadApi || !withFreshToken) {
+      return;
+    }
+
     let cancelled = false;
     aliveRef.current = true;
     parserRef.current = null;
@@ -202,7 +251,7 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, sidePanel }:
       aliveRef.current = false;
       closeReader();
     };
-  }, [downloadApi, withFreshToken, closeReader, pumpRows, flushUi]);
+  }, [inlineUtf8Text, downloadApi, withFreshToken, closeReader, pumpRows, flushUi]);
 
   const onLoadMore = useCallback(async () => {
     if (streamDone || hitCap || initLoading || loadMoreInFlight.current) return;
@@ -327,7 +376,7 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, sidePanel }:
           )}
         >
           {hitCap
-            ? `已加载前 ${MAX_DISPLAY_ROWS.toLocaleString()} 行，避免页面过重；完整数据请使用侧栏「下载 CSV」。`
+            ? `已加载前 ${MAX_DISPLAY_ROWS.toLocaleString()} 行，避免页面过重；完整数据请使用顶部下载按钮。`
             : `已加载全部共 ${dataRows.length.toLocaleString()} 行数据。`}
         </div>
       ) : null}

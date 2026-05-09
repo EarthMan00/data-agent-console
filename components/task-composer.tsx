@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, ChevronDown, Paperclip, Send } from "lucide-react";
+import { ArrowUpRight, ChevronDown, Paperclip, Send, Square } from "lucide-react";
 
 import { homeCapabilityItems } from "@/lib/home-capability-items";
 import { PlatformLogo } from "@/components/platform-logo";
@@ -29,6 +29,9 @@ type TaskComposerProps = {
   onSourceRemove: (capabilityId: string) => void;
   onFilesSelected: (files: FileList) => void;
   onSubmit: () => void;
+  /** 任务执行中显示为停止按钮 */
+  submitVariant?: "send" | "stop";
+  onStop?: () => void;
   visualStyle?: "default" | "heroMinimal";
   containerClassName?: string;
   textareaClassName?: string;
@@ -273,6 +276,8 @@ export function TaskComposer({
   onSourceRemove,
   onFilesSelected,
   onSubmit,
+  submitVariant = "send",
+  onStop,
   visualStyle = "default",
   containerClassName,
   textareaClassName,
@@ -280,6 +285,7 @@ export function TaskComposer({
 }: TaskComposerProps) {
   const isHeroMinimal = visualStyle === "heroMinimal";
   const hasText = value.trim().length > 0;
+  const showStop = submitVariant === "stop";
   const fileInputId = useId();
   const textboxRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -694,7 +700,11 @@ export function TaskComposer({
                         }
                         if (event.key === "Enter" && !event.shiftKey) {
                           event.preventDefault();
-                          onSubmit();
+                          if (showStop && onStop) {
+                            onStop();
+                          } else {
+                            onSubmit();
+                          }
                         }
                       }}
                       onClick={(event) => {
@@ -987,22 +997,31 @@ export function TaskComposer({
 
               <Button
                 type="button"
-                onClick={onSubmit}
+                onClick={() => (showStop ? onStop?.() : onSubmit())}
                 size="icon"
-                aria-label="发送任务"
+                aria-label={showStop ? "停止任务" : "发送任务"}
                 data-testid="task-composer-submit"
                 className={
-                  sendButtonClassName ??
-                  (isHeroMinimal
-                    ? hasText
-                      ? "h-[34px] w-[34px] rounded-[12px] bg-[#2563eb] text-white shadow-[0_10px_24px_rgba(37,99,235,0.25)] transition hover:bg-[#1d4ed8]"
-                      : "h-[34px] w-[34px] rounded-[12px] border border-[#e2e5ea] bg-[#f3f4f6] text-[#9ca3af] shadow-none transition hover:border-[#d1d5db] hover:bg-[#eceef1] hover:text-[#4b5563]"
-                    : hasText
-                      ? "h-[38px] w-[38px] rounded-[14px] border border-transparent bg-[#2563eb] text-white shadow-[0_12px_24px_rgba(37,99,235,0.25)] transition hover:-translate-y-0.5 hover:bg-[#1d4ed8] hover:shadow-[0_16px_30px_rgba(37,99,235,0.24)]"
-                      : "h-[38px] w-[38px] rounded-[14px] border border-[#111111] bg-[linear-gradient(180deg,#1b1b1d,#111113)] text-white shadow-[0_12px_24px_rgba(15,15,18,0.18)] transition hover:-translate-y-0.5 hover:bg-[linear-gradient(180deg,#26262a,#121214)] hover:shadow-[0_16px_30px_rgba(15,15,18,0.24)]" )
+                  showStop
+                    ? cn(
+                        sendButtonClassName,
+                        "h-[38px] w-[38px] shrink-0 rounded-[14px] border border-transparent !bg-[#dc2626] text-white shadow-[0_12px_24px_rgba(220,38,38,0.28)] transition hover:-translate-y-0.5 hover:!bg-[#b91c1c] hover:shadow-[0_16px_30px_rgba(220,38,38,0.26)]",
+                      )
+                    : sendButtonClassName ??
+                      (isHeroMinimal
+                        ? hasText
+                          ? "h-[34px] w-[34px] rounded-[12px] bg-[#2563eb] text-white shadow-[0_10px_24px_rgba(37,99,235,0.25)] transition hover:bg-[#1d4ed8]"
+                          : "h-[34px] w-[34px] rounded-[12px] border border-[#e2e5ea] bg-[#f3f4f6] text-[#9ca3af] shadow-none transition hover:border-[#d1d5db] hover:bg-[#eceef1] hover:text-[#4b5563]"
+                        : hasText
+                          ? "h-[38px] w-[38px] rounded-[14px] border border-transparent bg-[#2563eb] text-white shadow-[0_12px_24px_rgba(37,99,235,0.25)] transition hover:-translate-y-0.5 hover:bg-[#1d4ed8] hover:shadow-[0_16px_30px_rgba(37,99,235,0.24)]"
+                          : "h-[38px] w-[38px] rounded-[14px] border border-[#111111] bg-[linear-gradient(180deg,#1b1b1d,#111113)] text-white shadow-[0_12px_24px_rgba(15,15,18,0.18)] transition hover:-translate-y-0.5 hover:bg-[linear-gradient(180deg,#26262a,#121214)] hover:shadow-[0_16px_30px_rgba(15,15,18,0.24)]" )
                 }
               >
-                <Send className="h-[14px] w-[14px]" />
+                {showStop ? (
+                  <Square className="h-[14px] w-[14px]" />
+                ) : (
+                  <Send className="h-[14px] w-[14px]" />
+                )}
               </Button>
             </div>
           </div>

@@ -31,10 +31,10 @@ export async function streamAgentRound(
   options?: { platform?: StreamAgentRoundPlatformOptions },
 ) {
   if (isAgentRealApiEnabled()) {
-    const { withFreshToken } = options?.platform ?? {};
     const sid = input.platformChatSessionId;
-    if (sid && withFreshToken) {
-      await runPlatformRound(input, handlers, sid, withFreshToken);
+    const platform = options?.platform;
+    if (sid && platform?.withFreshToken) {
+      await runPlatformRound(input, handlers, sid, platform);
       return;
     }
     throw new Error(

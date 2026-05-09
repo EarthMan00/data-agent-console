@@ -38,7 +38,7 @@ import { homeCapabilityItems } from "@/lib/home-capability-items";
 import { demoActions, useDemoState, type Report, type TaskRun } from "@/lib/workspace-store";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import { cn } from "@/lib/utils";
-import { formatAgentApiErrorForUser } from "@/lib/agent-api/client";
+import { cancelToolOrchestration, formatAgentApiErrorForUser } from "@/lib/agent-api/client";
 import {
   buildAcknowledgement,
   buildRoundViewModels,
@@ -122,6 +122,13 @@ function AgentRunWorkspaceView({
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState("");
   const executingRoundsRef = useRef<Set<string>>(new Set());
+  const abortPollRef = useRef(false);
+  const acceptedToolRef = useRef<{ taskId: string | null; orchestrationId: string | null }>({
+    taskId: null,
+    orchestrationId: null,
+  });
+  /** streamAgentRound 整段执行中（含首轮 queued、联网等待）——仅靠 run.status 不足以切换停止按钮 */
+  const [agentRoundInFlight, setAgentRoundInFlight] = useState(false);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesInnerRef = useRef<HTMLDivElement>(null);
 
@@ -130,6 +137,10 @@ function AgentRunWorkspaceView({
       demoActions.setCurrentRun(run.id);
     }
   }, [currentRunId, run]);
+
+  useEffect(() => {
+    setAgentRoundInFlight(false);
+  }, [run.id]);
 
   const composerMode = composerModes[run.id] ?? (run.mode === "专业模式" ? "深度模式" : "普通模式");
   const selectedSourceIds = selectedSourceOverrides[run.id] ?? [];
@@ -168,6 +179,66 @@ function AgentRunWorkspaceView({
   const previewBaseId = previewOverrides[run.id] ?? run.activePreviewId ?? report.previewKey;
 
   const latestRoundModel = roundModels.length > 0 ? roundModels[roundModels.length - 1] : undefined;
+
+  const stepStatusIsBusy = (status: string | undefined) => {
+    const st = (status ?? "").toLowerCase();
+    return st === "pending" || st === "running";
+  };
+
+  /** store 全表扫描（兼容异常大小写） */
+  const anyOrchestrationStepBusy = useMemo(() => {
+    const map = run.taskExecutionStepsByRound;
+    if (!map) return false;
+    return Object.values(map).some((steps) => steps.some((s) => stepStatusIsBusy(s.status)));
+  }, [run.taskExecutionStepsByRound]);
+
+  /**
+   * 任意一轮仍有执行中步骤 —— 必须与中间「任务执行」同源。
+   * 追问后 latestRoundModel 往往是新一轮（无 steps），若只看最新一轮会漏判，底部仍显示发送。
+   */
+  const anyRoundStepsBusy = useMemo(
+    () => roundModels.some((r) => r.executionSteps?.some((s) => stepStatusIsBusy(s.status))),
+    [roundModels],
+  );
+
+  /** 任意一轮：工具编排且任务执行区逻辑上未收尾（collapseExecution === false） */
+  const anyRoundOrchestrationPanelActive = useMemo(
+    () =>
+      roundModels.some(
+        (r) =>
+          r.uiLayout === "tool_orchestration" &&
+          (r.executionSteps?.length ?? 0) > 0 &&
+          !r.collapseExecution &&
+          !r.errorMessage,
+      ),
+    [roundModels],
+  );
+
+  /** 任意一轮：步骤已全部终态但尚无 assistant_final（汇总阶段） */
+  const anyRoundWaitingFinal = useMemo(() => {
+    if (run.status === "error") return false;
+    return roundModels.some((m) => {
+      if (!m.executionSteps?.length || m.uiLayout !== "tool_orchestration") return false;
+      if (m.errorMessage) return false;
+      if (!m.executionSteps.every((s) => s.status === "done" || s.status === "error")) return false;
+      const hasFinal = run.timeline.some(
+        (n) => n.roundId === m.roundId && n.kind === "assistant_final",
+      );
+      return !hasFinal && run.status !== "success";
+    });
+  }, [roundModels, run.timeline, run.status]);
+
+  /** 与「任务执行」一致：刷新后 agentRoundInFlight 会丢；queued 且任意轮已有拆解步骤也算执行态 */
+  const composerShowsStop =
+    agentRoundInFlight ||
+    run.status === "running" ||
+    (run.status === "queued" && roundModels.some((r) => (r.executionSteps?.length ?? 0) > 0)) ||
+    roundModels.some((r) => r.assistantPending) ||
+    anyOrchestrationStepBusy ||
+    anyRoundStepsBusy ||
+    anyRoundWaitingFinal ||
+    anyRoundOrchestrationPanelActive;
+
   const latestHasPlatformSteps = Boolean(latestRoundModel?.executionSteps?.length);
   const latestRoundIdForPanel = latestRoundModel?.roundId;
   const latestPlatformSubtasks = latestRoundIdForPanel
@@ -249,6 +320,18 @@ function AgentRunWorkspaceView({
     run.timeline,
   ]);
 
+  const stopCurrentRound = useCallback(async () => {
+    abortPollRef.current = true;
+    const orchId = acceptedToolRef.current.orchestrationId;
+    if (orchId && platformAgent) {
+      try {
+        await platformAgent.withFreshToken((token) => cancelToolOrchestration(token, orchId));
+      } catch {
+        /* 终止以本地轮询为准；后端可能已结束 */
+      }
+    }
+  }, [platformAgent]);
+
   const executeRound = useCallback(async (input: {
     roundId: string;
     prompt: string;
@@ -258,6 +341,9 @@ function AgentRunWorkspaceView({
   }) => {
     if (executingRoundsRef.current.has(input.roundId)) return;
     executingRoundsRef.current.add(input.roundId);
+    setAgentRoundInFlight(true);
+    abortPollRef.current = false;
+    acceptedToolRef.current = { taskId: null, orchestrationId: null };
     try {
       await streamAgentRound(
         {
@@ -277,7 +363,18 @@ function AgentRunWorkspaceView({
           },
         },
         isPlatformBackendEnabled() && platformAgent && run.platformSessionId
-          ? { platform: { withFreshToken: platformAgent.withFreshToken } }
+          ? {
+              platform: {
+                withFreshToken: platformAgent.withFreshToken,
+                shouldAbortPoll: () => abortPollRef.current,
+                onToolTaskAccepted: (p) => {
+                  acceptedToolRef.current = {
+                    taskId: p.taskId,
+                    orchestrationId: p.orchestrationId,
+                  };
+                },
+              },
+            }
           : undefined,
       );
       setQueuedAttachments((current) => ({ ...current, [run.id]: [] }));
@@ -293,6 +390,7 @@ function AgentRunWorkspaceView({
       setNotice("");
     } finally {
       executingRoundsRef.current.delete(input.roundId);
+      setAgentRoundInFlight(false);
     }
   }, [composerMode, platformAgent, run.id, run.objective, run.platformSessionId]);
 
@@ -309,7 +407,7 @@ function AgentRunWorkspaceView({
 
   const appendNote = async () => {
     const value = sanitizeObjective(draft);
-    if (!value || run.status === "running") return;
+    if (!value || composerShowsStop) return;
     const attachments = queuedAttachments[run.id] ?? [];
     const roundId = demoActions.queueFollowupRound(run.id, {
       prompt: value,
@@ -655,11 +753,9 @@ function AgentRunWorkspaceView({
               onToolSelect={applyCapability}
               onSourceRemove={removeCapability}
               onFilesSelected={handleFilesSelected}
-              onSubmit={() => {
-                if (run.status !== "running") {
-                  void appendNote();
-                }
-              }}
+              submitVariant={composerShowsStop ? "stop" : "send"}
+              onStop={() => void stopCurrentRound()}
+              onSubmit={() => void appendNote()}
               containerClassName="overflow-visible rounded-[18px] border border-[#dde4ef] bg-[rgba(255,255,255,0.98)] shadow-[0_16px_36px_rgba(163,177,198,0.12)]"
               textareaClassName="min-h-[84px] max-h-[12em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-[15px] leading-7 text-[#324357] caret-[#324357] outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-visible:[box-shadow:none!important]"
               sendButtonClassName="h-9 w-9 rounded-[10px]"

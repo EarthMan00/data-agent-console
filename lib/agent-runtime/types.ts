@@ -27,4 +27,8 @@ export type AgentRoundInput = {
 
 export type StreamAgentRoundPlatformOptions = {
   withFreshToken: (run: (token: string) => Promise<void>) => Promise<void>;
+  /** 为 true 时退出编排/任务轮询（通常与后端取消编排配合） */
+  shouldAbortPoll?: () => boolean;
+  /** 202 已接受工具任务后回调，便于 UI 持有 task_id / orchestration_id 以取消 */
+  onToolTaskAccepted?: (payload: { taskId: string; orchestrationId: string | null }) => void;
 };

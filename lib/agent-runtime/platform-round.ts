@@ -45,8 +45,9 @@ export async function runPlatformRound(
   input: AgentRoundInput,
   handlers: { onEvent: (event: AgentRoundRuntimeEvent) => void },
   chatSessionId: string,
-  withFreshToken: StreamAgentRoundPlatformOptions["withFreshToken"],
+  platformOptions: StreamAgentRoundPlatformOptions,
 ) {
+  const { withFreshToken, shouldAbortPoll, onToolTaskAccepted } = platformOptions;
   const sourceLabels =
     input.selectedCapabilities.length > 0
       ? input.selectedCapabilities.map((id) => capabilityLabelMap.get(id) ?? id)
@@ -87,6 +88,13 @@ export async function runPlatformRound(
 
     const mid = safeRandomUUID();
     const result = await withAuthRetry((tk) => sendChatMessage(tk, chatSessionId, input.prompt, mid));
+
+    if (result.kind === "accepted") {
+      onToolTaskAccepted?.({
+        taskId: result.task_id,
+        orchestrationId: result.orchestration_id,
+      });
+    }
 
     if (result.kind === "completed") {
       handlers.onEvent({
@@ -238,8 +246,13 @@ export async function runPlatformRound(
       let lastOrch: Awaited<ReturnType<typeof getToolOrchestration>> | null = null;
 
       if (orchestrationId) {
+        let userStopped = false;
         for (let polls = 0; polls < 4500; polls += 1) {
           await sleep(800);
+          if (shouldAbortPoll?.()) {
+            userStopped = true;
+            break;
+          }
           try {
             lastOrch = await withAuthRetry((t) => getToolOrchestration(t, orchestrationId));
           } catch (e) {
@@ -259,6 +272,22 @@ export async function runPlatformRound(
           }
         }
 
+        if (userStopped) {
+          finalizeAllSteps("error");
+          await persistTaskExecutionStepsUniform("error");
+          pushPlatformSnapshot({
+            task_id: result.task_id,
+            artifacts: [],
+            zip_download_api: null,
+          });
+          handlers.onEvent({
+            type: "error",
+            roundId: input.roundId,
+            message: humanizeTaskErrorMessage("任务已终止。"),
+          });
+          return;
+        }
+
         let summaryTaskId = result.task_id;
         if (lastOrch) {
           if (lastOrch.success) {
@@ -275,8 +304,13 @@ export async function runPlatformRound(
           emitStep(stepDefs[0]!.id, "running");
         }
         let polls = 0;
+        let userStoppedSingle = false;
         while (!sharedTask.finished_at && polls < 600) {
           await sleep(1000);
+          if (shouldAbortPoll?.()) {
+            userStoppedSingle = true;
+            break;
+          }
           try {
             sharedTask = await withAuthRetry((t) => getTask(t, result.task_id));
           } catch (e) {
@@ -285,6 +319,19 @@ export async function runPlatformRound(
             continue;
           }
           polls += 1;
+        }
+        if (userStoppedSingle) {
+          if (stepDefs.length > 0) {
+            emitStep(stepDefs[0]!.id, "error");
+          }
+          finalizeAllSteps("error");
+          await persistTaskExecutionStepsUniform("error", result.task_id);
+          handlers.onEvent({
+            type: "error",
+            roundId: input.roundId,
+            message: humanizeTaskErrorMessage("任务已终止。"),
+          });
+          return;
         }
         if (stepDefs.length > 0) {
           if (!sharedTask.finished_at) {

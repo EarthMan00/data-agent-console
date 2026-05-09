@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Bot, UserRound } from "lucide-react";
 
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
-import { formatAgentApiErrorForUser, getTask, listSessionMessages, sendChatMessage } from "@/lib/agent-api/client";
+import { formatAgentApiErrorForUser, listSessionMessages, sendChatMessage } from "@/lib/agent-api/client";
 import type { ChatSendResult, SessionMessageItem } from "@/lib/agent-api/types";
 import { safeRandomUUID } from "@/lib/random-uuid";
 import { ChatMarkdown } from "@/components/chat-markdown";
@@ -20,6 +20,7 @@ import { TaskExecutionStepsAssistantBubble } from "@/components/task-execution-s
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import { messageIdsEligibleForTaskResultCard } from "@/lib/session-task-result-card-visibility";
 import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
+import { fetchArtifactsForResultPanel } from "@/lib/merge-orchestration-task-artifacts";
 
 const SIMPLE_CHAT_COLUMN_MAX = "max-w-[min(100%,800px)]";
 const SIMPLE_CHAT_BUBBLE_MAX = "max-w-[min(100%,720px)]";
@@ -94,6 +95,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   const [currentArtifacts, setCurrentArtifacts] = useState<PlatformTaskArtifactRef[] | null>(null);
   const [currentBundleDownloadApi, setCurrentBundleDownloadApi] = useState<string | null>(null);
   const [currentBundleDownloadName, setCurrentBundleDownloadName] = useState<string | null>(null);
+  const [currentTaskFinishedAt, setCurrentTaskFinishedAt] = useState<string | null>(null);
 
   const isLoggedIn = Boolean(
     platformAgent?.auth?.accessToken &&
@@ -121,6 +123,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     setShowResultPanel(false);
     setFocusedTaskId(null);
     setCurrentArtifacts(null);
+    setCurrentTaskFinishedAt(null);
   }, [sessionId]);
 
   useEffect(() => {
@@ -159,13 +162,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
       setError("");
       try {
         await platformAgent.withFreshToken(async (token) => {
-          const task = await getTask(token, taskId);
-          const artifacts: PlatformTaskArtifactRef[] = (task.artifacts ?? []).map((a) => ({
-            artifact_id: a.artifact_id,
-            artifact_type: a.artifact_type,
-            original_name: a.original_name,
-            download_api: a.download_api,
-          }));
+          const { artifacts, finishedAt } = await fetchArtifactsForResultPanel(token, taskId, bundleTaskIds);
           setCurrentArtifacts(artifacts);
           const ids = (bundleTaskIds ?? []).map((x) => (x || "").trim()).filter(Boolean);
           const api =
@@ -174,6 +171,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
               : `/api/tasks/${encodeURIComponent(taskId)}/download`;
           setCurrentBundleDownloadApi(api);
           setCurrentBundleDownloadName(ids.length > 1 ? `${taskId}.zip` : null);
+          setCurrentTaskFinishedAt(finishedAt);
           setFocusedTaskId(taskId);
           setShowResultPanel(true);
         });
@@ -254,11 +252,13 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
             bundleDownloadApi={currentBundleDownloadApi}
             bundleDownloadName={currentBundleDownloadName}
             taskId={focusedTaskId}
+            resultGeneratedAt={currentTaskFinishedAt}
             onClose={() => {
               setShowResultPanel(false);
               setFocusedTaskId(null);
               setCurrentBundleDownloadApi(null);
               setCurrentBundleDownloadName(null);
+              setCurrentTaskFinishedAt(null);
             }}
           />
         ) : undefined
