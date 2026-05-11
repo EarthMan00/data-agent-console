@@ -14,6 +14,7 @@ import {
 } from "@/components/execution-steps-monitor";
 import { cn } from "@/lib/utils";
 import { compactText } from "@/components/agent-workspace-view-models";
+import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 
 function PlatformSubtaskResultCard({
@@ -64,7 +65,9 @@ function PlatformSubtaskResultCard({
         </span>
       </div>
       {snap.errorMessage ? (
-        <p className="mt-2 text-[11px] leading-5 text-[#b91c1c]">{compactText(snap.errorMessage, 160)}</p>
+        <p className="mt-2 text-[11px] leading-5 text-[#b91c1c]">
+          {compactText(humanizeTaskErrorMessage(snap.errorMessage), 220)}
+        </p>
       ) : null}
     </button>
   );

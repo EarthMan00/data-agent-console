@@ -112,11 +112,14 @@ export function buildRoundViewModels(run: TaskRunLike) {
     const uiLayout: RoundViewModel["uiLayout"] =
       explicitLayout ?? (chains.length > 0 ? "tool_orchestration" : "simple_chat");
 
+    const anyExecStepFailedEarly = Boolean(execStepsSorted?.some((s) => s.status === "error"));
+
     const assistantPending =
       (run.status === "running" || run.status === "queued") &&
       run.latestRoundId === node.roundId &&
       !finalNode &&
-      !errorMessage;
+      !errorMessage &&
+      !anyExecStepFailedEarly;
 
     let intentText =
       sourceLabels.length > 0
@@ -168,7 +171,8 @@ export function buildRoundViewModels(run: TaskRunLike) {
 
     const taskOutcomeReady =
       uiLayout === "tool_orchestration" && hasExecSteps
-        ? executionPhasesComplete && (baseConversationOutput || Boolean(errorMessage))
+        ? executionPhasesComplete &&
+            (baseConversationOutput || Boolean(errorMessage) || anyExecStepFailedEarly)
         : baseConversationOutput || Boolean(errorMessage);
 
     const waitingExecSummary =

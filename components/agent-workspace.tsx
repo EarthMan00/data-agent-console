@@ -230,7 +230,8 @@ function AgentRunWorkspaceView({
           r.uiLayout === "tool_orchestration" &&
           (r.executionSteps?.length ?? 0) > 0 &&
           !r.collapseExecution &&
-          !r.errorMessage,
+          !r.errorMessage &&
+          !r.executionSteps?.some((s) => s.status === "error"),
       ),
     [roundModels],
   );
@@ -241,6 +242,7 @@ function AgentRunWorkspaceView({
     return roundModels.some((m) => {
       if (!m.executionSteps?.length || m.uiLayout !== "tool_orchestration") return false;
       if (m.errorMessage) return false;
+      if (m.executionSteps.some((s) => s.status === "error")) return false;
       if (!m.executionSteps.every((s) => s.status === "done" || s.status === "error")) return false;
       const hasFinal = run.timeline.some(
         (n) => n.roundId === m.roundId && n.kind === "assistant_final",
