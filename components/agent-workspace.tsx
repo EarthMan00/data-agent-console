@@ -36,6 +36,7 @@ import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { isPlatformBackendEnabled, streamAgentRound } from "@/lib/agent-runtime";
 import { homeCapabilityItems } from "@/lib/home-capability-items";
 import { demoActions, useDemoState, type Report, type TaskRun } from "@/lib/workspace-store";
+import { displayLabelForIndexedSubtask } from "@/lib/merge-orchestration-task-artifacts";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import { cn } from "@/lib/utils";
 import { cancelToolOrchestration, formatAgentApiErrorForUser } from "@/lib/agent-api/client";
@@ -55,6 +56,26 @@ const ChatAttachments = dynamic(
 
 export { buildAcknowledgement, buildRoundViewModels, toCapabilitySafeTitle };
 export type { RoundViewModel, TaskRunLike };
+
+/** 各轮任务执行区内步骤卡片高亮：最新一轮用全局页签状态；历史轮仅在本轮子任务内推算 */
+function activeHighlightForRound(
+  roundId: string,
+  latestRoundId: string | undefined,
+  roundSubs: PlatformSubtaskSnapshot[] | undefined,
+  globalHighlight: string | null,
+  panelFocus: { taskId: string; artifacts: PlatformTaskArtifactRef[] } | null,
+): string | null {
+  if (roundId === latestRoundId) return globalHighlight;
+  const subs = roundSubs ?? [];
+  const fid = panelFocus?.taskId;
+  if (fid && subs.some((s) => s.taskId === fid)) return fid;
+  const withData = subs
+    .filter((s) => hasTabularTaskResultFiles(s.artifacts))
+    .slice()
+    .sort((a, b) => b.stepIndex - a.stepIndex);
+  if (withData.length > 0) return withData[0]!.taskId;
+  return subs.length > 0 ? subs[subs.length - 1]!.taskId : null;
+}
 
 export function AgentWorkspace() {
   const pathname = usePathname();
@@ -246,6 +267,38 @@ function AgentRunWorkspaceView({
     : [];
   const anySubtaskTabular = latestPlatformSubtasks.some((s) => hasTabularTaskResultFiles(s.artifacts));
   const effectivePanelArtifacts = panelSubtaskFocus?.artifacts ?? run.platformTaskArtifacts;
+
+  /** 后完成的步骤排在前面，供左侧页签与默认选中 */
+  const subtasksWithTabularPreview = useMemo(
+    () =>
+      latestPlatformSubtasks
+        .filter((s) => hasTabularTaskResultFiles(s.artifacts))
+        .slice()
+        .sort((a, b) => b.stepIndex - a.stepIndex),
+    [latestPlatformSubtasks],
+  );
+
+  const resolvedSubtaskTaskIdForPanel = useMemo(() => {
+    if (subtasksWithTabularPreview.length === 0) return null;
+    const fid = panelSubtaskFocus?.taskId;
+    if (fid && subtasksWithTabularPreview.some((s) => s.taskId === fid)) return fid;
+    return subtasksWithTabularPreview[0]!.taskId;
+  }, [panelSubtaskFocus, subtasksWithTabularPreview]);
+
+  const artifactsForTaskPanel = useMemo(() => {
+    if (subtasksWithTabularPreview.length > 0) {
+      const hit = subtasksWithTabularPreview.find((s) => s.taskId === resolvedSubtaskTaskIdForPanel);
+      return hit?.artifacts ?? [];
+    }
+    return effectivePanelArtifacts ?? [];
+  }, [subtasksWithTabularPreview, resolvedSubtaskTaskIdForPanel, effectivePanelArtifacts]);
+
+  const stepTimelineHighlightTaskId = useMemo(() => {
+    if (panelSubtaskFocus?.taskId) return panelSubtaskFocus.taskId;
+    if (subtasksWithTabularPreview.length > 0) return subtasksWithTabularPreview[0]!.taskId;
+    const last = latestPlatformSubtasks.length > 0 ? latestPlatformSubtasks[latestPlatformSubtasks.length - 1] : undefined;
+    return last?.taskId ?? null;
+  }, [panelSubtaskFocus, subtasksWithTabularPreview, latestPlatformSubtasks]);
   /** 分步任务：任一步产生可表格化产物即可展开右侧；执行中（running）也可预览已完成的步骤 */
   const latestRoundWantsTaskPanel = Boolean(
     latestRoundModel?.uiLayout === "tool_orchestration" &&
@@ -471,10 +524,32 @@ function AgentRunWorkspaceView({
         showRightRail ? (
           showTaskResultPanel ? (
             <AgentTaskResultPanel
-              artifacts={effectivePanelArtifacts ?? []}
+              artifacts={artifactsForTaskPanel ?? []}
               withFreshToken={platformAgent?.withFreshToken}
-              taskId={panelSubtaskFocus?.taskId ?? run.platformTaskId ?? null}
+              taskId={resolvedSubtaskTaskIdForPanel ?? panelSubtaskFocus?.taskId ?? run.platformTaskId ?? null}
               zipDownloadApi={run.platformTaskZipDownloadApi ?? null}
+              subtaskResultTabs={
+                subtasksWithTabularPreview.length > 1
+                  ? subtasksWithTabularPreview.map((s) => ({
+                      taskId: s.taskId,
+                      label: compactText(
+                        displayLabelForIndexedSubtask(
+                          s.stepIndex,
+                          s.label,
+                          latestRoundModel?.executionSteps,
+                        ),
+                        36,
+                      ),
+                    }))
+                  : undefined
+              }
+              activeSubtaskTaskId={resolvedSubtaskTaskIdForPanel}
+              onSubtaskSelect={(taskId) => {
+                const snap = latestPlatformSubtasks.find((s) => s.taskId === taskId);
+                if (snap && hasTabularTaskResultFiles(snap.artifacts)) {
+                  setPanelSubtaskFocus({ taskId, artifacts: snap.artifacts });
+                }
+              }}
               onClose={() =>
                 setPanelVisibility((current) => ({
                   ...current,
@@ -619,7 +694,13 @@ function AgentRunWorkspaceView({
                               <PlatformRoundStepTimeline
                                 executionSteps={round.executionSteps}
                                 platformSubtasks={round.platformSubtasks}
-                                panelSubtaskFocus={panelSubtaskFocus}
+                                activeHighlightTaskId={activeHighlightForRound(
+                                  round.roundId,
+                                  latestRoundIdForPanel,
+                                  round.platformSubtasks,
+                                  stepTimelineHighlightTaskId,
+                                  panelSubtaskFocus,
+                                )}
                                 runId={run.id}
                                 setPanelSubtaskFocus={setPanelSubtaskFocus}
                                 setPanelVisibility={setPanelVisibility}
@@ -677,7 +758,13 @@ function AgentRunWorkspaceView({
                               <PlatformRoundStepTimeline
                                 executionSteps={round.executionSteps}
                                 platformSubtasks={round.platformSubtasks}
-                                panelSubtaskFocus={panelSubtaskFocus}
+                                activeHighlightTaskId={activeHighlightForRound(
+                                  round.roundId,
+                                  latestRoundIdForPanel,
+                                  round.platformSubtasks,
+                                  stepTimelineHighlightTaskId,
+                                  panelSubtaskFocus,
+                                )}
                                 runId={run.id}
                                 setPanelSubtaskFocus={setPanelSubtaskFocus}
                                 setPanelVisibility={setPanelVisibility}

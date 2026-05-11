@@ -238,6 +238,7 @@ function MoreDataShellComponent({
   contentScrollMode = "shell",
 }: MoreDataShellProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
   const { runs, currentRunId } = useDemoState();
@@ -261,6 +262,12 @@ function MoreDataShellComponent({
   const childManagedScroll = contentScrollMode === "child";
 
   const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
+
+  /** 从对话页返回首页等路由时再拉一次列表，避免仅靠首屏加载看不到刚结束的会话 */
+  useEffect(() => {
+    if (!clientMounted || !isLoggedIn) return;
+    if (pathname === "/") void refreshHistory();
+  }, [pathname, clientMounted, isLoggedIn, refreshHistory]);
   const activeSessionId = platformAgent?.platformSessionId ?? null;
   const showAuthSidebar = clientMounted && isLoggedIn;
   /** 顶栏用户区：与侧栏同理，mount 前固定为「登录」，避免 token 仅在客户端存在时 hydration 不一致 */

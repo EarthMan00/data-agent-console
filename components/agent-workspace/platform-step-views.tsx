@@ -12,9 +12,9 @@ import {
   ExecutionStepCard,
   StepResultPendingCard,
 } from "@/components/execution-steps-monitor";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { compactText } from "@/components/agent-workspace-view-models";
+import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 
 function PlatformSubtaskResultCard({
   snap,
@@ -30,13 +30,22 @@ function PlatformSubtaskResultCard({
 }) {
   const ok = snap.outcome === "success";
   const stepNo = snap.stepIndex + 1;
+  const hasPreviewFiles = hasTabularTaskResultFiles(snap.artifacts);
   const header =
     totalSteps != null ? `步骤 ${stepNo} / ${totalSteps} · 执行结果` : `步骤 ${stepNo} · 执行结果`;
   return (
-    <div
+    <button
+      type="button"
+      onClick={() => {
+        if (!hasPreviewFiles) return;
+        onSelect();
+      }}
       className={cn(
-        "w-full rounded-[16px] border px-4 py-3 text-left shadow-[0_8px_20px_rgba(15,23,42,0.04)]",
+        "w-full rounded-[16px] border px-4 py-3 text-left shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition-colors",
         isActive ? "border-[#2563eb] bg-[#eff6ff]" : "border-[#eceef1] bg-white",
+        hasPreviewFiles
+          ? "cursor-pointer hover:border-[#bfdbfe] hover:bg-[#f8fafc]"
+          : "cursor-default opacity-95",
       )}
     >
       <div className="text-[11px] font-medium uppercase tracking-wide text-[#9aa39e]">{header}</div>
@@ -57,31 +66,27 @@ function PlatformSubtaskResultCard({
       {snap.errorMessage ? (
         <p className="mt-2 text-[11px] leading-5 text-[#b91c1c]">{compactText(snap.errorMessage, 160)}</p>
       ) : null}
-      <Button type="button" variant="default" size="sm" className="mt-3 h-8 rounded-[10px] px-3 text-xs" onClick={onSelect}>
-        查看任务结果
-      </Button>
-    </div>
+    </button>
   );
 }
 
 export function PlatformRoundStepTimeline({
   executionSteps,
   platformSubtasks,
-  panelSubtaskFocus,
+  activeHighlightTaskId,
   runId,
   setPanelSubtaskFocus,
   setPanelVisibility,
 }: {
   executionSteps: TaskExecutionStep[];
   platformSubtasks: PlatformSubtaskSnapshot[] | undefined;
-  panelSubtaskFocus: { taskId: string; artifacts: PlatformTaskArtifactRef[] } | null;
+  /** 与右侧结果区当前页签对齐的步骤 taskId（含默认选中「最新有结果的一步」） */
+  activeHighlightTaskId: string | null;
   runId: string;
   setPanelSubtaskFocus: Dispatch<SetStateAction<{ taskId: string; artifacts: PlatformTaskArtifactRef[] } | null>>;
   setPanelVisibility: Dispatch<SetStateAction<Record<string, boolean>>>;
 }) {
   const items = buildPlatformStepTimeline(executionSteps, platformSubtasks);
-  const subs = platformSubtasks ?? [];
-  const lastSnap = subs.length ? subs[subs.length - 1] : undefined;
   const total = executionSteps.length;
 
   return (
@@ -109,9 +114,7 @@ export function PlatformRoundStepTimeline({
           );
         }
         const snap = item.snap;
-        const active =
-          panelSubtaskFocus?.taskId === snap.taskId ||
-          (!panelSubtaskFocus && lastSnap != null && snap.taskId === lastSnap.taskId);
+        const active = activeHighlightTaskId === snap.taskId;
         return (
           <PlatformSubtaskResultCard
             key={snap.taskId}

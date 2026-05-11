@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Ellipsis, Star, X } from "lucide-react";
+import { Download, Ellipsis, Menu, Star, X } from "lucide-react";
 
 import { TaskResultSheetBody } from "@/components/task-result-sheet-body";
 import { TaskSingleDataArtifactPreview } from "@/components/task-single-data-preview";
@@ -25,6 +25,12 @@ import {
 } from "@/lib/task-result-sheets";
 import { cn } from "@/lib/utils";
 
+export type AgentTaskSubtaskTab = {
+  taskId: string;
+  /** 例如「步骤 2」 */
+  label: string;
+};
+
 type AgentTaskResultPanelProps = {
   onClose: () => void;
   artifacts?: PlatformTaskArtifactRef[];
@@ -35,6 +41,10 @@ type AgentTaskResultPanelProps = {
   taskId?: string | null;
   /** 展示「最后生成时间」 */
   resultGeneratedAt?: string | null;
+  /** 编排多步且多步有表格类结果时：底部 Excel 式 sheet 页签（调用方保证后执行的在前面） */
+  subtaskResultTabs?: AgentTaskSubtaskTab[];
+  activeSubtaskTaskId?: string | null;
+  onSubtaskSelect?: (taskId: string) => void;
 };
 
 function effectiveBundleDownloadPath(p: {
@@ -68,6 +78,93 @@ function formatResultDate(iso: string | null | undefined): string | null {
   return `${y}-${m}-${day}`;
 }
 
+/** 底部横向 Excel / Google Sheets 风格工作表标签条 */
+function ExcelStyleSheetTabBar({
+  tabs,
+  activeId,
+  onSelect,
+  dense,
+}: {
+  tabs: { id: string; label: string }[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  /** 同一轮下还存在「子任务」底栏时，文件层略紧凑 */
+  dense?: boolean;
+}) {
+  const [sheetMenuOpen, setSheetMenuOpen] = useState(false);
+
+  if (tabs.length <= 1) return null;
+
+  return (
+    <div className="flex shrink-0 items-stretch border-t border-[#dadce0] bg-[#f1f3f4]">
+      <Popover open={sheetMenuOpen} onOpenChange={setSheetMenuOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="flex h-9 w-9 shrink-0 items-center justify-center border-r border-[#dadce0] text-[#5f6368] transition hover:bg-black/[0.06]"
+            aria-label="全部工作表"
+          >
+            <Menu className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent side="top" align="start" className="w-[min(100vw-2rem,17rem)] p-1">
+          <div className="max-h-[min(60vh,320px)] overflow-y-auto">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={cn(
+                  "flex w-full rounded-md px-2 py-2 text-left text-[13px] transition",
+                  activeId === t.id
+                    ? "bg-[#e6f4ea] font-medium text-[#15803d]"
+                    : "text-[#3c4043] hover:bg-[#e8eaed]",
+                )}
+                onClick={() => {
+                  onSelect(t.id);
+                  setSheetMenuOpen(false);
+                }}
+              >
+                <span className="line-clamp-3">{t.label}</span>
+              </button>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+      <div
+        className="flex min-h-9 min-w-0 flex-1 items-end gap-0 overflow-x-auto px-0.5"
+        role="tablist"
+        aria-label="工作表"
+      >
+        {tabs.map((t) => {
+          const active = activeId === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onSelect(t.id)}
+              className={cn(
+                "relative shrink-0 px-3 pb-2 pt-1.5 text-left leading-tight transition",
+                dense ? "text-[12px]" : "text-[13px]",
+                active ? "font-medium text-[#15803d]" : "text-[#5f6368] hover:bg-black/[0.04]",
+              )}
+            >
+              <span className="line-clamp-1 max-w-[min(220px,40vw)]">{t.label}</span>
+              {active ? (
+                <span
+                  className="absolute bottom-0 left-2 right-2 h-[3px] rounded-t-[2px] bg-[#15803d]"
+                  aria-hidden
+                />
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function AgentTaskResultPanel({
   onClose,
   artifacts,
@@ -77,6 +174,9 @@ export function AgentTaskResultPanel({
   zipDownloadApi,
   taskId,
   resultGeneratedAt,
+  subtaskResultTabs,
+  activeSubtaskTaskId,
+  onSubtaskSelect,
 }: AgentTaskResultPanelProps) {
   const tid = (taskId ?? "").trim();
   const sheets = useMemo(() => buildTaskResultSheets(artifacts ?? []), [artifacts]);
@@ -226,6 +326,8 @@ export function AgentTaskResultPanel({
 
   const dateLine = formatResultDate(resultGeneratedAt ?? undefined);
 
+  const showSubtaskSheetBar = Boolean(subtaskResultTabs && subtaskResultTabs.length > 1 && onSubtaskSelect);
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-white" data-testid="agent-preview-panel">
       <div className="flex shrink-0 flex-col gap-1 border-b border-[#e5e7eb] bg-[linear-gradient(180deg,#fafafa,#f4f4f5)] px-3 py-2">
@@ -319,37 +421,38 @@ export function AgentTaskResultPanel({
         <div className="border-b border-[#ececec] bg-[#fafaf9] px-3 py-2 text-xs text-[#78716c]">{notice}</div>
       ) : null}
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-3 pb-2 pt-2">
-        {withFreshToken && useSheetUi && activeSheet ? (
-          <TaskResultSheetBody sheet={activeSheet} viewMode={viewMode} withFreshToken={withFreshToken} />
-        ) : withFreshToken && !useSheetUi && fallbackPrimary ? (
-          <TaskSingleDataArtifactPreview artifact={fallbackPrimary} withFreshToken={withFreshToken} />
-        ) : (
-          <p className="text-[13px] leading-6 text-[#64748b]">
-            暂无数据或报告类结果文件（CSV/JSON/Markdown/HTML/PDF/ChatExcel）可展示。
-          </p>
-        )}
-      </div>
-
-      {useSheetUi && sheets.length > 1 ? (
-        <div className="flex shrink-0 gap-1 overflow-x-auto border-t border-[#e5e7eb] bg-white px-2 py-2">
-          {sheets.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setActiveSheetId(s.id)}
-              className={cn(
-                "shrink-0 rounded-lg px-3 py-2 text-left text-xs transition",
-                activeSheet?.id === s.id
-                  ? "border-b-2 border-[#16a34a] font-medium text-[#15803d]"
-                  : "border-b-2 border-transparent text-[#64748b] hover:bg-[#f4f4f5]",
-              )}
-            >
-              <span className="line-clamp-2 max-w-[200px]">{s.label}</span>
-            </button>
-          ))}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-3 pt-2">
+          {withFreshToken && useSheetUi && activeSheet ? (
+            <TaskResultSheetBody sheet={activeSheet} viewMode={viewMode} withFreshToken={withFreshToken} />
+          ) : withFreshToken && !useSheetUi && fallbackPrimary ? (
+            <TaskSingleDataArtifactPreview artifact={fallbackPrimary} withFreshToken={withFreshToken} />
+          ) : (
+            <p className="text-[13px] leading-6 text-[#64748b]">
+              暂无数据或报告类结果文件（CSV/JSON/Markdown/HTML/PDF/ChatExcel）可展示。
+            </p>
+          )}
         </div>
-      ) : null}
+
+        {/* Excel 式底部 sheet：截图同款浅灰条 + 绿色激活下划线；多子任务时栏在最底，其上方可为同任务多文件 */}
+        <div className="flex shrink-0 flex-col shadow-[0_-1px_0_#dadce0]">
+          {useSheetUi && sheets.length > 1 ? (
+            <ExcelStyleSheetTabBar
+              tabs={sheets.map((s) => ({ id: s.id, label: s.label }))}
+              activeId={activeSheet?.id ?? null}
+              onSelect={(id) => setActiveSheetId(id)}
+              dense={showSubtaskSheetBar}
+            />
+          ) : null}
+          {showSubtaskSheetBar ? (
+            <ExcelStyleSheetTabBar
+              tabs={subtaskResultTabs!.map((t) => ({ id: t.taskId, label: t.label }))}
+              activeId={activeSubtaskTaskId ?? null}
+              onSelect={(id) => onSubtaskSelect!(id)}
+            />
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
