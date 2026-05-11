@@ -2,7 +2,16 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Bookmark,
   ChevronDown,
@@ -208,7 +217,9 @@ export function MoreDataShellRoot({ children }: { children: ReactNode }) {
   return (
     <ShellMetaProvider>
       <MoreDataShellStateProvider>
-        <MoreDataShellInner>{children}</MoreDataShellInner>
+        <Suspense fallback={<div className="min-h-full flex-1 bg-[#fafafa]" aria-hidden />}>
+          <MoreDataShellInner>{children}</MoreDataShellInner>
+        </Suspense>
       </MoreDataShellStateProvider>
     </ShellMetaProvider>
   );
