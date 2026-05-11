@@ -7,6 +7,16 @@ function stripChatexcelImportNoise(text: string): string {
     .trim();
 }
 
+/** KeyError 在 chatexcel JSON 里可能是 suggestions、'suggestions' 或 "'suggestions'" */
+function normalizeKeyErrorName(err: string): string {
+  let s = (err || "").trim();
+  s = s.replace(/^['"]|['"]$/g, "");
+  if ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith('"') && s.endsWith('"'))) {
+    s = s.slice(1, -1);
+  }
+  return s.trim();
+}
+
 export function humanizeTaskErrorMessage(raw: string): string {
   const t = (raw || "").trim();
   if (!t) return t;
@@ -30,7 +40,15 @@ export function humanizeTaskErrorMessage(raw: string): string {
         const et = typeof parsed.error_type === "string" ? parsed.error_type : "";
         const err = parsed.error.replace(/^['"]|['"]$/g, "");
         if (action === "run_excel_code" && et === "KeyError") {
-          return `Excel 代码执行失败：数据或代码中缺少键/列「${err || "未知"}」。若仅在服务器上失败，请核对表格列名是否与本地一致。`;
+          const key = normalizeKeyErrorName(err) || "未知";
+          if (key === "suggestions") {
+            return (
+              "Excel 代码执行时访问了「suggestions」列/键，但当前数据里并没有这个名称。" +
+              "常见原因：模型把普通表当成带「建议」字段的结构、或误用列名。请让助手按**实际表头**编写代码，或先说明各列含义；" +
+              "若仅服务器失败，请对比服务器上文件与本地文件的列名是否一致。"
+            );
+          }
+          return `Excel 代码执行失败：访问了不存在的键或列「${key}」。请核对代码中的列名、字典键与表格是否一致（服务器与本地文件可能不同）。`;
         }
         if (action === "run_excel_code") {
           return `Excel 代码执行失败：${err.slice(0, 280)}${err.length > 280 ? "…" : ""}`;
