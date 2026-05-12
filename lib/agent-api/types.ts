@@ -77,6 +77,12 @@ export type ToolOrchestrationStepApi = {
   label: string;
   task_id: string | null;
   status: string;
+  /** run_linkfox_task | run_chatexcel_task */
+  tool?: string | null;
+  /** run_chatexcel_task：generate_report | merge_keyword_table | raw */
+  chatexcel_kind?: string | null;
+  prior_context_mode?: string | null;
+  reads_from_steps?: number[] | null;
 };
 
 export type ToolOrchestrationStatusApi = {

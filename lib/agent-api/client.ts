@@ -857,11 +857,24 @@ export async function getToolOrchestration(
       };
     }
     const o = item as Record<string, unknown>;
+    const rawReads = o.reads_from_steps;
+    let reads_from_steps: number[] | null = null;
+    if (Array.isArray(rawReads)) {
+      reads_from_steps = [];
+      for (const x of rawReads) {
+        const n = typeof x === "number" ? x : Number(x);
+        if (Number.isFinite(n)) reads_from_steps.push(Math.trunc(n));
+      }
+    }
     return {
       index: typeof o.index === "number" ? o.index : index,
       label: typeof o.label === "string" ? o.label : "",
       task_id: typeof o.task_id === "string" ? o.task_id : null,
       status: typeof o.status === "string" ? o.status : "PENDING",
+      tool: typeof o.tool === "string" ? o.tool : null,
+      chatexcel_kind: typeof o.chatexcel_kind === "string" ? o.chatexcel_kind : null,
+      prior_context_mode: typeof o.prior_context_mode === "string" ? o.prior_context_mode : null,
+      reads_from_steps,
     };
   });
   return {
