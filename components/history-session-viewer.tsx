@@ -274,15 +274,19 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
         platformAgent?.openLogin("请先登录后再查看任务结果。");
         return;
       }
+      const effectiveBundle =
+        bundleTaskIds && bundleTaskIds.length > 0
+          ? bundleTaskIds
+          : orchestrationAnchor?.bundleTaskIds;
       setError("");
       try {
         await platformAgent.withFreshToken(async (token) => {
-          const data = await fetchTaskOrchestrationForResultPanel(token, taskId, bundleTaskIds, {
+          const data = await fetchTaskOrchestrationForResultPanel(token, taskId, effectiveBundle, {
             orchestrationId: orchestrationId ?? undefined,
           });
           setOrchestrationBundles(data.bundles);
           setPanelSubtaskFocus(null);
-          const ids = (bundleTaskIds ?? []).map((x) => (x || "").trim()).filter(Boolean);
+          const ids = (effectiveBundle ?? []).map((x) => (x || "").trim()).filter(Boolean);
           const api =
             ids.length > 0
               ? `/api/tasks/download?` + ids.map((id) => `task_ids=${encodeURIComponent(id)}`).join("&")
@@ -297,7 +301,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
         setError(formatAgentApiErrorForUser(e));
       }
     },
-    [platformAgent],
+    [orchestrationAnchor, platformAgent],
   );
 
   const send = useCallback(async () => {
@@ -465,7 +469,9 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                             }
                             void openTaskResultPanel(
                               taskId,
-                              bundleTaskIds.length > 0 ? bundleTaskIds : undefined,
+                              bundleTaskIds.length > 0
+                                ? bundleTaskIds
+                                : orchestrationAnchor?.bundleTaskIds,
                               orchIdMeta ?? orchestrationAnchor?.orchestrationId,
                             );
                           }}

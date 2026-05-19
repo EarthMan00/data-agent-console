@@ -1,4 +1,4 @@
-import { getTask, getToolOrchestration } from "@/lib/agent-api/client";
+import { AgentApiError, getTask, getToolOrchestration } from "@/lib/agent-api/client";
 import type { SessionMessageItem, TaskResponse } from "@/lib/agent-api/types";
 import type { PlatformSubtaskSnapshot, PlatformTaskArtifactRef, TaskExecutionStep } from "@/lib/agent-events";
 
@@ -147,12 +147,19 @@ export async function fetchTaskOrchestrationForResultPanel(
   let stepIds = dedupeOrchestrationTaskIds(primaryTaskId, bundleTaskIds);
 
   if (stepIds.length <= 1 && options?.orchestrationId) {
-    const orch = await getToolOrchestration(token, options.orchestrationId);
-    const fromOrch = orch.steps
-      .map((s) => (s.task_id ?? "").trim())
-      .filter((x) => x.length > 0);
-    if (fromOrch.length > 0) {
-      stepIds = dedupeOrchestrationTaskIds(fromOrch[fromOrch.length - 1]!, fromOrch);
+    try {
+      const orch = await getToolOrchestration(token, options.orchestrationId);
+      const fromOrch = orch.steps
+        .map((s) => (s.task_id ?? "").trim())
+        .filter((x) => x.length > 0);
+      if (fromOrch.length > 0) {
+        stepIds = dedupeOrchestrationTaskIds(fromOrch[fromOrch.length - 1]!, fromOrch);
+      }
+    } catch (e) {
+      // 编排仅存进程内存，服务重启后 404；继续用 message 里已有的 task_id / bundle
+      if (!(e instanceof AgentApiError && e.status === 404)) {
+        throw e;
+      }
     }
   }
   const bundles: TaskOrchestrationBundleRow[] = [];
