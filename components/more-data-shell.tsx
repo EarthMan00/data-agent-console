@@ -38,7 +38,7 @@ import {
 } from "@/lib/agent-api/client";
 import type { SessionListItem, SessionMessageItem } from "@/lib/agent-api/types";
 import { cn } from "@/lib/utils";
-import { demoActions, useDemoState } from "@/lib/workspace-store";
+import { workspaceActions, useWorkspaceState } from "@/lib/workspace-store";
 
 const navItems = [
   { href: "/", label: "新的对话", icon: PlusCircle },
@@ -252,7 +252,7 @@ function MoreDataShellComponent({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
-  const { runs, currentRunId } = useDemoState();
+  const { runs, currentRunId } = useWorkspaceState();
 
   const {
     historySessions,
@@ -316,7 +316,7 @@ function MoreDataShellComponent({
           .filter((r) => ((r.platformSessionId ?? "").trim() === sid))
           .map((r) => r.id);
         for (const rid of matchingRunIds) {
-          demoActions.removeRunById(rid);
+          workspaceActions.removeRunById(rid);
         }
 
         const urlRunId = searchParams.get("runId");

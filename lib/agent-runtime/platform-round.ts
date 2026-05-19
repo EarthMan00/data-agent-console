@@ -1,5 +1,4 @@
 import {
-  AgentApiError,
   getTask,
   getToolOrchestration,
   patchTaskExecutionSteps,
@@ -13,7 +12,6 @@ import { safeRandomUUID } from "@/lib/random-uuid";
 import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 import { buildTaskCompletionSummary } from "@/lib/task-chat-summary";
 
-import { PlatformAuthExpiredError, refreshPlatformAccessToken } from "./auth";
 import { capabilityLabelMap } from "./constants";
 import { buildReportPatch } from "./report-helpers";
 import { mapServerOrchestrationStepStatus, mapTaskResponseToSubtaskEvent } from "./task-mapping";
@@ -64,30 +62,9 @@ export async function runPlatformRound(
   }
 
   await withFreshToken(async (token) => {
-    let accessToken = token;
-    const withAuthRetry = async <T,>(fn: (t: string) => Promise<T>): Promise<T> => {
-      try {
-        return await fn(accessToken);
-      } catch (e) {
-        if (e instanceof AgentApiError && e.status === 401) {
-          let next: string | null;
-          try {
-            next = await refreshPlatformAccessToken();
-          } catch {
-            throw new PlatformAuthExpiredError();
-          }
-          if (next) {
-            accessToken = next;
-            return await fn(accessToken);
-          }
-          throw new PlatformAuthExpiredError();
-        }
-        throw e;
-      }
-    };
-
+    const accessToken = token;
     const mid = safeRandomUUID();
-    const result = await withAuthRetry((tk) => sendChatMessage(tk, chatSessionId, input.prompt, mid));
+    const result = await sendChatMessage(accessToken, chatSessionId, input.prompt, mid);
 
     if (result.kind === "accepted") {
       onToolTaskAccepted?.({
@@ -129,14 +106,10 @@ export async function runPlatformRound(
 
     try {
       const executionSteps = result.execution_steps ?? [];
-      const stepLabels =
-        executionSteps.length > 0
-          ? executionSteps
-          : (() => {
-              const compact = input.prompt.replace(/\s+/g, " ").trim();
-              const t = compact.length > 200 ? `${compact.slice(0, 197)}...` : compact;
-              return [t ? `调用工具：${t}` : "调用工具执行当前任务"];
-            })();
+      if (executionSteps.length === 0) {
+        throw new Error("平台未返回 execution_steps，无法展示任务步骤");
+      }
+      const stepLabels = executionSteps;
 
       const stepDefs = stepLabels.map((label, i) => ({
         id: `${input.roundId}-step-${i + 1}`,
@@ -176,11 +149,7 @@ export async function runPlatformRound(
           task_id: taskIdForMeta ?? result.task_id,
           steps,
         };
-        if (taskExecutionStepsMessageId) {
-          await patchTaskExecutionSteps(accessToken, chatSessionId, taskExecutionStepsMessageId, body);
-        } else {
-          await postTaskExecutionSteps(accessToken, chatSessionId, body);
-        }
+        await patchTaskExecutionSteps(accessToken, chatSessionId, taskExecutionStepsMessageId, body);
       };
 
       const persistTaskExecutionStepsUniform = async (finalStatus: TaskExecutionStepStatus, taskIdForMeta?: string) => {
@@ -215,13 +184,8 @@ export async function runPlatformRound(
           const def = stepDefs[i];
           const label = def?.label ?? st.label ?? `步骤 ${i + 1}`;
           const sid = def?.id ?? `${input.roundId}-step-${i + 1}`;
-          try {
-            const t = await withAuthRetry((tk) => getTask(tk, tid));
-            handlers.onEvent(mapTaskResponseToSubtaskEvent(input.roundId, i, sid, label, t));
-          } catch (e) {
-            if (e instanceof PlatformAuthExpiredError) throw e;
-            /* 单步任务查询失败不阻断整轮 */
-          }
+          const t = await getTask(accessToken, tid);
+          handlers.onEvent(mapTaskResponseToSubtaskEvent(input.roundId, i, sid, label, t));
         }
       };
 
@@ -241,7 +205,7 @@ export async function runPlatformRound(
       };
 
       const orchestrationId = result.orchestration_id;
-      let sharedTask: TaskResponse = await withAuthRetry((t) => getTask(t, result.task_id));
+      let sharedTask: TaskResponse = await getTask(accessToken, result.task_id);
       let orchFinished = false;
       let lastOrch: Awaited<ReturnType<typeof getToolOrchestration>> | null = null;
 
@@ -253,13 +217,7 @@ export async function runPlatformRound(
             userStopped = true;
             break;
           }
-          try {
-            lastOrch = await withAuthRetry((t) => getToolOrchestration(t, orchestrationId));
-          } catch (e) {
-            if (e instanceof PlatformAuthExpiredError) throw e;
-            lastOrch = null;
-            continue;
-          }
+          lastOrch = await getToolOrchestration(accessToken, orchestrationId);
           lastOrch.steps.forEach((st, idx) => {
             const def = stepDefs[idx];
             if (!def) return;
@@ -298,7 +256,7 @@ export async function runPlatformRound(
             summaryTaskId = failed?.task_id ?? result.task_id;
           }
         }
-        sharedTask = await withAuthRetry((t) => getTask(t, summaryTaskId));
+        sharedTask = await getTask(accessToken, summaryTaskId);
       } else {
         if (stepDefs.length > 0) {
           emitStep(stepDefs[0]!.id, "running");
@@ -311,13 +269,7 @@ export async function runPlatformRound(
             userStoppedSingle = true;
             break;
           }
-          try {
-            sharedTask = await withAuthRetry((t) => getTask(t, result.task_id));
-          } catch (e) {
-            if (e instanceof PlatformAuthExpiredError) throw e;
-            polls += 1;
-            continue;
-          }
+          sharedTask = await getTask(accessToken, result.task_id);
           polls += 1;
         }
         if (userStoppedSingle) {
@@ -381,6 +333,17 @@ export async function runPlatformRound(
         await persistTaskExecutionStepsRows(rowStatuses, task.task_id);
 
         if (!lastOrch?.success) {
+          if (lastOrch) {
+            const rowStatuses: TaskExecutionStepStatus[] = lastOrch.steps.map((st) => {
+              const mapped = mapServerOrchestrationStepStatus(st.status);
+              return mapped === "pending" ? "error" : mapped;
+            });
+            rowStatuses.forEach((st, idx) => {
+              const def = stepDefs[idx];
+              if (def) emitStep(def.id, st);
+            });
+            await persistTaskExecutionStepsRows(rowStatuses, task.task_id);
+          }
           handlers.onEvent({
             type: "error",
             roundId: input.roundId,

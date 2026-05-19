@@ -110,7 +110,7 @@ export function pickBestOrchestrationAnchor(messages: SessionMessageItem[]): Orc
     if (!primary) continue;
 
     const kind = meta.kind;
-    const isStepsProgressMeta = kind === "task_execution_steps" || kind === "mock_task_execution";
+    const isStepsProgressMeta = kind === "task_execution_steps";
 
     let score = ids.length;
     if (ids.length >= 2) score += 1000;
@@ -147,16 +147,12 @@ export async function fetchTaskOrchestrationForResultPanel(
   let stepIds = dedupeOrchestrationTaskIds(primaryTaskId, bundleTaskIds);
 
   if (stepIds.length <= 1 && options?.orchestrationId) {
-    try {
-      const orch = await getToolOrchestration(token, options.orchestrationId);
-      const fromOrch = orch.steps
-        .map((s) => (s.task_id ?? "").trim())
-        .filter((x) => x.length > 0);
-      if (fromOrch.length > 0) {
-        stepIds = dedupeOrchestrationTaskIds(fromOrch[fromOrch.length - 1]!, fromOrch);
-      }
-    } catch {
-      /* 保持单 task 拉取 */
+    const orch = await getToolOrchestration(token, options.orchestrationId);
+    const fromOrch = orch.steps
+      .map((s) => (s.task_id ?? "").trim())
+      .filter((x) => x.length > 0);
+    if (fromOrch.length > 0) {
+      stepIds = dedupeOrchestrationTaskIds(fromOrch[fromOrch.length - 1]!, fromOrch);
     }
   }
   const bundles: TaskOrchestrationBundleRow[] = [];

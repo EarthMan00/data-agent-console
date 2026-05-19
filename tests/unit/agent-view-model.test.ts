@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAcknowledgement, buildRoundViewModels, toCapabilitySafeTitle, type TaskRunLike } from "@/components/agent-workspace";
+import {
+  buildAcknowledgement,
+  buildRoundViewModels,
+  isExecutionStepActivelyBusy,
+  isRoundExecutionTerminated,
+  toCapabilitySafeTitle,
+  type TaskRunLike,
+} from "@/components/agent-workspace";
 
 const sampleRun: TaskRunLike = {
   startedAt: "2026-03-28 12:00:00",
@@ -146,5 +153,22 @@ describe("agent view model helpers", () => {
 
   it("truncates long capability-safe titles", () => {
     expect(toCapabilitySafeTitle("a".repeat(50))).toBe(`${"a".repeat(42)}...`);
+  });
+
+  it("does not treat pending follow-up steps as busy after orchestration failed", () => {
+    const round = {
+      errorMessage: "积分不足!",
+      executionSteps: [
+        { id: "s1", roundId: "r1", order: 0, label: "步骤1", status: "error" as const },
+        { id: "s2", roundId: "r1", order: 1, label: "步骤2", status: "pending" as const },
+      ],
+    };
+    expect(isRoundExecutionTerminated("error", round)).toBe(true);
+    const rawBusy = round.executionSteps.some((s) => isExecutionStepActivelyBusy(s.status));
+    expect(rawBusy).toBe(true);
+    const composerBusy =
+      !isRoundExecutionTerminated("error", round) &&
+      round.executionSteps.some((s) => isExecutionStepActivelyBusy(s.status));
+    expect(composerBusy).toBe(false);
   });
 });

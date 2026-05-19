@@ -35,7 +35,7 @@ import { sanitizeObjective } from "@/lib/agent-attachments";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { isPlatformBackendEnabled, streamAgentRound } from "@/lib/agent-runtime";
 import { homeCapabilityItems } from "@/lib/home-capability-items";
-import { demoActions, useDemoState, type Report, type TaskRun } from "@/lib/workspace-store";
+import { workspaceActions, useWorkspaceState, type Report, type TaskRun } from "@/lib/workspace-store";
 import { displayLabelForIndexedSubtask } from "@/lib/merge-orchestration-task-artifacts";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import { cn } from "@/lib/utils";
@@ -44,6 +44,8 @@ import {
   buildAcknowledgement,
   buildRoundViewModels,
   compactText,
+  isExecutionStepActivelyBusy,
+  isRoundExecutionTerminated,
   type RoundViewModel,
   type TaskRunLike,
   toCapabilitySafeTitle,
@@ -54,7 +56,13 @@ const ChatAttachments = dynamic(
   { ssr: false },
 );
 
-export { buildAcknowledgement, buildRoundViewModels, toCapabilitySafeTitle };
+export {
+  buildAcknowledgement,
+  buildRoundViewModels,
+  isExecutionStepActivelyBusy,
+  isRoundExecutionTerminated,
+  toCapabilitySafeTitle,
+};
 export type { RoundViewModel, TaskRunLike };
 
 /** 各轮任务执行区内步骤卡片高亮：最新一轮用全局页签状态；历史轮仅在本轮子任务内推算 */
@@ -83,7 +91,7 @@ export function AgentWorkspace() {
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
   const historySessionId = searchParams.get("sessionId") ?? "";
-  const { currentRunId, reports, runs } = useDemoState();
+  const { currentRunId, reports, runs } = useWorkspaceState();
   const runId = searchParams.get("runId") ?? currentRunId;
   const run = runId ? (runs.find((item) => item.id === runId) ?? null) : null;
   const report = run ? (reports.find((item) => item.id === run.reportId) ?? null) : null;
@@ -127,7 +135,7 @@ function AgentRunWorkspaceView({
   report: Report;
   platformAgent: ReturnType<typeof useOptionalPlatformAgent>;
 }) {
-  const { currentRunId } = useDemoState();
+  const { currentRunId } = useWorkspaceState();
   const [previewOverrides, setPreviewOverrides] = useState<Record<string, string | null>>({});
   const [panelVisibility, setPanelVisibility] = useState<Record<string, boolean>>({});
   /** 右侧任务结果区：点击某张步骤结果卡片时锁定该步产物；新一轮步骤快照到达时自动清除以跟随最新一步 */
@@ -155,7 +163,7 @@ function AgentRunWorkspaceView({
 
   useEffect(() => {
     if (run && currentRunId !== run.id) {
-      demoActions.setCurrentRun(run.id);
+      workspaceActions.setCurrentRun(run.id);
     }
   }, [currentRunId, run]);
 
@@ -201,25 +209,30 @@ function AgentRunWorkspaceView({
 
   const latestRoundModel = roundModels.length > 0 ? roundModels[roundModels.length - 1] : undefined;
 
-  const stepStatusIsBusy = (status: string | undefined) => {
-    const st = (status ?? "").toLowerCase();
-    return st === "pending" || st === "running";
-  };
-
-  /** store 全表扫描（兼容异常大小写） */
+  /** store 全表扫描（兼容异常大小写）；已失败/已结束的轮次忽略未执行的 pending。 */
   const anyOrchestrationStepBusy = useMemo(() => {
     const map = run.taskExecutionStepsByRound;
     if (!map) return false;
-    return Object.values(map).some((steps) => steps.some((s) => stepStatusIsBusy(s.status)));
-  }, [run.taskExecutionStepsByRound]);
+    return roundModels.some((r) => {
+      if (isRoundExecutionTerminated(run.status, r)) return false;
+      const steps = map[r.roundId];
+      if (!steps) return false;
+      return steps.some((s) => isExecutionStepActivelyBusy(s.status));
+    });
+  }, [run.taskExecutionStepsByRound, roundModels, run.status]);
 
   /**
    * 任意一轮仍有执行中步骤 —— 必须与中间「任务执行」同源。
    * 追问后 latestRoundModel 往往是新一轮（无 steps），若只看最新一轮会漏判，底部仍显示发送。
+   * 某步已失败后，后续 pending 不算 busy（否则会一直显示停止按钮）。
    */
   const anyRoundStepsBusy = useMemo(
-    () => roundModels.some((r) => r.executionSteps?.some((s) => stepStatusIsBusy(s.status))),
-    [roundModels],
+    () =>
+      roundModels.some((r) => {
+        if (isRoundExecutionTerminated(run.status, r)) return false;
+        return r.executionSteps?.some((s) => isExecutionStepActivelyBusy(s.status));
+      }),
+    [roundModels, run.status],
   );
 
   /** 任意一轮：工具编排且任务执行区逻辑上未收尾（collapseExecution === false） */
@@ -252,15 +265,29 @@ function AgentRunWorkspaceView({
   }, [roundModels, run.timeline, run.status]);
 
   /** 与「任务执行」一致：刷新后 agentRoundInFlight 会丢；queued 且任意轮已有拆解步骤也算执行态 */
-  const composerShowsStop =
-    agentRoundInFlight ||
-    run.status === "running" ||
-    (run.status === "queued" && roundModels.some((r) => (r.executionSteps?.length ?? 0) > 0)) ||
-    roundModels.some((r) => r.assistantPending) ||
-    anyOrchestrationStepBusy ||
-    anyRoundStepsBusy ||
-    anyRoundWaitingFinal ||
-    anyRoundOrchestrationPanelActive;
+  const composerShowsStop = useMemo(() => {
+    if (run.status === "error") {
+      return agentRoundInFlight;
+    }
+    return (
+      agentRoundInFlight ||
+      run.status === "running" ||
+      (run.status === "queued" && roundModels.some((r) => (r.executionSteps?.length ?? 0) > 0)) ||
+      roundModels.some((r) => r.assistantPending) ||
+      anyOrchestrationStepBusy ||
+      anyRoundStepsBusy ||
+      anyRoundWaitingFinal ||
+      anyRoundOrchestrationPanelActive
+    );
+  }, [
+    agentRoundInFlight,
+    anyOrchestrationStepBusy,
+    anyRoundOrchestrationPanelActive,
+    anyRoundStepsBusy,
+    anyRoundWaitingFinal,
+    roundModels,
+    run.status,
+  ]);
 
   const latestHasPlatformSteps = Boolean(latestRoundModel?.executionSteps?.length);
   const latestRoundIdForPanel = latestRoundModel?.roundId;
@@ -414,7 +441,7 @@ function AgentRunWorkspaceView({
         },
         {
           onEvent: (event) => {
-            demoActions.applyRuntimeEvent(run.id, event);
+            workspaceActions.applyRuntimeEvent(run.id, event);
           },
         },
         isPlatformBackendEnabled() && platformAgent && run.platformSessionId
@@ -434,15 +461,6 @@ function AgentRunWorkspaceView({
       );
       setQueuedAttachments((current) => ({ ...current, [run.id]: [] }));
       setComposerVersion((current) => ({ ...current, [run.id]: (current[run.id] ?? 0) + 1 }));
-    } catch (error) {
-      const errText = formatAgentApiErrorForUser(error);
-      demoActions.applyRuntimeEvent(run.id, {
-        type: "error",
-        roundId: input.roundId,
-        message: errText,
-      });
-      // 错误已在会话区内展示（系统气泡 / 任务区提示），勿再写入顶部 notice，避免重复白框
-      setNotice("");
     } finally {
       executingRoundsRef.current.delete(input.roundId);
       setAgentRoundInFlight(false);
@@ -464,7 +482,7 @@ function AgentRunWorkspaceView({
     const value = sanitizeObjective(draft);
     if (!value || composerShowsStop) return;
     const attachments = queuedAttachments[run.id] ?? [];
-    const roundId = demoActions.queueFollowupRound(run.id, {
+    const roundId = workspaceActions.queueFollowupRound(run.id, {
       prompt: value,
       selectedCapabilities: selectedSourceIds,
       attachments,
@@ -720,7 +738,7 @@ function AgentRunWorkspaceView({
                                         onAction={
                                           tool.previewId
                                             ? () => {
-                                                demoActions.setActivePreview(run.id, tool.previewId!);
+                                                workspaceActions.setActivePreview(run.id, tool.previewId!);
                                                 setPreviewOverrides((current) => ({
                                                   ...current,
                                                   [run.id]: tool.previewId!,
@@ -789,7 +807,7 @@ function AgentRunWorkspaceView({
                             const currentOpen = panelVisibility[run.id] ?? false;
                             const next = !currentOpen;
                             if (next && run.activePreviewId) {
-                              demoActions.setActivePreview(run.id, run.activePreviewId);
+                              workspaceActions.setActivePreview(run.id, run.activePreviewId);
                               setPreviewOverrides((current) => ({ ...current, [run.id]: run.activePreviewId! }));
                             }
                             setPanelVisibility((current) => ({ ...current, [run.id]: next }));

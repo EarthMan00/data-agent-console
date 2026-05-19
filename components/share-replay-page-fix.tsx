@@ -39,7 +39,7 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
   if (!share) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f7f7f8] text-[13px] text-[#6f7773]">
-        ???????
+        加载分享内容�?
       </div>
     );
   }
@@ -49,7 +49,7 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
   const generatedAt = linkedReport?.generatedAt ?? "";
   const summary =
     linkedRun?.summaryBody ??
-    "?????????????????????????????????";
+    "完整执行回放需关联真实会话数据；当前仅展示该分享的任务目标与说明�?;
 
   return (
     <div className="min-h-screen bg-[#f7f7f8] text-[#202124]">
@@ -63,25 +63,36 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
           <div className="truncate text-[12px] font-medium text-[#27272a]">{topTitle}</div>
           {generatedAt ? <div className="text-[11px] text-[#8b949e]">{generatedAt}</div> : null}
         </div>
-        <Link href="/" className="text-[#6f7773]" aria-label="??">
+        <Link href="/" className="text-[#6f7773]" aria-label="关闭">
           <X className="h-4 w-4" />
         </Link>
       </header>
+
       <div className="mx-auto max-w-[960px] px-6 py-8">
-        {share.description ? <p className="mb-4 text-[12px] text-[#6f7773]">{share.description}</p> : null}
+        {share.description ? (
+          <p className="mb-4 text-[12px] text-[#6f7773]">{share.description}</p>
+        ) : null}
         <div className="rounded-[18px] border border-[#e5e7eb] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
           <div className="whitespace-pre-wrap text-[14px] leading-8 text-[#202124]">{objective}</div>
         </div>
         <p className="mt-6 text-[12px] leading-6 text-[#5e6763]">{summary}</p>
-        {linkedRun
-          ? linkedRun.sections.map((section) => (
-              <div key={section.id} className="mt-4 rounded-[12px] border border-[#eceef1] bg-[#fafafa] px-4 py-3">
+        {linkedRun ? (
+          <div className="mt-6 space-y-3">
+            <div className="text-[13px] font-semibold text-[#303734]">已加载工作区回放</div>
+            {linkedRun.sections.map((section) => (
+              <div key={section.id} className="rounded-[12px] border border-[#eceef1] bg-[#fafafa] px-4 py-3">
                 <div className="text-[12px] font-medium text-[#303734]">{section.title}</div>
                 <p className="mt-1 text-[12px] leading-6 text-[#5e6763]">{section.body}</p>
               </div>
-            ))
-          : null}
+            ))}
+          </div>
+        ) : (
+          <p className="mt-6 text-[12px] text-[#9aa39e]">
+            执行时间线与结果表需来自真实任务会话；请从首页发起同款任务或登录后打开关联 run�?
+          </p>
+        )}
       </div>
     </div>
   );
 }
+

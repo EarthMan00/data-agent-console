@@ -10,19 +10,16 @@ export function deriveTaskUiStatus(t: UserScheduledTaskItemApi): TaskUiStatus {
   return "生效中";
 }
 
-export function formatHhmm(iso: string | null | undefined, fallback: string) {
-  if (!iso) return fallback;
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return fallback;
-    return d.toLocaleString();
-  } catch {
-    return fallback;
+export function formatHhmm(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    throw new Error(`无效时间: ${iso}`);
   }
+  return d.toLocaleString();
 }
 
 export function nextRunLabel(t: UserScheduledTaskItemApi) {
-  if (t.next_run_at) return formatHhmm(t.next_run_at, t.time_hhmm);
+  if (t.next_run_at) return formatHhmm(t.next_run_at);
   if (t.recurrence === "once" && t.run_once_date) return `一次性 ${t.run_once_date} ${t.time_hhmm}`;
   return `${recurrenceLabel(t)} ${t.time_hhmm}`;
 }

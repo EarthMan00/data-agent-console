@@ -3,9 +3,6 @@ import type { TaskExecutionStep, TaskExecutionStepStatus } from "@/lib/agent-eve
 /** 当前写入库中的 meta.kind */
 export const TASK_EXECUTION_STEPS_META_KIND = "task_execution_steps" as const;
 
-/** 历史数据兼容（旧端点写入） */
-const LEGACY_TASK_STEPS_META_KIND = "mock_task_execution" as const;
-
 function isStepStatus(v: unknown): v is TaskExecutionStepStatus {
   return v === "pending" || v === "running" || v === "done" || v === "error";
 }
@@ -16,7 +13,7 @@ export function parseTaskExecutionStepsFromMeta(
 ): TaskExecutionStep[] | null {
   if (!meta) return null;
   const k = meta.kind;
-  if (k !== TASK_EXECUTION_STEPS_META_KIND && k !== LEGACY_TASK_STEPS_META_KIND) return null;
+  if (k !== TASK_EXECUTION_STEPS_META_KIND) return null;
   const roundId = typeof meta.round_id === "string" ? meta.round_id : "";
   const raw = meta.steps;
   if (!Array.isArray(raw)) return null;

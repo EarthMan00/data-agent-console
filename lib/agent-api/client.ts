@@ -471,14 +471,15 @@ export async function postTaskExecutionSteps(
     },
     body: JSON.stringify(body),
   });
-  if (res.status === 503) return null;
-  if (!res.ok) return null;
   const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("post task execution steps failed", res.status, data);
+  }
   if (data && typeof data === "object" && !Array.isArray(data)) {
     const mid = (data as Record<string, unknown>).message_id;
     if (typeof mid === "string") return mid;
   }
-  return null;
+  throw new AgentApiError("post task execution steps: missing message_id", res.status, data);
 }
 
 /** 任务结束时更新同一条步骤消息的 steps（不改变排序位置）。 */
@@ -499,8 +500,11 @@ export async function patchTaskExecutionSteps(
       body: JSON.stringify(body),
     },
   );
-  if (res.status === 503) return false;
-  return res.ok;
+  if (!res.ok) {
+    const data = await safeJson(res);
+    throw new AgentApiError("patch task execution steps failed", res.status, data);
+  }
+  return true;
 }
 
 export type ListTasksParams = {

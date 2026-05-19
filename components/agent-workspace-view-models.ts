@@ -230,6 +230,22 @@ export function buildRoundViewModels(run: TaskRunLike) {
   return models;
 }
 
+/** 本轮工具编排已结束（成功/失败/取消），后续 pending 步骤不应再占用「停止」按钮。 */
+export function isRoundExecutionTerminated(
+  runStatus: TaskRunLike["status"] | undefined,
+  round: Pick<RoundViewModel, "errorMessage" | "executionSteps">,
+): boolean {
+  if (runStatus === "error" || runStatus === "success") return true;
+  if (round.errorMessage) return true;
+  if (round.executionSteps?.some((s) => s.status === "error")) return true;
+  return false;
+}
+
+export function isExecutionStepActivelyBusy(status: string | undefined): boolean {
+  const st = (status ?? "").toLowerCase();
+  return st === "pending" || st === "running";
+}
+
 export function buildAcknowledgement(round: RoundViewModel, run: TaskRunLike) {
   const shortTitle = compactText(round.userMessage ?? run.objective, 40);
   if (round.executionSteps?.length) {

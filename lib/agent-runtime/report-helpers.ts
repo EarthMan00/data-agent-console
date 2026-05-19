@@ -1,5 +1,6 @@
 import type { AgentAttachment } from "@/lib/agent-events";
-import { createMinimalResultPreview, DEFAULT_RESULT_PREVIEW_KEY } from "@/lib/report-defaults";
+import type { ResultPreview } from "@/lib/workspace-domain-types";
+import { DEFAULT_RESULT_PREVIEW_KEY } from "@/lib/report-defaults";
 
 import { capabilityLabelMap } from "./constants";
 
@@ -49,27 +50,23 @@ export function buildStreamChunks(prompt: string, sourceLabels: string[], attach
   return chunks;
 }
 
+/** 流式阶段的报告元数据补丁；表格内容须由真实 task/report 事件填充。 */
 export function buildReportPatch(prompt: string, sourceLabels: string[], attachments: AgentAttachment[]) {
-  const base = createMinimalResultPreview({
-    id: DEFAULT_RESULT_PREVIEW_KEY,
+  return {
+    previewKey: DEFAULT_RESULT_PREVIEW_KEY,
     title: prompt.length > 24 ? `${prompt.slice(0, 24)}...` : prompt,
     subtitle: `最后生成时间：${formatShortDate()} · ${sourceLabels.join("、") || "默认数据源"}`,
-  });
-  return {
-    previewKey: base.id,
-    title: base.title,
-    subtitle: base.subtitle,
     generatedAt: formatDate(),
-    mode: base.mode,
+    mode: "sheet" as const,
     summary: [
       `本轮以 ${sourceLabels.join("、") || "默认数据源"} 为主线完成了多逻辑链执行。`,
       attachments.length > 0
         ? `已结合附件 ${attachments.map((item) => item.name).join("、")} 做上下文校正。`
         : "当前结果已经具备继续追问的上下文承接能力。",
-      `围绕“${prompt}”的关键判断已同步写入右侧结果快照。`,
+      `围绕“${prompt}”的关键判断将随任务结果同步到右侧预览。`,
     ],
-    sheetTabs: base.sheetTabs.map((tab) => ({ ...tab })),
-    sheetRows: base.sheetRows.map((row) => [...row]),
-    summaryBody: `系统已按 ${sourceLabels.join("、") || "默认数据源"} 并行完成多逻辑链分析，并将结果同步到当前会话与右侧预览。`,
+    sheetTabs: [] as ResultPreview["sheetTabs"],
+    sheetRows: [] as ResultPreview["sheetRows"],
+    summaryBody: `系统已按 ${sourceLabels.join("、") || "默认数据源"} 并行执行多逻辑链分析，表格数据将在任务完成后写入。`,
   };
 }

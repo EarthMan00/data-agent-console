@@ -10,7 +10,7 @@ import { AgentWorkspace } from "@/components/agent-workspace";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { PlatformLogo } from "@/components/platform-logo";
 import { sanitizeObjective } from "@/lib/agent-attachments";
-import { demoActions } from "@/lib/workspace-store";
+import { workspaceActions } from "@/lib/workspace-store";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import {
@@ -50,8 +50,7 @@ export function MoreDataHomePage() {
 
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      const rows = await fetchHomePromptRecommendations();
+    void fetchHomePromptRecommendations().then((rows) => {
       if (cancelled) return;
       setRemotePromptCards(
         rows.map((r) => ({
@@ -65,7 +64,7 @@ export function MoreDataHomePage() {
           replayShareId: r.replay_share_id ?? undefined,
         })),
       );
-    })();
+    });
     return () => {
       cancelled = true;
     };
@@ -109,7 +108,7 @@ export function MoreDataHomePage() {
       try {
         const sid = await platformAgent.beginNewHomeTaskSession();
         if (!sid) return;
-        const runId = demoActions.startPlatformTask({
+        const runId = workspaceActions.startPlatformTask({
           platformSessionId: sid,
           objective: nextQuery,
           mode: composerMode === "深度模式" ? "专业模式" : "轻量模式",
@@ -134,7 +133,7 @@ export function MoreDataHomePage() {
         mode: composerMode === "深度模式" ? "专业模式" : "轻量模式",
         selectedCapabilities,
       });
-      demoActions.upsertRunSnapshot(snapshot.run, snapshot.report);
+      workspaceActions.upsertRunSnapshot(snapshot.run, snapshot.report);
       router.replace(`/?runId=${snapshot.run.id}`);
     } finally {
       setLaunching(false);
@@ -215,7 +214,7 @@ export function MoreDataHomePage() {
       return;
     }
     if (runId) {
-      demoActions.setCurrentRun(runId);
+      workspaceActions.setCurrentRun(runId);
     }
     window.open(`/share/${shareId}`, "_blank", "noopener,noreferrer");
   };

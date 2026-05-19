@@ -6,7 +6,7 @@ import { Download, Ellipsis, Expand, Share2 } from "lucide-react";
 
 import { MoreDataShell } from "@/components/more-data-shell";
 import { Button } from "@/components/ui/button";
-import { useDemoState } from "@/lib/workspace-store";
+import { useWorkspaceState } from "@/lib/workspace-store";
 
 const standaloneReportTabs = [
   { id: "overview", label: "报告摘要" },
@@ -16,7 +16,7 @@ const standaloneReportTabs = [
 export function ReportView() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { currentRunId, reports, runs } = useDemoState();
+  const { currentRunId, reports, runs } = useWorkspaceState();
   const reportId = searchParams.get("reportId");
   const report =
     reports.find((item) => item.id === reportId) ??

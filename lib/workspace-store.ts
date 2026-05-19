@@ -16,7 +16,7 @@ import type {
   TaskExecutionStep,
 } from "@/lib/agent-events";
 import { upsertReportCollection, upsertRunCollection } from "@/lib/workspace-upsert";
-import { createMinimalResultPreview, DEFAULT_RESULT_PREVIEW_KEY } from "@/lib/report-defaults";
+import { DEFAULT_RESULT_PREVIEW_KEY } from "@/lib/report-defaults";
 import { homeCapabilityItems } from "@/lib/home-capability-items";
 import { DEFAULT_RESULT_SUMMARY_TITLE, WORKSPACE_DISPLAY_NAME } from "@/lib/workspace-constants";
 import type { FavoriteItem, PromptCard, ResultPreview, RunRecord, ScheduleItem } from "@/lib/workspace-domain-types";
@@ -152,54 +152,16 @@ function getSourceLabel(sourceId: string) {
   return capabilityLabelMap.get(sourceId) ?? sourceId;
 }
 
-function pickPreviewKey(sourceId: string) {
-  if (["amazon", "keepa", "store-scan", "walmart", "ebay"].includes(sourceId)) return "market-report";
-  if (["jimu", "seller-sprite", "google"].includes(sourceId)) return "review-report";
-  if (["web-search", "alibaba", "tiktok", "patent"].includes(sourceId)) return "competition-report";
-  return DEFAULT_RESULT_PREVIEW_KEY;
-}
-
 function clonePreviewByKey(previewKey: string) {
-  const preview = createMinimalResultPreview({ id: previewKey, title: "任务结果" });
   return {
-    ...preview,
-    summary: [...preview.summary],
-    sheetRows: preview.sheetRows.map((row) => [...row]),
-    sheetTabs: preview.sheetTabs.map((tab) => ({ ...tab })),
+    id: previewKey,
+    title: "任务结果",
+    subtitle: "",
+    mode: "sheet" as const,
+    summary: [] as string[],
+    sheetTabs: [] as { id: string; label: string }[],
+    sheetRows: [] as string[][],
   };
-}
-
-function buildSummaryBody(
-  objective: string,
-  sourceLabels: string[],
-  note?: string,
-  attachments?: AgentAttachment[],
-) {
-  const short = toRunTitle(objective);
-  const sourceText =
-    sourceLabels.length > 0 ? `系统已并行调度 ${sourceLabels.join("、")} 多条数据源链。` : "系统已完成基础数据源链调度。";
-  const attachmentText =
-    attachments && attachments.length > 0 ? `并纳入附件上下文 ${attachments.map((item) => item.name).join("、")}。` : "";
-  const tail = note ? `最新补充要求为“${note}”，本轮结果已完成同步刷新。` : "当前结果适合继续追问、保存模板或转为周期任务。";
-  return `任务“${short}”已完成多逻辑链执行。${sourceText}${attachmentText}${tail}`;
-}
-
-function buildAssistantFinalText(
-  objective: string,
-  sourceLabels: string[],
-  note?: string,
-  attachments?: AgentAttachment[],
-) {
-  const opening = note ? `已根据“${note}”补充分析。` : `围绕“${toRunTitle(objective)}”的首轮分析已完成。`;
-  const sourceSentence =
-    sourceLabels.length > 0
-      ? `本轮主要整合了 ${sourceLabels.join("、")} 的结果，并在同一轮里完成交叉比对。`
-      : "本轮基于默认数据源链给出了一版基础结果。";
-  const attachmentSentence =
-    attachments && attachments.length > 0
-      ? `我也参考了附件 ${attachments.map((item) => item.name).join("、")} 的上下文，不是只看页面内文本。`
-      : "当前输出已经包含市场、评论和竞争三个层面的综合判断。";
-  return [opening, sourceSentence, attachmentSentence].join("\n\n");
 }
 
 function createNode<T extends ConversationNode>(node: T): T {
@@ -226,57 +188,7 @@ function createAttachmentNode(roundId: string, attachments: AgentAttachment[], c
   });
 }
 
-function createSeedTimeline(
-  objective: string,
-  sources: string[],
-  report: Report,
-  roundId: string,
-) {
-  const createdAt = report.generatedAt;
-  const sourceLabels = sources.map(getSourceLabel);
-  const chains: DataSourceChain[] = sources.map((sourceId, index) => ({
-    id: createId("chain"),
-    roundId,
-    sourceId,
-    sourceLabel: getSourceLabel(sourceId),
-    status: "success",
-    intent: `围绕“${toRunTitle(objective)}”查询 ${getSourceLabel(sourceId)} 的结构化结果。`,
-    progressText: `已完成 ${getSourceLabel(sourceId)} 数据查询与整理。`,
-    resultCountText: index === 0 ? "返回 50 条数据" : index === 1 ? "返回 60 条数据" : "返回 1 组结果",
-    resultPreviewId: pickPreviewKey(sourceId),
-  }));
-
-  const timeline: ConversationNode[] = [
-    createUserNode(roundId, objective, createdAt),
-    ...chains.map((chain) =>
-      createNode({
-        id: createId("node"),
-        roundId,
-        createdAt,
-        kind: "data_source_chain",
-        chainId: chain.id,
-      }),
-    ),
-    createNode({
-      id: createId("node"),
-      roundId,
-      createdAt,
-      kind: "assistant_final",
-      text: buildAssistantFinalText(objective, sourceLabels),
-    }),
-    createNode({
-      id: createId("node"),
-      roundId,
-      createdAt,
-      kind: "report_patch",
-      summary: [...report.summary],
-    }),
-  ];
-
-  return { timeline, chains };
-}
-
-function buildReport(runId: string, objective: string, previewKey = "market-report"): Report {
+function buildReport(runId: string, objective: string, previewKey = DEFAULT_RESULT_PREVIEW_KEY): Report {
   const base = clonePreviewByKey(previewKey);
   return {
     ...base,
@@ -314,87 +226,6 @@ function buildRunRecord(run: TaskRun, report: Report): RunRecordEntry {
     status: run.status === "error" ? "失败" : "成功",
     summary: run.objective.length > 120 ? `${run.objective.slice(0, 120)}…` : run.objective,
   };
-}
-
-function buildRunFromObjective(objective: string, mode: TaskDraft["mode"], selectedCapabilities: string[]) {
-  const startedAt = formatDate();
-  const taskDraftId = createId("task");
-  const runId = createId("run");
-  const roundId = createId("round");
-  const title = toRunTitle(objective);
-  const report = buildReport(runId, objective);
-  const run: TaskRun = {
-    id: runId,
-    taskDraftId,
-    reportId: report.id,
-    title,
-    objective,
-    mode,
-    selectedCapabilities,
-    status: "queued",
-    startedAt,
-    sections: [],
-    notes: [],
-    activePreviewId: report.previewKey,
-    summaryTitle: DEFAULT_RESULT_SUMMARY_TITLE,
-    summaryBody: "任务已创建，等待开始执行多逻辑链分析。",
-    saved: false,
-    starred: false,
-    latestRoundId: roundId,
-    timeline: [createUserNode(roundId, objective, startedAt)],
-    chains: [],
-  };
-  const taskDraft: TaskDraft = {
-    id: taskDraftId,
-    objective,
-    mode,
-    selectedCapabilities,
-    createdAt: startedAt,
-  };
-  return { taskDraft, run, report };
-}
-
-function buildSeedRun(args: {
-  runId: string;
-  taskDraftId: string;
-  objective: string;
-  mode: TaskDraft["mode"];
-  selectedCapabilities: string[];
-  startedAt: string;
-  saved: boolean;
-}) {
-  const report = {
-    ...buildReport(args.runId, args.objective),
-    id: `report-${args.runId}`,
-    runId: args.runId,
-    generatedAt: args.startedAt,
-    subtitle: `最后生成时间：${args.startedAt.slice(0, 10)} · ${args.objective.slice(0, 26)}`,
-  };
-  const roundId = `round-${args.runId}`;
-  const { timeline, chains } = createSeedTimeline(args.objective, args.selectedCapabilities, report, roundId);
-  const run: TaskRun = {
-    id: args.runId,
-    taskDraftId: args.taskDraftId,
-    reportId: report.id,
-    title: toRunTitle(args.objective),
-    objective: args.objective,
-    mode: args.mode,
-    selectedCapabilities: args.selectedCapabilities,
-    status: "success",
-    startedAt: args.startedAt,
-    sections: [],
-    notes: [],
-    activePreviewId: report.previewKey,
-    summaryTitle: DEFAULT_RESULT_SUMMARY_TITLE,
-    summaryBody: buildSummaryBody(args.objective, args.selectedCapabilities.map(getSourceLabel)),
-    saved: args.saved,
-    starred: false,
-    latestRoundId: roundId,
-    timeline,
-    chains,
-    roundUiLayouts: { [roundId]: "tool_orchestration" },
-  };
-  return { run, report };
 }
 
 function updateAttachmentStatuses(nodes: ConversationNode[], roundId: string, attachments: AgentAttachment[]) {
@@ -748,7 +579,7 @@ function createWorkflowFromInput(input: {
   };
 }
 
-export const demoStore = {
+export const workspaceStore = {
   subscribe(listener: () => void) {
     listeners.add(listener);
     return () => listeners.delete(listener);
@@ -758,34 +589,18 @@ export const demoStore = {
   },
 };
 
-export function useDemoState() {
-  return useSyncExternalStore(demoStore.subscribe, demoStore.getSnapshot, demoStore.getSnapshot);
+export function useWorkspaceState() {
+  return useSyncExternalStore(
+    workspaceStore.subscribe,
+    workspaceStore.getSnapshot,
+    workspaceStore.getSnapshot,
+  );
 }
 
-export const demoActions = {
-  startTaskRun(input: {
-    objective: string;
-    mode: TaskDraft["mode"];
-    selectedCapabilities?: string[];
-  }) {
-    const objective = input.objective.trim();
-    const selectedCapabilities = input.selectedCapabilities?.length
-      ? input.selectedCapabilities
-      : toCapabilityIds(objective);
-    const { taskDraft, run, report } = buildRunFromObjective(objective, input.mode, selectedCapabilities);
+/** @deprecated 使用 useWorkspaceState */
+export const useDemoState = useWorkspaceState;
 
-    updateState((current) => ({
-      ...current,
-      taskDrafts: [taskDraft, ...current.taskDrafts],
-      runs: [run, ...current.runs],
-      reports: [report, ...current.reports],
-      runRecords: [buildRunRecord(run, report), ...current.runRecords],
-      currentRunId: run.id,
-    }));
-
-    return run.id;
-  },
-
+export const workspaceActions = {
   startPlatformTask(input: {
     platformSessionId: string;
     objective: string;
@@ -1109,3 +924,6 @@ export const demoActions = {
     return { workflowId, templateId };
   },
 };
+
+/** @deprecated 使用 workspaceActions */
+export const demoActions = workspaceActions;
