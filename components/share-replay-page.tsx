@@ -39,7 +39,7 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
   if (!share) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f7f7f8] text-[13px] text-[#6f7773]">
-        ???????
+        加载分享内容…
       </div>
     );
   }
@@ -49,7 +49,7 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
   const generatedAt = linkedReport?.generatedAt ?? "";
   const summary =
     linkedRun?.summaryBody ??
-    "?????????????????????????????????";
+    "完整执行回放需关联真实会话数据；当前仅展示该分享的任务目标与说明。";
 
   return (
     <div className="min-h-screen bg-[#f7f7f8] text-[#202124]">
@@ -63,7 +63,7 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
           <div className="truncate text-[12px] font-medium text-[#27272a]">{topTitle}</div>
           {generatedAt ? <div className="text-[11px] text-[#8b949e]">{generatedAt}</div> : null}
         </div>
-        <Link href="/" className="text-[#6f7773]" aria-label="??">
+        <Link href="/" className="text-[#6f7773]" aria-label="关闭">
           <X className="h-4 w-4" />
         </Link>
       </header>

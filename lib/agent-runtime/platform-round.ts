@@ -12,6 +12,7 @@ import { safeRandomUUID } from "@/lib/random-uuid";
 import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 import { buildTaskCompletionSummary } from "@/lib/task-chat-summary";
 
+import { PlatformAuthExpiredError } from "./auth";
 import { capabilityLabelMap } from "./constants";
 import { buildReportPatch } from "./report-helpers";
 import { mapServerOrchestrationStepStatus, mapTaskResponseToSubtaskEvent } from "./task-mapping";
@@ -139,6 +140,7 @@ export async function runPlatformRound(
       });
 
       const persistTaskExecutionStepsRows = async (statuses: TaskExecutionStepStatus[], taskIdForMeta?: string) => {
+        if (!taskExecutionStepsMessageId) return;
         const steps = stepDefs.map((s, i) => ({
           id: s.id,
           label: s.label,
