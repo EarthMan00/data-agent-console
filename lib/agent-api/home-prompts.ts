@@ -1,4 +1,4 @@
-import { AgentApiError } from "@/lib/agent-api/client";
+import { AgentApiError, readErrorResponseBody } from "@/lib/agent-api/client";
 import { getAgentHttpApiBase } from "@/lib/agent-api/config";
 import type { HomePromptRecommendationDto } from "@/lib/agent-api/types";
 
@@ -6,9 +6,20 @@ import type { HomePromptRecommendationDto } from "@/lib/agent-api/types";
 export async function fetchHomePromptRecommendations(): Promise<HomePromptRecommendationDto[]> {
   const base = getAgentHttpApiBase();
   const res = await fetch(`${base}/api/home-prompt-recommendations`);
-  const data = await res.json().catch(() => null);
+  const data = await readErrorResponseBody(res);
   if (!res.ok) {
-    throw new AgentApiError("home prompt recommendations failed", res.status, data);
+    const detail =
+      data && typeof data === "object" && !Array.isArray(data)
+        ? (data as { _nonJsonBody?: string; detail?: string })._nonJsonBody ||
+          (data as { detail?: string }).detail
+        : null;
+    throw new AgentApiError(
+      detail
+        ? `home prompt recommendations failed: ${String(detail).slice(0, 200)}`
+        : "home prompt recommendations failed",
+      res.status,
+      data,
+    );
   }
   if (!data || typeof data !== "object" || !Array.isArray((data as { items?: unknown }).items)) {
     throw new AgentApiError("invalid home prompt recommendations response", res.status, data);

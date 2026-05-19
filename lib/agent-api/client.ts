@@ -25,14 +25,8 @@ function apiUrl(path: string): string {
   return `${base}${p}`;
 }
 
-async function parseJson(res: Response): Promise<unknown> {
-  const text = await res.text();
-  if (!text) return null;
-  return JSON.parse(text) as unknown;
-}
-
-/** 在 !res.ok 时读取 body：优先解析 JSON，失败时返回含原文片段的占位对象，便于排障。 */
-export async function readErrorResponseBody(res: Response): Promise<unknown> {
+/** 读取响应体并解析 JSON；非 JSON（如代理返回 Internal Server Error 纯文本）时返回 `{ _nonJsonBody }`。 */
+async function parseResponseJson(res: Response): Promise<unknown> {
   const text = await res.text();
   if (!text) return null;
   try {
@@ -40,6 +34,29 @@ export async function readErrorResponseBody(res: Response): Promise<unknown> {
   } catch {
     return { _nonJsonBody: text.length > 2000 ? `${text.slice(0, 2000)}…` : text };
   }
+}
+
+/** 与 parseResponseJson 相同；保留名称供全文件 API 调用方使用。 */
+async function parseJson(res: Response): Promise<unknown> {
+  return parseResponseJson(res);
+}
+
+/** 在 !res.ok 时读取 body：优先解析 JSON，失败时返回含原文片段的占位对象，便于排障。 */
+export async function readErrorResponseBody(res: Response): Promise<unknown> {
+  return parseResponseJson(res);
+}
+
+function apiErrorDetailFromBody(body: unknown, fallback: string): string {
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    const o = body as Record<string, unknown>;
+    if (typeof o._nonJsonBody === "string" && o._nonJsonBody.trim()) {
+      return `${fallback}: ${o._nonJsonBody.trim().slice(0, 280)}`;
+    }
+    if (typeof o.detail === "string" && o.detail.trim()) {
+      return `${fallback}: ${o.detail.trim().slice(0, 280)}`;
+    }
+  }
+  return fallback;
 }
 
 export class AgentApiError extends Error {
@@ -97,9 +114,9 @@ function assertJsonObject(v: unknown): asserts v is Record<string, unknown> {
   }
 }
 
-/** 读取响应 JSON；非法 JSON 时抛出，由调用方处理（不再吞掉解析错误）。 */
+/** 读取响应 JSON；非 JSON 时返回 `{ _nonJsonBody }`，由调用方结合 `res.ok` 抛出 AgentApiError。 */
 async function safeJson(res: Response): Promise<unknown> {
-  return parseJson(res);
+  return parseResponseJson(res);
 }
 
 export async function login(account: string, password: string): Promise<LoginResponse> {
@@ -564,10 +581,18 @@ export async function sendChatMessage(
     body: JSON.stringify({ message, message_id: messageId }),
   });
   const raw = await parseJson(res);
-  const invalidBody = raw === null || typeof raw !== "object" || Array.isArray(raw);
+  const invalidBody =
+    raw === null ||
+    typeof raw !== "object" ||
+    Array.isArray(raw) ||
+    (raw !== null && typeof raw === "object" && "_nonJsonBody" in (raw as Record<string, unknown>));
   if (invalidBody) {
     if (!res.ok) {
-      throw new AgentApiError(formatHttpErrorMessage(res, raw, "发送消息失败"), res.status, raw);
+      throw new AgentApiError(
+        apiErrorDetailFromBody(raw, formatHttpErrorMessage(res, raw, "发送消息失败")),
+        res.status,
+        raw,
+      );
     }
     throw new AgentApiError(
       `invalid chat response body (HTTP ${res.status} ${(res.statusText || "").trim() || "Error"})`,
@@ -836,7 +861,11 @@ export async function getToolOrchestration(
   });
   const raw = await safeJson(res);
   if (!res.ok) {
-    throw new AgentApiError("get tool orchestration failed", res.status, raw);
+    throw new AgentApiError(
+      apiErrorDetailFromBody(raw, "get tool orchestration failed"),
+      res.status,
+      raw,
+    );
   }
   assertJsonObject(raw);
   const orchestration_id = raw.orchestration_id;

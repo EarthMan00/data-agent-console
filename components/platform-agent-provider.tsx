@@ -362,7 +362,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     () => ({
       auth,
       authHydrated,
-      authValidated: authHydrated,
+      authValidated: authHydrated && Boolean(auth?.accessToken),
       platformSessionId,
       openLogin,
       closeLogin,

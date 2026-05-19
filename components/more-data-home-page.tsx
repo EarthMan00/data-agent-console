@@ -50,21 +50,27 @@ export function MoreDataHomePage() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetchHomePromptRecommendations().then((rows) => {
-      if (cancelled) return;
-      setRemotePromptCards(
-        rows.map((r) => ({
-          id: r.id,
-          title: r.title,
-          body: r.description,
-          prompt: r.prompt,
-          meta: r.meta,
-          capabilityIds: r.capability_ids,
-          replayRunId: r.replay_run_id ?? undefined,
-          replayShareId: r.replay_share_id ?? undefined,
-        })),
-      );
-    });
+    void fetchHomePromptRecommendations()
+      .then((rows) => {
+        if (cancelled) return;
+        setRemotePromptCards(
+          rows.map((r) => ({
+            id: r.id,
+            title: r.title,
+            body: r.description,
+            prompt: r.prompt,
+            meta: r.meta,
+            capabilityIds: r.capability_ids,
+            replayRunId: r.replay_run_id ?? undefined,
+            replayShareId: r.replay_share_id ?? undefined,
+          })),
+        );
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn("[home-prompt-recommendations]", msg);
+      });
     return () => {
       cancelled = true;
     };
