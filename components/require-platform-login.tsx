@@ -22,10 +22,10 @@ export function RequirePlatformLogin({ children }: { children: React.ReactNode }
     return children;
   }
   if (!platformAgent.authHydrated) {
-    return null;
+    return <div className="min-h-0 flex-1" aria-hidden />;
   }
   if (isPlatformBackendEnabled() && !platformAgent.auth) {
-    return null;
+    return <div className="min-h-0 flex-1" aria-hidden />;
   }
   return children;
 }

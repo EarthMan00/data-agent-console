@@ -19,6 +19,7 @@ import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
 import { TaskExecutionStepsAssistantBubble } from "@/components/task-execution-steps-assistant-bubble";
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import { messageIdsEligibleForTaskResultCard } from "@/lib/session-task-result-card-visibility";
+import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
 import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import {
@@ -429,13 +430,14 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                       : null;
                   const taskId =
                     m.role === "assistant" && rawTaskId && taskResultCardMessageIds.has(m.id) ? rawTaskId : undefined;
+                  const hideAssistantBubble = shouldHideAssistantMessageBubble(m);
                   const key = m.id;
                   return (
                     <div key={key} className="space-y-2">
                       {m.role === "user" ? (
                         <SimpleUserBubble text={m.content} datetime={m.created_at} />
                       ) : m.role === "assistant" ? (
-                        taskSteps && taskSteps.length > 0 ? (
+                        hideAssistantBubble ? null : taskSteps && taskSteps.length > 0 ? (
                           <TaskExecutionStepsAssistantBubble
                             steps={taskSteps}
                             datetime={m.created_at}

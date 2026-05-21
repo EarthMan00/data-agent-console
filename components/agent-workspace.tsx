@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+
+import {
+  useSearchParamFlagSnapshot,
+  useSearchParamSnapshot,
+} from "@/lib/use-search-param-snapshot";
 import { Bot, ChevronDown, ListRestart, MessageCircleMore, ThumbsDown, ThumbsUp } from "lucide-react";
 import type {
   AgentAttachment,
@@ -90,12 +95,22 @@ export function AgentWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
-  const historySessionId = searchParams.get("sessionId") ?? "";
+  const historySessionId = useSearchParamSnapshot("sessionId");
+  const scheduleTrial = useSearchParamFlagSnapshot("scheduleTrial");
+  const scheduledRunRecord = useSearchParamFlagSnapshot("scheduledRunRecord");
+  const runLabel = useSearchParamSnapshot("runLabel");
+  const fallbackTaskId = useSearchParamSnapshot("taskId");
+  const urlRunId = useSearchParamSnapshot("runId");
   const { currentRunId, reports, runs } = useWorkspaceState();
-  const runId = searchParams.get("runId") ?? currentRunId;
+  const runId = urlRunId || currentRunId;
   const run = runId ? (runs.find((item) => item.id === runId) ?? null) : null;
   const report = run ? (reports.find((item) => item.id === run.reportId) ?? null) : null;
   const isPlatformSession = isPlatformBackendEnabled() && Boolean(platformAgent) && Boolean(historySessionId);
+  const awaitingAgentRouteParams =
+    isPlatformBackendEnabled() &&
+    pathname === "/agent" &&
+    !historySessionId &&
+    !runId;
 
   useEffect(() => {
     // 仅在既没有 runId、也没有 sessionId 时，才认为是误打开 /agent，需要跳回首页。
@@ -106,11 +121,22 @@ export function AgentWorkspace() {
     }
   }, [pathname, router, searchParams, historySessionId]);
 
+  if (awaitingAgentRouteParams) {
+    return (
+      <MoreDataShell currentPath="/agent" contentScrollMode="child" currentRunLabel="对话" mainDecoration={null}>
+        <div className="flex h-full min-h-0 flex-1 items-center justify-center text-sm text-[#71717a]">加载中…</div>
+      </MoreDataShell>
+    );
+  }
+
   if (isPlatformSession) {
     return (
       <PlatformSessionAgentWorkspace
         sessionId={historySessionId}
-        scheduleTrial={searchParams.get("scheduleTrial") === "1"}
+        scheduleTrial={scheduleTrial}
+        scheduledRunRecord={scheduledRunRecord}
+        runLabel={runLabel || undefined}
+        fallbackTaskId={fallbackTaskId || undefined}
       />
     );
   }

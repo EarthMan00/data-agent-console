@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRightLeft,
@@ -68,6 +68,10 @@ import {
 } from "@/lib/schedule-next-run";
 import { buildCreatePayloads, toHhmm, SCHEDULE_KINDS, type ScheduleKind } from "@/lib/schedule-payloads";
 import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
+import {
+  persistResultPushBlocksForTask,
+  resultPushBlocksForEditingTask,
+} from "@/lib/schedule-result-push-storage";
 import type {
   ScheduledTaskRunItemApi,
   UserScheduledTaskGroupDto,
@@ -210,9 +214,25 @@ export function SchedulesWorkspace() {
   const [moveTask, setMoveTask] = useState<UserScheduledTaskItemApi | null>(null);
   const [moveGroupId, setMoveGroupId] = useState<string | "">("");
 
-  const createMode = searchParams.get("create") === "1";
-  const createGroupIdQ = searchParams.get("groupId") || "";
-  const editId = searchParams.get("edit");
+  const readSearchParam = useCallback(
+    (key: string) => searchParams.get(key),
+    [searchParams],
+  );
+  const createMode = useSyncExternalStore(
+    () => () => {},
+    () => readSearchParam("create") === "1",
+    () => false,
+  );
+  const createGroupIdQ = useSyncExternalStore(
+    () => () => {},
+    () => readSearchParam("groupId") || "",
+    () => "",
+  );
+  const editId = useSyncExternalStore(
+    () => () => {},
+    () => readSearchParam("edit"),
+    () => null,
+  );
 
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -231,9 +251,28 @@ export function SchedulesWorkspace() {
   const editPromptBaselineRef = useRef<string | null>(null);
   const resultPushRef = useRef<ResultPushBlock[]>([]);
 
+  const applyResultPushBlocks = useCallback((blocks: ResultPushBlock[]) => {
+    resultPushRef.current = blocks;
+    setResultPushFormKey((k) => k + 1);
+  }, []);
+
+  const restoreResultPushForEdit = useCallback(
+    (taskId: string, task?: UserScheduledTaskItemApi | null) => {
+      const blocks = resultPushBlocksForEditingTask(taskId, task);
+      if (blocks.length > 0) {
+        applyResultPushBlocks(blocks);
+      }
+    },
+    [applyResultPushBlocks],
+  );
+
   const chipOptions = useMemo(() => ["全部", "默认", ...groups.map((g) => g.name).filter(Boolean)], [groups]);
 
-  const restoreParam = searchParams.get("restore") === "1";
+  const restoreParam = useSyncExternalStore(
+    () => () => {},
+    () => readSearchParam("restore") === "1",
+    () => false,
+  );
 
   /** 从试跑「上一步」回配置：带 restore=1 时从 sessionStorage 还原表单。其它进入创建页时若仅保留内存/草稿（例如上次未保存就离开），则恢复为干净默认态。 */
   useEffect(() => {
@@ -253,8 +292,7 @@ export function SchedulesWorkspace() {
         setSelectedMonthDays(new Set(d.selectedMonthDayValues));
         setRunOnceDate(d.runOnceDate);
         setFormGroupId(d.groupId ?? null);
-        resultPushRef.current = d.resultPushBlocks;
-        setResultPushFormKey((k) => k + 1);
+        applyResultPushBlocks(Array.isArray(d.resultPushBlocks) ? d.resultPushBlocks : []);
         fromRestore.current = true;
       }
       const gq = (() => {
@@ -278,7 +316,7 @@ export function SchedulesWorkspace() {
       return;
     }
     setTimeHhmm(defaultNearestHalfHourHhmm(HALF_HOUR_TIME_OPTIONS));
-  }, [createMode, restoreParam, createGroupIdQ, router, searchParams]);
+  }, [createMode, restoreParam, createGroupIdQ, router, searchParams, applyResultPushBlocks]);
 
   /** 放弃/重新进入空新建：清空 memory 与 session 草稿。试跑上一步会带 restore=1 且由上方 effect 还原，不调用此项。 */
   const resetCreateFormToDefaults = useCallback(() => {
@@ -291,13 +329,12 @@ export function SchedulesWorkspace() {
     setSelectedWeekdays(new Set());
     setSelectedMonthDays(new Set());
     setRunOnceDate("");
-    resultPushRef.current = [];
-    setResultPushFormKey((k) => k + 1);
+    applyResultPushBlocks([]);
     setNotice("");
     editPromptBaselineRef.current = null;
     setEditPromptChangedSaveGateOpen(false);
     clearScheduleTrialStorage();
-  }, []);
+  }, [applyResultPushBlocks]);
 
   const wasInCreateMode = useRef(false);
   useEffect(() => {
@@ -343,8 +380,6 @@ export function SchedulesWorkspace() {
     }
     setTimeHhmm(toHhmm(t.time_hhmm));
     setFormGroupId(t.group_id ?? null);
-    resultPushRef.current = [];
-    setResultPushFormKey((k) => k + 1);
     editPromptBaselineRef.current = String(t.prompt_text ?? "").trim();
   }, []);
 
@@ -360,6 +395,7 @@ export function SchedulesWorkspace() {
     const fromList = tasks.find((x) => x.id === editId);
     if (fromList) {
       applyTaskToScheduleForm(fromList);
+      restoreResultPushForEdit(editId, fromList);
       editFormHydratedForId.current = editId;
       return;
     }
@@ -373,12 +409,13 @@ export function SchedulesWorkspace() {
         return;
       }
       applyTaskToScheduleForm(t);
+      restoreResultPushForEdit(editId, t);
       editFormHydratedForId.current = editId;
     });
     return () => {
       cancelled = true;
     };
-  }, [createMode, editId, tasks, platformAgent, applyTaskToScheduleForm]);
+  }, [createMode, editId, tasks, platformAgent, applyTaskToScheduleForm, restoreResultPushForEdit]);
 
   /** 新建时：用 URL 的 `groupId` 初始化（从列表点「创建」会带上与筛选胶囊一致的分组；编辑态由 `applyTaskToScheduleForm` 从任务装填，此处跳过） */
   useEffect(() => {
@@ -647,6 +684,7 @@ export function SchedulesWorkspace() {
         editingTaskId: editId,
       });
       await saveScheduleTasksWithDraft(platformAgent.withFreshToken, { requireEnabledNext: true });
+      persistResultPushBlocksForTask(editId, resultPushRef.current);
       // 与列表/水合共用 `tasks`：保存后必须刷新，否则再次进入编辑会从旧的 tasks.find 装填表单
       await refreshGroupsAndTasks();
       resetCreateFormToDefaults();
@@ -654,6 +692,7 @@ export function SchedulesWorkspace() {
       setToastMessage("定时任务已更新");
       setToastVariant("default");
     } catch (e) {
+      persistResultPushBlocksForTask(editId, resultPushRef.current);
       setNotice(formatAgentApiErrorForUser(e) || "保存失败");
     } finally {
       setBusy(false);
@@ -738,6 +777,15 @@ export function SchedulesWorkspace() {
   if (createMode) {
     return (
       <MoreDataShell currentPath="/schedules">
+        <AutoToast
+          message={toastMessage}
+          variant={toastVariant}
+          onDismiss={() => {
+            setToastMessage(null);
+            setToastVariant("default");
+          }}
+          durationMs={2200}
+        />
         <div className="px-8 pb-12 pt-8">
           <div className="mx-auto max-w-[760px]">
             {notice ? <p className="mb-6 text-sm text-[#52525b]">{notice}</p> : null}
@@ -983,9 +1031,12 @@ export function SchedulesWorkspace() {
                 <Field label="结果推送">
                   <ScheduleResultPushSection
                     key={resultPushFormKey}
-                    defaultBlocks={resultPushFormKey > 0 ? resultPushRef.current : undefined}
+                    defaultBlocks={resultPushRef.current.length > 0 ? resultPushRef.current : undefined}
                     onConfigSnapshot={({ blocks }) => {
                       resultPushRef.current = blocks;
+                      if (editId) {
+                        persistResultPushBlocksForTask(editId, blocks);
+                      }
                     }}
                     onNotify={setNotice}
                   />
@@ -1701,8 +1752,15 @@ function ApiRunRecordRow({
     if (platformAgent) {
       platformAgent.setActivePlatformSession(sessionId);
     }
-    router.push(`/agent?sessionId=${encodeURIComponent(sessionId)}`);
-  }, [onNotify, platformAgent, router, sessionId]);
+    const label = (r.task_title_snapshot || "").trim();
+    const q = new URLSearchParams({
+      sessionId,
+      scheduledRunRecord: "1",
+    });
+    if (label) q.set("runLabel", label);
+    if (taskId) q.set("taskId", taskId);
+    router.push(`/agent?${q.toString()}`);
+  }, [onNotify, platformAgent, router, sessionId, r.task_title_snapshot, taskId]);
 
   const onDeleteRun = useCallback(() => {
     if (!window.confirm("确定删除该条运行记录？将同时清理该次执行产生的会话、对话与任务文件。")) {

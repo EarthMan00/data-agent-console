@@ -209,6 +209,7 @@ export type UserScheduledTaskItemApi = {
   run_once_date: string | null;
   next_run_at: string | null;
   last_run_at: string | null;
+  result_push_config?: import("@/lib/schedule-result-push-api").ResultPushConfigApi | null;
   created_at: string;
   updated_at: string;
 };
@@ -230,6 +231,7 @@ export type UserScheduledTaskCreateBody = {
   weekday?: number | null;
   day_of_month?: number | null;
   run_once_date?: string | null;
+  result_push_config?: import("@/lib/schedule-result-push-api").ResultPushConfigApi | null;
 };
 
 export type UserScheduledTaskPatchBody = {
@@ -242,6 +244,7 @@ export type UserScheduledTaskPatchBody = {
   weekday?: number | null;
   day_of_month?: number | null;
   run_once_date?: string | null;
+  result_push_config?: import("@/lib/schedule-result-push-api").ResultPushConfigApi | null;
 };
 
 /** 定时任务运行记录 `/api/scheduled-task-runs` */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Mail, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,7 @@ const emptyFei = (): FeishuBlock => ({ id: newId(), type: "feishu", webhook: "",
 type ScheduleResultPushProps = {
   /** 从「试跑-上一步」等场景还原时的初始块 */
   defaultBlocks?: ResultPushBlock[] | null;
-  /** 提交/试跑时可用于随任务持久化（待后端支持 meta 等字段时接入） */
+  /** 配置变更时回传当前 blocks（试跑草稿等） */
   onConfigSnapshot?: (payload: { blocks: ResultPushBlock[] }) => void;
   /** 校验、说明类提示（如联调中） */
   onNotify?: (message: string) => void;
@@ -78,11 +78,17 @@ export function validateResultPushBlocks(blocks: ResultPushBlock[]): string | nu
 }
 
 /**
- * 结果推送：多选渠道（图一）+ 邮箱/钉钉/飞书配置 cards（图二~五）。推送数据当前仅存前端，创建任务接口无对应字段时不会发往服务端。
+ * 结果推送：多选渠道（图一）+ 邮箱/钉钉/飞书配置 cards（图二~五）。
+ * 保存任务时写入服务端 `result_push_config`，执行结束后按渠道推送执行结果通知。
  */
 export function ScheduleResultPushSection({ defaultBlocks, onConfigSnapshot, onNotify }: ScheduleResultPushProps) {
   const [blocks, setBlocks] = useState<PushBlock[]>(defaultBlocks != null ? defaultBlocks : []);
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (defaultBlocks == null) return;
+    setBlocks(defaultBlocks);
+  }, [defaultBlocks]);
 
   const hasEmail = blocks.some((b) => b.type === "email");
   const hasDing = blocks.some((b) => b.type === "dingtalk");

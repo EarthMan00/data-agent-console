@@ -20,13 +20,24 @@ export function buildTaskStepsFromDecompositionLabels(
   roundId: string,
   taskInFlight: boolean,
   lastTask: TaskResponse | null,
+  options?: {
+    multiStepOrchestration?: boolean;
+    orchestrationFinished?: boolean;
+    orchestrationSuccess?: boolean;
+  },
 ): TaskExecutionStep[] {
   const n = labels.length;
   if (n === 0) return [];
   const t = lastTask;
   const s = t ? (t.status || "") : "";
-  const allDone = t != null && !taskInFlight && isTaskDoneStatus(s);
-  const anyFailed = t != null && !taskInFlight && isTaskFailedStatus(s);
+  const multi = Boolean(options?.multiStepOrchestration && n > 1);
+  const orchDone = Boolean(options?.orchestrationFinished);
+  const allDone = multi
+    ? orchDone
+    : t != null && !taskInFlight && isTaskDoneStatus(s);
+  const anyFailed = multi
+    ? orchDone && options?.orchestrationSuccess === false
+    : t != null && !taskInFlight && isTaskFailedStatus(s);
 
   return labels.map((label, i) => {
     let status: TaskExecutionStepStatus = "pending";

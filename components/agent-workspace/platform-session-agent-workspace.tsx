@@ -17,6 +17,7 @@ import {
   deleteTaskSession,
   formatAgentApiErrorForUser,
   getTask,
+  getToolOrchestration,
   listSessionMessages,
   sendChatMessage,
 } from "@/lib/agent-api/client";
@@ -34,6 +35,8 @@ import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
 import { buildTaskStepsFromDecompositionLabels } from "@/lib/schedule-trial-execution-presentation";
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import { messageIdsEligibleForTaskResultCard } from "@/lib/session-task-result-card-visibility";
+import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
+import { extractDecompositionLabelsFromMessages } from "@/lib/parse-decomposition-labels";
 import { safeRandomUUID } from "@/lib/random-uuid";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
@@ -42,6 +45,7 @@ import {
   fetchTaskOrchestrationForResultPanel,
   mergeBundlesIntoPlatformSnapshots,
   pickBestOrchestrationAnchor,
+  type OrchestrationAnchor,
   type TaskOrchestrationBundleRow,
 } from "@/lib/merge-orchestration-task-artifacts";
 import { cn } from "@/lib/utils";
@@ -61,10 +65,18 @@ function taskInFlight(t: TaskResponse) {
 export function PlatformSessionAgentWorkspace({
   sessionId,
   scheduleTrial = false,
+  scheduledRunRecord = false,
+  runLabel,
+  fallbackTaskId,
 }: {
   sessionId: string;
   /** 从定时任务「试跑」进入：隐藏输入框，展示上一步/保存/终止。 */
   scheduleTrial?: boolean;
+  /** 从定时任务「运行记录-查看过程」进入：只读回放，样式与正常对话一致，不可追问。 */
+  scheduledRunRecord?: boolean;
+  runLabel?: string;
+  /** 运行记录 meta 中的 skill task_id，用于拉取编排产物（消息 meta 缺省时） */
+  fallbackTaskId?: string;
 }) {
   const platformAgent = useOptionalPlatformAgent();
   const { refreshHistory } = useMoreDataShellState();
@@ -88,6 +100,12 @@ export function PlatformSessionAgentWorkspace({
   const [currentBundleDownloadName, setCurrentBundleDownloadName] = useState<string | null>(null);
   const [currentTaskFinishedAt, setCurrentTaskFinishedAt] = useState<string | null>(null);
   const [lastTaskSnapshot, setLastTaskSnapshot] = useState<TaskResponse | null>(null);
+  const [trialOrchestrationDone, setTrialOrchestrationDone] = useState<{
+    finished: boolean;
+    success: boolean;
+  } | null>(null);
+  const trialAutoOpenedPanelRef = useRef(false);
+  const scheduledRunAutoOpenedPanelRef = useRef(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [trialRunInFlight, setTrialRunInFlight] = useState(() => {
     if (!scheduleTrial) return false;
@@ -161,11 +179,13 @@ export function PlatformSessionAgentWorkspace({
           let taskId: string | null = null;
           let sendKind: ScheduleTrialSendState = "unknown";
           let executionStepLabels: string[] | null = null;
+          let orchestrationId: string | null = null;
           if (result.kind === "accepted") {
             taskId = result.task_id;
             sendKind = "accepted";
             const ex = result.execution_steps;
             executionStepLabels = Array.isArray(ex) && ex.length > 0 ? ex : null;
+            orchestrationId = result.orchestration_id;
           } else if (result.kind === "completed") {
             taskId = null;
             sendKind = "completed";
@@ -176,7 +196,14 @@ export function PlatformSessionAgentWorkspace({
             taskId = null;
             sendKind = "unknown";
           }
-          saveScheduleTrialMeta({ v: 1, sessionId, taskId, sendKind, executionStepLabels });
+          saveScheduleTrialMeta({
+            v: 1,
+            sessionId,
+            taskId,
+            sendKind,
+            executionStepLabels,
+            orchestrationId,
+          });
         });
         if (isMounted.current) await reload();
       } catch (e) {
@@ -203,20 +230,46 @@ export function PlatformSessionAgentWorkspace({
     return () => clearInterval(t);
   }, [scheduleTrial, platformAgent, sessionId, reload, messages.length, sending]);
 
+  const trialMeta = scheduleTrial ? loadScheduleTrialMeta() : null;
+  const trialOrchestrationId =
+    trialMeta?.sessionId === sessionId ? (trialMeta.orchestrationId?.trim() || null) : null;
+  const trialIsMultiStep = (trialMeta?.executionStepLabels?.length ?? 0) > 1;
+
   useEffect(() => {
     if (!scheduleTrial || !trialTaskId || !platformAgent) return;
     const tid = trialTaskId;
+    const orchId = trialOrchestrationId;
+    const multi = trialIsMultiStep && Boolean(orchId);
     let stop = false;
     const run = async () => {
       try {
         let t: TaskResponse | null = null;
+        let orchFinished = false;
         await platformAgent.withFreshToken(async (token) => {
           t = await getTask(token, tid);
+          if (multi && orchId) {
+            try {
+              const orch = await getToolOrchestration(token, orchId);
+              orchFinished = orch.finished;
+              if (!stop && isMounted.current) {
+                setTrialOrchestrationDone({ finished: orch.finished, success: orch.success });
+              }
+              if (orch.finished && isMounted.current) {
+                await reload();
+              }
+            } catch {
+              /* 编排可能已落库到消息 meta，忽略 404 */
+            }
+          }
         });
         if (stop) return;
         setLastTaskSnapshot(t);
-        if (!t || !taskInFlight(t)) {
+        const firstTaskDone = !t || !taskInFlight(t);
+        if (multi && orchId) {
+          setTrialRunInFlight(!orchFinished);
+        } else if (firstTaskDone) {
           setTrialRunInFlight(false);
+          if (isMounted.current) void reload();
         } else {
           setTrialRunInFlight(true);
         }
@@ -233,10 +286,10 @@ export function PlatformSessionAgentWorkspace({
       stop = true;
       clearInterval(h);
     };
-  }, [scheduleTrial, trialTaskId, platformAgent]);
+  }, [scheduleTrial, trialTaskId, platformAgent, trialOrchestrationId, trialIsMultiStep, reload]);
 
   useEffect(() => {
-    if (scheduleTrial) return;
+    if (scheduleTrial || scheduledRunRecord) return;
     try {
       const raw = sessionStorage.getItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
       if (raw) {
@@ -246,9 +299,13 @@ export function PlatformSessionAgentWorkspace({
     } catch {
       /* ignore */
     }
-  }, [sessionId, scheduleTrial]);
+  }, [sessionId, scheduleTrial, scheduledRunRecord]);
 
-  const headerLabel = scheduleTrial ? (loadScheduleCreateDraft()?.title?.trim() || "试跑") : "对话";
+  const headerLabel = scheduleTrial
+    ? (loadScheduleCreateDraft()?.title?.trim() || "试跑")
+    : scheduledRunRecord
+      ? (runLabel?.trim() || "定时任务记录")
+      : "对话";
   const scheduleControlsLocked = scheduleTrial && (busy || trialRunInFlight || saveBusy);
   /** 试跑页：除保存提交中外都允许点「终止」并回到配置，避免 404/轮询异常时无法离开 */
   const terminateEnabled = scheduleTrial && !saveBusy;
@@ -313,28 +370,59 @@ export function PlatformSessionAgentWorkspace({
     setOrchestrationBundles([]);
     setPanelSubtaskFocus(null);
     setCurrentTaskFinishedAt(null);
+    setTrialOrchestrationDone(null);
+    trialAutoOpenedPanelRef.current = false;
+    scheduledRunAutoOpenedPanelRef.current = false;
   }, [sessionId]);
 
   const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
 
   const orchestrationAnchor = useMemo(() => pickBestOrchestrationAnchor(messages), [messages]);
 
+  const effectiveOrchestrationAnchor = useMemo((): OrchestrationAnchor | null => {
+    if (orchestrationAnchor) return orchestrationAnchor;
+    const runRecordTaskId = (fallbackTaskId ?? "").trim();
+    if (scheduledRunRecord && runRecordTaskId) {
+      return {
+        messageId: "",
+        primaryTaskId: runRecordTaskId,
+        bundleTaskIds: undefined,
+        orchestrationId: null,
+      };
+    }
+    if (!scheduleTrial || trialMeta?.sessionId !== sessionId) return null;
+    const trialTaskId = (trialMeta.taskId ?? "").trim();
+    const trialOrchId = (trialMeta.orchestrationId ?? "").trim();
+    if (!trialTaskId && !trialOrchId) return null;
+    return {
+      messageId: "",
+      primaryTaskId: trialTaskId,
+      bundleTaskIds: undefined,
+      orchestrationId: trialOrchId || null,
+    };
+  }, [orchestrationAnchor, scheduleTrial, trialMeta, sessionId, scheduledRunRecord, fallbackTaskId]);
+
   useEffect(() => {
-    if (!orchestrationAnchor || !platformAgent?.auth || showResultPanel) return;
+    if (!effectiveOrchestrationAnchor || !platformAgent?.auth || showResultPanel) return;
     let cancelled = false;
     void platformAgent.withFreshToken(async (token) => {
       const data = await fetchTaskOrchestrationForResultPanel(
         token,
-        orchestrationAnchor.primaryTaskId,
-        orchestrationAnchor.bundleTaskIds,
-        { orchestrationId: orchestrationAnchor.orchestrationId },
+        effectiveOrchestrationAnchor.primaryTaskId,
+        effectiveOrchestrationAnchor.bundleTaskIds,
+        { orchestrationId: effectiveOrchestrationAnchor.orchestrationId },
       );
       if (!cancelled && isMounted.current) setOrchestrationBundles(data.bundles);
     });
     return () => {
       cancelled = true;
     };
-  }, [orchestrationAnchor, platformAgent, showResultPanel]);
+  }, [effectiveOrchestrationAnchor, platformAgent, showResultPanel]);
+
+  const firstAssistantIndex = useMemo(
+    () => messages.findIndex((m) => m.role === "assistant"),
+    [messages],
+  );
 
   const latestStepsMessageId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -358,10 +446,64 @@ export function PlatformSessionAgentWorkspace({
     return null;
   }, [messages]);
 
+  const trialExecutionStepsForLabels = useMemo(() => {
+    if (!scheduleTrial || trialMeta?.sessionId !== sessionId) return null;
+    const labels = trialMeta.executionStepLabels;
+    if (!labels?.length) return null;
+    return buildTaskStepsFromDecompositionLabels(
+      labels,
+      "trial-labels",
+      trialRunInFlight,
+      lastTaskSnapshot,
+      {
+        multiStepOrchestration: labels.length > 1,
+        orchestrationFinished: trialOrchestrationDone?.finished ?? Boolean(orchestrationAnchor),
+        orchestrationSuccess: trialOrchestrationDone?.success ?? true,
+      },
+    );
+  }, [
+    scheduleTrial,
+    trialMeta,
+    sessionId,
+    trialRunInFlight,
+    lastTaskSnapshot,
+    trialOrchestrationDone,
+    orchestrationAnchor,
+  ]);
+
+  const runRecordExecutionStepsForLabels = useMemo(() => {
+    if (!scheduledRunRecord) return null;
+    const labels = extractDecompositionLabelsFromMessages(messages);
+    if (!labels.length) return null;
+    const orchFailed = messages.some(
+      (m) => m.role === "assistant" && /多步任务在执行过程中失败/.test(m.content || ""),
+    );
+    const orchCancelled = messages.some(
+      (m) => m.role === "assistant" && /多步任务已由用户终止/.test(m.content || ""),
+    );
+    return buildTaskStepsFromDecompositionLabels(labels, sessionId, false, null, {
+      multiStepOrchestration: labels.length > 1,
+      orchestrationFinished: true,
+      orchestrationSuccess: !orchFailed && !orchCancelled,
+    });
+  }, [scheduledRunRecord, messages, sessionId]);
+
+  const executionStepsForBundleLabels =
+    latestExecutionSteps ?? trialExecutionStepsForLabels ?? runRecordExecutionStepsForLabels;
+
   const orchestrationBundlesForUi = useMemo(
-    () => enrichOrchestrationBundlesWithStepLabels(orchestrationBundles, latestExecutionSteps),
-    [orchestrationBundles, latestExecutionSteps],
+    () => enrichOrchestrationBundlesWithStepLabels(orchestrationBundles, executionStepsForBundleLabels),
+    [orchestrationBundles, executionStepsForBundleLabels],
   );
+
+  const stepsMessageIdForBundles = useMemo(() => {
+    if (latestStepsMessageId) return latestStepsMessageId;
+    if ((scheduleTrial || scheduledRunRecord) && firstAssistantIndex >= 0) {
+      const m = messages[firstAssistantIndex];
+      if (m?.role === "assistant") return m.id;
+    }
+    return null;
+  }, [latestStepsMessageId, scheduleTrial, scheduledRunRecord, firstAssistantIndex, messages]);
 
   const subtasksWithTabularPreview = useMemo(
     () =>
@@ -410,12 +552,6 @@ export function PlatformSessionAgentWorkspace({
     [sessionId],
   );
 
-  /** 试跑/平台会话中「拆解+工具」那轮通常是第一条 assistant；此前仅限 isLast，结束后若有多条 assistant 会退回「助手」Markdown 气泡。 */
-  const firstAssistantIndex = useMemo(
-    () => messages.findIndex((m) => m.role === "assistant"),
-    [messages],
-  );
-
   const showTrialRunFooterLine = useMemo(() => {
     if (!scheduleTrial || !trialRunInFlight || sending) return false;
     const t = loadScheduleTrialMeta();
@@ -460,6 +596,40 @@ export function PlatformSessionAgentWorkspace({
     },
     [platformAgent],
   );
+
+  useEffect(() => {
+    if (!scheduleTrial || trialRunInFlight || trialAutoOpenedPanelRef.current) return;
+    if (subtasksWithTabularPreview.length === 0 || !effectiveOrchestrationAnchor) return;
+    trialAutoOpenedPanelRef.current = true;
+    void openTaskResultPanel(
+      effectiveOrchestrationAnchor.primaryTaskId,
+      effectiveOrchestrationAnchor.bundleTaskIds,
+      effectiveOrchestrationAnchor.orchestrationId,
+    );
+  }, [
+    scheduleTrial,
+    trialRunInFlight,
+    subtasksWithTabularPreview.length,
+    effectiveOrchestrationAnchor,
+    openTaskResultPanel,
+  ]);
+
+  useEffect(() => {
+    if (!scheduledRunRecord || scheduledRunAutoOpenedPanelRef.current || busy) return;
+    if (subtasksWithTabularPreview.length === 0 || !effectiveOrchestrationAnchor) return;
+    scheduledRunAutoOpenedPanelRef.current = true;
+    void openTaskResultPanel(
+      effectiveOrchestrationAnchor.primaryTaskId,
+      effectiveOrchestrationAnchor.bundleTaskIds,
+      effectiveOrchestrationAnchor.orchestrationId,
+    );
+  }, [
+    scheduledRunRecord,
+    busy,
+    subtasksWithTabularPreview.length,
+    effectiveOrchestrationAnchor,
+    openTaskResultPanel,
+  ]);
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -569,9 +739,23 @@ export function PlatformSessionAgentWorkspace({
                           m.id,
                           trialRunInFlight,
                           lastTaskSnapshot,
+                          {
+                            multiStepOrchestration: trialLabels.length > 1,
+                            orchestrationFinished:
+                              trialOrchestrationDone?.finished ?? Boolean(orchestrationAnchor),
+                            orchestrationSuccess: trialOrchestrationDone?.success ?? true,
+                          },
                         )
                       : null;
-                  const taskStepsToShow = taskStepsFromMessage ?? syntheticForTrial;
+                  const syntheticForRunRecord =
+                    scheduledRunRecord &&
+                    isThisOrchestrationTurn &&
+                    !taskStepsFromMessage &&
+                    runRecordExecutionStepsForLabels?.length
+                      ? runRecordExecutionStepsForLabels
+                      : null;
+                  const taskStepsToShow = taskStepsFromMessage ?? syntheticForTrial ?? syntheticForRunRecord;
+                  const showTaskStepsBubble = Boolean(taskStepsToShow && taskStepsToShow.length > 0);
                   const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
                   const rawBundle = Array.isArray(meta?.orchestration_step_task_ids)
                     ? (meta?.orchestration_step_task_ids as unknown[])
@@ -583,21 +767,29 @@ export function PlatformSessionAgentWorkspace({
                     typeof meta?.orchestration_id === "string" && meta.orchestration_id.trim()
                       ? meta.orchestration_id.trim()
                       : null;
-                  const taskId =
+                  const trialResultOnFirstAssistant =
+                    scheduleTrial &&
+                    isThisOrchestrationTurn &&
+                    effectiveOrchestrationAnchor &&
+                    !trialRunInFlight &&
+                    subtasksWithTabularPreview.length > 0;
+                  const taskIdFromMeta =
                     m.role === "assistant" && rawTaskId && taskResultCardMessageIds.has(m.id) ? rawTaskId : undefined;
+                  const taskId = taskIdFromMeta ?? (trialResultOnFirstAssistant ? effectiveOrchestrationAnchor!.primaryTaskId : undefined);
+                  const hideAssistantBubble = shouldHideAssistantMessageBubble(m);
                   const key = m.id;
                   return (
                     <div key={key} className="space-y-2">
                       {m.role === "user" ? (
                         <SimpleUserBubble text={m.content} datetime={m.created_at} />
                       ) : m.role === "assistant" ? (
-                        taskStepsToShow && taskStepsToShow.length > 0 ? (
+                        showTaskStepsBubble ? (
                           <TaskExecutionStepsAssistantBubble
-                            steps={taskStepsToShow}
+                            steps={taskStepsToShow!}
                             datetime={m.created_at}
                             platformSubtasks={
-                              m.id === latestStepsMessageId && orchestrationBundlesForUi.length > 0
-                                ? mergeBundlesIntoPlatformSnapshots(taskStepsToShow, orchestrationBundlesForUi)
+                              m.id === stepsMessageIdForBundles && orchestrationBundlesForUi.length > 0
+                                ? mergeBundlesIntoPlatformSnapshots(taskStepsToShow!, orchestrationBundlesForUi)
                                 : undefined
                             }
                             timelineRunId={sessionId}
@@ -605,7 +797,7 @@ export function PlatformSessionAgentWorkspace({
                             setPanelSubtaskFocus={setPanelSubtaskFocus}
                             setPanelVisibility={setPanelVisibilityRecord}
                           />
-                        ) : (
+                        ) : hideAssistantBubble ? null : (
                           <SimpleAssistantBubble body={m.content} datetime={m.created_at} />
                         )
                       ) : (
@@ -625,8 +817,12 @@ export function PlatformSessionAgentWorkspace({
                             }
                             void openTaskResultPanel(
                               taskId,
-                              bundleTaskIds.length > 0 ? bundleTaskIds : undefined,
-                              orchIdMeta ?? orchestrationAnchor?.orchestrationId,
+                              bundleTaskIds.length > 0
+                                ? bundleTaskIds
+                                : effectiveOrchestrationAnchor?.bundleTaskIds,
+                              orchIdMeta ??
+                                effectiveOrchestrationAnchor?.orchestrationId ??
+                                orchestrationAnchor?.orchestrationId,
                             );
                           }}
                         />
@@ -643,7 +839,9 @@ export function PlatformSessionAgentWorkspace({
 
         <div className="bg-[rgba(255,255,255,0.86)] px-4 py-4 backdrop-blur-xl sm:px-6">
           <div className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
-            {scheduleTrial ? (
+            {scheduledRunRecord ? (
+              <p className="py-1 text-center text-xs text-[#a1a1aa]">此为定时任务执行记录，不支持继续追问。</p>
+            ) : scheduleTrial ? (
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Button
                   type="button"

@@ -1,6 +1,7 @@
 import { validateResultPushBlocks } from "@/components/schedule-result-push";
 import { createUserScheduledTask, patchUserScheduledTask } from "@/lib/agent-api/scheduled-tasks";
 import type { UserScheduledTaskCreateBody, UserScheduledTaskPatchBody } from "@/lib/agent-api/types";
+import { resultPushBlocksToApiConfig } from "@/lib/schedule-result-push-api";
 import { clearScheduleTrialStorage, loadScheduleCreateDraft } from "@/lib/schedule-create-draft";
 import { buildCreatePayloads } from "@/lib/schedule-payloads";
 import { computeNextRunForCreateBody } from "@/lib/schedule-next-run";
@@ -16,6 +17,7 @@ function createBodyToPatch(b: UserScheduledTaskCreateBody): UserScheduledTaskPat
     weekday: b.weekday ?? null,
     day_of_month: b.day_of_month ?? null,
     run_once_date: b.run_once_date ?? null,
+    result_push_config: b.result_push_config ?? null,
   };
 }
 
@@ -53,6 +55,7 @@ export async function saveScheduleTasksWithDraft(
       }
     }
   }
+  const pushCfg = resultPushBlocksToApiConfig(d.resultPushBlocks);
   const editingId = d.editingTaskId?.trim() || null;
   if (editingId) {
     if (payloads.length !== 1) {
@@ -61,14 +64,16 @@ export async function saveScheduleTasksWithDraft(
       );
     }
     await withFreshToken(async (token) => {
-      await patchUserScheduledTask(token, editingId, createBodyToPatch(payloads[0]!));
+      const patchBody = createBodyToPatch(payloads[0]!);
+      patchBody.result_push_config = pushCfg;
+      await patchUserScheduledTask(token, editingId, patchBody);
     });
     clearScheduleTrialStorage();
     return { count: 1 };
   }
   await withFreshToken(async (token) => {
     for (const b of payloads) {
-      await createUserScheduledTask(token, b);
+      await createUserScheduledTask(token, { ...b, result_push_config: pushCfg });
     }
   });
   clearScheduleTrialStorage();

@@ -37,6 +37,8 @@ export type ScheduleTrialMetaV1 = {
   sessionId: string;
   taskId: string | null;
   sendKind: ScheduleTrialSendState;
+  /** 多步编排时 POST /chat/send 202 返回，用于拉取各子任务产物 */
+  orchestrationId?: string | null;
   /**
    * POST /chat/.../send 202 的 execution_steps 文案，用于在会话 message.meta 仍无 task_execution_steps 时
    * 与首页「任务拆分 / 任务执行」同构展示。
