@@ -19,8 +19,12 @@ import {
   getTask,
   getToolOrchestration,
   listSessionMessages,
-  sendChatMessage,
 } from "@/lib/agent-api/client";
+import {
+  createStreamingAssistantMessage,
+  isStreamingAssistantMessage,
+  sendSessionMessageStream,
+} from "@/lib/session-chat-send";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import type { ChatSendResult, SessionMessageItem, TaskResponse } from "@/lib/agent-api/types";
 import type { ScheduleTrialSendState } from "@/lib/schedule-create-draft";
@@ -34,9 +38,12 @@ import {
 import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
 import { buildTaskStepsFromDecompositionLabels } from "@/lib/schedule-trial-execution-presentation";
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
-import { messageIdsEligibleForTaskResultCard } from "@/lib/session-task-result-card-visibility";
-import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
+import {
+  isSupersededTaskExecutionStepsMessage,
+  messageIdsEligibleForTaskResultCard,
+} from "@/lib/session-task-result-card-visibility";
 import { extractDecompositionLabelsFromMessages } from "@/lib/parse-decomposition-labels";
+import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
 import { safeRandomUUID } from "@/lib/random-uuid";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
@@ -50,6 +57,7 @@ import {
 } from "@/lib/merge-orchestration-task-artifacts";
 import { cn } from "@/lib/utils";
 
+import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import { SIMPLE_CHAT_COLUMN_MAX, SimpleAssistantBubble, SimpleSystemBubble, SimpleUserBubble } from "./chat-bubbles";
 
 function taskInFlight(t: TaskResponse) {
@@ -169,13 +177,22 @@ export function PlatformSessionAgentWorkspace({
       meta: {},
     };
     setError("");
-    setMessages([optimistic]);
     setSending(true);
     const mid = safeRandomUUID();
+    const assistantStreamId = `streaming_assistant_${mid}`;
+    const nowIso = new Date().toISOString();
+    setMessages([optimistic, createStreamingAssistantMessage(assistantStreamId, nowIso)]);
     void (async () => {
       try {
         await platformAgent.withFreshToken(async (token) => {
-          const result: ChatSendResult = await sendChatMessage(token, sessionId, prompt, mid);
+          const result: ChatSendResult = await sendSessionMessageStream(
+            token,
+            sessionId,
+            prompt,
+            mid,
+            setMessages,
+            assistantStreamId,
+          );
           let taskId: string | null = null;
           let sendKind: ScheduleTrialSendState = "unknown";
           let executionStepLabels: string[] | null = null;
@@ -349,20 +366,9 @@ export function PlatformSessionAgentWorkspace({
     goBackToSchedule();
   }, [platformAgent, trialTaskId, goBackToSchedule]);
 
-  useEffect(() => {
-    const outer = messagesScrollRef.current;
-    const inner = messagesInnerRef.current;
-    if (!outer || !inner) return;
-    const scrollToBottom = () => {
-      requestAnimationFrame(() => {
-        outer.scrollTop = outer.scrollHeight;
-      });
-    };
-    scrollToBottom();
-    const ro = new ResizeObserver(scrollToBottom);
-    ro.observe(inner);
-    return () => ro.disconnect();
-  }, [busy, error, messages, sending]);
+  useChatStickToBottom(messagesScrollRef, messagesInnerRef, [busy, error, messages, sending], {
+    resetKey: sessionId,
+  });
 
   useEffect(() => {
     setShowResultPanel(false);
@@ -470,6 +476,23 @@ export function PlatformSessionAgentWorkspace({
     trialOrchestrationDone,
     orchestrationAnchor,
   ]);
+
+  const decompositionFallbackSteps = useMemo(() => {
+    if (latestStepsMessageId) return null;
+    const labels = extractDecompositionLabelsFromMessages(messages);
+    if (!labels.length) return null;
+    const orchFailed = messages.some(
+      (m) => m.role === "assistant" && /多步任务在执行过程中失败/.test(m.content || ""),
+    );
+    const orchCancelled = messages.some(
+      (m) => m.role === "assistant" && /多步任务已由用户终止/.test(m.content || ""),
+    );
+    return buildTaskStepsFromDecompositionLabels(labels, sessionId, false, null, {
+      multiStepOrchestration: labels.length > 1,
+      orchestrationFinished: Boolean(orchestrationAnchor),
+      orchestrationSuccess: !orchFailed && !orchCancelled,
+    });
+  }, [latestStepsMessageId, messages, orchestrationAnchor, sessionId]);
 
   const runRecordExecutionStepsForLabels = useMemo(() => {
     if (!scheduledRunRecord) return null;
@@ -648,12 +671,14 @@ export function PlatformSessionAgentWorkspace({
       message_index: 0,
       meta: {},
     };
-    setMessages((cur) => [...cur, optimistic]);
+    const mid = safeRandomUUID();
+    const assistantStreamId = `streaming_assistant_${mid}`;
+    const nowIso = new Date().toISOString();
+    setMessages((cur) => [...cur, optimistic, createStreamingAssistantMessage(assistantStreamId, nowIso)]);
     setDraft("");
     try {
       await platformAgent.withFreshToken(async (token) => {
-        const mid = safeRandomUUID();
-        await sendChatMessage(token, sessionId, text, mid);
+        await sendSessionMessageStream(token, sessionId, text, mid, setMessages, assistantStreamId);
       });
       await reload();
       void refreshHistory();
@@ -754,7 +779,16 @@ export function PlatformSessionAgentWorkspace({
                     runRecordExecutionStepsForLabels?.length
                       ? runRecordExecutionStepsForLabels
                       : null;
-                  const taskStepsToShow = taskStepsFromMessage ?? syntheticForTrial ?? syntheticForRunRecord;
+                  if (
+                    isSupersededTaskExecutionStepsMessage(m, latestStepsMessageId, taskStepsFromMessage)
+                  ) {
+                    return null;
+                  }
+                  const taskStepsToShow =
+                    taskStepsFromMessage ??
+                    syntheticForTrial ??
+                    syntheticForRunRecord ??
+                    (isThisOrchestrationTurn ? decompositionFallbackSteps : null);
                   const showTaskStepsBubble = Boolean(taskStepsToShow && taskStepsToShow.length > 0);
                   const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
                   const rawBundle = Array.isArray(meta?.orchestration_step_task_ids)
@@ -798,7 +832,11 @@ export function PlatformSessionAgentWorkspace({
                             setPanelVisibility={setPanelVisibilityRecord}
                           />
                         ) : hideAssistantBubble ? null : (
-                          <SimpleAssistantBubble body={m.content} datetime={m.created_at} />
+                          <SimpleAssistantBubble
+                            body={m.content}
+                            datetime={m.created_at}
+                            streaming={isStreamingAssistantMessage(m)}
+                          />
                         )
                       ) : (
                         <SimpleSystemBubble message={m.content} />
@@ -830,7 +868,9 @@ export function PlatformSessionAgentWorkspace({
                     </div>
                   );
                 })}
-                {sending ? <AssistantLoadingRow variant="thinking" /> : null}
+                {sending && !messages.some(isStreamingAssistantMessage) ? (
+                  <AssistantLoadingRow variant="thinking" />
+                ) : null}
                 {showTrialRunFooterLine ? <AssistantLoadingRow variant="task" /> : null}
               </div>
             </div>

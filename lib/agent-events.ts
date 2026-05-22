@@ -186,6 +186,21 @@ export type AgentRoundRuntimeEvent =
       zipDownloadApi: string | null;
     }
   | {
+      type: "task_split_delta";
+      roundId: string;
+      steps: string[];
+    }
+  | {
+      /** 服务端拆分 SSE 已结束，可判定任务拆分 UI 是否展示完毕 */
+      type: "task_split_stream_end";
+      roundId: string;
+    }
+  | {
+      /** 任务拆分 UI（含打字机）已展示完毕 */
+      type: "split_reveal_complete";
+      roundId: string;
+    }
+  | {
       type: "task_execution_steps_init";
       roundId: string;
       steps: Array<{ id: string; label: string }>;

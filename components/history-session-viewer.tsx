@@ -2,13 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, UserRound } from "lucide-react";
+import { UserRound } from "lucide-react";
 
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
-import { formatAgentApiErrorForUser, listSessionMessages, sendChatMessage } from "@/lib/agent-api/client";
+import { formatAgentApiErrorForUser, listSessionMessages } from "@/lib/agent-api/client";
+import {
+  createStreamingAssistantMessage,
+  isStreamingAssistantMessage,
+  sendSessionMessageStream,
+} from "@/lib/session-chat-send";
 import type { ChatSendResult, SessionMessageItem } from "@/lib/agent-api/types";
 import { safeRandomUUID } from "@/lib/random-uuid";
-import { ChatMarkdown } from "@/components/chat-markdown";
+import { SimpleAssistantBubble } from "@/components/agent-workspace/chat-bubbles";
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { MoreDataShell, useMoreDataShellState } from "@/components/more-data-shell";
 import { compactText } from "@/components/agent-workspace-view-models";
@@ -18,10 +23,15 @@ import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
 import { TaskExecutionStepsAssistantBubble } from "@/components/task-execution-steps-assistant-bubble";
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
-import { messageIdsEligibleForTaskResultCard } from "@/lib/session-task-result-card-visibility";
+import {
+  isSupersededTaskExecutionStepsMessage,
+  messageIdsEligibleForTaskResultCard,
+} from "@/lib/session-task-result-card-visibility";
+import { extractDecompositionLabelsFromMessages } from "@/lib/parse-decomposition-labels";
+import { buildTaskStepsFromDecompositionLabels } from "@/lib/schedule-trial-execution-presentation";
 import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
-import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
+import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import {
   enrichOrchestrationBundlesWithStepLabels,
   fetchTaskOrchestrationForResultPanel,
@@ -58,27 +68,6 @@ function SimpleUserBubble({ text, datetime }: { text: string; datetime: string }
   );
 }
 
-function SimpleAssistantBubble({ body, datetime }: { body: string; datetime: string }) {
-  return (
-    <div className="flex w-full justify-start">
-      <div className={`rounded-[18px] border border-[#e5e7eb] bg-white px-4 py-3 shadow-sm ${SIMPLE_CHAT_BUBBLE_MAX}`}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs font-semibold text-[#475569]">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#171717] text-white">
-              <Bot className="h-3.5 w-3.5" />
-            </span>
-            LinkData
-          </div>
-          <div className="text-[11px] text-[#94a3b8]">{formatTime(datetime)}</div>
-        </div>
-        <div className="mt-2 text-sm text-[#0f172a]">
-          <ChatMarkdown>{stripModelThinkingForUi(body)}</ChatMarkdown>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function SimpleSystemBubble({ message }: { message: string }) {
   return (
     <div className="flex w-full justify-center">
@@ -100,6 +89,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   const [messages, setMessages] = useState<SessionMessageItem[]>([]);
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesInnerRef = useRef<HTMLDivElement>(null);
   const [showResultPanel, setShowResultPanel] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [orchestrationBundles, setOrchestrationBundles] = useState<TaskOrchestrationBundleRow[]>([]);
@@ -163,13 +153,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     void reload();
   }, [platformAgent, reload, router, sessionId]);
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
-    });
-  }, [busy, messages, sending]);
+  useChatStickToBottom(scrollRef, messagesInnerRef, [busy, messages, sending], { resetKey: sessionId });
 
   const title = useMemo(() => `历史对话`, []);
 
@@ -204,6 +188,28 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     }
     return null;
   }, [messages]);
+
+  const firstAssistantIndex = useMemo(
+    () => messages.findIndex((m) => m.role === "assistant"),
+    [messages],
+  );
+
+  const decompositionFallbackSteps = useMemo(() => {
+    if (latestStepsMessageId) return null;
+    const labels = extractDecompositionLabelsFromMessages(messages);
+    if (!labels.length) return null;
+    const orchFailed = messages.some(
+      (m) => m.role === "assistant" && /多步任务在执行过程中失败/.test(m.content || ""),
+    );
+    const orchCancelled = messages.some(
+      (m) => m.role === "assistant" && /多步任务已由用户终止/.test(m.content || ""),
+    );
+    return buildTaskStepsFromDecompositionLabels(labels, sessionId, false, null, {
+      multiStepOrchestration: labels.length > 1,
+      orchestrationFinished: Boolean(orchestrationAnchor),
+      orchestrationSuccess: !orchFailed && !orchCancelled,
+    });
+  }, [latestStepsMessageId, messages, orchestrationAnchor, sessionId]);
 
   const latestExecutionSteps = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -323,12 +329,24 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
       message_index: 0,
       meta: {},
     };
-    setMessages((cur) => [...cur, optimisticUser]);
+    const mid = safeRandomUUID();
+    const assistantStreamId = `streaming_assistant_${mid}`;
+    setMessages((cur) => [
+      ...cur,
+      optimisticUser,
+      createStreamingAssistantMessage(assistantStreamId, nowIso),
+    ]);
     setDraft("");
     try {
       await platformAgent.withFreshToken(async (token) => {
-        const mid = safeRandomUUID();
-        const res: ChatSendResult = await sendChatMessage(token, sessionId, text, mid);
+        const res: ChatSendResult = await sendSessionMessageStream(
+          token,
+          sessionId,
+          text,
+          mid,
+          setMessages,
+          assistantStreamId,
+        );
         if (res.kind === "completed") {
           await reload();
           return;
@@ -406,7 +424,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     >
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
         <div ref={scrollRef} className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-4 pt-6 sm:px-6">
-          <div className={`mx-auto w-full ${SIMPLE_CHAT_COLUMN_MAX}`}>
+          <div ref={messagesInnerRef} className={`mx-auto w-full ${SIMPLE_CHAT_COLUMN_MAX}`}>
             <div className="space-y-5">
               {error ? <SimpleSystemBubble message={`加载/发送失败：${error}`} /> : null}
               {!isLoggedIn ? <SimpleSystemBubble message="未登录" /> : null}
@@ -414,9 +432,19 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
               {!busy && isLoggedIn && messages.length === 0 ? <SimpleSystemBubble message="该会话暂无消息" /> : null}
 
               <div className="space-y-4">
-                {messages.map((m) => {
+                {messages.map((m, i) => {
                   const meta = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
-                  const taskSteps = parseTaskExecutionStepsFromMeta(meta);
+                  const taskStepsFromMessage = parseTaskExecutionStepsFromMeta(meta);
+                  if (
+                    isSupersededTaskExecutionStepsMessage(m, latestStepsMessageId, taskStepsFromMessage)
+                  ) {
+                    return null;
+                  }
+                  const isThisOrchestrationTurn = m.role === "assistant" && i === firstAssistantIndex;
+                  const taskSteps =
+                    taskStepsFromMessage ??
+                    (isThisOrchestrationTurn ? decompositionFallbackSteps : null);
+                  const showTaskStepsBubble = Boolean(taskSteps && taskSteps.length > 0);
                   const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
                   const rawBundle = Array.isArray(meta?.orchestration_step_task_ids)
                     ? (meta?.orchestration_step_task_ids as unknown[])
@@ -437,13 +465,14 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                       {m.role === "user" ? (
                         <SimpleUserBubble text={m.content} datetime={m.created_at} />
                       ) : m.role === "assistant" ? (
-                        hideAssistantBubble ? null : taskSteps && taskSteps.length > 0 ? (
+                        showTaskStepsBubble ? (
                           <TaskExecutionStepsAssistantBubble
-                            steps={taskSteps}
+                            steps={taskSteps!}
                             datetime={m.created_at}
                             platformSubtasks={
-                              m.id === latestStepsMessageId && orchestrationBundlesForUi.length > 0
-                                ? mergeBundlesIntoPlatformSnapshots(taskSteps, orchestrationBundlesForUi)
+                              (m.id === latestStepsMessageId || isThisOrchestrationTurn) &&
+                              orchestrationBundlesForUi.length > 0
+                                ? mergeBundlesIntoPlatformSnapshots(taskSteps!, orchestrationBundlesForUi)
                                 : undefined
                             }
                             timelineRunId={sessionId}
@@ -451,8 +480,12 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                             setPanelSubtaskFocus={setPanelSubtaskFocus}
                             setPanelVisibility={setPanelVisibilityRecord}
                           />
-                        ) : (
-                          <SimpleAssistantBubble body={m.content} datetime={m.created_at} />
+                        ) : hideAssistantBubble ? null : (
+                          <SimpleAssistantBubble
+                            body={m.content}
+                            datetime={m.created_at}
+                            streaming={isStreamingAssistantMessage(m)}
+                          />
                         )
                       ) : (
                         <SimpleSystemBubble message={m.content} />
@@ -482,7 +515,9 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                     </div>
                   );
                 })}
-                {sending ? <AssistantLoadingRow variant="thinking" /> : null}
+                {sending && !messages.some(isStreamingAssistantMessage) ? (
+                  <AssistantLoadingRow variant="thinking" />
+                ) : null}
               </div>
             </div>
           </div>

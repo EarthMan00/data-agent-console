@@ -7,6 +7,7 @@ import type {
   TaskExecutionStep,
 } from "@/lib/agent-events";
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
+import { stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 
 export type RoundViewModel = {
@@ -38,6 +39,17 @@ export type RoundViewModel = {
   collapseExecution: boolean;
   executionSteps?: TaskExecutionStep[];
   platformSubtasks?: PlatformSubtaskSnapshot[];
+  /** 纯对话：助手正文（流式累积或终稿） */
+  assistantReplyText?: string;
+  assistantStreaming?: boolean;
+  /** 本轮是否已结束（success / error） */
+  roundTerminal?: boolean;
+  /** 任务拆分区是否启用打字机（当前轮进行中） */
+  splitReveal?: boolean;
+  /** 任务拆分 SSE 是否已结束 */
+  splitStreamEnded?: boolean;
+  /** 任务拆分 UI 是否已展示完毕 */
+  splitRevealComplete?: boolean;
 };
 
 export type TaskRunLike = {
@@ -51,6 +63,8 @@ export type TaskRunLike = {
   latestRoundId?: string | null;
   taskExecutionStepsByRound?: Record<string, TaskExecutionStep[]>;
   platformSubtasksByRound?: Record<string, PlatformSubtaskSnapshot[]>;
+  splitStreamEndedByRound?: Record<string, boolean>;
+  splitRevealCompleteByRound?: Record<string, boolean>;
   platformTaskArtifacts?: PlatformTaskArtifactRef[];
 };
 
@@ -94,6 +108,10 @@ export function buildRoundViewModels(run: TaskRunLike) {
     const createdAt = roundNodes[0]?.createdAt ?? run.startedAt;
     const userNode = roundNodes.find((item) => item.kind === "user_message" && "text" in item);
     const finalNode = roundNodes.find((item) => item.kind === "assistant_final" && "text" in item);
+    const streamNode = roundNodes.find(
+      (item): item is ConversationNode & { kind: "assistant_stream"; text: string; status: "streaming" | "complete" } =>
+        item.kind === "assistant_stream" && "text" in item,
+    );
     const attachmentNode = roundNodes.find((item) => item.kind === "attachment_group" && "attachments" in item);
     const patchNode = roundNodes.find((item) => item.kind === "report_patch" && "summary" in item);
     const errorNode = roundNodes.find((item): item is ConversationNode & { kind: "error"; message: string } => item.kind === "error");
@@ -114,10 +132,24 @@ export function buildRoundViewModels(run: TaskRunLike) {
 
     const anyExecStepFailedEarly = Boolean(execStepsSorted?.some((s) => s.status === "error"));
 
+    const streamRaw = streamNode?.text ?? "";
+    const streamForUi =
+      streamNode?.status === "streaming"
+        ? stripModelThinkingForStreamPartial(streamRaw)
+        : stripModelThinkingForUi(streamRaw);
+    const streamNorm = streamForUi === "（无回复）" ? "" : streamForUi.trim();
+    const finalRaw = finalNode?.text ?? "";
+    const finalNorm =
+      (stripModelThinkingForUi(finalRaw) === "（无回复）" ? "" : stripModelThinkingForUi(finalRaw)).trim();
+    const assistantReplyText = (finalNorm || streamNorm).trim();
+    const assistantStreaming = streamNode?.status === "streaming";
+
+    const roundTerminal = run.status === "success" || run.status === "error";
+
     const assistantPending =
       (run.status === "running" || run.status === "queued") &&
       run.latestRoundId === node.roundId &&
-      !finalNode &&
+      !assistantReplyText &&
       !errorMessage &&
       !anyExecStepFailedEarly;
 
@@ -160,7 +192,8 @@ export function buildRoundViewModels(run: TaskRunLike) {
 
     const patchSummaryText = (patchNode?.summary ?? []).join("。");
     const baseConversationOutput = Boolean(
-      (finalNode?.text && finalNode.text.trim()) || (patchNode?.summary && patchNode.summary.length > 0),
+      assistantReplyText ||
+        (uiLayout === "tool_orchestration" && patchNode?.summary && patchNode.summary.length > 0),
     );
     const executionPhasesComplete =
       uiLayout === "simple_chat" ||
@@ -180,9 +213,12 @@ export function buildRoundViewModels(run: TaskRunLike) {
 
     const resultSummary = errorMessage
       ? ""
-      : finalNode?.text?.trim() ||
-        patchSummaryText ||
-        (waitingExecSummary ? "任务执行完成后将在此展示结果摘要。" : buildExecutionSummaryFallback(run.objective, sourceLabels));
+      : assistantReplyText ||
+        (uiLayout === "tool_orchestration" ? patchSummaryText : "") ||
+        (waitingExecSummary ? "任务执行完成后将在此展示结果摘要。" : "") ||
+        (roundTerminal && !assistantReplyText
+          ? buildExecutionSummaryFallback(run.objective, sourceLabels)
+          : "");
 
     const collapseExecution =
       Boolean(errorMessage) ||
@@ -224,6 +260,15 @@ export function buildRoundViewModels(run: TaskRunLike) {
       collapseExecution,
       executionSteps: execStepsSorted,
       platformSubtasks,
+      assistantReplyText: assistantReplyText || undefined,
+      assistantStreaming,
+      roundTerminal,
+      splitReveal:
+        run.latestRoundId === node.roundId &&
+        (run.status === "running" || run.status === "queued") &&
+        splitItems.length > 0,
+      splitStreamEnded: Boolean(run.splitStreamEndedByRound?.[node.roundId]),
+      splitRevealComplete: Boolean(run.splitRevealCompleteByRound?.[node.roundId]),
     });
   }
 

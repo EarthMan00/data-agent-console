@@ -11,13 +11,9 @@ const agentInternalBase = agentInternal.replace(/\/$/, "");
 
 const nextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost", ...extraDevOrigins],
+  // SSE 须走 app/agent-platform/[...path]/route.ts 流式透传；rewrites 会缓冲整段响应导致无打字机效果。
   async rewrites() {
-    return [
-      {
-        source: "/agent-platform/:path*",
-        destination: `${agentInternalBase}/:path*`,
-      },
-    ];
+    return [];
   },
 };
 

@@ -9,6 +9,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -85,11 +86,41 @@ type HistoryEntry = SessionListItem & {
   firstAt?: string | null;
 };
 
+const HISTORY_PAGE_SIZE = 20;
+
+async function enrichHistoryEntries(
+  token: string,
+  sessions: SessionListItem[],
+): Promise<HistoryEntry[]> {
+  return Promise.all(
+    sessions.map(async (s) => {
+      try {
+        const mr = await listSessionMessages(token, s.session_id, 30);
+        const msgs = (mr.messages ?? []) as SessionMessageItem[];
+        const sorted = [...msgs].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        );
+        const firstUser = sorted.find((m) => m.role === "user") ?? sorted[0];
+        return {
+          ...s,
+          firstMessage: firstUser?.content ?? null,
+          firstAt: firstUser?.created_at ?? s.created_at,
+        };
+      } catch {
+        return { ...s, firstMessage: null, firstAt: s.created_at };
+      }
+    }),
+  );
+}
+
 type MoreDataShellStateValue = {
   historySessions: HistoryEntry[];
   historyBusy: boolean;
+  historyLoadingMore: boolean;
+  historyHasMore: boolean;
   historyError: string;
   refreshHistory: () => Promise<void>;
+  loadMoreHistory: () => Promise<void>;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (next: boolean | ((current: boolean) => boolean)) => void;
   setHistoryError: (next: string) => void;
@@ -101,11 +132,16 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
   const platformAgent = useOptionalPlatformAgent();
   const [historySessions, setHistorySessions] = useState<HistoryEntry[]>([]);
   const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const [historyTotal, setHistoryTotal] = useState(0);
   const [historyError, setHistoryError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [historyWasLoaded, setHistoryWasLoaded] = useState(false);
+  const historyPageRef = useRef(0);
+  const historyLoadMoreLockRef = useRef(false);
 
   const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
+  const historyHasMore = historySessions.length < historyTotal;
 
   const refreshHistory = useCallback(async () => {
     if (!platformAgent?.auth?.accessToken) return;
@@ -113,28 +149,11 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
     setHistoryError("");
     try {
       await platformAgent.withFreshToken(async (token) => {
-        const res = await listSessions(token, 1, 50);
+        const res = await listSessions(token, 1, HISTORY_PAGE_SIZE);
         const base = res.sessions ?? [];
-        const head = base.slice(0, 8);
-        const enriched: HistoryEntry[] = await Promise.all(
-          head.map(async (s) => {
-            try {
-              const mr = await listSessionMessages(token, s.session_id, 80);
-              const msgs = (mr.messages ?? []) as SessionMessageItem[];
-              const sorted = [...msgs].sort(
-                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-              );
-              const firstUser = sorted.find((m) => m.role === "user") ?? sorted[0];
-              return {
-                ...s,
-                firstMessage: firstUser?.content ?? null,
-                firstAt: firstUser?.created_at ?? s.created_at,
-              };
-            } catch {
-              return { ...s, firstMessage: null, firstAt: s.created_at };
-            }
-          }),
-        );
+        const enriched = await enrichHistoryEntries(token, base);
+        historyPageRef.current = 1;
+        setHistoryTotal(res.total ?? enriched.length);
         setHistorySessions(enriched);
         setHistoryWasLoaded(true);
       });
@@ -144,12 +163,55 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
     } finally {
       setHistoryBusy(false);
     }
-  }, [platformAgent, setHistoryError]);
+  }, [platformAgent]);
+
+  const loadMoreHistory = useCallback(async () => {
+    if (!platformAgent?.auth?.accessToken) return;
+    if (historyLoadMoreLockRef.current || historyBusy) return;
+    if (historySessions.length >= historyTotal) return;
+
+    historyLoadMoreLockRef.current = true;
+    setHistoryLoadingMore(true);
+    setHistoryError("");
+    try {
+      await platformAgent.withFreshToken(async (token) => {
+        const nextPage = historyPageRef.current + 1;
+        const res = await listSessions(token, nextPage, HISTORY_PAGE_SIZE);
+        const base = res.sessions ?? [];
+        if (base.length === 0) {
+          setHistoryTotal(res.total ?? historySessions.length);
+          return;
+        }
+        const enriched = await enrichHistoryEntries(token, base);
+        historyPageRef.current = nextPage;
+        setHistoryTotal(res.total ?? historyTotal);
+        setHistorySessions((prev) => {
+          const seen = new Set(prev.map((s) => s.session_id));
+          const merged = [...prev];
+          for (const row of enriched) {
+            if (!seen.has(row.session_id)) {
+              merged.push(row);
+              seen.add(row.session_id);
+            }
+          }
+          return merged;
+        });
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setHistoryError(msg);
+    } finally {
+      setHistoryLoadingMore(false);
+      historyLoadMoreLockRef.current = false;
+    }
+  }, [historyBusy, historySessions.length, historyTotal, platformAgent]);
 
   useEffect(() => {
     if (!isLoggedIn) {
       setHistorySessions([]);
       setHistoryWasLoaded(false);
+      setHistoryTotal(0);
+      historyPageRef.current = 0;
       return;
     }
     if (!historyWasLoaded) {
@@ -161,13 +223,26 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
     () => ({
       historySessions,
       historyBusy,
+      historyLoadingMore,
+      historyHasMore,
       historyError,
       refreshHistory,
+      loadMoreHistory,
       sidebarCollapsed,
       setSidebarCollapsed,
       setHistoryError,
     }),
-    [historySessions, historyBusy, historyError, refreshHistory, sidebarCollapsed, setHistoryError],
+    [
+      historySessions,
+      historyBusy,
+      historyLoadingMore,
+      historyHasMore,
+      historyError,
+      refreshHistory,
+      loadMoreHistory,
+      sidebarCollapsed,
+      setHistoryError,
+    ],
   );
 
   return <MoreDataShellStateContext.Provider value={value}>{children}</MoreDataShellStateContext.Provider>;
@@ -257,14 +332,19 @@ function MoreDataShellComponent({
   const {
     historySessions,
     historyBusy,
+    historyLoadingMore,
+    historyHasMore,
     historyError,
     refreshHistory,
+    loadMoreHistory,
     sidebarCollapsed,
     setSidebarCollapsed,
     setHistoryError,
   } = useMoreDataShellState();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [historyPurgeConfirmId, setHistoryPurgeConfirmId] = useState<string | null>(null);
+  const historyListScrollRef = useRef<HTMLDivElement>(null);
+  const historyLoadSentinelRef = useRef<HTMLDivElement>(null);
   /** 首屏与服务端 HTML 一致：认证态来自客户端存储，仅在 mount 后再按登录态渲染侧栏，避免 hydration mismatch */
   const [clientMounted, setClientMounted] = useState(false);
   useEffect(() => {
@@ -279,6 +359,22 @@ function MoreDataShellComponent({
     if (!clientMounted || !isLoggedIn) return;
     if (pathname === "/") void refreshHistory();
   }, [pathname, clientMounted, isLoggedIn, refreshHistory]);
+
+  /** 历史列表触底加载下一页 */
+  useEffect(() => {
+    const root = historyListScrollRef.current;
+    const sentinel = historyLoadSentinelRef.current;
+    if (!root || !sentinel || !historyHasMore || historyBusy) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) void loadMoreHistory();
+      },
+      { root, rootMargin: "64px", threshold: 0 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [historyBusy, historyHasMore, historySessions.length, loadMoreHistory]);
   const activeSessionId = platformAgent?.platformSessionId ?? null;
   const showAuthSidebar = clientMounted && isLoggedIn;
   /** 顶栏用户区：与侧栏同理，mount 前固定为「登录」，避免 token 仅在客户端存在时 hydration 不一致 */
@@ -435,7 +531,10 @@ function MoreDataShellComponent({
                     onClick={() => void refreshHistory()}
                   />
                 </div>
-                <div className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                <div
+                  ref={historyListScrollRef}
+                  className="hide-scrollbar-y mt-2 min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+                >
                   <div className="space-y-2">
                   {historyBusy ? (
                     <div className="px-3 py-2 text-xs text-[#94a3b8]">加载中…</div>
@@ -524,6 +623,15 @@ function MoreDataShellComponent({
                       </div>
                     ))
                   )}
+                  {historyHasMore ? (
+                    <div
+                      ref={historyLoadSentinelRef}
+                      className="px-3 py-2 text-center text-[11px] text-[#94a3b8]"
+                      aria-hidden={!historyLoadingMore}
+                    >
+                      {historyLoadingMore ? "加载更多…" : "\u00a0"}
+                    </div>
+                  ) : null}
                   </div>
                 </div>
               </div>

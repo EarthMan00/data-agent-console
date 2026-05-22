@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 
+import { HtmlArtifactIframe } from "@/components/html-artifact-iframe";
 import { ChatexcelArtifactPreview } from "@/components/chatexcel-artifact-preview";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { parseChatexcelArtifactText } from "@/lib/chatexcel-artifact";
@@ -92,12 +93,9 @@ export function FavoriteSnapshotView({
 
   if (kind === "html" && content_text) {
     return (
-      <iframe
-        title={title ?? "HTML 预览"}
-        sandbox=""
-        className="min-h-[400px] w-full flex-1 rounded-[10px] border border-[#e5e7eb] bg-white"
-        srcDoc={content_text}
-      />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">
+        <HtmlArtifactIframe html={content_text} title={title ?? "HTML 预览"} />
+      </div>
     );
   }
 

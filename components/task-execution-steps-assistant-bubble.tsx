@@ -4,6 +4,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { Bot } from "lucide-react";
 
 import { PlatformRoundStepTimeline } from "@/components/agent-workspace/platform-step-views";
+import { TaskSplitSection } from "@/components/agent-workspace/task-split-section";
 import { ExecutionStepsHistoryList } from "@/components/execution-steps-monitor";
 import type { PlatformSubtaskSnapshot, PlatformTaskArtifactRef, TaskExecutionStep } from "@/lib/agent-events";
 import { cn } from "@/lib/utils";
@@ -66,17 +67,11 @@ export function TaskExecutionStepsAssistantBubble({
           <div className="shrink-0 text-[11px] text-[#94a3b8]">{formatTime(datetime)}</div>
         </div>
 
-        <div className="space-y-2 px-1" data-testid="platform-task-split">
-          <div className="text-[14px] font-semibold text-[#202124]">任务拆分</div>
-          <div className="space-y-2 text-[13px] leading-[1.6] text-[#4f5753]">
-            {ordered.map((step, itemIndex) => (
-              <div key={step.id} className="flex gap-2">
-                <span className="pt-px text-[#9aa39e]">{itemIndex + 1}.</span>
-                <p className="min-w-0 flex-1">{step.label.replace(/^\d+[）.、]\s*/, "")}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+        <TaskSplitSection
+          items={ordered.map((s) => s.label)}
+          reveal={false}
+          testId="platform-task-split"
+        />
 
         <div
           className="rounded-[20px] border border-[#eceef1] bg-[#fcfcfd] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.03)]"

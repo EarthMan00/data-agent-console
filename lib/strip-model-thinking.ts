@@ -64,3 +64,29 @@ export function stripModelThinkingForUi(text: string): string {
   const s = t.trim();
   return s || "（无回复）";
 }
+
+/** 流式进行中：仅去掉已闭合思考块，避免未闭合标签导致整段缓冲被清空。 */
+export function stripModelThinkingForStreamPartial(text: string): string {
+  if (!text) return "";
+  let t = text.replace(ZW_RE, "");
+  t = t.replace(/＜/g, "<").replace(/＞/g, ">");
+  const tags = ["redacted_reasoning", "redacted_thinking", "thinking", "think"] as const;
+  for (const tag of tags) {
+    const open = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/\\s*${tag}\\s*>`, "gi");
+    t = t.replace(open, "");
+  }
+  for (const tag of ["redacted_reasoning", "thinking", "think"] as const) {
+    const openToEnd = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*$`, "gi");
+    t = t.replace(openToEnd, "");
+  }
+  t = stripRedactedThinkingBlocksScan(t);
+  return t.trim();
+}
+
+export function streamSanitizeDeltaClient(prev: string, rawAccum: string): { display: string; delta: string } {
+  const display = stripModelThinkingForStreamPartial(rawAccum);
+  if (display.startsWith(prev)) {
+    return { display, delta: display.slice(prev.length) };
+  }
+  return { display, delta: display };
+}

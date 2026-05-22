@@ -31,6 +31,7 @@ import {
   SimpleUserBubble,
   ToolCard,
 } from "@/components/agent-workspace/chat-bubbles";
+import { TaskSplitSection } from "@/components/agent-workspace/task-split-section";
 import { PlatformRoundStepTimeline } from "@/components/agent-workspace/platform-step-views";
 import { PlatformSessionAgentWorkspace } from "@/components/agent-workspace/platform-session-agent-workspace";
 import { ReportPreviewPanel } from "@/components/report-preview-panel";
@@ -43,6 +44,8 @@ import { homeCapabilityItems } from "@/lib/home-capability-items";
 import { workspaceActions, useWorkspaceState, type Report, type TaskRun } from "@/lib/workspace-store";
 import { displayLabelForIndexedSubtask } from "@/lib/merge-orchestration-task-artifacts";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
+import { notifySplitRevealComplete } from "@/lib/split-reveal-gate";
+import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import { cn } from "@/lib/utils";
 import { cancelToolOrchestration, formatAgentApiErrorForUser } from "@/lib/agent-api/client";
 import {
@@ -215,6 +218,8 @@ function AgentRunWorkspaceView({
         taskExecutionStepsByRound: run.taskExecutionStepsByRound,
         platformSubtasksByRound: run.platformSubtasksByRound,
         platformTaskArtifacts: run.platformTaskArtifacts,
+        splitStreamEndedByRound: run.splitStreamEndedByRound,
+        splitRevealCompleteByRound: run.splitRevealCompleteByRound,
       }),
     [
       run.chains,
@@ -228,6 +233,8 @@ function AgentRunWorkspaceView({
       run.status,
       run.taskExecutionStepsByRound,
       run.timeline,
+      run.splitStreamEndedByRound,
+      run.splitRevealCompleteByRound,
     ],
   );
 
@@ -402,20 +409,7 @@ function AgentRunWorkspaceView({
 
   const taskPanelOpen = showTaskResultPanel;
 
-  useEffect(() => {
-    const outer = messagesScrollRef.current;
-    const inner = messagesInnerRef.current;
-    if (!outer || !inner) return;
-    const scrollToBottom = () => {
-      requestAnimationFrame(() => {
-        outer.scrollTop = outer.scrollHeight;
-      });
-    };
-    scrollToBottom();
-    const ro = new ResizeObserver(scrollToBottom);
-    ro.observe(inner);
-    return () => ro.disconnect();
-  }, [
+  useChatStickToBottom(messagesScrollRef, messagesInnerRef, [
     executionCardExpandedByRound,
     notice,
     roundModels,
@@ -426,7 +420,9 @@ function AgentRunWorkspaceView({
     run.status,
     run.taskExecutionStepsByRound,
     run.timeline,
-  ]);
+    run.splitRevealCompleteByRound,
+    run.splitStreamEndedByRound,
+  ], { resetKey: run.id });
 
   const stopCurrentRound = useCallback(async () => {
     abortPollRef.current = true;
@@ -487,6 +483,17 @@ function AgentRunWorkspaceView({
       );
       setQueuedAttachments((current) => ({ ...current, [run.id]: [] }));
       setComposerVersion((current) => ({ ...current, [run.id]: (current[run.id] ?? 0) + 1 }));
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "本轮执行失败，请稍后重试。";
+      workspaceActions.applyRuntimeEvent(run.id, {
+        type: "error",
+        roundId: input.roundId,
+        message,
+      });
+      workspaceActions.applyRuntimeEvent(run.id, {
+        type: "round_completed",
+        roundId: input.roundId,
+      });
     } finally {
       executingRoundsRef.current.delete(input.roundId);
       setAgentRoundInFlight(false);
@@ -637,6 +644,11 @@ function AgentRunWorkspaceView({
               {roundModels.map((round, index) => {
                 const executionExpanded =
                   executionCardExpandedByRound[round.roundId] ?? !round.collapseExecution;
+                const splitRevealDone =
+                  round.splitItems.length === 0 ||
+                  !round.splitReveal ||
+                  round.roundTerminal ||
+                  Boolean(round.splitRevealComplete);
 
                 return (
                 <div key={round.roundId} className="space-y-3">
@@ -676,9 +688,20 @@ function AgentRunWorkspaceView({
                         <SimpleSystemBubble message={round.errorMessage} />
                       ) : round.assistantPending ? (
                         <AssistantLoadingRow variant="thinking" />
-                      ) : (
-                        <SimpleAssistantBubble body={round.resultSummary} datetime={round.createdAt} />
-                      )}
+                      ) : round.assistantReplyText ? (
+                        <SimpleAssistantBubble
+                          body={round.assistantReplyText}
+                          datetime={round.createdAt}
+                          streaming={round.assistantStreaming}
+                        />
+                      ) : round.roundTerminal && round.resultSummary ? (
+                        <SimpleAssistantBubble
+                          body={round.resultSummary}
+                          datetime={round.createdAt}
+                          streaming={false}
+                          typewriter={false}
+                        />
+                      ) : null}
                     </div>
                   ) : (
                   <div className="w-full max-w-[780px]">
@@ -698,19 +721,23 @@ function AgentRunWorkspaceView({
                         <AssistantLoadingRow variant="task" />
                       ) : null}
 
-                      <div className="space-y-2 px-1" data-testid="agent-split-section">
-                        <div className="text-[14px] font-semibold text-[#202124]">任务拆分</div>
-                        <div className="space-y-2 text-[13px] leading-6.5 text-[#4f5753]">
-                          {round.splitItems.map((item, itemIndex) => (
-                            <div key={item} className="flex gap-2">
-                              <span className="pt-[1px] text-[#9aa39e]">{itemIndex + 1}.</span>
-                              <p className="min-w-0 flex-1">{item.replace(/^\d+[）)]\s*/, "")}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      {round.splitItems.length > 0 ? (
+                        <TaskSplitSection
+                          items={round.splitItems}
+                          reveal={Boolean(round.splitReveal)}
+                          streamEnded={Boolean(round.splitStreamEnded)}
+                          onRevealComplete={() => {
+                            workspaceActions.applyRuntimeEvent(run.id, {
+                              type: "split_reveal_complete",
+                              roundId: round.roundId,
+                            });
+                            notifySplitRevealComplete(round.roundId);
+                          }}
+                        />
+                      ) : null}
 
-                      {executionExpanded ? (
+                      {splitRevealDone ? (
+                        executionExpanded ? (
                         <div className="rounded-[20px] border border-[#eceef1] bg-[#fcfcfd] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.03)]" data-testid="agent-execution-panel">
                           <div className="flex items-center justify-between gap-4">
                             <div>
@@ -818,7 +845,8 @@ function AgentRunWorkspaceView({
                             </div>
                           ) : null}
                         </>
-                      )}
+                      )
+                      ) : null}
 
                       {round.errorMessage ? <p className="text-sm text-red-600">{round.errorMessage}</p> : null}
 

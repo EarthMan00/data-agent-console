@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
+import { HtmlArtifactIframe } from "@/components/html-artifact-iframe";
 import { ChatexcelArtifactPreview } from "@/components/chatexcel-artifact-preview";
 import { LazyCsvArtifactTable } from "@/components/lazy-csv-artifact-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -170,12 +171,9 @@ export function TaskSingleDataArtifactPreview({ artifact, withFreshToken }: Task
 
   if (isHtml && text != null) {
     return (
-      <iframe
-        title="HTML 预览"
-        sandbox=""
-        className="min-h-[280px] w-full flex-1 rounded-[10px] border border-[#e5e7eb] bg-white"
-        srcDoc={text}
-      />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">
+        <HtmlArtifactIframe html={text} title={artifact.original_name || "HTML 预览"} />
+      </div>
     );
   }
 

@@ -71,6 +71,100 @@ describe("agent view model helpers", () => {
     expect(models[0]?.assistantPending).toBe(false);
   });
 
+  it("treats unclosed think in stream as empty for assistantReplyText", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      status: "running",
+      chains: [],
+      roundUiLayouts: { "round-1": "simple_chat" },
+      timeline: [
+        {
+          id: "node-user",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:00",
+          kind: "user_message",
+          text: "你好",
+        },
+        {
+          id: "node-stream",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:05",
+          kind: "assistant_stream",
+          text: " 用户",
+          status: "streaming",
+        },
+      ],
+    };
+    const [round] = buildRoundViewModels(run);
+    expect(round.assistantPending).toBe(true);
+    expect(round.assistantReplyText).toBeUndefined();
+  });
+
+  it("shows assistantPending when stream shell exists but text is still empty", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      status: "running",
+      chains: [],
+      roundUiLayouts: { "round-1": "simple_chat" },
+      timeline: [
+        {
+          id: "node-user",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:00",
+          kind: "user_message",
+          text: "你好",
+        },
+        {
+          id: "node-stream",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:05",
+          kind: "assistant_stream",
+          text: "",
+          status: "streaming",
+        },
+      ],
+    };
+    const [round] = buildRoundViewModels(run);
+    expect(round.assistantPending).toBe(true);
+    expect(round.resultSummary).toBe("");
+    expect(round.assistantStreaming).toBe(true);
+  });
+
+  it("prefers assistant_stream text over report_patch summary in simple_chat", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      chains: [],
+      roundUiLayouts: { "round-1": "simple_chat" },
+      timeline: [
+        {
+          id: "node-user",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:00",
+          kind: "user_message",
+          text: "你好",
+        },
+        {
+          id: "node-stream",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:05",
+          kind: "assistant_stream",
+          text: "你好！我是数据分析助手。",
+          status: "complete",
+        },
+        {
+          id: "node-patch",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:10",
+          kind: "report_patch",
+          summary: ["本轮以 默认数据源 为主线完成了多逻辑链执行。"],
+        },
+      ],
+    };
+    const [round] = buildRoundViewModels(run);
+    expect(round.resultSummary).toBe("你好！我是数据分析助手。");
+    expect(round.assistantStreaming).toBe(false);
+  });
+
   it("uses simple_chat layout when explicit and clears split/execution chrome", () => {
     const simple: TaskRunLike = {
       ...sampleRun,
@@ -142,6 +236,27 @@ describe("agent view model helpers", () => {
     const [round] = buildRoundViewModels(run);
     expect(round.hasResult).toBe(true);
     expect(round.showTaskResultInChat).toBe(true);
+  });
+
+  it("maps splitStreamEnded and splitRevealComplete from run into round view models", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      status: "running",
+      latestRoundId: "round-1",
+      roundUiLayouts: { "round-1": "tool_orchestration" },
+      splitStreamEndedByRound: { "round-1": true },
+      splitRevealCompleteByRound: { "round-1": true },
+      taskExecutionStepsByRound: {
+        "round-1": [
+          { id: "s1", roundId: "round-1", order: 0, label: "搜索商品", status: "running" },
+        ],
+      },
+    };
+    const [round] = buildRoundViewModels(run);
+    expect(round.splitStreamEnded).toBe(true);
+    expect(round.splitRevealComplete).toBe(true);
+    expect(round.splitReveal).toBe(true);
+    expect(round.executionSteps).toHaveLength(1);
   });
 
   it("creates a plain-language acknowledgement from execution groups", () => {

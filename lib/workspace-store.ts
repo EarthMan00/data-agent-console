@@ -15,6 +15,7 @@ import type {
   PlatformTaskArtifactRef,
   TaskExecutionStep,
 } from "@/lib/agent-events";
+import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 import { upsertReportCollection, upsertRunCollection } from "@/lib/workspace-upsert";
 import { DEFAULT_RESULT_PREVIEW_KEY } from "@/lib/report-defaults";
 import { homeCapabilityItems } from "@/lib/home-capability-items";
@@ -53,6 +54,10 @@ export type TaskRun = {
   chains: DataSourceChain[];
   /** 每轮对话 UI：普通气泡 vs 工具编排（拆分/执行） */
   roundUiLayouts?: Record<string, "simple_chat" | "tool_orchestration">;
+  /** 任务拆分 SSE 是否已结束（结束后才允许判定拆分展示完成） */
+  splitStreamEndedByRound?: Record<string, boolean>;
+  /** 任务拆分 UI（含打字机）是否已展示完毕 */
+  splitRevealCompleteByRound?: Record<string, boolean>;
   /** 平台异步任务完成后附带的产物（用于右侧预览 CSV/JSON 等） */
   platformTaskArtifacts?: PlatformTaskArtifactRef[];
   platformTaskId?: string;
@@ -264,6 +269,75 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
     const subMap = { ...(nextRun.platformSubtasksByRound ?? {}) };
     delete subMap[event.roundId];
     nextRun.platformSubtasksByRound = subMap;
+    const streamEndedMap = { ...(nextRun.splitStreamEndedByRound ?? {}) };
+    delete streamEndedMap[event.roundId];
+    nextRun.splitStreamEndedByRound = streamEndedMap;
+    const revealDoneMap = { ...(nextRun.splitRevealCompleteByRound ?? {}) };
+    delete revealDoneMap[event.roundId];
+    nextRun.splitRevealCompleteByRound = revealDoneMap;
+    const hasStreamShell = timeline.some(
+      (node) => node.kind === "assistant_stream" && node.roundId === event.roundId,
+    );
+    if (!hasStreamShell) {
+      nextRun.timeline = [
+        ...timeline,
+        createNode({
+          id: createId("node"),
+          roundId: event.roundId,
+          createdAt: formatDate(),
+          kind: "assistant_stream",
+          text: "",
+          status: "streaming",
+        }),
+      ];
+    }
+  }
+
+  if (event.type === "task_split_delta") {
+    const existing = nextRun.taskExecutionStepsByRound?.[event.roundId] ?? [];
+    const rows: TaskExecutionStep[] = event.steps.map((label, idx) => {
+      const prev = existing[idx];
+      return {
+        id: prev?.id ?? `${event.roundId}-split-${idx + 1}`,
+        roundId: event.roundId,
+        order: idx,
+        label,
+        status: prev?.status ?? ("pending" as const),
+      };
+    });
+    nextRun.taskExecutionStepsByRound = {
+      ...(nextRun.taskExecutionStepsByRound ?? {}),
+      [event.roundId]: rows,
+    };
+    nextRun.roundUiLayouts = {
+      ...(nextRun.roundUiLayouts ?? {}),
+      [event.roundId]: "tool_orchestration",
+    };
+    nextRun.splitStreamEndedByRound = {
+      ...(nextRun.splitStreamEndedByRound ?? {}),
+      [event.roundId]: false,
+    };
+    nextRun.splitRevealCompleteByRound = {
+      ...(nextRun.splitRevealCompleteByRound ?? {}),
+      [event.roundId]: false,
+    };
+    return { run: nextRun, report: nextReport };
+  }
+
+  if (event.type === "task_split_stream_end") {
+    nextRun.splitStreamEndedByRound = {
+      ...(nextRun.splitStreamEndedByRound ?? {}),
+      [event.roundId]: true,
+    };
+    return { run: nextRun, report: nextReport };
+  }
+
+  if (event.type === "split_reveal_complete") {
+    nextRun.splitRevealCompleteByRound = {
+      ...(nextRun.splitRevealCompleteByRound ?? {}),
+      [event.roundId]: true,
+    };
+    return { run: nextRun, report: nextReport };
   }
 
   if (event.type === "task_execution_steps_init") {
@@ -277,6 +351,10 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
     nextRun.taskExecutionStepsByRound = {
       ...(nextRun.taskExecutionStepsByRound ?? {}),
       [event.roundId]: rows,
+    };
+    nextRun.roundUiLayouts = {
+      ...(nextRun.roundUiLayouts ?? {}),
+      [event.roundId]: "tool_orchestration",
     };
     const subMap = { ...(nextRun.platformSubtasksByRound ?? {}) };
     delete subMap[event.roundId];
@@ -438,21 +516,36 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
   }
 
   if (event.type === "final") {
-    nextRun.timeline = timeline.map((node) =>
-      node.kind === "assistant_stream" && node.roundId === event.roundId
-        ? { ...node, status: "complete" as const }
-        : node,
+    const hadStream = timeline.some(
+      (node) => node.kind === "assistant_stream" && node.roundId === event.roundId,
     );
-    nextRun.timeline = [
-      ...nextRun.timeline,
-      createNode({
-        id: createId("node"),
-        roundId: event.roundId,
-        createdAt: formatDate(),
-        kind: "assistant_final",
-        text: event.text,
-      }),
-    ];
+    const finalRaw = (event.text ?? "").trim();
+    const finalText = finalRaw === "（无回复）" ? "" : finalRaw;
+    nextRun.timeline = timeline.map((node) => {
+      if (node.kind === "assistant_stream" && node.roundId === event.roundId) {
+        const streamedClean = stripModelThinkingForUi(node.text ?? "");
+        const streamedNorm = streamedClean === "（无回复）" ? "" : streamedClean.trim();
+        const resolved = finalText || streamedNorm;
+        return {
+          ...node,
+          status: "complete" as const,
+          text: resolved,
+        };
+      }
+      return node;
+    });
+    if (!hadStream) {
+      nextRun.timeline = [
+        ...nextRun.timeline,
+        createNode({
+          id: createId("node"),
+          roundId: event.roundId,
+          createdAt: formatDate(),
+          kind: "assistant_final",
+          text: event.text,
+        }),
+      ];
+    }
     return { run: nextRun, report: nextReport };
   }
 
@@ -485,13 +578,23 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
 
   if (event.type === "round_completed") {
     nextRun.status = "success";
+    nextRun.timeline = timeline.map((node) =>
+      node.kind === "assistant_stream" && node.roundId === event.roundId
+        ? { ...node, status: "complete" as const }
+        : node,
+    );
     return { run: nextRun, report: nextReport };
   }
 
   if (event.type === "error") {
     nextRun.status = "error";
+    const completedTimeline = timeline.map((node) =>
+      node.kind === "assistant_stream" && node.roundId === event.roundId
+        ? { ...node, status: "complete" as const }
+        : node,
+    );
     nextRun.timeline = [
-      ...timeline,
+      ...completedTimeline,
       createNode({
         id: createId("node"),
         roundId: event.roundId,

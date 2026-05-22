@@ -1,3 +1,4 @@
+import { consumeChatSendStream, type ChatStreamHandlers } from "@/lib/agent-api/chat-stream";
 import { getAgentHttpApiBase, getAgentWsOrigin } from "@/lib/agent-api/config";
 import type { TaskExecutionStepStatus } from "@/lib/agent-events";
 import type {
@@ -562,6 +563,29 @@ export async function deleteTaskSession(accessToken: string, taskId: string): Pr
   if (!res.ok) {
     throw new AgentApiError("delete task session failed", res.status, data);
   }
+}
+
+export async function sendChatMessageStream(
+  accessToken: string,
+  sessionId: string,
+  message: string,
+  messageId: string,
+  handlers: ChatStreamHandlers = {},
+  init?: { signal?: AbortSignal },
+): Promise<ChatSendResult> {
+  const res = await fetch(apiUrl(`/api/chat/${sessionId}/send/stream`), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      "Idempotency-Key": `ui:${messageId}`,
+      "X-Request-ID": messageId,
+    },
+    body: JSON.stringify({ message, message_id: messageId }),
+    signal: init?.signal,
+  });
+  return consumeChatSendStream(res, handlers);
 }
 
 export async function sendChatMessage(

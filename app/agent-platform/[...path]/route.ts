@@ -1,0 +1,93 @@
+import type { NextRequest } from "next/server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/**
+ * 将 /agent-platform/* 流式透传到本机 FastAPI，避免 next.config rewrites 缓冲 SSE。
+ * 开发环境在 NEXT_PUBLIC_AGENT_API_USE_PROXY=1 时，浏览器请求同源 /agent-platform/... 会命中此 Route。
+ */
+const BACKEND_BASE = (
+  process.env.AGENT_WEB_PLATFORM_INTERNAL_URL?.trim() || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+function buildUpstreamUrl(request: NextRequest, pathSegments: string[]) {
+  const path = pathSegments.map(encodeURIComponent).join("/");
+  const url = new URL(`/${path}`, BACKEND_BASE);
+  url.search = request.nextUrl.search;
+  return url.toString();
+}
+
+function forwardRequestHeaders(request: NextRequest): Headers {
+  const headers = new Headers(request.headers);
+  headers.delete("host");
+  headers.delete("connection");
+  headers.delete("content-length");
+  return headers;
+}
+
+function buildResponseHeaders(upstream: Response): Headers {
+  const headers = new Headers(upstream.headers);
+  const ct = headers.get("content-type") ?? "";
+  if (ct.includes("text/event-stream")) {
+    headers.set("Cache-Control", "no-cache, no-transform");
+    headers.set("Connection", "keep-alive");
+    headers.set("X-Accel-Buffering", "no");
+  }
+  return headers;
+}
+
+async function proxy(request: NextRequest, pathSegments: string[]) {
+  const url = buildUpstreamUrl(request, pathSegments);
+  const method = request.method.toUpperCase();
+  const hasBody = method !== "GET" && method !== "HEAD";
+
+  const init: RequestInit & { duplex?: "half" } = {
+    method,
+    headers: forwardRequestHeaders(request),
+    cache: "no-store",
+  };
+
+  if (hasBody) {
+    init.body = request.body;
+    init.duplex = "half";
+  }
+
+  const upstream = await fetch(url, init);
+  return new Response(upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers: buildResponseHeaders(upstream),
+  });
+}
+
+type RouteCtx = { params: Promise<{ path: string[] }> };
+
+async function withPath(request: NextRequest, ctx: RouteCtx) {
+  const { path } = await ctx.params;
+  return proxy(request, path ?? []);
+}
+
+export async function GET(request: NextRequest, ctx: RouteCtx) {
+  return withPath(request, ctx);
+}
+
+export async function POST(request: NextRequest, ctx: RouteCtx) {
+  return withPath(request, ctx);
+}
+
+export async function PUT(request: NextRequest, ctx: RouteCtx) {
+  return withPath(request, ctx);
+}
+
+export async function PATCH(request: NextRequest, ctx: RouteCtx) {
+  return withPath(request, ctx);
+}
+
+export async function DELETE(request: NextRequest, ctx: RouteCtx) {
+  return withPath(request, ctx);
+}
+
+export async function OPTIONS(request: NextRequest, ctx: RouteCtx) {
+  return withPath(request, ctx);
+}

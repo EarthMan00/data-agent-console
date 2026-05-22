@@ -1,10 +1,16 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { ChevronDown, FileText } from "lucide-react";
 
 import { ChatMarkdown } from "@/components/chat-markdown";
+import { useTypewriterReveal } from "@/lib/use-typewriter-reveal";
 import { cn } from "@/lib/utils";
-import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
+import { stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
+
+function charLen(text: string): number {
+  return [...text].length;
+}
 
 function splitMessageLines(text: string) {
   return text
@@ -39,7 +45,38 @@ export function SimpleUserBubble({ text, datetime }: { text: string; datetime: s
   );
 }
 
-export function SimpleAssistantBubble({ body, datetime }: { body: string; datetime: string }) {
+export function SimpleAssistantBubble({
+  body,
+  datetime,
+  streaming = false,
+  typewriter = true,
+}: {
+  body: string;
+  datetime: string;
+  streaming?: boolean;
+  /** 流式时是否逐字展示（默认开启） */
+  typewriter?: boolean;
+}) {
+  const targetNorm = (() => {
+    const t = streaming ? stripModelThinkingForStreamPartial(body) : stripModelThinkingForUi(body);
+    return t === "（无回复）" ? "" : t;
+  })();
+  const latchedStreamRef = useRef(false);
+  if (streaming) latchedStreamRef.current = true;
+
+  const runTypewriter = typewriter && latchedStreamRef.current && charLen(targetNorm) > 0;
+  const { text: shown, revealing } = useTypewriterReveal(targetNorm, runTypewriter, {
+    charIntervalMs: 22,
+  });
+  /** 仅在 SSE 进行中显示光标；流结束后继续打字机追平但不闪光标 */
+  const showCursor = Boolean(streaming && runTypewriter && revealing);
+
+  useEffect(() => {
+    if (!revealing && !streaming) {
+      latchedStreamRef.current = false;
+    }
+  }, [revealing, streaming]);
+
   return (
     <div className="flex w-full justify-start">
       <div className={cn("group flex flex-col items-start", SIMPLE_CHAT_BUBBLE_MAX)}>
@@ -49,7 +86,12 @@ export function SimpleAssistantBubble({ body, datetime }: { body: string; dateti
         <div className="shrink-0 rounded-[16px] border border-[#e1e6ef] bg-white px-4 py-3 text-[#324357] shadow-sm">
           <div className="text-[11px] font-medium uppercase tracking-wide text-[#64748b] opacity-80">助手</div>
           <div className="mt-1 min-w-0">
-            <ChatMarkdown>{stripModelThinkingForUi(body)}</ChatMarkdown>
+            <ChatMarkdown>{shown}</ChatMarkdown>
+            {showCursor ? (
+              <span className="ml-0.5 inline-block animate-pulse text-[#64748b]" aria-hidden>
+                ▌
+              </span>
+            ) : null}
           </div>
         </div>
       </div>

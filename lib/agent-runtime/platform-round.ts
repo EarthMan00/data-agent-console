@@ -3,19 +3,28 @@ import {
   getToolOrchestration,
   patchTaskExecutionSteps,
   postTaskExecutionSteps,
-  sendChatMessage,
+  sendChatMessageStream,
 } from "@/lib/agent-api/client";
+import { ChatStreamError } from "@/lib/agent-api/chat-stream";
 import type { TaskResponse, ToolOrchestrationStatusApi } from "@/lib/agent-api/types";
 import type { AgentRoundRuntimeEvent, TaskExecutionStepStatus } from "@/lib/agent-events";
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { safeRandomUUID } from "@/lib/random-uuid";
-import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
+import { streamSanitizeDeltaClient, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 import { buildTaskCompletionSummary } from "@/lib/task-chat-summary";
 
 import { PlatformAuthExpiredError } from "./auth";
 import { capabilityLabelMap } from "./constants";
 import { buildReportPatch } from "./report-helpers";
 import { mapServerOrchestrationStepStatus, mapTaskResponseToSubtaskEvent } from "./task-mapping";
+import {
+  clearSplitRevealWait,
+  isSplitStreamEndedInStore,
+  notifySplitRevealComplete,
+  registerSplitRevealWait,
+  waitForSplitRevealComplete,
+  yieldToUi,
+} from "@/lib/split-reveal-gate";
 import { sleep } from "./util";
 import type { AgentRoundInput, StreamAgentRoundPlatformOptions } from "./types";
 
@@ -53,6 +62,7 @@ export async function runPlatformRound(
       : [];
 
   handlers.onEvent({ type: "round_started", roundId: input.roundId });
+  registerSplitRevealWait(input.roundId);
 
   if (input.attachments.length > 0) {
     handlers.onEvent({
@@ -62,10 +72,55 @@ export async function runPlatformRound(
     });
   }
 
+  try {
   await withFreshToken(async (token) => {
     const accessToken = token;
     const mid = safeRandomUUID();
-    const result = await sendChatMessage(accessToken, chatSessionId, input.prompt, mid);
+    let hadStreamDelta = false;
+    let hadSplitStreamSteps = false;
+    let rawStreamAccum = "";
+    let prevSanitizedStream = "";
+    const result = await sendChatMessageStream(
+      accessToken,
+      chatSessionId,
+      input.prompt,
+      mid,
+      {
+        onDelta: (text) => {
+          if (!text) return;
+          rawStreamAccum += text;
+          const { display, delta } = streamSanitizeDeltaClient(prevSanitizedStream, rawStreamAccum);
+          prevSanitizedStream = display;
+          if (!delta) return;
+          hadStreamDelta = true;
+          handlers.onEvent({
+            type: "round_ui_layout",
+            roundId: input.roundId,
+            layout: "simple_chat",
+          });
+          handlers.onEvent({ type: "delta", roundId: input.roundId, text: delta });
+        },
+        onSplitDelta: (steps) => {
+          if (steps.length === 0) return;
+          hadSplitStreamSteps = true;
+          handlers.onEvent({
+            type: "round_ui_layout",
+            roundId: input.roundId,
+            layout: "tool_orchestration",
+          });
+          handlers.onEvent({
+            type: "task_split_delta",
+            roundId: input.roundId,
+            steps,
+          });
+        },
+        onAssistantComplete: () => {
+          if (hadSplitStreamSteps) {
+            handlers.onEvent({ type: "task_split_stream_end", roundId: input.roundId });
+          }
+        },
+      },
+    );
 
     if (result.kind === "accepted") {
       onToolTaskAccepted?.({
@@ -80,12 +135,23 @@ export async function runPlatformRound(
         roundId: input.roundId,
         layout: "simple_chat",
       });
-      const text = stripModelThinkingForUi(result.message);
-      handlers.onEvent({ type: "final", roundId: input.roundId, text });
+      const text = stripModelThinkingForUi(result.message || rawStreamAccum);
+      const finalText = text === "（无回复）" ? "" : text;
+      if (hadStreamDelta && finalText && finalText.length > prevSanitizedStream.length) {
+        const tail = finalText.startsWith(prevSanitizedStream)
+          ? finalText.slice(prevSanitizedStream.length)
+          : "";
+        if (tail) {
+          handlers.onEvent({ type: "delta", roundId: input.roundId, text: tail });
+        }
+      } else if (!hadStreamDelta && finalText) {
+        handlers.onEvent({ type: "delta", roundId: input.roundId, text: finalText });
+      }
+      prevSanitizedStream = finalText;
       handlers.onEvent({
-        type: "report_updated",
+        type: "final",
         roundId: input.roundId,
-        patch: buildReportPatch(input.prompt, sourceLabels, input.attachments),
+        text: finalText,
       });
       handlers.onEvent({ type: "round_completed", roundId: input.roundId });
       return;
@@ -123,11 +189,42 @@ export async function runPlatformRound(
         layout: "tool_orchestration",
       });
 
-      handlers.onEvent({
-        type: "task_execution_steps_init",
-        roundId: input.roundId,
-        steps: stepDefs.map((s) => ({ id: s.id, label: s.label })),
-      });
+      const finishSplitRevealUi = async () => {
+        if (!isSplitStreamEndedInStore(input.roundId)) {
+          handlers.onEvent({ type: "task_split_stream_end", roundId: input.roundId });
+        }
+        await waitForSplitRevealComplete(input.roundId, stepLabels);
+        handlers.onEvent({ type: "split_reveal_complete", roundId: input.roundId });
+        notifySplitRevealComplete(input.roundId);
+      };
+
+      registerSplitRevealWait(input.roundId);
+
+      if (hadSplitStreamSteps) {
+        handlers.onEvent({
+          type: "task_execution_steps_init",
+          roundId: input.roundId,
+          steps: stepDefs.map((s) => ({ id: s.id, label: s.label })),
+        });
+        await finishSplitRevealUi();
+      } else {
+        handlers.onEvent({
+          type: "task_execution_steps_init",
+          roundId: input.roundId,
+          steps: stepDefs.map((s) => ({ id: s.id, label: s.label })),
+        });
+        await yieldToUi();
+        await finishSplitRevealUi();
+      }
+
+      if (stepDefs.length > 0) {
+        handlers.onEvent({
+          type: "task_execution_step_update",
+          roundId: input.roundId,
+          stepId: stepDefs[0]!.id,
+          status: "running",
+        });
+      }
 
       const taskExecutionStepsMessageId = await postTaskExecutionSteps(accessToken, chatSessionId, {
         round_id: input.roundId,
@@ -439,4 +536,20 @@ export async function runPlatformRound(
       throw e;
     }
   });
+  } catch (e) {
+    const message =
+      e instanceof ChatStreamError
+        ? e.message
+        : e instanceof Error
+          ? e.message
+          : "发送失败，请稍后重试。";
+    handlers.onEvent({
+      type: "error",
+      roundId: input.roundId,
+      message: humanizeTaskErrorMessage(message),
+    });
+    handlers.onEvent({ type: "round_completed", roundId: input.roundId });
+  } finally {
+    clearSplitRevealWait(input.roundId);
+  }
 }
