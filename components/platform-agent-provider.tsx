@@ -8,19 +8,18 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 
 import {
   AgentApiError,
-  checkUsernameAvailable,
   createSession,
   login,
   refreshAccessToken,
-  registerByEmail,
   releaseSession,
-  sendRegisterEmailOtp,
 } from "@/lib/agent-api/client";
 import { isAgentRealApiEnabled } from "@/lib/agent-api/config";
 import {
@@ -35,9 +34,7 @@ import {
   type AgentSessionSnapshot,
 } from "@/lib/agent-api/session";
 import { invalidateSessionAndRequestLogin } from "@/lib/agent-runtime/auth";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { ArrowLeft, ArrowRight, Power } from "@/components/ui/tabler-icons";
 
 export type PlatformAgentContextValue = {
   auth: AgentSessionSnapshot | null;
@@ -63,7 +60,34 @@ export type PlatformAgentContextValue = {
   withFreshToken: (run: (token: string) => Promise<void>) => Promise<void>;
 };
 
-const PlatformAgentContext = createContext<PlatformAgentContextValue | null>(null);
+const PlatformAgentContext = createContext<PlatformAgentContextValue | null>(
+  null,
+);
+
+function formatLoginError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  const proxyHint =
+    /failed to fetch|load failed|networkerror/i.test(msg) &&
+    (process.env.NEXT_PUBLIC_AGENT_API_USE_PROXY ?? "").trim() !== "1"
+      ? " 若为从其它电脑访问，请在 .env.local 设置 NEXT_PUBLIC_AGENT_API_USE_PROXY=1 并重启 dev。"
+      : "";
+
+  if (/failed to fetch|load failed|networkerror/i.test(msg)) {
+    return `无法连接登录服务，请检查网络或服务配置。${proxyHint}`;
+  }
+  if (
+    (e instanceof AgentApiError && (e.status === 401 || e.status === 403)) ||
+    /login failed|invalid credentials|invalid password|incorrect|unauthorized/i.test(
+      msg,
+    )
+  ) {
+    return "账号或密码错误，请重新输入。";
+  }
+  if (/[\u4e00-\u9fa5]/.test(msg)) {
+    return msg;
+  }
+  return "登录失败，请稍后重试。";
+}
 
 export function useOptionalPlatformAgent(): PlatformAgentContextValue | null {
   return useContext(PlatformAgentContext);
@@ -72,57 +96,20 @@ export function useOptionalPlatformAgent(): PlatformAgentContextValue | null {
 function PlatformAgentInner({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [auth, setAuth] = useState<AgentSessionSnapshot | null>(null);
-  const [platformSessionId, setPlatformSessionId] = useState<string | null>(null);
+  const [platformSessionId, setPlatformSessionId] = useState<string | null>(
+    null,
+  );
   const [authHydrated, setAuthHydrated] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
-  const [registerOpen, setRegisterOpen] = useState(false);
-  const [loginBanner, setLoginBanner] = useState("");
 
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
+  const [loginStep, setLoginStep] = useState<"account" | "password">("account");
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
-
-  const [regUsername, setRegUsername] = useState("");
-  const [regEmail, setRegEmail] = useState("");
-  const [regPassword, setRegPassword] = useState("");
-  const [regCode, setRegCode] = useState("");
-  const [regBusy, setRegBusy] = useState(false);
-  const [regError, setRegError] = useState("");
-  const [regUsernameOk, setRegUsernameOk] = useState<boolean | null>(null);
-  const [regCooldownLeft, setRegCooldownLeft] = useState(0);
-  const regNameTimer = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (regCooldownLeft <= 0) return;
-    const t = window.setInterval(() => {
-      setRegCooldownLeft((v) => (v <= 1 ? 0 : v - 1));
-    }, 1000);
-    return () => window.clearInterval(t);
-  }, [regCooldownLeft]);
-
-  useEffect(() => {
-    if (!registerOpen) return;
-    const u = (regUsername || "").trim();
-    if (u.length < 2) {
-      setRegUsernameOk(null);
-      return;
-    }
-    if (regNameTimer.current) window.clearTimeout(regNameTimer.current);
-    regNameTimer.current = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const ok = await checkUsernameAvailable(u);
-          setRegUsernameOk(ok);
-        } catch {
-          setRegUsernameOk(null);
-        }
-      })();
-    }, 350) as unknown as number;
-    return () => {
-      if (regNameTimer.current) window.clearTimeout(regNameTimer.current);
-    };
-  }, [regUsername, registerOpen]);
+  const accountInputRef = useRef<HTMLInputElement | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
+  const suppressLoginOpenUntilRef = useRef(0);
 
   useEffect(() => {
     setAuth(loadAgentSession());
@@ -134,15 +121,46 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   }, []);
 
   const openLogin = useCallback((banner?: string) => {
-    setLoginBanner(banner?.trim() || "登录后即可连接 agent_web_platform。");
+    void banner;
+    if (Date.now() < suppressLoginOpenUntilRef.current) return;
+    setAccount("");
+    setPassword("");
     setLoginError("");
-    setRegisterOpen(false);
+    setLoginStep("account");
     setLoginOpen(true);
   }, []);
 
   const closeLogin = useCallback(() => {
+    suppressLoginOpenUntilRef.current = Date.now() + 650;
+    setAccount("");
+    setPassword("");
+    setLoginError("");
+    setLoginStep("account");
     setLoginOpen(false);
   }, []);
+
+  useEffect(() => {
+    if (!loginOpen) return;
+    const t = window.setTimeout(() => {
+      if (loginStep === "account") {
+        accountInputRef.current?.focus();
+      } else {
+        passwordInputRef.current?.focus();
+      }
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [loginOpen, loginStep]);
+
+  useEffect(() => {
+    if (!loginOpen) return;
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        closeLogin();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [closeLogin, loginOpen]);
 
   const withFreshToken = useCallback(
     async (run: (token: string) => Promise<void>) => {
@@ -156,14 +174,21 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
         if (e instanceof AgentApiError && e.status === 401) {
           try {
             const nextAccess = await refreshAccessToken(snap.refreshToken);
-            const next: AgentSessionSnapshot = { ...snap, accessToken: nextAccess };
+            const next: AgentSessionSnapshot = {
+              ...snap,
+              accessToken: nextAccess,
+            };
             saveAgentSession(next);
             setAuth(next);
             await run(nextAccess);
             return;
           } catch (refreshErr) {
             invalidateSessionAndRequestLogin();
-            throw new AgentApiError("登录已失效，请重新登录。", 401, refreshErr);
+            throw new AgentApiError(
+              "登录已失效，请重新登录。",
+              401,
+              refreshErr,
+            );
           }
         }
         throw e;
@@ -176,16 +201,21 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     const onExpired = () => {
       setAuth(null);
       setPlatformSessionId(null);
-      setRegisterOpen(false);
       openLogin("登录已失效，请重新登录。");
       router.replace("/");
     };
     window.addEventListener(AGENT_AUTH_EXPIRED_EVENT, onExpired);
-    return () => window.removeEventListener(AGENT_AUTH_EXPIRED_EVENT, onExpired);
+    return () =>
+      window.removeEventListener(AGENT_AUTH_EXPIRED_EVENT, onExpired);
   }, [openLogin, router]);
 
   const applyLoginResponse = useCallback(
-    async (res: { access_token: string; refresh_token: string; user_id: string; user_role?: string | undefined }) => {
+    async (res: {
+      access_token: string;
+      refresh_token: string;
+      user_id: string;
+      user_role?: string | undefined;
+    }) => {
       const prevSnap = loadAgentSession();
       const prevSid = loadPlatformSessionId();
       if (prevSnap?.accessToken && prevSid) {
@@ -209,7 +239,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       clearPlatformSessionId();
       setPlatformSessionId(null);
       setLoginOpen(false);
-      setRegisterOpen(false);
     },
     [],
   );
@@ -222,12 +251,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
         const res = await login(a, p);
         await applyLoginResponse(res);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        const hint =
-          /failed to fetch|load failed|networkerror/i.test(msg) && (process.env.NEXT_PUBLIC_AGENT_API_USE_PROXY ?? "").trim() !== "1"
-            ? " 若为从其它电脑访问，请在 .env.local 设置 NEXT_PUBLIC_AGENT_API_USE_PROXY=1 并重启 dev。"
-            : "";
-        setLoginError(msg + hint);
+        setLoginError(formatLoginError(e));
       } finally {
         setLoginBusy(false);
       }
@@ -235,38 +259,34 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     [applyLoginResponse],
   );
 
-  const requestRegisterEmailOtp = useCallback(async () => {
-    if (regCooldownLeft > 0) return;
-    setRegError("");
-    try {
-      const r = await sendRegisterEmailOtp((regUsername || "").trim(), (regEmail || "").trim());
-      if (r.retryAfterSeconds != null) {
-        setRegCooldownLeft(Math.max(1, Math.floor(r.retryAfterSeconds)));
-      } else {
-        setRegCooldownLeft(60);
+  const advanceLogin = useCallback(() => {
+    if (loginStep === "account") {
+      if (!account.trim()) {
+        setLoginError("请输入账号");
+        accountInputRef.current?.focus();
+        return;
       }
-    } catch (e) {
-      setRegError(e instanceof Error ? e.message : String(e));
+      setLoginError("");
+      setLoginStep("password");
+      return;
     }
-  }, [regCooldownLeft, regEmail, regUsername]);
+    void loginWithPassword(account, password);
+  }, [account, loginStep, loginWithPassword, password]);
 
-  const completeRegister = useCallback(async () => {
-    setRegBusy(true);
-    setRegError("");
-    try {
-      const res = await registerByEmail({
-        username: (regUsername || "").trim(),
-        email: (regEmail || "").trim(),
-        password: regPassword,
-        code: (regCode || "").trim(),
-      });
-      await applyLoginResponse(res);
-    } catch (e) {
-      setRegError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setRegBusy(false);
-    }
-  }, [applyLoginResponse, regCode, regEmail, regPassword, regUsername]);
+  const returnToAccountStep = useCallback(() => {
+    setLoginError("");
+    setPassword("");
+    setLoginStep("account");
+  }, []);
+
+  const handleLoginInputKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      advanceLogin();
+    },
+    [advanceLogin],
+  );
 
   const logout = useCallback(async () => {
     const snap = auth ?? loadAgentSession();
@@ -285,11 +305,12 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     clearAgentSession();
     setAuth(null);
     setPlatformSessionId(null);
-    setRegisterOpen(false);
     router.push("/");
   }, [auth, platformSessionId, router]);
 
-  const beginNewHomeTaskSession = useCallback(async (): Promise<string | null> => {
+  const beginNewHomeTaskSession = useCallback(async (): Promise<
+    string | null
+  > => {
     const snap = auth ?? loadAgentSession();
     if (!snap) {
       openLogin("请先登录后再发起任务。");
@@ -303,11 +324,14 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
           try {
             await releaseSession(token, sid);
           } catch (e) {
-            console.warn("[platform-agent] release_session_before_new_home_failed", {
-              session_id: sid,
-              error: e instanceof Error ? e.message : String(e),
-              status: e instanceof AgentApiError ? e.status : undefined,
-            });
+            console.warn(
+              "[platform-agent] release_session_before_new_home_failed",
+              {
+                session_id: sid,
+                error: e instanceof Error ? e.message : String(e),
+                status: e instanceof AgentApiError ? e.status : undefined,
+              },
+            );
           }
         }
         const created = await createSession(token);
@@ -393,163 +417,184 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   return (
     <PlatformAgentContext.Provider value={value}>
       {children}
-      <Dialog
-        open={loginOpen}
-        onOpenChange={(o) => {
-          if (!o) closeLogin();
-        }}
-      >
-        <DialogContent className="max-w-md rounded-[14px] sm:rounded-[14px]" aria-describedby={undefined}>
-          <DialogTitle className="font-[family:var(--font-jakarta)] text-lg text-[#1d2a3b]">登录</DialogTitle>
-          {loginBanner ? <p className="text-sm text-[#64748b]">{loginBanner}</p> : null}
-          <form
-            className="grid gap-3 pt-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void loginWithPassword(account, password);
-            }}
+      {loginOpen ? (
+        <div className="mdata-auth-overlay fixed inset-0 z-50 bg-[#b9b8b5]">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mdata-login-title"
+            className="mdata-auth-panel fixed left-1/2 top-1/2 h-[calc(100vh-40px)] w-[calc(100vw-40px)] max-w-none -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[24px] border-0 bg-[#141414] p-0 text-white shadow-none sm:rounded-[24px]"
           >
-            <div className="grid gap-1">
-              <label className="text-xs text-[#7e8da0]">账号</label>
-              <Input
-                value={account}
-                onChange={(e) => setAccount(e.target.value)}
-                className="h-9 rounded-[10px]"
-                autoComplete="username"
-                placeholder="用户名或邮箱"
-              />
-            </div>
-            <div className="grid gap-1">
-              <label className="text-xs text-[#7e8da0]">密码</label>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="h-9 rounded-[10px]"
-                autoComplete="current-password"
-                placeholder="请输入密码"
-              />
-            </div>
-            {loginError ? <p className="text-sm text-red-600">{loginError}</p> : null}
-            <div className="flex items-center justify-between gap-3">
-              <Button
+            <div className="relative h-full w-full overflow-hidden">
+              <div className="absolute left-9 top-[21px] flex h-[31px] items-center gap-2.5">
+                <div className="flex items-center gap-2.5">
+                  <Image
+                    src="/mdata-logo.png"
+                    alt="Mdata"
+                    width={31}
+                    height={31}
+                    className="h-[31px] w-[31px] object-contain"
+                    draggable={false}
+                    priority
+                  />
+                  <span className="text-[27px] font-semibold leading-[31px] text-white">
+                    Mdata
+                  </span>
+                </div>
+              </div>
+              <button
                 type="button"
-                variant="ghost"
-                className="h-9 rounded-[10px] px-2 text-[#64748b] hover:text-[#1d2a3b]"
-                onClick={() => {
-                  setLoginError("");
-                  setRegError("");
-                  setRegUsernameOk(null);
-                  setRegisterOpen(true);
+                className="absolute right-[18px] top-3.5 z-20 inline-flex h-16 w-16 items-center justify-center rounded-full text-white/58 transition-[color,background-color,opacity] duration-300 hover:bg-white/[0.04] hover:text-white/82"
+                aria-label="关闭登录"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  closeLogin();
                 }}
               >
-                注册
-              </Button>
-              <Button type="submit" className="rounded-[10px]" disabled={loginBusy}>
-                {loginBusy ? "登录中…" : "登录"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+                <Power className="h-9 w-9" strokeWidth={1.8} />
+              </button>
 
-      <Dialog
-        open={registerOpen}
-        onOpenChange={(o) => {
-          setRegisterOpen(o);
-        }}
-      >
-        <DialogContent className="max-w-md rounded-[14px] sm:rounded-[14px]" aria-describedby={undefined}>
-          <DialogTitle className="font-[family:var(--font-jakarta)] text-lg text-[#1d2a3b]">注册</DialogTitle>
-          <p className="text-sm text-[#64748b]">通过邮箱验证码完成注册；注册成功后将自动登录。</p>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="h-[250px] w-[min(730px,calc(100vw-120px))]">
+                  <h2
+                    id="mdata-login-title"
+                    className="h-[90px] max-w-[730px] text-left text-[30px] font-semibold leading-[45px] tracking-normal text-white transition-colors duration-300"
+                  >
+                    我是
+                    Mdata，跨境电商运营助手，掌握数据，洞察数据的神。请先登录
+                  </h2>
 
-          <div className="grid gap-3 pt-1">
-            <div className="grid gap-1">
-              <label className="text-xs text-[#7e8da0]">用户名</label>
-              <Input
-                value={regUsername}
-                onChange={(e) => setRegUsername(e.target.value)}
-                className="h-9 rounded-[10px]"
-                autoComplete="off"
-                placeholder="2-64 个字符"
-              />
-              {regUsernameOk === true ? <p className="text-xs text-emerald-700">用户名可用</p> : null}
-              {regUsernameOk === false ? <p className="text-xs text-red-600">用户名已存在</p> : null}
-            </div>
+                  <form
+                    className="mt-5 h-[121px] w-full"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      advanceLogin();
+                    }}
+                  >
+                    <label className="sr-only" htmlFor="mdata-login-account">
+                      账号
+                    </label>
+                    <label className="sr-only" htmlFor="mdata-login-password">
+                      密码
+                    </label>
+                    <div className="flex h-[45px] items-center">
+                      <span className="inline-flex h-[45px] w-[103px] shrink-0 items-center text-[30px] font-bold leading-[45px] text-white">
+                        {loginStep === "account" ? "账号" : "密码"}
+                      </span>
+                      <input
+                        id="mdata-login-account"
+                        ref={accountInputRef}
+                        name="username"
+                        aria-label="账号"
+                        aria-invalid={
+                          loginStep === "account" && loginError
+                            ? true
+                            : undefined
+                        }
+                        aria-describedby={
+                          loginStep === "account" && loginError
+                            ? "mdata-login-error"
+                            : undefined
+                        }
+                        value={account}
+                        onChange={(e) => {
+                          setAccount(e.target.value);
+                          if (loginError) setLoginError("");
+                        }}
+                        onKeyDown={handleLoginInputKeyDown}
+                        className={
+                          loginStep === "account"
+                            ? "h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-bold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                            : "hidden"
+                        }
+                        autoComplete="username"
+                        placeholder="请在此处输入用户名或邮箱"
+                      />
+                      <input
+                        id="mdata-login-password"
+                        ref={passwordInputRef}
+                        name="password"
+                        aria-label="密码"
+                        aria-invalid={
+                          loginStep === "password" && loginError
+                            ? true
+                            : undefined
+                        }
+                        aria-describedby={
+                          loginStep === "password" && loginError
+                            ? "mdata-login-error"
+                            : undefined
+                        }
+                        type="password"
+                        value={password}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          if (loginError) setLoginError("");
+                        }}
+                        onKeyDown={handleLoginInputKeyDown}
+                        className={
+                          loginStep === "password"
+                            ? "h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-bold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                            : "hidden"
+                        }
+                        autoComplete="current-password"
+                        placeholder="请在此处输入密码"
+                      />
+                    </div>
 
-            <div className="grid gap-1">
-              <label className="text-xs text-[#7e8da0]">邮箱</label>
-              <Input
-                value={regEmail}
-                onChange={(e) => setRegEmail(e.target.value)}
-                className="h-9 rounded-[10px]"
-                inputMode="email"
-                autoComplete="email"
-                placeholder="name@example.com"
-              />
-            </div>
+                    {loginError ? (
+                      <p
+                        id="mdata-login-error"
+                        role="alert"
+                        className="mt-4 max-w-[640px] text-[14px] font-medium leading-6 text-[#ff7a7a]"
+                      >
+                        {loginError}
+                      </p>
+                    ) : null}
 
-            <div className="grid gap-1">
-              <label className="text-xs text-[#7e8da0]">密码</label>
-              <Input
-                type="password"
-                value={regPassword}
-                onChange={(e) => setRegPassword(e.target.value)}
-                className="h-9 rounded-[10px]"
-                autoComplete="new-password"
-                placeholder="至少 4 位"
-              />
-            </div>
-
-            <div className="grid gap-1">
-              <label className="text-xs text-[#7e8da0]">邮箱验证码</label>
-              <div className="flex gap-2">
-                <Input
-                  value={regCode}
-                  onChange={(e) => setRegCode(e.target.value)}
-                  className="h-9 flex-1 rounded-[10px]"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  placeholder="6 位验证码"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 rounded-[10px] px-3"
-                  onClick={() => void requestRegisterEmailOtp()}
-                  disabled={regCooldownLeft > 0 || regBusy}
-                >
-                  {regCooldownLeft > 0 ? `${regCooldownLeft}s` : "获取验证码"}
-                </Button>
+                    <div className="-ml-3 mt-7 flex h-12 items-center gap-3">
+                      {loginStep === "password" ? (
+                        <button
+                          type="button"
+                          aria-label="返回账号"
+                          disabled={loginBusy}
+                          className="inline-flex h-12 w-12 items-center justify-center rounded-full text-white transition-colors duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
+                          onClick={returnToAccountStep}
+                        >
+                          <ArrowLeft className="h-7 w-7" strokeWidth={1.85} />
+                        </button>
+                      ) : null}
+                      <button
+                        type="submit"
+                        aria-label={loginStep === "account" ? "继续" : "登录"}
+                        disabled={loginBusy}
+                        className="inline-flex h-12 w-12 items-center justify-center rounded-full text-white transition-colors duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <ArrowRight className="h-7 w-7" strokeWidth={1.85} />
+                      </button>
+                    </div>
+                  </form>
+                </div>
               </div>
             </div>
-
-            {regError ? <p className="text-sm text-red-600">{regError}</p> : null}
-
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                className="rounded-[10px]"
-                onClick={() => setRegisterOpen(false)}
-                disabled={regBusy}
-              >
-                返回登录
-              </Button>
-              <Button type="button" className="rounded-[10px]" disabled={regBusy} onClick={() => void completeRegister()}>
-                {regBusy ? "处理中…" : "完成注册并登录"}
-              </Button>
-            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      ) : null}
     </PlatformAgentContext.Provider>
   );
 }
 
 export function PlatformAgentProvider({ children }: { children: ReactNode }) {
   if (!isAgentRealApiEnabled()) {
-    return <PlatformAgentContext.Provider value={null}>{children}</PlatformAgentContext.Provider>;
+    return (
+      <PlatformAgentContext.Provider value={null}>
+        {children}
+      </PlatformAgentContext.Provider>
+    );
   }
   return <PlatformAgentInner>{children}</PlatformAgentInner>;
 }
