@@ -13,7 +13,7 @@ import {
   Search,
   Trash2,
   X,
-} from "lucide-react";
+} from "@/components/ui/tabler-icons";
 
 import { AutoToast } from "@/components/auto-toast";
 import { MoreDataShell } from "@/components/more-data-shell";

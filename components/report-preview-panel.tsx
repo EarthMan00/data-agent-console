@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, Ellipsis, Expand, Minimize2, X } from "lucide-react";
+import { Download, Ellipsis, Expand, Minimize2, X } from "@/components/ui/tabler-icons";
 
 import { Button } from "@/components/ui/button";
 import type { Report } from "@/lib/workspace-store";

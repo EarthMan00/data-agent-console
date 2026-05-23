@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, FileText } from "lucide-react";
+import { ChevronDown, FileText } from "@/components/ui/tabler-icons";
 
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { cn } from "@/lib/utils";

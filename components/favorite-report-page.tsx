@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Download, FileSpreadsheet, Loader2 } from "lucide-react";
+import { ArrowLeft, Download, FileSpreadsheet, Loader2 } from "@/components/ui/tabler-icons";
 import Link from "next/link";
 import { FavoriteSheetsResultView } from "@/components/favorite-sheets-result-view";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";

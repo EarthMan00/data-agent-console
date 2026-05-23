@@ -2,21 +2,18 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, ChevronDown, Paperclip, Send, Square } from "lucide-react";
+import { ComposerPrimitive } from "@assistant-ui/react";
+import { BorderBeam } from "border-beam";
+import { ArrowUp, ChevronDown, CornerDownLeft, Paperclip, Square } from "@/components/ui/tabler-icons";
 
 import { homeCapabilityItems } from "@/lib/home-capability-items";
-import { PlatformLogo } from "@/components/platform-logo";
+import { getPlatformLogoSvgMarkup, PlatformLogo } from "@/components/platform-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
 type ComposerMode = "普通模式" | "深度模式";
-
-const composerModeLabel: Record<ComposerMode, string> = {
-  "普通模式": "普通模式",
-  "深度模式": "专业模式",
-};
 
 type TaskComposerProps = {
   value: string;
@@ -214,11 +211,13 @@ function normalizeEditorContent(container: HTMLElement) {
 
 function createToolTokenNode({
   capabilityId,
+  icon,
   label,
   accent,
   onRemove,
 }: {
   capabilityId: string;
+  icon: string;
   label: string;
   accent: string;
   onRemove: (capabilityId: string) => void;
@@ -229,34 +228,21 @@ function createToolTokenNode({
   button.dataset.toolId = capabilityId;
   button.dataset.sourceTag = capabilityId;
   button.className =
-    "group mx-0.5 inline-flex h-7 items-center gap-1.5 rounded-[10px] border border-[#dbe7ff] bg-[#f4f8ff] px-2.5 align-middle text-[12px] font-medium text-[#2f5fb8]";
+    "group mx-0.5 inline-flex h-7 items-center gap-1.5 rounded-[10px] border border-transparent bg-[#e5efff] px-2.5 align-middle text-[16px] font-semibold leading-none text-[#1764ff]";
   button.setAttribute("contenteditable", "false");
   button.setAttribute("aria-label", `移除数据源 ${label}`);
 
   const iconWrap = document.createElement("span");
-  iconWrap.className = "inline-flex h-3 w-3 items-center justify-center";
+  iconWrap.className = "inline-flex h-4 w-4 items-center justify-center";
   iconWrap.setAttribute("aria-hidden", "true");
-  const iconNode = document.createElement("span");
-  iconNode.className = "inline-flex h-3 w-3 items-center justify-center rounded-full";
-  iconNode.style.background = `${accent}22`;
-  const dotNode = document.createElement("span");
-  dotNode.className = "block h-1.5 w-1.5 rounded-full";
-  dotNode.style.background = accent;
-  iconNode.appendChild(dotNode);
-  iconWrap.appendChild(iconNode);
+  iconWrap.innerHTML = getPlatformLogoSvgMarkup({ name: icon, color: accent, className: "h-4 w-4" });
 
   const labelNode = document.createElement("span");
-  labelNode.textContent = `@${label}`;
-
-  const closeNode = document.createElement("span");
-  closeNode.className = "inline-flex h-3 w-3 items-center justify-center text-[#86a3da] opacity-0 transition group-hover:opacity-100";
-  closeNode.innerHTML =
-    '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 2L8 8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M8 2L2 8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
-  closeNode.setAttribute("aria-hidden", "true");
+  labelNode.className = "translate-y-px";
+  labelNode.textContent = label;
 
   button.appendChild(iconWrap);
   button.appendChild(labelNode);
-  button.appendChild(closeNode);
   button.addEventListener("mousedown", (event) => {
     event.preventDefault();
     onRemove(capabilityId);
@@ -269,8 +255,6 @@ export function TaskComposer({
   value,
   onValueChange,
   placeholder,
-  mode,
-  onModeChange,
   selectedSourceIds = [],
   onToolSelect,
   onSourceRemove,
@@ -305,10 +289,11 @@ export function TaskComposer({
     width: 520,
     maxHeight: 312,
   });
-  const [modeOpen, setModeOpen] = useState(false);
+  const [, setModeOpen] = useState(false);
   const [highlightedToolIndex, setHighlightedToolIndex] = useState(-1);
   const [attachmentNames, setAttachmentNames] = useState<string[]>([]);
   const [editorFocused, setEditorFocused] = useState(false);
+  const [composerActive, setComposerActive] = useState(false);
   const blurTimeoutRef = useRef<number | null>(null);
 
   const filteredTools = useMemo(() => homeCapabilityItems.filter((item) => item.id !== "scenarios"), []);
@@ -436,7 +421,7 @@ export function TaskComposer({
     setMentionRange({ start: prefix.lastIndexOf("@"), end: caret });
     setMentionAnchorTop(anchorTop);
     setMentionOpen(true);
-    updateHighlightedToolIndex(-1);
+    updateHighlightedToolIndex(filteredTools.length > 0 ? 0 : -1);
   };
 
   useEffect(() => {
@@ -499,6 +484,7 @@ export function TaskComposer({
         editor.appendChild(
           createToolTokenNode({
             capabilityId: source.id,
+            icon: source.icon,
             label: source.label,
             accent: source.accent,
             onRemove: removeToolFromEditor,
@@ -542,6 +528,7 @@ export function TaskComposer({
 
     const tokenNode = createToolTokenNode({
       capabilityId: tool.id,
+      icon: tool.icon,
       label: tool.label,
       accent: tool.accent,
       onRemove: removeToolFromEditor,
@@ -569,21 +556,31 @@ export function TaskComposer({
     setSourceButtonOpen(true);
   };
 
-  return (
+  const showComposerBeam = isHeroMinimal && (composerActive || editorFocused || sourceButtonOpen || mentionOpen);
+
+  const composerCard = (
     <Card
       data-task-composer-root
+      onFocusCapture={() => setComposerActive(true)}
+      onBlurCapture={(event) => {
+        const nextTarget = event.relatedTarget;
+        if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+          setComposerActive(false);
+        }
+      }}
+      onMouseDownCapture={() => setComposerActive(true)}
       className={
         containerClassName ??
         cn(
-          "relative z-30 w-full bg-white",
+          "relative z-30 w-full",
           isHeroMinimal
-            ? "rounded-[20px] border-[#dfe3ea] shadow-[0_10px_28px_rgba(15,23,42,0.045)]"
+            ? "rounded-[22px] !border-[#e5e7eb] !bg-none !bg-white !shadow-[0_12px_32px_rgba(0,0,0,0.02)] backdrop-blur-none"
             : "rounded-[28px] border-[#e7e5e4] shadow-[0_18px_40px_rgba(15,23,42,0.06)]",
         )
       }
     >
       <CardContent className="p-0">
-          <div className={cn(isHeroMinimal ? "px-4 pb-2.5 pt-2.5" : "px-4 pb-3 pt-3")}>
+          <div className={cn(isHeroMinimal ? "px-4 pb-2 pt-2" : "px-4 pb-3 pt-3")}>
             <div
             className="px-1"
             onKeyDownCapture={(event) => {
@@ -601,8 +598,8 @@ export function TaskComposer({
               }
             }}
           >
-            <div className={cn(isHeroMinimal ? "min-h-[92px]" : "min-h-[88px]")}>
-              <div className={cn("relative", isHeroMinimal ? "min-h-[80px]" : "min-h-[72px]")}>
+            <div className={cn(isHeroMinimal ? "min-h-[54px]" : "min-h-[88px]")}>
+              <div className={cn("relative", isHeroMinimal ? "min-h-[42px]" : "min-h-[72px]")}>
                 <div
                   ref={textboxRef}
                   data-testid="task-composer-textbox"
@@ -620,9 +617,9 @@ export function TaskComposer({
                     }
                   }}
                   onFocus={() => focusEditor(false)}
-                  className={cn("relative overflow-visible", isHeroMinimal ? "min-h-[96px]" : "min-h-[84px]")}
+                  className={cn("relative overflow-visible", isHeroMinimal ? "min-h-[52px]" : "min-h-[84px]")}
                 >
-                  <div className={cn("flex flex-wrap items-start gap-1.5", isHeroMinimal ? "min-h-[96px]" : "min-h-[84px]")}>
+                  <div className={cn("flex flex-wrap items-start gap-1.5", isHeroMinimal ? "min-h-[52px]" : "min-h-[84px]")}>
                     <div
                       ref={editorRef}
                       data-testid="task-composer-editor"
@@ -664,12 +661,9 @@ export function TaskComposer({
                           return;
                         }
                         if (mentionOpen && mentionTools.length > 0 && event.key === "Enter") {
-                          if (highlightedToolIndexRef.current < 0) {
-                            event.preventDefault();
-                            return;
-                          }
                           event.preventDefault();
-                          const selectedTool = mentionTools[highlightedToolIndexRef.current];
+                          const selectedIndex = highlightedToolIndexRef.current < 0 ? 0 : highlightedToolIndexRef.current;
+                          const selectedTool = mentionTools[selectedIndex];
                           if (selectedTool) selectDataSource(selectedTool.id, "mention");
                           return;
                         }
@@ -734,7 +728,7 @@ export function TaskComposer({
                       className={cn(
                         textareaClassName ??
                           (isHeroMinimal
-                            ? "min-h-[28px] max-h-[10em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-[15px] leading-7 text-[#1c1c1c] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
+                            ? "min-h-[28px] max-h-[9em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-[16px] leading-7 text-[#34322d] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
                             : "min-h-[28px] max-h-[10em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1 pr-2 text-[14px] leading-7 text-[#1c1c1c] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"),
                       )}
                     />
@@ -742,7 +736,7 @@ export function TaskComposer({
                   {!value && selectedSources.length === 0 && !editorFocused ? (
                     <div className={cn(
                       "pointer-events-none absolute left-[1px] max-w-[520px] leading-7",
-                      isHeroMinimal ? "top-[8px] text-[14px] text-[#b7bcc5]" : "top-[4px] text-[13px] text-[#a1a1aa]",
+                      isHeroMinimal ? "top-[8px] text-[15px] text-[#858481]" : "top-[4px] text-[13px] text-[#a1a1aa]",
                     )}>
                       {placeholder}
                     </div>
@@ -752,21 +746,15 @@ export function TaskComposer({
                     ? createPortal(
                     <div
                       data-testid="task-composer-mention-menu"
-                      className="fixed z-[140] overflow-hidden rounded-[18px] border border-[#ece8e1] bg-white shadow-[0_20px_48px_rgba(24,24,27,0.14)]"
+                      className="fixed z-[140] overflow-hidden rounded-[18px] border border-[#e4e5e9] bg-white shadow-[0_20px_48px_rgba(24,24,27,0.12)]"
                       style={{
                         top: mentionMenuStyle.top,
                         left: mentionMenuStyle.left,
                         width: mentionMenuStyle.width,
                       }}
                     >
-                      <div className="flex items-center justify-between border-b border-[#f2efe9] px-4 py-3">
-                        <div>
-                          <div className="text-[12px] font-medium text-[#18181b]">@数据源</div>
-                          <div className="mt-0.5 text-[12px] text-[#a8a29e]">通过 @ 插入数据源，不会影响首页下方提示词卡片</div>
-                        </div>
-                        <div className="rounded-full border border-[#ede9e1] bg-[#faf9f7] px-2 py-1 text-[12px] text-[#8f8a80]">
-                          已收录 {filteredTools.length}+ 数据源
-                        </div>
+                      <div className="flex items-center border-b border-[rgba(0,0,0,0.06)] px-4 py-3">
+                        <div className="text-[13px] font-medium text-[#34322d]">@数据源</div>
                       </div>
                       <div ref={toolListRef} className="grid gap-1 overflow-y-auto p-2.5" style={{ maxHeight: mentionMenuStyle.maxHeight }}>
                         {mentionTools.map((item, index) => (
@@ -781,27 +769,22 @@ export function TaskComposer({
                               event.preventDefault();
                               selectDataSource(item.id, "mention");
                             }}
-                            className={`flex min-h-[54px] items-start gap-3 rounded-[14px] border px-3 py-2.5 text-left transition ${
+                            className={`flex min-h-[58px] items-start gap-3 rounded-[14px] border px-3 py-2.5 text-left transition ${
                               index === highlightedToolIndex
-                                ? "border-[#d8e2f6] bg-[#f7faff]"
-                                : "border-transparent hover:border-[#ebe7df] hover:bg-[#faf9f7]"
+                                ? "border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.06)]"
+                                : "border-transparent hover:border-[rgba(0,0,0,0.06)] hover:bg-[rgba(55,53,47,0.04)]"
                             }`}
                           >
-                            <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[#ece8df] bg-white">
+                            <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[rgba(0,0,0,0.08)] bg-white">
                               <PlatformLogo name={item.icon} color={item.accent} className="h-4 w-4" />
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="flex items-center gap-2">
-                                <span className="truncate text-[13px] font-medium text-[#27272a]">{item.label}</span>
-                                <span className="rounded-full bg-[#f5f5f4] px-1.5 py-0.5 text-[12px] text-[#8b8b91]">
-                                  数据源
-                                </span>
-                              </span>
-                              <span className="mt-1 line-clamp-2 block text-[12px] leading-4 text-[#8a8f98]">
+                              <span className="block truncate text-[14px] font-medium leading-5 text-[#34322d]">{item.label}</span>
+                              <span className="mt-1 line-clamp-2 block text-[13px] leading-5 text-[#858481]">
                                 {item.promptHint}
                               </span>
                             </span>
-                            <ArrowUpRight className="mt-1 h-3.5 w-3.5 shrink-0 text-[#b0b3ba]" />
+                            <CornerDownLeft className="mt-1 h-3.5 w-3.5 shrink-0 text-[#858481]" />
                           </button>
                         ))}
                       </div>
@@ -817,13 +800,13 @@ export function TaskComposer({
                 {attachmentNames.slice(0, 3).map((name) => (
                   <span
                     key={name}
-                    className="inline-flex h-7 items-center rounded-full border border-[#e7e5e4] bg-[#fafaf9] px-2.5 text-[12px] text-[#52525b]"
+                    className="inline-flex h-7 items-center rounded-full border border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.04)] px-2.5 text-[13px] text-[#858481]"
                   >
                     {name}
                   </span>
                 ))}
                 {attachmentNames.length > 3 ? (
-                  <span className="inline-flex h-7 items-center rounded-full border border-[#e7e5e4] bg-[#fafaf9] px-2.5 text-[12px] text-[#52525b]">
+                  <span className="inline-flex h-7 items-center rounded-full border border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.04)] px-2.5 text-[13px] text-[#858481]">
                     +{attachmentNames.length - 3}
                   </span>
                 ) : null}
@@ -834,7 +817,7 @@ export function TaskComposer({
           <div
             className={cn(
               "mt-2.5 flex flex-wrap items-center justify-between gap-3 pt-2.5",
-              isHeroMinimal ? "border-t border-[#eceef2]" : "border-t border-[#f1eeea]",
+              isHeroMinimal ? "mt-2.5 border-t border-[rgba(0,0,0,0.06)] pt-2.5" : "border-t border-[#f1eeea]",
             )}
           >
             <div className="flex flex-wrap items-center gap-1.5">
@@ -844,9 +827,9 @@ export function TaskComposer({
                     variant="outline"
                     size="sm"
                     className={cn(
-                      "h-[30px] rounded-[10px] bg-white px-[11px] text-[12px] font-medium shadow-none",
+                      "h-8 rounded-[10px] bg-white px-3 text-[14px] font-medium shadow-none",
                       isHeroMinimal
-                        ? "border-[#e5e7eb] text-[#4b5563] hover:border-[#d1d5db] hover:bg-[#fafafa]"
+                        ? "border-[rgba(0,0,0,0.08)] text-[#34322d] hover:border-[rgba(0,0,0,0.12)] hover:bg-[rgba(55,53,47,0.06)]"
                         : "border-[#e6e2da] text-[#27272a] hover:border-[#d9d4cb] hover:bg-[#fbfaf8]",
                     )}
                     type="button"
@@ -859,7 +842,7 @@ export function TaskComposer({
                     }}
                   >
                     @数据源
-                    <ChevronDown className={`h-[13px] w-[13px] transition ${sourceButtonOpen ? "rotate-180" : ""}`} />
+                    <ChevronDown className={`h-3.5 w-3.5 transition ${sourceButtonOpen ? "rotate-180" : ""}`} />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent
@@ -867,35 +850,29 @@ export function TaskComposer({
                   sideOffset={10}
                   onOpenAutoFocus={(event) => event.preventDefault()}
                   onCloseAutoFocus={(event) => event.preventDefault()}
-                  className="w-[520px] rounded-[16px] border-[#ece8e1] bg-[rgba(255,255,255,0.98)] p-2 shadow-[0_12px_28px_rgba(24,24,27,0.08)]"
+                  className="w-[520px] rounded-[18px] border-[rgba(0,0,0,0.08)] bg-white p-0 shadow-[0_20px_48px_rgba(24,24,27,0.12)]"
                 >
-                  <div className="mb-1 flex items-center justify-between px-2 py-1">
-                    <div>
-                      <div className="text-[12px] font-medium text-[#18181b]">@数据源</div>
-                      <div className="mt-0.5 text-[12px] text-[#a8a29e]">选择后会以内联数据源节点加入输入框</div>
-                    </div>
-                    <span className="rounded-full border border-[#ede9e1] bg-[#faf9f7] px-2 py-1 text-[12px] text-[#8f8a80]">
-                      全部分组
-                    </span>
+                  <div className="flex items-center border-b border-[rgba(0,0,0,0.06)] px-4 py-3">
+                    <div className="text-[13px] font-medium text-[#34322d]">@数据源</div>
                   </div>
-                  <div className="grid max-h-[320px] gap-1 overflow-y-auto pr-1">
+                  <div className="grid max-h-[320px] gap-1 overflow-y-auto p-2.5">
                     {filteredTools.map((item) => (
                       <button
                         key={item.id}
                         type="button"
                         onClick={() => selectDataSource(item.id, "button")}
-                        className="flex min-h-[52px] items-start gap-3 rounded-[12px] border border-transparent px-3 py-2.5 text-left transition hover:border-[#ebe7df] hover:bg-[#faf9f7]"
+                        className="flex min-h-[58px] items-start gap-3 rounded-[14px] border border-transparent px-3 py-2.5 text-left transition hover:border-[rgba(0,0,0,0.06)] hover:bg-[rgba(55,53,47,0.04)]"
                       >
-                        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[#ece8df] bg-white">
-                          <PlatformLogo name={item.icon} color={item.accent} className="h-[13px] w-[13px]" />
+                        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[rgba(0,0,0,0.08)] bg-white">
+                          <PlatformLogo name={item.icon} color={item.accent} className="h-4 w-4" />
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[12px] font-medium text-[#1f1f1f]">{item.label}</span>
-                          <span className="mt-1 line-clamp-2 block text-[12px] leading-4 text-[#8a8f98]">
+                          <span className="block truncate text-[14px] font-medium leading-5 text-[#34322d]">{item.label}</span>
+                          <span className="mt-1 line-clamp-2 block text-[13px] leading-5 text-[#858481]">
                             {item.promptHint}
                           </span>
                         </span>
-                        <ArrowUpRight className="mt-1 h-[13px] w-[13px] shrink-0 text-[#b8b2a8]" />
+                        <CornerDownLeft className="mt-1 h-3.5 w-3.5 shrink-0 text-[#858481]" />
                       </button>
                     ))}
                   </div>
@@ -922,9 +899,9 @@ export function TaskComposer({
                 variant="ghost"
                 size="sm"
                 className={cn(
-                  "h-[30px] rounded-[10px] border px-[11px] text-[12px] font-medium",
+                  "h-8 rounded-[10px] border px-3 text-[14px] font-medium",
                   isHeroMinimal
-                    ? "border-transparent text-[#6b7280] hover:border-[#e5e7eb] hover:bg-[#fafafa] hover:text-[#27272a]"
+                    ? "border-transparent text-[#34322d] hover:border-[rgba(0,0,0,0.08)] hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
                     : "border-transparent text-[#6f7783] hover:border-[#e8e2d8] hover:bg-[#faf8f4] hover:text-[#27272a]",
                 )}
                 onClick={() => {
@@ -941,7 +918,7 @@ export function TaskComposer({
                 }}
                 aria-label="添加附件"
               >
-                <Paperclip className="h-[13px] w-[13px]" />
+                <Paperclip className="h-4 w-4" />
                 附件
               </Button>
             </div>
@@ -1010,8 +987,8 @@ export function TaskComposer({
                     : sendButtonClassName ??
                       (isHeroMinimal
                         ? hasText
-                          ? "h-[34px] w-[34px] rounded-[12px] bg-[#2563eb] text-white shadow-[0_10px_24px_rgba(37,99,235,0.25)] transition hover:bg-[#1d4ed8]"
-                          : "h-[34px] w-[34px] rounded-[12px] border border-[#e2e5ea] bg-[#f3f4f6] text-[#9ca3af] shadow-none transition hover:border-[#d1d5db] hover:bg-[#eceef1] hover:text-[#4b5563]"
+                          ? "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[#37352f] p-0 text-white shadow-none transition hover:bg-[#2f2d28]"
+                          : "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[rgba(55,53,47,0.08)] p-0 text-white shadow-none transition hover:bg-[rgba(55,53,47,0.08)]"
                         : hasText
                           ? "h-[38px] w-[38px] rounded-[14px] border border-transparent bg-[#2563eb] text-white shadow-[0_12px_24px_rgba(37,99,235,0.25)] transition hover:-translate-y-0.5 hover:bg-[#1d4ed8] hover:shadow-[0_16px_30px_rgba(37,99,235,0.24)]"
                           : "h-[38px] w-[38px] rounded-[14px] border border-[#111111] bg-[linear-gradient(180deg,#1b1b1d,#111113)] text-white shadow-[0_12px_24px_rgba(15,15,18,0.18)] transition hover:-translate-y-0.5 hover:bg-[linear-gradient(180deg,#26262a,#121214)] hover:shadow-[0_16px_30px_rgba(15,15,18,0.24)]" )
@@ -1020,13 +997,35 @@ export function TaskComposer({
                 {showStop ? (
                   <Square className="h-[14px] w-[14px]" />
                 ) : (
-                  <Send className="h-[14px] w-[14px]" />
+                  <ArrowUp className="h-[15px] w-[15px]" strokeWidth={2.4} />
                 )}
               </Button>
             </div>
           </div>
         </div>
       </CardContent>
-    </Card>
+      </Card>
+  );
+
+  return (
+    <ComposerPrimitive.Root className="contents" data-assistant-ui-composer>
+      {isHeroMinimal ? (
+        <BorderBeam
+          active={showComposerBeam}
+          borderRadius={22}
+          brightness={1.12}
+          className="w-full"
+          colorVariant="ocean"
+          duration={2.6}
+          size="md"
+          strength={0.72}
+          theme="light"
+        >
+          {composerCard}
+        </BorderBeam>
+      ) : (
+        composerCard
+      )}
+    </ComposerPrimitive.Root>
   );
 }

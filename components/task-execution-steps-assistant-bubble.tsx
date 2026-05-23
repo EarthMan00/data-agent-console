@@ -1,7 +1,7 @@
 "use client";
 
 import type { Dispatch, SetStateAction } from "react";
-import { Bot } from "lucide-react";
+import { Bot } from "@/components/ui/tabler-icons";
 
 import { PlatformRoundStepTimeline } from "@/components/agent-workspace/platform-step-views";
 import { ExecutionStepsHistoryList } from "@/components/execution-steps-monitor";

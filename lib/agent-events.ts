@@ -1,8 +1,7 @@
-import type { AttachmentType } from "tdesign-web-components/lib/chatbot/core/type";
 import type { SheetTab } from "@/lib/workspace-domain-types";
 
 export type AgentAttachmentStatus = "queued" | "accepted" | "referenced";
-export type AgentAttachmentFileType = AttachmentType;
+export type AgentAttachmentFileType = "image" | "video" | "audio" | "pdf" | "doc" | "ppt" | "txt";
 
 export type AgentAttachment = {
   id: string;

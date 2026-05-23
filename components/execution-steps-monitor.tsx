@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, XCircle } from "@/components/ui/tabler-icons";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

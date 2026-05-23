@@ -1,14 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
   useSearchParamFlagSnapshot,
   useSearchParamSnapshot,
 } from "@/lib/use-search-param-snapshot";
-import { Bot, ChevronDown, ListRestart, MessageCircleMore, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Bot, ChevronDown, ListRestart, MessageCircleMore, ThumbsDown, ThumbsUp } from "@/components/ui/tabler-icons";
 import type {
   AgentAttachment,
   DataSourceChain,
@@ -17,10 +16,12 @@ import type {
   TaskExecutionStep,
 } from "@/lib/agent-events";
 import { MoreDataShell } from "@/components/more-data-shell";
+import { AssistantAttachmentList } from "@/components/assistant-attachment-list";
+import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
-import { buildAttachmentItems, toTdAttachments } from "@/components/agent-workspace/attachment-utils";
+import { buildAttachmentItems } from "@/components/agent-workspace/attachment-utils";
 import {
   CollapsedStatusRow,
   ConversationBubble,
@@ -55,11 +56,6 @@ import {
   type TaskRunLike,
   toCapabilitySafeTitle,
 } from "@/components/agent-workspace-view-models";
-
-const ChatAttachments = dynamic(
-  () => import("@tdesign-react/aigc").then((mod) => mod.ChatAttachments),
-  { ssr: false },
-);
 
 export {
   buildAcknowledgement,
@@ -619,7 +615,7 @@ function AgentRunWorkspaceView({
         ) : undefined
       }
     >
-      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
+      <AssistantThreadFrame className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white" isRunning={composerShowsStop} onCancel={stopCurrentRound}>
         <div
           ref={messagesScrollRef}
           className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-4 pt-6 sm:px-6"
@@ -665,7 +661,7 @@ function AgentRunWorkspaceView({
                           round.uiLayout === "simple_chat" && cn("w-full", SIMPLE_CHAT_BUBBLE_MAX),
                         )}
                       >
-                        <ChatAttachments items={toTdAttachments(round.attachments)} overflow="wrap" />
+                        <AssistantAttachmentList attachments={round.attachments} />
                       </div>
                     </div>
                   ) : null}
@@ -897,7 +893,7 @@ function AgentRunWorkspaceView({
             <div className="mt-3 text-center text-xs text-[#92a0b2]">内容由 AI 大模型生成，请仔细甄别</div>
           </div>
         </div>
-      </div>
+      </AssistantThreadFrame>
     </MoreDataShell>
   );
 }

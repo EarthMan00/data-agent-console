@@ -28,6 +28,7 @@ describe("admin and feedback flow", () => {
       "fetch",
       vi.fn(async () => ({
         ok: true,
+        text: async () => "",
         json: async () => ({ success: true }),
       })),
     );

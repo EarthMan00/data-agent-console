@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Ellipsis, Menu, Star, X } from "lucide-react";
+import { Download, Ellipsis, Menu, Star, X } from "@/components/ui/tabler-icons";
 
 import { TaskResultSheetBody } from "@/components/task-result-sheet-body";
 import { TaskSingleDataArtifactPreview } from "@/components/task-single-data-preview";

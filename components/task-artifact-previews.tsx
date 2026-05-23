@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileJson, Table } from "lucide-react";
+import { FileJson, Table } from "@/components/ui/tabler-icons";
 
 import { ChatexcelArtifactPreview } from "@/components/chatexcel-artifact-preview";
 import { LazyCsvArtifactTable } from "@/components/lazy-csv-artifact-table";

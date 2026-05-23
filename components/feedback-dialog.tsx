@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle } from "@/components/ui/tabler-icons";
 import { useEffect, useMemo, useState } from "react";
 
 import { RequiredAsterisk } from "@/components/required-mark";

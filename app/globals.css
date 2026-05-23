@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fcfcf9;
-  --foreground: #1e2a3a;
+  --background: #fbfbfa;
+  --foreground: #202124;
 }
 
 @theme inline {
@@ -19,7 +19,7 @@ body {
 }
 
 body {
-  background: linear-gradient(180deg, #fefefc 0%, #fbfbf8 52%, #fafaf7 100%);
+  background: #fbfbfa;
   color: var(--foreground);
   font-family: var(--font-geist-sans), "SF Pro Text", "Segoe UI", sans-serif;
 }
@@ -33,15 +33,13 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0) 34%),
-    linear-gradient(90deg, rgba(92, 116, 255, 0.02), rgba(92, 116, 255, 0) 16%, rgba(255, 196, 122, 0) 84%, rgba(255, 196, 122, 0.02));
-  opacity: 1;
+  background: radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0) 32%);
+  opacity: 0.72;
 }
 
 ::selection {
-  background: rgba(92, 116, 255, 0.2);
-  color: #142033;
+  background: rgba(0, 0, 0, 0.12);
+  color: #111113;
 }
 
 a,
@@ -58,6 +56,11 @@ input:focus-visible {
 
 textarea:focus-visible {
   box-shadow: none;
+}
+
+input#history-task-search:focus-visible {
+  box-shadow: none;
+  border-radius: 0;
 }
 
 @keyframes ray-sweep-left {
@@ -136,6 +139,58 @@ textarea:focus-visible {
   }
 }
 
+@keyframes mdata-auth-panel-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes mdata-auth-panel-out {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes mdata-auth-overlay-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.mdata-auth-overlay[data-state="open"] {
+  animation: mdata-auth-overlay-in 240ms ease-out both;
+}
+
+.mdata-auth-panel,
+.mdata-auth-panel * {
+  font-family:
+    "PingFang SC",
+    -apple-system,
+    "Segoe UI",
+    system-ui,
+    "SF Pro Text",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    sans-serif;
+}
+
+.mdata-auth-panel[data-state="open"] {
+  animation: mdata-auth-panel-in 280ms ease-out both;
+}
+
+.mdata-auth-panel[data-state="closed"] {
+  animation: mdata-auth-panel-out 160ms ease-in both;
+}
+
 .animate-ray-sweep-left {
   animation: ray-sweep-left 10s ease-in-out infinite;
 }
@@ -171,7 +226,10 @@ textarea:focus-visible {
   .animate-ray-sweep-center,
   .animate-breathe-slow,
   .animate-drift-up,
-  .animate-sheen-pass::after {
+  .animate-sheen-pass::after,
+  .mdata-auth-overlay[data-state="open"],
+  .mdata-auth-panel[data-state="open"],
+  .mdata-auth-panel[data-state="closed"] {
     animation: none !important;
   }
 }

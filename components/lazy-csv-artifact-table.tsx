@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/tabler-icons";
 
 import { openAuthorizedUtf8TextStream } from "@/lib/agent-api/client";
 import { CsvIncrementalParser, pickDelimiterFromFirstCsvLine } from "@/lib/csv-incremental-parser";

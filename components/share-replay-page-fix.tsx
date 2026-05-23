@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FileText, X } from "lucide-react";
+import { FileText, X } from "@/components/ui/tabler-icons";
 
 import { fetchPublicShare, type PublicShareReplayDto } from "@/lib/agent-api/public-shares";
 import { useWorkspaceState } from "@/lib/workspace-store";
