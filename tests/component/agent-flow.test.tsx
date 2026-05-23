@@ -9,12 +9,6 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn() }),
 }));
 
-vi.mock("@tdesign-react/aigc", () => ({
-  ChatAttachments: ({ items }: { items: Array<{ name: string }> }) => (
-    <div>{items.map((item) => item.name).join("、")}</div>
-  ),
-}));
-
 describe("agent flow", () => {
   it("renders the current /agent structure with summary bar, result section, and preview", () => {
     render(<AgentWorkspace />);

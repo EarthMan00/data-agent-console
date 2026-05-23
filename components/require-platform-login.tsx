@@ -1,31 +1,37 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { AgentRoutePlaceholder } from "@/components/agent-route-placeholder";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { isPlatformBackendEnabled } from "@/lib/agent-runtime";
 
 export function RequirePlatformLogin({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const platformAgent = useOptionalPlatformAgent();
+  const [clientMounted, setClientMounted] = useState(false);
 
   useEffect(() => {
-    if (!isPlatformBackendEnabled() || !platformAgent?.authHydrated) return;
+    setClientMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!clientMounted || !isPlatformBackendEnabled() || !platformAgent?.authHydrated) return;
     if (!platformAgent.auth) {
       platformAgent.openLogin("请先登录后再继续操作。");
       router.replace("/");
     }
-  }, [platformAgent, router]);
+  }, [clientMounted, platformAgent, router]);
 
   if (!platformAgent) {
     return children;
   }
-  if (!platformAgent.authHydrated) {
-    return <div className="min-h-0 flex-1" aria-hidden />;
+  if (!clientMounted || !platformAgent.authHydrated) {
+    return <AgentRoutePlaceholder />;
   }
   if (isPlatformBackendEnabled() && !platformAgent.auth) {
-    return <div className="min-h-0 flex-1" aria-hidden />;
+    return <AgentRoutePlaceholder />;
   }
   return children;
 }

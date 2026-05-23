@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import type { CSSProperties, ReactNode } from "react";
-import "tdesign-web-components/lib/style/index.css";
 import "./globals.css";
 import { PlatformAgentProvider } from "@/components/platform-agent-provider";
 import { MoreDataShellRoot } from "@/components/more-data-shell";

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
-import { UserRound } from "lucide-react";
+import { Bot, UserRound } from "@/components/ui/tabler-icons";
 
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { formatAgentApiErrorForUser, listSessionMessages } from "@/lib/agent-api/client";

@@ -13,7 +13,7 @@ import {
   Pencil,
   Search,
   StarOff,
-} from "lucide-react";
+} from "@/components/ui/tabler-icons";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";

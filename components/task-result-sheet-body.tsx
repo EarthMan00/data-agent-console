@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/tabler-icons";
 
 import { LazyCsvArtifactTable } from "@/components/lazy-csv-artifact-table";
 import { TaskSingleDataArtifactPreview } from "@/components/task-single-data-preview";

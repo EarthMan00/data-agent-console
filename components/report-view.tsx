@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Download, Ellipsis, Expand, Share2 } from "lucide-react";
+import { Download, Ellipsis, Expand, Share2 } from "@/components/ui/tabler-icons";
 
 import { MoreDataShell } from "@/components/more-data-shell";
 import { Button } from "@/components/ui/button";

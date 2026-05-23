@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowDown, ArrowRight, Database, Globe, Layers, Layout, Server, Shield, Sparkles, Users, Zap } from "lucide-react";
+import { ArrowDown, ArrowRight, Database, Globe, Layers, Layout, Server, Shield, Sparkles, Users, Zap } from "@/components/ui/tabler-icons";
 
 export default function BusinessArchitecture() {
   return (

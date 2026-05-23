@@ -15,15 +15,23 @@ import {
 } from "react";
 import {
   Bookmark,
-  ChevronDown,
+  BookOpen,
   Clock3,
   FolderHeart,
+  HelpCircle,
+  Home,
+  LogOut,
+  MessageCircleMore,
   PanelLeft,
-  PlusCircle,
-  Star,
+  Plus,
+  Search,
+  Settings,
+  SparkleHighlight,
   Trash2,
+  UserRound,
   Users,
-} from "lucide-react";
+  X,
+} from "@/components/ui/tabler-icons";
 
 import { BrandLogo } from "@/components/brand-logo";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
@@ -42,7 +50,7 @@ import { cn } from "@/lib/utils";
 import { workspaceActions, useWorkspaceState } from "@/lib/workspace-store";
 
 const navItems = [
-  { href: "/", label: "新的对话", icon: PlusCircle },
+  { href: "/", label: "新的对话", icon: SparkleHighlight },
   { href: "/prompt-library", label: "提示词库", icon: Bookmark },
   { href: "/schedules", label: "定时任务", icon: Clock3 },
   { href: "/artifacts", label: "收藏夹", icon: FolderHeart },
@@ -264,17 +272,18 @@ export function MoreDataShell({
   mainDecoration,
   contentScrollMode = "shell",
 }: MoreDataShellProps) {
-  const { setMeta } = useShellMetaContext();
+  const shellMetaContext = useContext(ShellMetaContext);
+  const setShellMeta = shellMetaContext?.setMeta;
 
   useEffect(() => {
-    setMeta({
+    setShellMeta?.({
       currentPath,
       rightRail,
       currentRunLabel,
       mainDecoration,
       contentScrollMode,
     });
-  }, [currentPath, rightRail, currentRunLabel, mainDecoration, contentScrollMode, setMeta]);
+  }, [currentPath, rightRail, currentRunLabel, mainDecoration, contentScrollMode, setShellMeta]);
 
   return <>{children}</>;
 }
@@ -343,14 +352,19 @@ function MoreDataShellComponent({
   } = useMoreDataShellState();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [historyPurgeConfirmId, setHistoryPurgeConfirmId] = useState<string | null>(null);
-  const historyListScrollRef = useRef<HTMLDivElement>(null);
-  const historyLoadSentinelRef = useRef<HTMLDivElement>(null);
+  const [historySearch, setHistorySearch] = useState("");
+  const [historySearchOpen, setHistorySearchOpen] = useState(false);
+  const historySearchInputRef = useRef<HTMLInputElement | null>(null);
+  const historyListScrollRef = useRef<HTMLDivElement | null>(null);
+  const historyLoadSentinelRef = useRef<HTMLDivElement | null>(null);
   /** 首屏与服务端 HTML 一致：认证态来自客户端存储，仅在 mount 后再按登录态渲染侧栏，避免 hydration mismatch */
   const [clientMounted, setClientMounted] = useState(false);
   useEffect(() => {
     setClientMounted(true);
   }, []);
   const childManagedScroll = contentScrollMode === "child";
+  const sidebarExpandedWidth = 300;
+  const sidebarCollapsedWidth = 68;
 
   const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
 
@@ -381,6 +395,22 @@ function MoreDataShellComponent({
   const headerAuth = platformAgent?.auth;
   const showHeaderUserMenu = clientMounted && Boolean(headerAuth);
 
+  useEffect(() => {
+    if (!historySearchOpen) return;
+    const timer = window.setTimeout(() => historySearchInputRef.current?.focus(), 0);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setHistorySearch("");
+        setHistorySearchOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [historySearchOpen]);
+
   const sidebarNavItems = useMemo(() => {
     const base = [...navItems];
     if (showAuthSidebar && platformAgent?.auth?.userRole === "admin") {
@@ -389,11 +419,30 @@ function MoreDataShellComponent({
     return base;
   }, [showAuthSidebar, platformAgent?.auth?.userRole]);
 
+  const filteredHistorySessions = useMemo(() => {
+    const q = historySearch.trim().toLowerCase();
+    if (!q) return historySessions;
+    return historySessions.filter((s) => {
+      const haystack = [s.firstMessage, s.session_id, s.firstAt, s.created_at]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [historySearch, historySessions]);
+
   const formatTime = (iso: string | null | undefined) => {
     if (!iso) return "";
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "";
     return d.toLocaleString();
+  };
+
+  const formatShortDate = (iso: string | null | undefined) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
   };
 
   const executePurgeHistorySession = useCallback(
@@ -462,25 +511,58 @@ function MoreDataShellComponent({
   return (
     <div className={childManagedScroll ? "h-screen overflow-hidden bg-transparent" : "min-h-screen bg-transparent"}>
       <div
-        className={childManagedScroll ? "grid h-screen overflow-hidden bg-[rgba(250,249,245,0.82)]" : "grid min-h-screen bg-[rgba(250,249,245,0.82)]"}
-        style={{ gridTemplateColumns: sidebarCollapsed ? "80px minmax(0,1fr)" : "272px minmax(0,1fr)" }}
+        className={childManagedScroll ? "grid h-screen overflow-hidden bg-[#f8f8f7]" : "grid min-h-screen bg-[#f8f8f7]"}
+        style={{ gridTemplateColumns: sidebarCollapsed ? `${sidebarCollapsedWidth}px minmax(0,1fr)` : `${sidebarExpandedWidth}px minmax(0,1fr)` }}
       >
-        <aside className={`sticky top-0 self-start flex h-screen min-h-0 flex-col overflow-hidden border-r border-[#e2e7ef] bg-[rgba(255,255,255,0.76)] py-7 backdrop-blur-xl transition-[padding,width] ${sidebarCollapsed ? "px-4" : "px-6"}`}>
+        <aside className="sticky top-0 self-start flex h-screen min-h-0 flex-col overflow-hidden bg-[#ebebeb] transition-[padding,width]">
           <div className="relative flex min-h-0 flex-1 flex-col">
             <div className="shrink-0">
               {sidebarCollapsed ? (
-                <div className="flex justify-center">
+                <div className="flex flex-col items-center gap-2 px-2 pt-3">
                   <BrandLogo compact />
+                  <button
+                    type="button"
+                    aria-label="展开侧边栏"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-[#5f625f] transition hover:bg-[#e9e9e7] hover:text-[#22221f]"
+                    onClick={() => setSidebarCollapsed(false)}
+                  >
+                    <PanelLeft className="h-4 w-4" strokeWidth={1.8} />
+                  </button>
                 </div>
               ) : (
                 <div>
-                  <div className="px-1">
+                  <div className="flex h-14 items-center gap-2 py-3 pl-3 pr-2.5">
                     <BrandLogo />
+                    <div className="ml-auto flex items-center gap-2">
+                      <button
+                        type="button"
+                        aria-label="搜索所有任务"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-[#5f625f] transition hover:bg-[#e9e9e7] hover:text-[#22221f]"
+                        onClick={() => {
+                          if (historySearchOpen) {
+                            setHistorySearch("");
+                            setHistorySearchOpen(false);
+                            return;
+                          }
+                          setHistorySearchOpen(true);
+                        }}
+                      >
+                        <Search className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="收起侧边栏"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-[#5f625f] transition hover:bg-[#e9e9e7] hover:text-[#22221f]"
+                        onClick={() => setSidebarCollapsed(true)}
+                      >
+                        <PanelLeft className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
 
-              <nav className="mt-6 space-y-2">
+              <nav className={cn("space-y-px", sidebarCollapsed ? "mt-3 px-2" : "px-2 pt-2")}>
               {sidebarNavItems.map(({ href, label, icon: Icon }) => {
                 const active = currentPath === href || (href === "/" && currentPath === "/agent");
                 return (
@@ -501,17 +583,17 @@ function MoreDataShellComponent({
                         platformAgent.openLogin("请先登录后再继续操作。");
                       }
                     }}
-                    className={`group flex items-center rounded-[14px] py-3 text-[15px] transition ${
+                    className={`group flex h-9 items-center rounded-[10px] text-[16px] font-normal leading-6 transition-colors ${
                     active
-                        ? "bg-[linear-gradient(180deg,#f5f5f5,#efefef)] font-medium text-[#18181b] shadow-[0_12px_24px_rgba(24,24,27,0.06)] ring-1 ring-[#e4e4e7]"
-                        : "text-[#74839a] hover:bg-[#f2f5fa] hover:text-[#243248]"
-                  } ${sidebarCollapsed ? "justify-center px-0" : "gap-3 px-4"}`}
+                        ? "bg-[rgba(55,53,47,0.06)] text-[#34322d]"
+                        : "text-[#34322d] hover:bg-[rgba(55,53,47,0.06)]"
+                  } ${sidebarCollapsed ? "justify-center px-0" : "gap-3 pl-[9px] pr-0.5"}`}
                     title={sidebarCollapsed ? label : undefined}
                   >
-                    <Icon className={`h-4 w-4 ${active ? "text-[#18181b]" : "text-[#8d9cb1] group-hover:text-[#18181b]"}`} />
+                    <Icon className="h-[18px] w-[18px] shrink-0 text-[#34322d]" strokeWidth={1.8} />
                     {!sidebarCollapsed ? (
                       <>
-                        <span>{label}</span>
+                        <span className="text-[14px] leading-[21px]">{label}</span>
                       </>
                     ) : null}
                   </Link>
@@ -521,35 +603,30 @@ function MoreDataShellComponent({
             </div>
 
             {!sidebarCollapsed && showAuthSidebar ? (
-              <div className="mt-10 flex min-h-0 flex-1 flex-col">
-                <div className="flex shrink-0 items-center justify-between px-2 text-xs text-[#7f8da0]">
-                  <span>历史对话</span>
-                  <button
-                    type="button"
-                    className="h-4 w-4 rounded-full border border-[#d8dee8] hover:bg-white"
-                    aria-label="刷新历史对话"
-                    onClick={() => void refreshHistory()}
-                  />
+              <div className="mt-[98px] flex min-h-0 flex-1 flex-col px-2">
+                <div className="flex h-9 shrink-0 items-center justify-between rounded-[10px] px-[9px] text-[16px] font-normal leading-6 text-[#858481]">
+                  <span className="text-[13px] font-medium leading-[18px] text-[#858481]">所有任务</span>
                 </div>
-                <div
-                  ref={historyListScrollRef}
-                  className="hide-scrollbar-y mt-2 min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
-                >
-                  <div className="space-y-2">
+                <div ref={historyListScrollRef} className="mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                  <div className="space-y-0.5">
                   {historyBusy ? (
-                    <div className="px-3 py-2 text-xs text-[#94a3b8]">加载中…</div>
+                    <div className="px-[9px] py-2 text-[14px] leading-5 text-[#858481]">加载中…</div>
                   ) : historyError ? (
-                    <div className="px-3 py-2 text-xs text-red-600">加载失败：{historyError}</div>
-                  ) : historySessions.length === 0 ? (
-                    <div className="px-3 py-2 text-xs text-[#94a3b8]">暂无历史对话</div>
+                    <div className="px-[9px] py-2 text-[14px] leading-5 text-red-600">加载失败：{historyError}</div>
+                  ) : filteredHistorySessions.length === 0 ? (
+                    historySearch.trim() ? (
+                      <div className="px-[9px] py-2 text-[14px] leading-5 text-[#858481]">没有匹配的任务</div>
+                    ) : null
                   ) : (
-                    historySessions.map((s) => (
+                    filteredHistorySessions.map((s) => {
+                      const historyItemActive = currentPath === "/agent" && activeSessionId === s.session_id;
+                      return (
                       <div
                         key={s.session_id}
-                        className={`flex w-full items-stretch gap-0.5 rounded-[14px] text-[13px] transition ${
-                          activeSessionId && s.session_id === activeSessionId
-                            ? "border border-[#e4e4e7] bg-[#f4f4f5] text-[#18181b]"
-                            : "border border-transparent text-[#7d8795] hover:border-[#d9e0eb] hover:bg-[#f7f9fc] hover:text-[#243248]"
+                        className={`group/history flex w-full items-stretch gap-0.5 rounded-[10px] text-[16px] font-normal leading-6 transition-colors ${
+                          historyItemActive
+                            ? "bg-[rgba(55,53,47,0.06)] text-[#34322d]"
+                            : "text-[#34322d] hover:bg-[rgba(55,53,47,0.06)]"
                         }`}
                       >
                         <button
@@ -558,12 +635,12 @@ function MoreDataShellComponent({
                             platformAgent?.setActivePlatformSession(s.session_id);
                             router.push(`/agent?sessionId=${encodeURIComponent(s.session_id)}`);
                           }}
-                          className="flex min-w-0 flex-1 items-center px-3 py-2.5 text-left"
+                          className="flex min-w-0 flex-1 items-center px-[9px] py-1.5 text-left"
                         >
                           <div className="min-w-0 flex-1">
                             <div className="truncate">{s.firstMessage || s.session_id}</div>
                             {s.firstAt ? (
-                              <div className="mt-0.5 text-[11px] text-[#9ca3af] select-none">
+                              <div className="mt-0.5 text-[14px] leading-5 text-[#858481] select-none">
                                 {formatTime(s.firstAt)}
                               </div>
                             ) : null}
@@ -578,12 +655,12 @@ function MoreDataShellComponent({
                           <PopoverTrigger asChild>
                             <button
                               type="button"
-                              className="inline-flex w-9 shrink-0 items-center justify-center rounded-r-xl text-[#94a3b8] transition hover:bg-[#fee2e2] hover:text-red-600 disabled:opacity-40 data-[state=open]:bg-[#fee2e2] data-[state=open]:text-red-600"
-                              aria-label="删除该历史会话"
+                              className="inline-flex w-8 shrink-0 items-center justify-center rounded-r-[9px] text-[#7f817d] opacity-0 transition hover:bg-[#eadfdd] hover:text-red-600 group-hover/history:opacity-100 focus-visible:opacity-100 disabled:opacity-40 data-[state=open]:bg-[#eadfdd] data-[state=open]:text-red-600 data-[state=open]:opacity-100"
+                              aria-label="删除该历史任务"
                               aria-expanded={historyPurgeConfirmId === s.session_id}
                               disabled={deletingId === s.session_id}
                             >
-                              <Trash2 className="h-4 w-4" aria-hidden />
+                              <Trash2 className="h-[15px] w-[15px]" aria-hidden />
                             </button>
                           </PopoverTrigger>
                           <PopoverContent
@@ -594,7 +671,7 @@ function MoreDataShellComponent({
                             onClick={(e) => e.stopPropagation()}
                           >
                             <p className="text-xs leading-relaxed text-[#475569]">
-                              确定删除该历史会话？消息、任务与产物将从服务端永久删除，且不可恢复。
+                              确定删除该历史任务？消息、任务与产物将从服务端永久删除，且不可恢复。
                             </p>
                             <div className="flex justify-end gap-2">
                               <Button
@@ -621,7 +698,8 @@ function MoreDataShellComponent({
                           </PopoverContent>
                         </Popover>
                       </div>
-                    ))
+                    );
+                    })
                   )}
                   {historyHasMore ? (
                     <div
@@ -640,12 +718,109 @@ function MoreDataShellComponent({
           </div>
         </aside>
 
+        {historySearchOpen ? (
+          <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label="搜索所有任务">
+            <button
+              type="button"
+              className="absolute inset-0 cursor-default bg-transparent"
+              aria-label="关闭搜索"
+              onClick={() => {
+                setHistorySearch("");
+                setHistorySearchOpen(false);
+              }}
+            />
+            <div className="pointer-events-none fixed left-1/2 top-1/2 w-[min(680px,calc(100vw_-_32px))] -translate-x-1/2 -translate-y-1/2">
+              <div className="pointer-events-auto flex h-[min(440px,calc(100vh_-_40px))] flex-col overflow-hidden rounded-[20px] border border-[rgba(0,0,0,0.06)] bg-[#f8f8f7] shadow-[0_0_1.25px_rgba(0,0,0,0.12),0_5px_16px_rgba(0,0,0,0.12)]">
+                <div className="flex h-[67px] shrink-0 items-center gap-2.5 border-b border-[rgba(0,0,0,0.06)] pb-[18px] pl-6 pr-2 pt-5">
+                  <Search className="h-6 w-6 shrink-0 text-[#5e5e5b]" strokeWidth={1.8} />
+                  <input
+                    ref={historySearchInputRef}
+                    id="history-task-search"
+                    value={historySearch}
+                    onChange={(e) => setHistorySearch(e.target.value)}
+                    placeholder="搜索任务..."
+                    className="h-7 min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-[18px] font-normal leading-7 text-[#34322d] shadow-none outline-none placeholder:text-[#858481] focus-visible:rounded-none focus-visible:[box-shadow:none!important]"
+                  />
+                  <button
+                    type="button"
+                    aria-label="关闭搜索"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#858481] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
+                    onClick={() => {
+                      setHistorySearch("");
+                      setHistorySearchOpen(false);
+                    }}
+                  >
+                    <X className="h-5 w-5" strokeWidth={1.9} />
+                  </button>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
+                  <button
+                    type="button"
+                    className="flex h-12 w-full items-center gap-2.5 rounded-lg bg-[rgba(55,53,47,0.06)] py-2 pl-2 pr-3 text-left text-sm text-[#34322d] transition hover:bg-[rgba(55,53,47,0.08)]"
+                    onClick={() => {
+                      setHistorySearch("");
+                      setHistorySearchOpen(false);
+                      platformAgent?.clearActivePlatformSession();
+                      router.replace("/");
+                    }}
+                    >
+                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[rgba(55,53,47,0.06)] text-[#3f403b]">
+                      <Plus className="h-4 w-4" strokeWidth={2} />
+                    </span>
+                    <span className="truncate text-sm font-normal leading-5 text-[#34322d]">新建任务</span>
+                  </button>
+
+                  <div className="mt-2 mb-1 flex px-2.5 pb-1.5 text-xs font-medium leading-4 text-[#858481]">更早的</div>
+                  <div className="space-y-0">
+                    {historyBusy ? (
+                      <div className="px-2 py-3 text-[14px] text-[#8b8c87]">加载中...</div>
+                    ) : filteredHistorySessions.length === 0 ? (
+                      historySearch.trim() ? (
+                        <div className="px-2 py-3 text-[14px] text-[#8b8c87]">没有匹配的任务</div>
+                      ) : null
+                    ) : (
+                      filteredHistorySessions.slice(0, 8).map((s) => (
+                        <button
+                          key={s.session_id}
+                          type="button"
+                          className="flex min-h-[52px] w-full items-center gap-2.5 rounded-lg py-1.5 pl-2 pr-3 text-left text-sm text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                          onClick={() => {
+                            setHistorySearch("");
+                            setHistorySearchOpen(false);
+                            platformAgent?.setActivePlatformSession(s.session_id);
+                            router.push(`/agent?sessionId=${encodeURIComponent(s.session_id)}`);
+                          }}
+                        >
+                          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[rgba(55,53,47,0.06)] text-[#666761]">
+                            <MessageCircleMore className="h-4 w-4" strokeWidth={1.9} />
+                          </span>
+                          <span className="min-w-0 flex-1 pr-4">
+                            <span className="block truncate text-sm font-medium leading-5 text-[#34322d]">
+                              {s.firstMessage || s.session_id}
+                            </span>
+                            <span className="block truncate text-sm font-normal leading-5 text-[#858481]">
+                              {s.session_id}
+                            </span>
+                          </span>
+                          {s.firstAt ? (
+                            <span className="shrink-0 text-sm font-normal text-[#858481]">
+                              {formatShortDate(s.firstAt)}
+                            </span>
+                          ) : null}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <main className={childManagedScroll ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-transparent" : "flex min-h-screen min-w-0 flex-col bg-transparent"}>
-          <header className="sticky top-0 z-50 flex h-14.5 items-center justify-between border-b border-[#e3e8ef] bg-[rgba(255,255,255,0.95)] px-6 backdrop-blur-xl">
+          <header className="sticky top-0 z-50 flex h-14.5 items-center justify-between bg-transparent px-6">
             <div className="flex min-w-0 items-center gap-3">
-              <Button aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"} variant="ghost" size="icon" className="h-8 w-8 rounded-[10px] text-[#7e8da0]" onClick={() => setSidebarCollapsed((current) => !current)}>
-                <PanelLeft className="h-4 w-4" />
-              </Button>
               {currentRunLabel ? (
                 <div className="min-w-0 truncate text-[15px] font-medium text-[#243248]">
                   {currentRunLabel}
@@ -654,58 +829,94 @@ function MoreDataShellComponent({
             </div>
 
             <div className="flex items-center gap-2 text-sm text-[#7c8ca0]">
-              {showHeaderUserMenu && headerAuth ? (
-                <Link
-                  href="/artifacts"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#64748b] transition hover:bg-[#f4f4f5]"
-                  title="我的收藏夹"
-                  aria-label="我的收藏夹"
-                >
-                  <Star className="h-[18px] w-[18px]" strokeWidth={1.75} />
-                </Link>
-              ) : null}
               {isPlatformBackendEnabled() && platformAgent ? (
                 showHeaderUserMenu && headerAuth ? (
                   <Popover>
                     <PopoverTrigger asChild>
                       <button
                         type="button"
-                        className="flex h-9 max-w-55 items-center gap-2 rounded-full border border-[#e2e8f0] bg-white px-1.5 py-1 pr-2.5 text-left shadow-sm transition hover:bg-[#f8fafc]"
+                        className="flex h-8 w-8 items-center justify-center rounded-full bg-[#18181b] text-[12px] font-semibold text-white shadow-none transition hover:bg-[#2a2a2d]"
                         aria-label="用户中心"
+                        title={headerAuth.userId}
                       >
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#18181b] text-xs font-semibold text-white">
-                          {(headerAuth.userId || "?").slice(0, 1).toUpperCase()}
-                        </span>
-                        <span className="hidden min-w-0 flex-1 truncate text-[13px] font-medium text-[#334155] sm:inline" title={headerAuth.userId}>
-                          {headerAuth.userId}
-                        </span>
-                        <ChevronDown className="h-4 w-4 shrink-0 text-[#94a3b8]" aria-hidden />
+                        {(headerAuth.userId || "?").slice(0, 1).toUpperCase()}
                       </button>
                     </PopoverTrigger>
-                    <PopoverContent align="end" className="w-72 space-y-3 p-4">
-                      <div>
-                        <div className="text-[13px] font-semibold text-[#1e293b]">用户中心</div>
-                        <div className="mt-1 truncate text-xs text-[#64748b]" title={headerAuth.userId}>
-                          {headerAuth.userId}
+                    <PopoverContent
+                      align="end"
+                      sideOffset={8}
+                      className="w-[300px] rounded-[20px] border border-[rgba(0,0,0,0.12)] bg-white p-0 text-[#34322d] shadow-[0_8px_32px_rgba(0,0,0,0.06)]"
+                    >
+                      <div className="flex w-full gap-2 px-4 pb-3 pt-5">
+                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#18181b] text-[17px] font-semibold leading-none text-white">
+                          {(headerAuth.userId || "?").slice(0, 1).toUpperCase()}
+                        </span>
+                        <div className="flex min-w-0 flex-1 flex-col justify-center">
+                          <div className="truncate text-[14px] font-medium leading-[22px] text-[#34322d]">Mdata 用户</div>
+                          <div className="truncate text-[13px] font-normal leading-5 text-[#858481]" title={headerAuth.userId}>
+                            {headerAuth.userId}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex flex-col gap-2">
-                        <Button
+
+                      <div className="flex flex-col gap-3 px-3 pb-3">
+                        <div className="rounded-[16px] border border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.04)]">
+                          <div className="flex items-center justify-between gap-3 border-b border-dashed border-[rgba(0,0,0,0.12)] px-3 py-3">
+                            <span className="text-[14px] font-medium leading-5 text-[#34322d]">当前账户</span>
+                            <span className="rounded-full bg-white px-2 py-1 text-[12px] font-medium leading-4 text-[#5e5e5b]">已登录</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 px-3 py-3">
+                            <span className="text-[14px] font-medium leading-5 text-[#34322d]">身份</span>
+                            <span className="truncate text-[14px] leading-5 text-[#858481]">{headerAuth.userRole ?? "user"}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-0.5">
+                          <button
+                            type="button"
+                            className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-[14px] font-medium leading-5 text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                            onClick={() => router.replace("/")}
+                          >
+                            <Home className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            主页
+                          </button>
+                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
+                            <UserRound className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            账户
+                          </div>
+                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
+                            <Settings className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            设置
+                          </div>
+                          <div className="my-1 h-px bg-[rgba(0,0,0,0.06)]" />
+                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
+                            <HelpCircle className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            获取帮助
+                          </div>
+                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
+                            <BookOpen className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            文档
+                          </div>
+                          <button
                           type="button"
-                          variant="outline"
-                          size="sm"
-                          className="w-full justify-center rounded-[10px]"
+                            className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-[14px] font-medium leading-5 text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
                           onClick={() => void platformAgent.logout()}
                         >
+                            <LogOut className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
                           退出登录
-                        </Button>
+                          </button>
+                        </div>
                       </div>
                     </PopoverContent>
                   </Popover>
                 ) : (
-                  <Button type="button" size="sm" className="rounded-[10px]" onClick={() => platformAgent.openLogin()}>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 items-center justify-center rounded-[14px] bg-[#18181b] px-3 text-[13px] font-medium leading-5 text-white shadow-none transition hover:bg-[#2a2a2d]"
+                    onClick={() => platformAgent.openLogin()}
+                  >
                     登录
-                  </Button>
+                  </button>
                 )
               ) : (
                 <div

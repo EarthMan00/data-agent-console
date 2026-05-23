@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, Check } from "lucide-react";
+import { AlertCircle, Check } from "@/components/ui/tabler-icons";
 
 import { cn } from "@/lib/utils";
 

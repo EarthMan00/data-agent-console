@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/tabler-icons";
 import ReactMarkdown from "react-markdown";
 
 import { HtmlArtifactIframe } from "@/components/html-artifact-iframe";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { ChevronDown, FileText } from "lucide-react";
+import { ChevronDown, FileText } from "@/components/ui/tabler-icons";
 
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { useTypewriterReveal } from "@/lib/use-typewriter-reveal";

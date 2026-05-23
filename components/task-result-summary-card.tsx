@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText } from "lucide-react";
+import { FileText } from "@/components/ui/tabler-icons";
 
 import { cn } from "@/lib/utils";
 

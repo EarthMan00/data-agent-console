@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy } from "@/components/ui/tabler-icons";
 import { fetchHomePromptRecommendations } from "@/lib/agent-api/home-prompts";
 import type { HomePromptCard } from "@/lib/workspace-domain-types";
 import { homeCapabilityItems } from "@/lib/home-capability-items";
 import { AgentWorkspace } from "@/components/agent-workspace";
+import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { PlatformLogo } from "@/components/platform-logo";
 import { sanitizeObjective } from "@/lib/agent-attachments";
@@ -21,7 +23,6 @@ import {
 import { TaskComposer } from "@/components/task-composer";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { FlickeringGrid } from "@/components/ui/flickering-grid";
 import { copyTextToClipboard } from "@/lib/clipboard";
 
 export function MoreDataHomePage() {
@@ -169,33 +170,12 @@ export function MoreDataHomePage() {
     setNotice(`已添加附件：${names}。`);
   };
 
-  const HEADER_HEIGHT = 58;
-  const capabilityAnchorRef = useRef<HTMLDivElement | null>(null);
-  const [composerFloating, setComposerFloating] = useState(false);
-
   const selectedPrompt = cards.find((card) => card.id === selectedPromptId) ?? null;
 
   const openPromptCard = (cardId: string) => {
     setPromptCopied(false);
     setSelectedPromptId(cardId);
   };
-
-  const updateComposerFloating = () => {
-    const anchor = capabilityAnchorRef.current;
-    setComposerFloating(Boolean(anchor && anchor.getBoundingClientRect().top <= HEADER_HEIGHT));
-  };
-
-  useEffect(() => {
-    updateComposerFloating();
-    window.addEventListener("scroll", updateComposerFloating, { passive: true });
-    window.addEventListener("resize", updateComposerFloating);
-
-    return () => {
-      window.removeEventListener("scroll", updateComposerFloating);
-      window.removeEventListener("resize", updateComposerFloating);
-    };
-  }, []);
-
 
   const applyPromptCard = (card: HomePromptCard) => {
     setQuery(card.prompt);
@@ -245,58 +225,50 @@ export function MoreDataHomePage() {
       currentPath="/"
       mainDecoration={
         <>
-          <div className="absolute inset-0 z-0 bg-[linear-gradient(180deg,#ffffff_0%,#fdfdfd_52%,#fbfbfb_100%)]" />
-          <div className="absolute left-1/2 top-[78px] z-0 h-[360px] w-[980px] -translate-x-1/2 overflow-hidden">
-            <FlickeringGrid
-              className="absolute inset-0 size-full opacity-[0.28] [mask-image:radial-gradient(circle_at_50%_42%,black_0%,black_34%,transparent_78%)]"
-              squareSize={4}
-              gridGap={6}
-              color="#6B7280"
-              maxOpacity={0.5}
-              flickerChance={0.1}
-              height={360}
-              width={980}
-            />
-          </div>
-          <div className="absolute left-1/2 top-[78px] z-0 h-[360px] w-[980px] -translate-x-1/2 bg-[radial-gradient(circle_at_50%_42%,rgba(0,0,0,0.02),transparent_58%)] opacity-20" />
-          <div className="absolute left-1/2 top-[44px] z-0 h-[420px] w-[620px] -translate-x-1/2 opacity-[0.12]">
-            <div className="absolute left-[82px] top-[12px] h-[46px] w-[148px] skew-x-[-34deg] rounded-[2px] border border-[#d6d9df]" />
-            <div className="absolute left-[214px] top-[0] h-[322px] w-[156px] skew-x-[-34deg] rounded-[2px] border border-[#d6d9df]" />
-            <div className="absolute left-[168px] top-[286px] h-[72px] w-[212px] skew-x-[-34deg] rounded-[2px] border border-[#e3e6ea]" />
-          </div>
-          <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_50%_-4%,rgba(255,255,255,0.96),rgba(255,255,255,0)_34%),linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.72)_74%,rgba(255,255,255,0.92)_100%)]" />
+          <div className="absolute inset-0 z-0 bg-[#f8f8f7]" />
         </>
       }
     >
-      <div className="flex flex-col pb-8">
-        <div className="px-8 pt-8">
-          <div className="mx-auto w-full max-w-[1180px] pt-4">
-            <div className="mx-auto max-w-[760px] pt-18 text-center md:pt-24">
-            <h1 className="font-[family:var(--font-jakarta)] text-[48px] font-semibold tracking-[-0.065em] text-[#18181b] md:text-[66px]">
-              跨境运营助手
-            </h1>
-            <p className="mt-3 text-[15px] leading-[1.7] text-[#585d66] md:text-[16px]">数据、选品、调研、分析...</p>
+      <div className="flex flex-col pb-10">
+        <div className="px-[21px] pt-[15vh]">
+          <div className="mx-auto w-full max-w-[768px]">
+            <div className="mx-auto text-center">
+              <Image
+                src="/mdata-logo.png"
+                alt="Mdata"
+                width={42}
+                height={42}
+                className="mx-auto mb-3 h-[42px] w-[42px] object-contain"
+                draggable={false}
+                priority
+              />
+              <h1 className="font-serif text-[36px] font-normal leading-[54px] tracking-normal text-[#34322d]">
+                跨境运营助手
+              </h1>
+              <p className="sr-only">数据、选品、调研、分析...</p>
           </div>
 
-          <div className="mx-auto mt-12 max-w-[820px]">
+          <div className="mx-auto mt-[34px] max-w-[768px]">
             <div id="sym:TaskComposer" className="transition">
-              <TaskComposer
-                value={query}
-                onValueChange={setQuery}
-                placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
-                mode={composerMode}
-                onModeChange={setComposerMode}
-                selectedSourceIds={selectedSourceIds}
-                onToolSelect={applyComposerTool}
-                onSourceRemove={removeComposerTool}
-                onFilesSelected={handleFilesSelected}
-                onSubmit={() => {
-                  if (!launching) {
-                    void launchAgent();
-                  }
-                }}
-                visualStyle="heroMinimal"
-              />
+              <AssistantThreadFrame>
+                <TaskComposer
+                  value={query}
+                  onValueChange={setQuery}
+                  placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
+                  mode={composerMode}
+                  onModeChange={setComposerMode}
+                  selectedSourceIds={selectedSourceIds}
+                  onToolSelect={applyComposerTool}
+                  onSourceRemove={removeComposerTool}
+                  onFilesSelected={handleFilesSelected}
+                  onSubmit={() => {
+                    if (!launching) {
+                      void launchAgent();
+                    }
+                  }}
+                  visualStyle="heroMinimal"
+                />
+              </AssistantThreadFrame>
             </div>
             <p className="sr-only" aria-live="polite">
               {notice}
@@ -307,29 +279,24 @@ export function MoreDataHomePage() {
 
       <div
         id="sym:homeCapabilityItems"
-        ref={capabilityAnchorRef}
-        className={`sticky top-[58px] z-20 mt-10 transition-all ${
-          composerFloating
-            ? "w-full border-b border-[#e5e7eb] bg-white/90 pb-3 pt-3 opacity-95 backdrop-blur-sm"
-            : "mx-auto w-full max-w-[920px] rounded-[28px] bg-white/90 px-2 py-3 opacity-95 backdrop-blur-sm"
-        }`}
+        className="mx-auto mt-10 w-full max-w-[768px] rounded-[20px] bg-transparent px-2 py-2 opacity-95"
       >
-        <div className="mx-auto flex w-full max-w-[1180px] justify-center px-8">
-          <div className={`flex w-full ${composerFloating ? 'max-w-[840px]' : 'max-w-[920px]'} flex-wrap items-center justify-center gap-x-1.5 gap-y-2 text-[12px] text-[#8f949d]`}>
+        <div className="mx-auto flex w-full justify-center px-0">
+          <div className="flex w-full max-w-[768px] flex-wrap items-center justify-center gap-2 text-[16px] text-[#34322d]">
             {homeCapabilityItems.map((item) => {
               const active = item.id === activeCapabilityId;
               return (
                 <button
                   key={item.id}
                   onClick={() => applyBrowseCapability(item.id)}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-[3px] transition duration-300 ${
+                  className={`inline-flex h-10 items-center gap-2 rounded-full border border-[rgba(0,0,0,0.06)] bg-transparent px-[14px] text-[16px] font-normal leading-6 transition duration-200 ${
                     active
-                      ? "border-[#d8dbe0] bg-[#f7f8fa] text-[#30343a] shadow-[0_6px_14px_rgba(15,23,42,0.04)]"
-                      : "border-[#eceef2] bg-[rgba(255,255,255,0.86)] text-[#8b9099] hover:border-[#d8dbe0] hover:bg-white hover:text-[#30343a]"
+                      ? "text-[#34322d]"
+                      : "text-[#34322d] hover:bg-[rgba(55,53,47,0.06)]"
                   }`}
                 >
-                  <span className="inline-flex h-3 w-3 items-center justify-center">
-                    <PlatformLogo name={item.icon} color={item.accent} className="h-[10px] w-[10px]" />
+                  <span className="inline-flex h-4 w-4 items-center justify-center">
+                    <PlatformLogo name={item.icon} color={item.accent} className="h-4 w-4" />
                   </span>
                   {item.label}
                 </button>
@@ -339,11 +306,11 @@ export function MoreDataHomePage() {
         </div>
       </div>
 
-      <div className="px-8 pt-8">
-        <div className="mx-auto w-full max-w-[1180px]">
-          <div className="mt-10 pb-2 text-center text-[12px] font-medium tracking-[0.02em] text-[#b1b5bc]">探索精选提示词</div>
+      <div className="px-4 pt-12 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[768px]">
+          <div className="pb-2 text-center font-serif text-[15px] font-normal leading-6 text-[#34322d]">探索精选提示词</div>
 
-          <div className="mt-5 grid gap-3 pb-6 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-4 grid gap-3 pb-6 md:grid-cols-2">
             {cards.map((card) => (
               <div
                 key={card.id}
@@ -358,19 +325,19 @@ export function MoreDataHomePage() {
                     openPromptCard(card.id);
                   }
                 }}
-                className={`group relative overflow-hidden rounded-[18px] border text-left outline-none transition duration-300 ${
-                  "border-[#f0f1f3] bg-[linear-gradient(180deg,#ffffff,#fdfdfd)] shadow-[0_6px_14px_rgba(15,23,42,0.025)] hover:-translate-y-0.5 hover:border-[#e0e3e8] hover:bg-[linear-gradient(180deg,#ffffff,#fbfbfb)] hover:shadow-[0_14px_28px_rgba(15,23,42,0.055)] focus-visible:-translate-y-0.5 focus-visible:border-[#e0e3e8] focus-visible:bg-[linear-gradient(180deg,#ffffff,#fbfbfb)] focus-visible:shadow-[0_14px_28px_rgba(15,23,42,0.055)]"
+                className={`group relative overflow-hidden rounded-[18px] border text-left outline-none transition duration-200 ${
+                  "border-[rgba(0,0,0,0.06)] bg-white/70 shadow-none hover:bg-white hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)] focus-visible:bg-white focus-visible:shadow-[0_8px_24px_rgba(0,0,0,0.04)]"
                 }`}
               >
-                <div className="flex min-h-[148px] flex-col px-4 py-3.5">
+                <div className="flex min-h-[118px] flex-col px-4 py-4">
                   <div className="min-w-0">
-                    <div className="line-clamp-4 text-[12px] leading-5 text-[#7d828b]">
-                      {card.body.length > 68 ? `${card.body.slice(0, 68)}…` : card.body}
+                    <div className="line-clamp-3 text-[13px] leading-5 text-[#858481]">
+                      {card.body.length > 78 ? `${card.body.slice(0, 78)}…` : card.body}
                     </div>
                   </div>
                   <div className="mt-auto pt-3">
-                    <div className="text-[13px] font-medium tracking-[-0.02em] text-[#24272d]">{card.title}</div>
-                    <div className="mt-1 text-[12px] leading-4 text-[#b0b4bc]">{card.meta}</div>
+                    <div className="font-serif text-[15px] font-normal leading-6 tracking-normal text-[#34322d]">{card.title}</div>
+                    <div className="mt-1 text-[13px] leading-[18px] text-[#858481]">{card.meta}</div>
                   </div>
                 </div>
               </div>
@@ -381,29 +348,29 @@ export function MoreDataHomePage() {
       </div>
 
       <Dialog open={Boolean(selectedPrompt)} onOpenChange={(open) => (!open ? setSelectedPromptId(null) : null)}>
-        <DialogContent className="max-w-[608px] rounded-[14px] border-[#e3e1dc] bg-white p-0 shadow-[0_28px_80px_rgba(15,23,42,0.16)]">
+        <DialogContent className="max-w-[608px] !rounded-[18px] border-[rgba(0,0,0,0.08)] bg-white p-0 shadow-[0_20px_48px_rgba(24,24,27,0.12)] sm:!rounded-[18px]">
           {selectedPrompt ? (
             <div className="p-5">
-              <DialogTitle className="pr-8 text-[16px] font-semibold tracking-[-0.03em] text-[#222222]">
+              <DialogTitle className="pr-8 font-serif text-[18px] font-normal leading-7 tracking-normal text-[#34322d]">
                 {selectedPrompt.title}
               </DialogTitle>
-              <DialogDescription className="mt-3 text-[13px] leading-6 text-[#7a7b80]">
+              <DialogDescription className="mt-3 text-[13px] leading-6 text-[#858481]">
                 {selectedPrompt.body}
               </DialogDescription>
 
-              <div className="mt-5 overflow-hidden rounded-[10px] border border-[#e8e8ea] bg-white">
-                <div className="flex items-center justify-between border-b border-[#efeff1] bg-[#fafafb] px-4 py-3">
-                  <div className="text-[13px] text-[#85868d]">提示词(Prompt)</div>
+              <div className="mt-5 overflow-hidden rounded-[14px] border border-[rgba(0,0,0,0.06)] bg-white">
+                <div className="flex items-center justify-between border-b border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.04)] px-4 py-3">
+                  <div className="text-[13px] text-[#858481]">提示词(Prompt)</div>
                   <button
                     type="button"
                     onClick={copyPromptCard}
-                    className="inline-flex items-center gap-1.5 text-[13px] text-[#26272b] transition hover:text-[#111111]"
+                    className="inline-flex items-center gap-1.5 text-[13px] text-[#34322d] transition hover:text-[#111111]"
                   >
                     {promptCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                     {promptCopied ? "已复制" : "复制"}
                   </button>
                 </div>
-                <div className="bg-[#fdfdfd] px-4 py-4 text-[13px] leading-7 text-[#2b2d31]">
+                <div className="bg-white px-4 py-4 text-[13px] leading-7 text-[#34322d]">
                   <p className="whitespace-pre-wrap">{selectedPrompt.prompt}</p>
                 </div>
               </div>
@@ -412,7 +379,7 @@ export function MoreDataHomePage() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-9 rounded-[9px] border-[#dadbdd] bg-white px-4 text-[13px] text-[#3d3f44]"
+                  className="h-9 rounded-[10px] border-[rgba(0,0,0,0.08)] bg-white px-4 text-[13px] text-[#34322d] shadow-none hover:bg-[rgba(55,53,47,0.06)]"
                   onClick={() => setSelectedPromptId(null)}
                 >
                   取消
@@ -420,14 +387,14 @@ export function MoreDataHomePage() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-9 rounded-[9px] border-[#dadbdd] bg-white px-4 text-[13px] text-[#2b2d31] hover:bg-[#f5f5f6]"
+                  className="h-9 rounded-[10px] border-[rgba(0,0,0,0.08)] bg-white px-4 text-[13px] text-[#34322d] shadow-none hover:bg-[rgba(55,53,47,0.06)]"
                   onClick={previewPromptRun}
                 >
                   查看回放
                 </Button>
                 <Button
                   type="button"
-                  className="h-9 rounded-[9px] border border-[#1d2a1e] bg-[#263126] px-4 text-[13px] text-white shadow-none hover:bg-[#1f2a20]"
+                  className="h-9 rounded-[10px] border border-[#34322d] bg-[#34322d] px-4 text-[13px] text-white shadow-none hover:bg-[#2f2d28]"
                   onClick={usePromptCard}
                 >
                   使用
