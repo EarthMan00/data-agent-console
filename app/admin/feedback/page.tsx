@@ -33,13 +33,13 @@ export default async function FeedbackAdminPage({ searchParams }: FeedbackAdminP
         <div className="flex flex-wrap items-start justify-between gap-6">
           <div>
             <div className="inline-flex items-center rounded-full border border-[#ececec] bg-white px-3 py-1 text-xs font-medium tracking-[0.14em] text-[#52525b]">
-              More Data Agent Admin
+              Alice Admin
             </div>
             <div className="mt-4 font-[family:var(--font-jakarta)] text-[30px] font-semibold tracking-[-0.03em]">
               问题反馈
             </div>
             <p className="mt-3 text-sm leading-7 text-[#71717a]">
-              查看来自线上 More Data Agent 的最新反馈，按页面和关键词快速筛选。
+              查看来自线上 Alice 的最新反馈，按页面和关键词快速筛选。
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">

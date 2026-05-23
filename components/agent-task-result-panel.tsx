@@ -330,24 +330,24 @@ export function AgentTaskResultPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white" data-testid="agent-preview-panel">
-      <div className="flex shrink-0 flex-col gap-1 border-b border-[#e5e7eb] bg-[linear-gradient(180deg,#fafafa,#f4f4f5)] px-3 py-2">
+      <div className="flex shrink-0 flex-col gap-1 border-b border-[#e2e2df] bg-white px-3 py-2">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-medium text-[#1f2421]">任务执行结果</div>
             {dateLine ? (
-              <div className="mt-0.5 text-[11px] text-[#8b9490]">最后生成时间：{dateLine}</div>
+              <div className="mt-0.5 text-[11px] text-[#8b8c87]">最后生成时间：{dateLine}</div>
             ) : null}
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
             {showTableCodeToggle ? (
-              <div className="mr-1 flex rounded-[10px] border border-[#e5e7eb] bg-[#ececec]/80 p-0.5">
+              <div className="mr-1 flex rounded-[10px] border border-[#e2e2df] bg-[#f0f0ef] p-0.5">
                 <button
                   type="button"
                   className={cn(
                     "rounded-[8px] px-2.5 py-1 text-xs font-medium transition",
                     viewMode === "table"
-                      ? "bg-white text-[#15803d] shadow-sm"
-                      : "text-[#64748b] hover:text-[#334155]",
+                      ? "bg-white text-[#111111] shadow-none"
+                      : "text-[#747571] hover:text-[#34322d]",
                   )}
                   onClick={() => setViewMode("table")}
                 >
@@ -358,8 +358,8 @@ export function AgentTaskResultPanel({
                   className={cn(
                     "rounded-[8px] px-2.5 py-1 text-xs font-medium transition",
                     viewMode === "code"
-                      ? "bg-white text-[#15803d] shadow-sm"
-                      : "text-[#64748b] hover:text-[#334155]",
+                      ? "bg-white text-[#111111] shadow-none"
+                      : "text-[#747571] hover:text-[#34322d]",
                   )}
                   onClick={() => setViewMode("code")}
                 >
@@ -373,7 +373,7 @@ export function AgentTaskResultPanel({
                 aria-label="下载当前结果"
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 rounded-[10px] text-[#64748b]"
+                className="h-8 w-8 rounded-[10px] text-[#747571]"
                 onClick={() => downloadCurrent()}
               >
                 <Download className="h-4 w-4" />
@@ -386,7 +386,7 @@ export function AgentTaskResultPanel({
                   aria-label="更多"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-[10px] text-[#64748b]"
+                  className="h-8 w-8 rounded-[10px] text-[#747571]"
                 >
                   <Ellipsis className="h-4 w-4" />
                 </Button>
@@ -408,7 +408,7 @@ export function AgentTaskResultPanel({
               aria-label="关闭任务结果"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-[10px] text-[#64748b]"
+              className="h-8 w-8 rounded-[10px] text-[#747571]"
               onClick={onClose}
             >
               <X className="h-4 w-4" />

@@ -95,6 +95,21 @@ type HistoryEntry = SessionListItem & {
 };
 
 const HISTORY_PAGE_SIZE = 20;
+const ACCOUNT_AVATAR_COLORS = ["#2563eb", "#7c3aed", "#db2777", "#dc2626", "#ea580c", "#16a34a", "#0891b2", "#4f46e5"];
+
+function getAccountAvatarMeta(name: string) {
+  const trimmed = name.trim();
+  const chars = Array.from(trimmed || "?");
+  const initial = (chars[0] ?? "?").toUpperCase();
+  let hash = 0;
+  for (const char of chars) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  }
+  return {
+    initial,
+    color: ACCOUNT_AVATAR_COLORS[hash % ACCOUNT_AVATAR_COLORS.length] ?? ACCOUNT_AVATAR_COLORS[0],
+  };
+}
 
 async function enrichHistoryEntries(
   token: string,
@@ -391,9 +406,11 @@ function MoreDataShellComponent({
   }, [historyBusy, historyHasMore, historySessions.length, loadMoreHistory]);
   const activeSessionId = platformAgent?.platformSessionId ?? null;
   const showAuthSidebar = clientMounted && isLoggedIn;
-  /** 顶栏用户区：与侧栏同理，mount 前固定为「登录」，避免 token 仅在客户端存在时 hydration 不一致 */
+  /** 账户区：mount 前固定为「登录」，避免 token 仅在客户端存在时 hydration 不一致 */
   const headerAuth = platformAgent?.auth;
   const showHeaderUserMenu = clientMounted && Boolean(headerAuth);
+  const accountDisplayName = headerAuth?.displayName || headerAuth?.userId || "账号与设置";
+  const accountAvatar = useMemo(() => getAccountAvatarMeta(accountDisplayName), [accountDisplayName]);
 
   useEffect(() => {
     if (!historySearchOpen) return;
@@ -511,10 +528,10 @@ function MoreDataShellComponent({
   return (
     <div className={childManagedScroll ? "h-screen overflow-hidden bg-transparent" : "min-h-screen bg-transparent"}>
       <div
-        className={childManagedScroll ? "grid h-screen overflow-hidden bg-[#f8f8f7]" : "grid min-h-screen bg-[#f8f8f7]"}
+        className={childManagedScroll ? "grid h-screen overflow-hidden bg-[#f7f7f7]" : "grid min-h-screen bg-[#f7f7f7]"}
         style={{ gridTemplateColumns: sidebarCollapsed ? `${sidebarCollapsedWidth}px minmax(0,1fr)` : `${sidebarExpandedWidth}px minmax(0,1fr)` }}
       >
-        <aside className="sticky top-0 self-start flex h-screen min-h-0 flex-col overflow-hidden bg-[#ebebeb] transition-[padding,width]">
+        <aside className="sticky top-0 self-start flex h-screen min-h-0 flex-col overflow-hidden bg-white transition-[padding,width]">
           <div className="relative flex min-h-0 flex-1 flex-col">
             <div className="shrink-0">
               {sidebarCollapsed ? (
@@ -548,14 +565,6 @@ function MoreDataShellComponent({
                         }}
                       >
                         <Search className="h-[18px] w-[18px]" strokeWidth={1.8} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="收起侧边栏"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-[#5f625f] transition hover:bg-[#e9e9e7] hover:text-[#22221f]"
-                        onClick={() => setSidebarCollapsed(true)}
-                      >
-                        <PanelLeft className="h-[18px] w-[18px]" strokeWidth={1.8} />
                       </button>
                     </div>
                   </div>
@@ -715,6 +724,106 @@ function MoreDataShellComponent({
               </div>
             ) : null}
 
+            {!sidebarCollapsed && isPlatformBackendEnabled() && platformAgent ? (
+              <div className="mt-auto shrink-0 px-2 pb-5 pt-4">
+                <div className="mx-[9px] mb-3 h-px bg-[#e7e7e4]" />
+                {showHeaderUserMenu && headerAuth ? (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex h-9 w-full items-center gap-3 rounded-[10px] pl-[9px] pr-0.5 text-left text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
+                        aria-label="用户中心"
+                        title={headerAuth.userId}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold leading-none text-white"
+                          style={{ backgroundColor: accountAvatar.color }}
+                        >
+                          {accountAvatar.initial}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[14px] font-normal leading-[21px] tracking-normal">
+                          {accountDisplayName}
+                        </span>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      side="top"
+                      sideOffset={8}
+                      className="w-[300px] rounded-[20px] border border-[rgba(0,0,0,0.12)] bg-white p-0 text-[#34322d] shadow-[0_8px_32px_rgba(0,0,0,0.06)]"
+                    >
+                      <div className="flex w-full gap-2 px-4 pb-3 pt-5">
+                        <span
+                          aria-hidden="true"
+                          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-[17px] font-semibold leading-none text-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]"
+                          style={{ backgroundColor: accountAvatar.color }}
+                        >
+                          {accountAvatar.initial}
+                        </span>
+                        <div className="flex min-w-0 flex-1 flex-col justify-center">
+                          <div className="truncate text-[14px] font-medium leading-[22px] text-[#34322d]">{accountDisplayName}</div>
+                          <div className="truncate text-[13px] font-normal leading-5 text-[#858481]" title={headerAuth.userId}>
+                            {headerAuth.userId}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-3 px-3 pb-3">
+                        <div className="flex flex-col gap-0.5">
+                          <button
+                            type="button"
+                            className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-[14px] font-medium leading-5 text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                            onClick={() => router.replace("/")}
+                          >
+                            <Home className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            主页
+                          </button>
+                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
+                            <UserRound className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            账户
+                          </div>
+                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
+                            <Settings className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            设置
+                          </div>
+                          <div className="my-1 h-px bg-[rgba(0,0,0,0.06)]" />
+                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
+                            <HelpCircle className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            获取帮助
+                          </div>
+                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
+                            <BookOpen className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            文档
+                          </div>
+                          <button
+                            type="button"
+                            className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-[14px] font-medium leading-5 text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                            onClick={() => void platformAgent.logout()}
+                          >
+                            <LogOut className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            退出登录
+                          </button>
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                ) : (
+                  <button
+                    type="button"
+                    className="flex h-9 w-full items-center gap-3 rounded-[10px] pl-[9px] pr-0.5 text-left text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
+                    onClick={() => platformAgent.openLogin()}
+                  >
+                    <UserRound className="h-[18px] w-[18px] shrink-0 text-[#34322d]" strokeWidth={1.8} />
+                    <span className="min-w-0 flex-1 truncate text-[14px] font-normal leading-[21px] tracking-normal">
+                      账号与设置
+                    </span>
+                  </button>
+                )}
+              </div>
+            ) : null}
+
           </div>
         </aside>
 
@@ -819,113 +928,13 @@ function MoreDataShellComponent({
         ) : null}
 
         <main className={childManagedScroll ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-transparent" : "flex min-h-screen min-w-0 flex-col bg-transparent"}>
-          <header className="sticky top-0 z-50 flex h-14.5 items-center justify-between bg-transparent px-6">
+          <header className="sticky top-0 z-50 flex h-14.5 items-center bg-transparent px-6">
             <div className="flex min-w-0 items-center gap-3">
               {currentRunLabel ? (
                 <div className="min-w-0 truncate text-[15px] font-medium text-[#243248]">
                   {currentRunLabel}
                 </div>
               ) : null}
-            </div>
-
-            <div className="flex items-center gap-2 text-sm text-[#7c8ca0]">
-              {isPlatformBackendEnabled() && platformAgent ? (
-                showHeaderUserMenu && headerAuth ? (
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button
-                        type="button"
-                        className="flex h-8 w-8 items-center justify-center rounded-full bg-[#18181b] text-[12px] font-semibold text-white shadow-none transition hover:bg-[#2a2a2d]"
-                        aria-label="用户中心"
-                        title={headerAuth.userId}
-                      >
-                        {(headerAuth.userId || "?").slice(0, 1).toUpperCase()}
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      align="end"
-                      sideOffset={8}
-                      className="w-[300px] rounded-[20px] border border-[rgba(0,0,0,0.12)] bg-white p-0 text-[#34322d] shadow-[0_8px_32px_rgba(0,0,0,0.06)]"
-                    >
-                      <div className="flex w-full gap-2 px-4 pb-3 pt-5">
-                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#18181b] text-[17px] font-semibold leading-none text-white">
-                          {(headerAuth.userId || "?").slice(0, 1).toUpperCase()}
-                        </span>
-                        <div className="flex min-w-0 flex-1 flex-col justify-center">
-                          <div className="truncate text-[14px] font-medium leading-[22px] text-[#34322d]">Mdata 用户</div>
-                          <div className="truncate text-[13px] font-normal leading-5 text-[#858481]" title={headerAuth.userId}>
-                            {headerAuth.userId}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col gap-3 px-3 pb-3">
-                        <div className="rounded-[16px] border border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.04)]">
-                          <div className="flex items-center justify-between gap-3 border-b border-dashed border-[rgba(0,0,0,0.12)] px-3 py-3">
-                            <span className="text-[14px] font-medium leading-5 text-[#34322d]">当前账户</span>
-                            <span className="rounded-full bg-white px-2 py-1 text-[12px] font-medium leading-4 text-[#5e5e5b]">已登录</span>
-                          </div>
-                          <div className="flex items-center justify-between gap-3 px-3 py-3">
-                            <span className="text-[14px] font-medium leading-5 text-[#34322d]">身份</span>
-                            <span className="truncate text-[14px] leading-5 text-[#858481]">{headerAuth.userRole ?? "user"}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col gap-0.5">
-                          <button
-                            type="button"
-                            className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-[14px] font-medium leading-5 text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
-                            onClick={() => router.replace("/")}
-                          >
-                            <Home className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                            主页
-                          </button>
-                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                            <UserRound className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                            账户
-                          </div>
-                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                            <Settings className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                            设置
-                          </div>
-                          <div className="my-1 h-px bg-[rgba(0,0,0,0.06)]" />
-                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                            <HelpCircle className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                            获取帮助
-                          </div>
-                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                            <BookOpen className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                            文档
-                          </div>
-                          <button
-                          type="button"
-                            className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-[14px] font-medium leading-5 text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
-                          onClick={() => void platformAgent.logout()}
-                        >
-                            <LogOut className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                          退出登录
-                          </button>
-                        </div>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                ) : (
-                  <button
-                    type="button"
-                    className="inline-flex h-8 items-center justify-center rounded-[14px] bg-[#18181b] px-3 text-[13px] font-medium leading-5 text-white shadow-none transition hover:bg-[#2a2a2d]"
-                    onClick={() => platformAgent.openLogin()}
-                  >
-                    登录
-                  </button>
-                )
-              ) : (
-                <div
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-[#e4e4e7] text-sm font-semibold text-[#52525b]"
-                  title="未启用后端联调"
-                >
-                  —
-                </div>
-              )}
             </div>
           </header>
 

@@ -2,6 +2,7 @@ export type LoginResponse = {
   access_token: string;
   refresh_token: string;
   user_id: string;
+  username?: string;
   plan_code: string;
   /** 服务端 `LoginResponse.user_role`，如 `admin` | `user` */
   user_role?: string;

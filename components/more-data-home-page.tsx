@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, Copy } from "@/components/ui/tabler-icons";
+import { ArrowUp, Check, Copy } from "@/components/ui/tabler-icons";
 import { fetchHomePromptRecommendations } from "@/lib/agent-api/home-prompts";
 import type { HomePromptCard } from "@/lib/workspace-domain-types";
 import { homeCapabilityItems } from "@/lib/home-capability-items";
@@ -20,6 +20,7 @@ import {
   isAgentRuntimeConfigured,
   isPlatformBackendEnabled,
 } from "@/lib/agent-runtime";
+import { cn } from "@/lib/utils";
 import { TaskComposer } from "@/components/task-composer";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -83,6 +84,7 @@ export function MoreDataHomePage() {
     const filtered = source.filter((card) => card.capabilityIds.includes(activeCapabilityId));
     return filtered.length > 0 ? filtered : source;
   }, [activeCapabilityId, remotePromptCards]);
+  const composerCanSubmit = sanitizeObjective(query).length > 0 && !launching;
 
   const launchAgent = async (seed?: string) => {
     const nextQuery = sanitizeObjective(seed ?? query);
@@ -225,30 +227,33 @@ export function MoreDataHomePage() {
       currentPath="/"
       mainDecoration={
         <>
-          <div className="absolute inset-0 z-0 bg-[#f8f8f7]" />
+          <div className="absolute inset-0 z-0 bg-[#f7f7f7]" />
         </>
       }
     >
-      <div className="flex flex-col pb-10">
-        <div className="px-[21px] pt-[15vh]">
-          <div className="mx-auto w-full max-w-[768px]">
-            <div className="mx-auto text-center">
-              <Image
-                src="/mdata-logo.png"
-                alt="Mdata"
-                width={42}
-                height={42}
-                className="mx-auto mb-3 h-[42px] w-[42px] object-contain"
-                draggable={false}
-                priority
-              />
-              <h1 className="font-serif text-[36px] font-normal leading-[54px] tracking-normal text-[#34322d]">
-                跨境运营助手
+      <div className="flex flex-col pb-14">
+        <section className="mx-auto w-full max-w-[1040px] px-8 pt-[56px]">
+          <div className="flex items-center gap-5">
+            <Image
+              src="/mdata-logo.png"
+              alt="Alice"
+              width={76}
+              height={76}
+              className="h-[76px] w-[76px] shrink-0 object-contain"
+              draggable={false}
+              priority
+            />
+            <div className="min-w-0">
+              <h1 className="text-[38px] font-semibold leading-[46px] text-[#111111]">
+                Alice
               </h1>
-              <p className="sr-only">数据、选品、调研、分析...</p>
+              <div className="mt-1 text-[18px] font-normal leading-7 text-[#34322d]">
+                💬 你的跨境运营助手，24h随时在线
+              </div>
+            </div>
           </div>
 
-          <div className="mx-auto mt-[34px] max-w-[768px]">
+          <div className="mt-7">
             <div id="sym:TaskComposer" className="transition">
               <AssistantThreadFrame>
                 <TaskComposer
@@ -267,6 +272,12 @@ export function MoreDataHomePage() {
                     }
                   }}
                   visualStyle="heroMinimal"
+                  containerClassName="relative z-30 w-full rounded-[24px] border border-[#e2e2df] bg-white shadow-[0_18px_44px_rgba(17,17,17,0.05)]"
+                  textareaClassName="min-h-[136px] max-h-[10em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-[14px] font-normal leading-6 text-[#34322d] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
+                  sendButtonClassName={cn(
+                    "h-10 w-10 min-w-0 rounded-full border border-transparent p-0 text-white shadow-none transition",
+                    composerCanSubmit ? "bg-[#111111] hover:bg-[#2a2a2a]" : "bg-[#dededc] hover:bg-[#d1d1cf]",
+                  )}
                 />
               </AssistantThreadFrame>
             </div>
@@ -274,84 +285,89 @@ export function MoreDataHomePage() {
               {notice}
             </p>
           </div>
-        </div>
-      </div>
 
-      <div
-        id="sym:homeCapabilityItems"
-        className="mx-auto mt-10 w-full max-w-[768px] rounded-[20px] bg-transparent px-2 py-2 opacity-95"
-      >
-        <div className="mx-auto flex w-full justify-center px-0">
-          <div className="flex w-full max-w-[768px] flex-wrap items-center justify-center gap-2 text-[16px] text-[#34322d]">
+          <div
+            id="sym:homeCapabilityItems"
+            className="mt-10 flex w-full flex-wrap items-center gap-x-6 gap-y-3 text-[16px] leading-6"
+          >
             {homeCapabilityItems.map((item) => {
               const active = item.id === activeCapabilityId;
               return (
                 <button
                   key={item.id}
+                  type="button"
                   onClick={() => applyBrowseCapability(item.id)}
-                  className={`inline-flex h-10 items-center gap-2 rounded-full border border-[rgba(0,0,0,0.06)] bg-transparent px-[14px] text-[16px] font-normal leading-6 transition duration-200 ${
-                    active
-                      ? "text-[#34322d]"
-                      : "text-[#34322d] hover:bg-[rgba(55,53,47,0.06)]"
-                  }`}
+                  className={cn(
+                    "inline-flex items-center gap-2 font-medium transition",
+                    active ? "text-[#111111]" : "text-[#8b8c87] hover:text-[#34322d]",
+                  )}
                 >
-                  <span className="inline-flex h-4 w-4 items-center justify-center">
-                    <PlatformLogo name={item.icon} color={item.accent} className="h-4 w-4" />
-                  </span>
+                  <PlatformLogo
+                    name={item.icon}
+                    color={active ? "#111111" : item.accent}
+                    className="h-[15px] w-[15px] shrink-0"
+                  />
                   {item.label}
                 </button>
               );
             })}
           </div>
-        </div>
-      </div>
 
-      <div className="px-4 pt-12 sm:px-6 lg:px-8">
-        <div className="mx-auto w-full max-w-[768px]">
-          <div className="pb-2 text-center font-serif text-[15px] font-normal leading-6 text-[#34322d]">探索精选提示词</div>
-
-          <div className="mt-4 grid gap-3 pb-6 md:grid-cols-2">
-            {cards.map((card) => (
-              <div
-                key={card.id}
-                role="button"
-                tabIndex={0}
-                aria-haspopup="dialog"
-                aria-label={`打开示例任务 ${card.title}`}
-                onClick={() => openPromptCard(card.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    openPromptCard(card.id);
-                  }
-                }}
-                className={`group relative overflow-hidden rounded-[18px] border text-left outline-none transition duration-200 ${
-                  "border-[rgba(0,0,0,0.06)] bg-white/70 shadow-none hover:bg-white hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)] focus-visible:bg-white focus-visible:shadow-[0_8px_24px_rgba(0,0,0,0.04)]"
-                }`}
-              >
-                <div className="flex min-h-[118px] flex-col px-4 py-4">
-                  <div className="min-w-0">
-                    <div className="line-clamp-3 text-[13px] leading-5 text-[#858481]">
-                      {card.body.length > 78 ? `${card.body.slice(0, 78)}…` : card.body}
+          <div className="pt-7">
+            <div className="grid gap-5 pb-6 md:grid-cols-2 xl:grid-cols-3">
+              {cards.map((card) => {
+                const capability = homeCapabilityItems.find((item) => card.capabilityIds.includes(item.id));
+                return (
+                  <div
+                    key={card.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-haspopup="dialog"
+                    aria-label={`打开示例任务 ${card.title}`}
+                    onClick={() => openPromptCard(card.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openPromptCard(card.id);
+                      }
+                    }}
+                    className="group relative overflow-hidden rounded-[18px] border border-white/70 bg-white/72 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)] outline-none transition duration-200 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)] focus-visible:bg-white focus-visible:shadow-[0_10px_24px_rgba(17,17,17,0.06)]"
+                  >
+                    <div className="flex min-h-[132px] flex-col px-5 py-[18px]">
+                      <div className="flex items-start gap-2.5">
+                        <span className="mt-1 inline-flex h-4 w-4 shrink-0 items-center justify-center">
+                          <PlatformLogo
+                            name={capability?.icon ?? "grid"}
+                            color={capability?.accent ?? "#8b9bb0"}
+                            className="h-4 w-4"
+                          />
+                        </span>
+                        <div className="min-w-0">
+                          <div className="line-clamp-1 text-[16px] font-semibold leading-6 text-[#111111]">
+                            {card.title}
+                          </div>
+                          <div className="mt-2 line-clamp-3 text-[14px] font-normal leading-6 text-[#747571]">
+                            {card.body.length > 78 ? `${card.body.slice(0, 78)}…` : card.body}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-auto flex items-end justify-end pt-3">
+                        <ArrowUp className="h-4 w-4 shrink-0 text-[#b1b2ae]" strokeWidth={1.8} />
+                      </div>
                     </div>
                   </div>
-                  <div className="mt-auto pt-3">
-                    <div className="font-serif text-[15px] font-normal leading-6 tracking-normal text-[#34322d]">{card.title}</div>
-                    <div className="mt-1 text-[13px] leading-[18px] text-[#858481]">{card.meta}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      </div>
+        </section>
       </div>
 
       <Dialog open={Boolean(selectedPrompt)} onOpenChange={(open) => (!open ? setSelectedPromptId(null) : null)}>
         <DialogContent className="max-w-[608px] !rounded-[18px] border-[rgba(0,0,0,0.08)] bg-white p-0 shadow-[0_20px_48px_rgba(24,24,27,0.12)] sm:!rounded-[18px]">
           {selectedPrompt ? (
             <div className="p-5">
-              <DialogTitle className="pr-8 font-serif text-[18px] font-normal leading-7 tracking-normal text-[#34322d]">
+              <DialogTitle className="pr-8 text-[18px] font-normal leading-7 tracking-normal text-[#34322d]">
                 {selectedPrompt.title}
               </DialogTitle>
               <DialogDescription className="mt-3 text-[13px] leading-6 text-[#858481]">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
@@ -10,10 +10,8 @@ import {
 import { Bot, ChevronDown, ListRestart, MessageCircleMore, ThumbsDown, ThumbsUp } from "@/components/ui/tabler-icons";
 import type {
   AgentAttachment,
-  DataSourceChain,
   PlatformSubtaskSnapshot,
   PlatformTaskArtifactRef,
-  TaskExecutionStep,
 } from "@/lib/agent-events";
 import { AgentRoutePlaceholder } from "@/components/agent-route-placeholder";
 import { MoreDataShell } from "@/components/more-data-shell";
@@ -49,7 +47,7 @@ import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import { notifySplitRevealComplete } from "@/lib/split-reveal-gate";
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import { cn } from "@/lib/utils";
-import { cancelToolOrchestration, formatAgentApiErrorForUser } from "@/lib/agent-api/client";
+import { cancelToolOrchestration } from "@/lib/agent-api/client";
 import {
   buildAcknowledgement,
   buildRoundViewModels,
@@ -95,7 +93,8 @@ export function AgentWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
-  const [clientMounted, setClientMounted] = useState(false);
+  const subscribeClientMounted = useCallback(() => () => {}, []);
+  const clientMounted = useSyncExternalStore(subscribeClientMounted, () => true, () => false);
   const historySessionId = useSearchParamSnapshot("sessionId");
   const scheduleTrial = useSearchParamFlagSnapshot("scheduleTrial");
   const scheduledRunRecord = useSearchParamFlagSnapshot("scheduledRunRecord");
@@ -106,10 +105,6 @@ export function AgentWorkspace() {
   const runId = urlRunId || currentRunId;
   const run = runId ? (runs.find((item) => item.id === runId) ?? null) : null;
   const report = run ? (reports.find((item) => item.id === run.reportId) ?? null) : null;
-
-  useEffect(() => {
-    setClientMounted(true);
-  }, []);
 
   const platformRouteReady = !isPlatformBackendEnabled() || clientMounted;
   const isPlatformSession =
@@ -335,9 +330,10 @@ function AgentRunWorkspaceView({
 
   const latestHasPlatformSteps = Boolean(latestRoundModel?.executionSteps?.length);
   const latestRoundIdForPanel = latestRoundModel?.roundId;
-  const latestPlatformSubtasks = latestRoundIdForPanel
-    ? (run.platformSubtasksByRound?.[latestRoundIdForPanel] ?? [])
-    : [];
+  const latestPlatformSubtasks = useMemo(
+    () => (latestRoundIdForPanel ? (run.platformSubtasksByRound?.[latestRoundIdForPanel] ?? []) : []),
+    [latestRoundIdForPanel, run.platformSubtasksByRound],
+  );
   const anySubtaskTabular = latestPlatformSubtasks.some((s) => hasTabularTaskResultFiles(s.artifacts));
   const effectivePanelArtifacts = panelSubtaskFocus?.artifacts ?? run.platformTaskArtifacts;
 
@@ -637,7 +633,7 @@ function AgentRunWorkspaceView({
         ) : undefined
       }
     >
-      <AssistantThreadFrame className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white" isRunning={composerShowsStop} onCancel={stopCurrentRound}>
+      <AssistantThreadFrame className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-transparent" isRunning={composerShowsStop} onCancel={stopCurrentRound}>
         <div
           ref={messagesScrollRef}
           className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-4 pt-6 sm:px-6"
@@ -684,7 +680,7 @@ function AgentRunWorkspaceView({
                     >
                       <div
                         className={cn(
-                          "rounded-[16px] border border-[#e5e7eb] bg-white px-3 py-3",
+                          "rounded-[16px] border border-[#e2e2df] bg-white px-3 py-3 shadow-[0_1px_2px_rgba(17,17,17,0.03)]",
                           round.uiLayout === "simple_chat" && cn("w-full", SIMPLE_CHAT_BUBBLE_MAX),
                         )}
                       >
@@ -718,11 +714,11 @@ function AgentRunWorkspaceView({
                   <div className="w-full max-w-[780px]">
                     <div className="space-y-3.5">
                       <div className="flex items-center gap-3 text-[14px] font-medium text-[#303734]">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-[#171717] text-white shadow-[0_14px_32px_rgba(23,23,23,0.18)]">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-[#111111] text-white shadow-none">
                           <Bot className="h-4 w-4" />
                         </div>
                         <div>
-                          <div className="text-[15px] font-semibold text-[#1f2421]">LinkData</div>
+                          <div className="text-[15px] font-semibold text-[#1f2421]">Alice</div>
                         </div>
                       </div>
 
@@ -749,10 +745,10 @@ function AgentRunWorkspaceView({
 
                       {splitRevealDone ? (
                         executionExpanded ? (
-                        <div className="rounded-[20px] border border-[#eceef1] bg-[#fcfcfd] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.03)]" data-testid="agent-execution-panel">
+                        <div className="rounded-[18px] border border-[#e2e2df] bg-white px-4 py-4 shadow-[0_1px_2px_rgba(17,17,17,0.03)]" data-testid="agent-execution-panel">
                           <div className="flex items-center justify-between gap-4">
                             <div>
-                              <div className="text-[16px] font-semibold tracking-[-0.02em] text-[#1f2421]">任务执行</div>
+                              <div className="text-[16px] font-semibold text-[#1f2421]">任务执行</div>
                             </div>
                             <div className="flex items-center">
                               {round.collapseExecution ? (
@@ -928,12 +924,12 @@ function AgentRunWorkspaceView({
               submitVariant={composerShowsStop ? "stop" : "send"}
               onStop={() => void stopCurrentRound()}
               onSubmit={() => void appendNote()}
-              containerClassName="overflow-visible rounded-[18px] border border-[#dde4ef] bg-[rgba(255,255,255,0.98)] shadow-[0_16px_36px_rgba(163,177,198,0.12)]"
-              textareaClassName="min-h-[84px] max-h-[12em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-[15px] leading-7 text-[#324357] caret-[#324357] outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-visible:[box-shadow:none!important]"
+              containerClassName="overflow-visible rounded-[18px] border border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]"
+              textareaClassName="min-h-[84px] max-h-[12em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-[14px] leading-6 text-[#34322d] caret-[#34322d] outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-visible:[box-shadow:none!important]"
               sendButtonClassName="h-9 w-9 rounded-[10px]"
             />
 
-            <div className="mt-3 text-center text-xs text-[#92a0b2]">内容由 AI 大模型生成，请仔细甄别</div>
+            <div className="mt-3 text-center text-xs text-[#8b8c87]">内容由 AI 大模型生成，请仔细甄别</div>
           </div>
         </div>
       </AssistantThreadFrame>

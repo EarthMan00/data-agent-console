@@ -877,7 +877,7 @@ export function PlatformSessionAgentWorkspace({
           </div>
         </div>
 
-        <div className="bg-[rgba(255,255,255,0.86)] px-4 py-4 backdrop-blur-xl sm:px-6">
+        <div className="bg-transparent px-4 py-4 sm:px-6">
           <div className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
             {scheduledRunRecord ? (
               <p className="py-1 text-center text-xs text-[#a1a1aa]">此为定时任务执行记录，不支持继续追问。</p>
@@ -904,7 +904,7 @@ export function PlatformSessionAgentWorkspace({
                   </Button>
                   <Button
                     type="button"
-                    className="h-11 min-w-[88px] flex-1 rounded-[10px] bg-[#18181b] text-white hover:bg-[#27272a] sm:flex-initial"
+                    className="h-11 min-w-[88px] flex-1 rounded-[10px] bg-[#111111] text-white hover:bg-[#2a2a2a] sm:flex-initial"
                     disabled={scheduleControlsLocked}
                     onClick={() => void onSaveSchedules()}
                   >
@@ -925,6 +925,8 @@ export function PlatformSessionAgentWorkspace({
                 onFilesSelected={() => {}}
                 onSubmit={() => void send()}
                 visualStyle="default"
+                containerClassName="overflow-visible rounded-[18px] border border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]"
+                textareaClassName="min-h-[84px] max-h-[12em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-[14px] leading-6 text-[#34322d] caret-[#34322d] outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-visible:[box-shadow:none!important]"
               />
             )}
           </div>

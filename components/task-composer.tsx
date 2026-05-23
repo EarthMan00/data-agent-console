@@ -2,13 +2,11 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BorderBeam } from "border-beam";
 import { ArrowUp, ChevronDown, CornerDownLeft, Paperclip, Square } from "@/components/ui/tabler-icons";
 
 import { homeCapabilityItems } from "@/lib/home-capability-items";
 import { getPlatformLogoSvgMarkup, PlatformLogo } from "@/components/platform-logo";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
@@ -128,6 +126,18 @@ function getTokenIds(container: HTMLElement) {
   );
 }
 
+function getSelectedToolTokenIds(container: HTMLElement) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return [];
+  const range = selection.getRangeAt(0);
+  if (!container.contains(range.commonAncestorContainer)) return [];
+
+  return Array.from(container.querySelectorAll<HTMLElement>("[data-tool-token='true'][data-tool-id]"))
+    .filter((node) => range.intersectsNode(node))
+    .map((node) => node.dataset.toolId ?? "")
+    .filter(Boolean);
+}
+
 function getToolTokenNearCaret(container: HTMLElement, direction: "backward" | "forward") {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return null;
@@ -227,7 +237,7 @@ function createToolTokenNode({
   button.dataset.toolId = capabilityId;
   button.dataset.sourceTag = capabilityId;
   button.className =
-    "group mx-0.5 inline-flex h-7 items-center gap-1.5 rounded-[10px] border border-transparent bg-[#e5efff] px-2.5 align-middle text-[16px] font-semibold leading-none text-[#1764ff]";
+    "group mx-0.5 inline-flex h-7 items-center gap-1.5 rounded-[10px] border border-transparent bg-[#e5efff] px-2.5 align-middle text-[14px] font-semibold leading-none text-[#1764ff]";
   button.setAttribute("contenteditable", "false");
   button.setAttribute("aria-label", `移除数据源 ${label}`);
 
@@ -292,7 +302,6 @@ export function TaskComposer({
   const [highlightedToolIndex, setHighlightedToolIndex] = useState(-1);
   const [attachmentNames, setAttachmentNames] = useState<string[]>([]);
   const [editorFocused, setEditorFocused] = useState(false);
-  const [composerActive, setComposerActive] = useState(false);
   const blurTimeoutRef = useRef<number | null>(null);
 
   const filteredTools = useMemo(() => homeCapabilityItems.filter((item) => item.id !== "scenarios"), []);
@@ -448,6 +457,32 @@ export function TaskComposer({
     return nextValue;
   }, [onValueChange]);
 
+  const deleteSelectionWithSources = useCallback((editor: HTMLElement) => {
+    const selectedToolIds = getSelectedToolTokenIds(editor);
+    if (selectedToolIds.length === 0) return false;
+
+    const selection = window.getSelection();
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    if (!selection || !range) return false;
+
+    suppressExternalSyncRef.current = true;
+    range.deleteContents();
+    selectedToolIds.forEach((id) => {
+      editor.querySelector<HTMLElement>(`[data-tool-token='true'][data-tool-id='${id}']`)?.remove();
+      onSourceRemove(id);
+    });
+    normalizeEditorContent(editor);
+    syncEditorValue();
+    closeMentionMenu();
+
+    const nextRange = document.createRange();
+    nextRange.selectNodeContents(editor);
+    nextRange.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(nextRange);
+    return true;
+  }, [onSourceRemove, syncEditorValue]);
+
   const removeToolFromEditor = useCallback((capabilityId: string) => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -555,30 +590,20 @@ export function TaskComposer({
     setSourceButtonOpen(true);
   };
 
-  const showComposerBeam = isHeroMinimal && (composerActive || editorFocused || sourceButtonOpen || mentionOpen);
-
   const composerCard = (
-    <Card
+    <div
       data-task-composer-root
-      onFocusCapture={() => setComposerActive(true)}
-      onBlurCapture={(event) => {
-        const nextTarget = event.relatedTarget;
-        if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
-          setComposerActive(false);
-        }
-      }}
-      onMouseDownCapture={() => setComposerActive(true)}
       className={
         containerClassName ??
         cn(
-          "relative z-30 w-full",
+          "relative z-30 w-full border text-[#243248]",
           isHeroMinimal
-            ? "rounded-[22px] !border-[#e5e7eb] !bg-none !bg-white !shadow-[0_12px_32px_rgba(0,0,0,0.02)] backdrop-blur-none"
-            : "rounded-[28px] border-[#e7e5e4] shadow-[0_18px_40px_rgba(15,23,42,0.06)]",
+            ? "rounded-[22px] !border-[#e2e2df] !bg-none !bg-white !shadow-[0_1px_2px_rgba(17,17,17,0.03)] backdrop-blur-none"
+            : "rounded-[18px] border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]",
         )
       }
     >
-      <CardContent className="p-0">
+      <div className="p-0">
           <div className={cn(isHeroMinimal ? "px-4 pb-2 pt-2" : "px-4 pb-3 pt-3")}>
             <div
             className="px-1"
@@ -635,6 +660,22 @@ export function TaskComposer({
                       }}
                       onKeyDown={(event) => {
                         normalizeSelectionOutsideToolToken(event.currentTarget);
+                        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+                          event.preventDefault();
+                          const selection = window.getSelection();
+                          const range = document.createRange();
+                          range.selectNodeContents(event.currentTarget);
+                          selection?.removeAllRanges();
+                          selection?.addRange(range);
+                          return;
+                        }
+                        if (
+                          (event.key === "Backspace" || event.key === "Delete") &&
+                          deleteSelectionWithSources(event.currentTarget)
+                        ) {
+                          event.preventDefault();
+                          return;
+                        }
                         const nearbyToken =
                           event.key === "Backspace"
                             ? getToolTokenNearCaret(event.currentTarget, "backward")
@@ -727,7 +768,7 @@ export function TaskComposer({
                       className={cn(
                         textareaClassName ??
                           (isHeroMinimal
-                            ? "min-h-[28px] max-h-[9em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-[16px] leading-7 text-[#34322d] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
+                            ? "min-h-[28px] max-h-[9em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-[14px] leading-6 text-[#34322d] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
                             : "min-h-[28px] max-h-[10em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1 pr-2 text-[14px] leading-7 text-[#1c1c1c] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"),
                       )}
                     />
@@ -989,8 +1030,8 @@ export function TaskComposer({
                           ? "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[#37352f] p-0 text-white shadow-none transition hover:bg-[#2f2d28]"
                           : "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[rgba(55,53,47,0.08)] p-0 text-white shadow-none transition hover:bg-[rgba(55,53,47,0.08)]"
                         : hasText
-                          ? "h-[38px] w-[38px] rounded-[14px] border border-transparent bg-[#2563eb] text-white shadow-[0_12px_24px_rgba(37,99,235,0.25)] transition hover:-translate-y-0.5 hover:bg-[#1d4ed8] hover:shadow-[0_16px_30px_rgba(37,99,235,0.24)]"
-                          : "h-[38px] w-[38px] rounded-[14px] border border-[#111111] bg-[linear-gradient(180deg,#1b1b1d,#111113)] text-white shadow-[0_12px_24px_rgba(15,15,18,0.18)] transition hover:-translate-y-0.5 hover:bg-[linear-gradient(180deg,#26262a,#121214)] hover:shadow-[0_16px_30px_rgba(15,15,18,0.24)]" )
+                          ? "h-[38px] w-[38px] rounded-[14px] border border-transparent bg-[#111111] text-white shadow-none transition hover:bg-[#2a2a2a]"
+                          : "h-[38px] w-[38px] rounded-[14px] border border-transparent bg-[#dededc] text-white shadow-none transition hover:bg-[#d1d1cf]" )
                 }
               >
                 {showStop ? (
@@ -1002,29 +1043,13 @@ export function TaskComposer({
             </div>
           </div>
         </div>
-      </CardContent>
-      </Card>
+      </div>
+      </div>
   );
 
   return (
     <div className="contents" data-assistant-ui-composer>
-      {isHeroMinimal ? (
-        <BorderBeam
-          active={showComposerBeam}
-          borderRadius={22}
-          brightness={1.12}
-          className="w-full"
-          colorVariant="ocean"
-          duration={2.6}
-          size="md"
-          strength={0.72}
-          theme="light"
-        >
-          {composerCard}
-        </BorderBeam>
-      ) : (
-        composerCard
-      )}
+      {composerCard}
     </div>
   );
 }

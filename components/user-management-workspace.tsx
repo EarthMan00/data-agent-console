@@ -142,11 +142,11 @@ export function UserManagementWorkspace() {
 
   return (
     <MoreDataShell currentPath="/user-management" currentRunLabel="用户管理">
-      <div className="mx-auto max-w-5xl px-6 py-8">
+      <div className="mx-auto max-w-[1180px] px-8 pb-12 pt-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-[#1e293b]">用户管理</h1>
-            <p className="mt-1 text-sm text-[#64748b]">
+            <h1 className="text-[24px] font-semibold leading-8 text-[#111111]">用户管理</h1>
+            <p className="mt-2 text-sm leading-6 text-[#747571]">
               查看账号与类型；仅管理员可访问本页。新建账号可选择普通用户或高级用户（不可创建管理员）。
             </p>
           </div>
@@ -162,9 +162,9 @@ export function UserManagementWorkspace() {
 
         {notice ? <p className="mt-4 text-sm text-red-600">{notice}</p> : null}
 
-        <div className="mt-6 overflow-hidden rounded-[14px] border border-[#e2e8f0] bg-white shadow-sm">
+        <div className="mt-8 overflow-hidden rounded-[18px] border border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-[#e2e8f0] bg-[#f8fafc] text-xs font-medium uppercase tracking-wide text-[#64748b]">
+            <thead className="border-b border-[#e2e2df] bg-[#f7f7f7] text-xs font-medium uppercase tracking-wide text-[#747571]">
               <tr>
                 <th className="px-4 py-3">用户名</th>
                 <th className="px-4 py-3">用户 ID</th>
@@ -192,32 +192,32 @@ export function UserManagementWorkspace() {
                   const isAdminRole = row.role === "admin";
                   const kindLabel = describeUserKind(row);
                   return (
-                    <tr key={row.user_id} className="border-b border-[#f1f5f9] last:border-0">
-                      <td className="px-4 py-3 font-medium text-[#334155]">{row.username}</td>
-                      <td className="max-w-[200px] truncate px-4 py-3 font-mono text-xs text-[#64748b]" title={row.user_id}>
+                    <tr key={row.user_id} className="border-b border-[#f0f0ef] last:border-0">
+                      <td className="px-4 py-3 font-medium text-[#111111]">{row.username}</td>
+                      <td className="max-w-[200px] truncate px-4 py-3 font-mono text-xs text-[#747571]" title={row.user_id}>
                         {row.user_id}
                       </td>
-                      <td className="px-4 py-3 text-[#64748b]">{row.email ?? "—"}</td>
+                      <td className="px-4 py-3 text-[#747571]">{row.email ?? "—"}</td>
                       <td className="px-4 py-3">
                         <span
                           className={`rounded-full px-2 py-0.5 text-xs ${
                             isAdminRole
                               ? "bg-violet-100 text-violet-800"
                               : kindLabel === "高级用户"
-                                ? "bg-emerald-100 text-emerald-800"
-                                : "bg-slate-100 text-slate-700"
+                                ? "bg-[#e9f7ef] text-[#166534]"
+                                : "bg-[#f0f0ef] text-[#52524f]"
                           }`}
                         >
                           {kindLabel}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-[#64748b]">{row.status}</td>
+                      <td className="px-4 py-3 text-[#747571]">{row.status}</td>
                       <td className="px-4 py-3 text-right">
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-8 rounded-[8px] text-[13px] text-[#475569]"
+                          className="h-8 rounded-[8px] text-[13px] text-[#52524f]"
                           onClick={() => {
                             setPwdTarget(row);
                             setPwdValue("");
@@ -248,14 +248,14 @@ export function UserManagementWorkspace() {
 
       <Dialog open={createOpen} onOpenChange={(o) => !o && setCreateOpen(false)}>
         <DialogContent className="max-w-md rounded-[14px]" aria-describedby={undefined}>
-          <DialogTitle className="text-lg text-[#1e293b]">新增账号</DialogTitle>
+          <DialogTitle className="text-lg text-[#111111]">新增账号</DialogTitle>
           <div className="grid gap-3 pt-2">
             <div className="grid gap-1">
-              <label className="text-xs text-[#64748b]">用户名</label>
+              <label className="text-xs text-[#747571]">用户名</label>
               <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} className="h-9 rounded-[10px]" />
             </div>
             <div className="grid gap-1">
-              <label className="text-xs text-[#64748b]">密码</label>
+              <label className="text-xs text-[#747571]">密码</label>
               <Input
                 type="password"
                 value={newPassword}
@@ -265,11 +265,11 @@ export function UserManagementWorkspace() {
               />
             </div>
             <div className="grid gap-1">
-              <label className="text-xs text-[#64748b]">用户类型</label>
+              <label className="text-xs text-[#747571]">用户类型</label>
               <select
                 value={newAccountKind}
                 onChange={(e) => setNewAccountKind(e.target.value as "standard" | "premium")}
-                className="h-9 rounded-[10px] border border-[#e2e8f0] bg-white px-3 text-sm"
+                className="h-9 rounded-[10px] border border-[#e2e2df] bg-white px-3 text-sm text-[#34322d]"
               >
                 <option value="standard">普通用户（仅对话，不含工具能力）</option>
                 <option value="premium">高级用户（可使用工具）</option>
@@ -289,13 +289,13 @@ export function UserManagementWorkspace() {
 
       <Dialog open={!!pwdTarget} onOpenChange={(o) => !o && setPwdTarget(null)}>
         <DialogContent className="max-w-md rounded-[14px]" aria-describedby={undefined}>
-          <DialogTitle className="text-lg text-[#1e293b]">
+          <DialogTitle className="text-lg text-[#111111]">
             修改密码{pwdTarget ? `：${pwdTarget.username}` : ""}
           </DialogTitle>
-          <p className="text-sm text-[#64748b]">直接设置新密码，无需验证旧密码。</p>
+          <p className="text-sm text-[#747571]">直接设置新密码，无需验证旧密码。</p>
           <div className="grid gap-3 pt-2">
             <div className="grid gap-1">
-              <label className="text-xs text-[#64748b]">新密码</label>
+              <label className="text-xs text-[#747571]">新密码</label>
               <Input
                 type="password"
                 value={pwdValue}
@@ -318,8 +318,8 @@ export function UserManagementWorkspace() {
 
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent className="max-w-md rounded-[14px]" aria-describedby={undefined}>
-          <DialogTitle className="text-lg text-[#1e293b]">确认删除</DialogTitle>
-          <p className="text-sm text-[#64748b]">
+          <DialogTitle className="text-lg text-[#111111]">确认删除</DialogTitle>
+          <p className="text-sm text-[#747571]">
             确定删除用户「{deleteTarget?.username}」？该用户在库中的会话、任务等关联数据将一并删除，且不可恢复。
           </p>
           <div className="flex justify-end gap-2 pt-4">

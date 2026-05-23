@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, UserRound } from "@/components/ui/tabler-icons";
+import { UserRound } from "@/components/ui/tabler-icons";
 
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { formatAgentApiErrorForUser, listSessionMessages } from "@/lib/agent-api/client";
@@ -422,7 +422,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
         ) : undefined
       }
     >
-      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-transparent">
         <div ref={scrollRef} className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-4 pt-6 sm:px-6">
           <div ref={messagesInnerRef} className={`mx-auto w-full ${SIMPLE_CHAT_COLUMN_MAX}`}>
             <div className="space-y-5">
@@ -523,7 +523,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
           </div>
         </div>
 
-        <div className="bg-[rgba(255,255,255,0.86)] px-4 py-4 backdrop-blur-xl sm:px-6">
+        <div className="bg-transparent px-4 py-4 sm:px-6">
           <div className={`mx-auto w-full ${SIMPLE_CHAT_COLUMN_MAX}`}>
             <TaskComposer
               value={draft}
@@ -537,6 +537,8 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
               onFilesSelected={() => {}}
               onSubmit={() => void send()}
               visualStyle="default"
+              containerClassName="overflow-visible rounded-[18px] border border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]"
+              textareaClassName="min-h-[84px] max-h-[12em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-[14px] leading-6 text-[#34322d] caret-[#34322d] outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-visible:[box-shadow:none!important]"
             />
           </div>
         </div>
@@ -544,4 +546,3 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     </MoreDataShell>
   );
 }
-

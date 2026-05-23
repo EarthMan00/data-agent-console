@@ -57,11 +57,11 @@ export function TaskExecutionStepsAssistantBubble({
       <div className="w-full space-y-3.5">
         <div className="flex w-full min-w-0 items-center justify-between gap-3 text-[14px] font-medium text-[#303734]">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#171717] text-white shadow-[0_14px_32px_rgba(23,23,23,0.18)]">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#111111] text-white shadow-none">
               <Bot className="h-4 w-4" />
             </div>
             <div>
-              <div className="text-[15px] font-semibold text-[#1f2421]">LinkData</div>
+              <div className="text-[15px] font-semibold text-[#1f2421]">Alice</div>
             </div>
           </div>
           <div className="shrink-0 text-[11px] text-[#94a3b8]">{formatTime(datetime)}</div>
@@ -74,10 +74,10 @@ export function TaskExecutionStepsAssistantBubble({
         />
 
         <div
-          className="rounded-[20px] border border-[#eceef1] bg-[#fcfcfd] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.03)]"
+          className="rounded-[18px] border border-[#e2e2df] bg-white px-4 py-4 shadow-[0_1px_2px_rgba(17,17,17,0.03)]"
           data-testid="platform-task-execution-panel"
         >
-          <div className="text-[16px] font-semibold tracking-[-0.02em] text-[#1f2421]">任务执行</div>
+          <div className="text-[16px] font-semibold text-[#1f2421]">任务执行</div>
           <div className="mt-4 space-y-0">
             {useLiveTimeline ? (
               <PlatformRoundStepTimeline

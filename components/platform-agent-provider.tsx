@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 
 import {
   AgentApiError,
+  checkAccessToken,
   createSession,
   login,
   refreshAccessToken,
@@ -112,13 +113,33 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const suppressLoginOpenUntilRef = useRef(0);
 
   useEffect(() => {
-    setAuth(loadAgentSession());
+    const snap = loadAgentSession();
+    setAuth(snap);
     setPlatformSessionId(loadPlatformSessionId());
     setAuthHydrated(true);
     const sync = () => setAuth(loadAgentSession());
     window.addEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
     return () => window.removeEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
   }, []);
+
+  useEffect(() => {
+    const snap = auth;
+    if (!snap?.accessToken || snap.displayName) return;
+    let cancelled = false;
+    void checkAccessToken(snap.accessToken)
+      .then((res) => {
+        if (cancelled || !res.username) return;
+        const next: AgentSessionSnapshot = { ...snap, displayName: res.username, userRole: res.user_role ?? snap.userRole };
+        saveAgentSession(next);
+        setAuth(next);
+      })
+      .catch(() => {
+        // 展示名补全失败不影响既有登录态。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [auth]);
 
   const openLogin = useCallback((banner?: string) => {
     void banner;
@@ -214,8 +235,9 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       access_token: string;
       refresh_token: string;
       user_id: string;
+      username?: string;
       user_role?: string | undefined;
-    }) => {
+    }, displayNameHint?: string) => {
       const prevSnap = loadAgentSession();
       const prevSid = loadPlatformSessionId();
       if (prevSnap?.accessToken && prevSid) {
@@ -232,6 +254,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
         accessToken: res.access_token,
         refreshToken: res.refresh_token,
         userId: res.user_id,
+        displayName: res.username ?? displayNameHint ?? res.user_id,
         userRole: res.user_role,
       };
       saveAgentSession(snap);
@@ -249,7 +272,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       setLoginError("");
       try {
         const res = await login(a, p);
-        await applyLoginResponse(res);
+        await applyLoginResponse(res, a.trim());
       } catch (e) {
         setLoginError(formatLoginError(e));
       } finally {
@@ -430,7 +453,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                 <div className="flex items-center gap-2.5">
                   <Image
                     src="/mdata-logo.png"
-                    alt="Mdata"
+                    alt="Alice"
                     width={31}
                     height={31}
                     className="h-[31px] w-[31px] object-contain"
@@ -438,7 +461,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     priority
                   />
                   <span className="text-[27px] font-semibold leading-[31px] text-white">
-                    Mdata
+                    Alice
                   </span>
                 </div>
               </div>
@@ -465,7 +488,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     className="h-[90px] max-w-[730px] text-left text-[30px] font-semibold leading-[45px] tracking-normal text-white transition-colors duration-300"
                   >
                     我是
-                    Mdata，跨境电商运营助手，掌握数据，洞察数据的神。请先登录
+                    Alice，跨境电商运营助手，掌握数据，洞察数据的神。请先登录
                   </h2>
 
                   <form

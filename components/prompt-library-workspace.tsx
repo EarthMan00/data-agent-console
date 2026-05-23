@@ -368,7 +368,7 @@ export function PromptLibraryWorkspace() {
         <div className="mx-auto max-w-[1180px]">
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div className="min-w-0 flex-1">
-              <h1 className="font-[family:var(--font-jakarta)] text-[24px] font-semibold text-[#18181b]">我的提示词</h1>
+              <h1 className="text-[24px] font-semibold leading-8 text-[#111111]">我的提示词</h1>
 
               <div className="mt-5 flex flex-wrap items-center gap-2">
                 <FilterChip
@@ -401,7 +401,7 @@ export function PromptLibraryWorkspace() {
                       value={newGroupName}
                       onChange={(e) => setNewGroupName(e.target.value)}
                       placeholder="请输入分组名称"
-                      className="h-8 w-[160px] rounded-[8px] border-[#d4d4d8] text-sm"
+                      className="h-8 w-[160px] rounded-[10px] border-[#e2e2df] text-sm"
                       onBlur={() => {
                         window.setTimeout(() => {
                           if (skipNewGroupBlurRef.current) {
@@ -432,7 +432,7 @@ export function PromptLibraryWorkspace() {
                     type="button"
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8 rounded-[8px] border-[#e5e7eb]"
+                    className="h-8 w-8 rounded-[10px] border-[#e2e2df]"
                     aria-label="新建分组"
                     onClick={() => setAddGroupOpen(true)}
                   >
@@ -449,11 +449,11 @@ export function PromptLibraryWorkspace() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="搜索提示词"
-                  className="h-9 w-[220px] rounded-[10px] border-[#e5e7eb] pl-9"
+                  className="h-9 w-[220px] rounded-[10px] border-[#e2e2df] pl-9"
                 />
               </div>
               <Button
-                className="h-9 rounded-[10px] bg-[#18181b] px-4 text-white hover:bg-[#27272a]"
+                className="h-9 rounded-[10px] bg-[#111111] px-4 text-white hover:bg-[#2a2a2a]"
                 onClick={openCreate}
               >
                 <Plus className="mr-1.5 h-4 w-4" />
@@ -471,7 +471,7 @@ export function PromptLibraryWorkspace() {
 
           {!busy && filteredPrompts.length === 0 ? (
             prompts.length === 0 ? (
-              <div className="mt-6 flex min-h-[min(420px,calc(100vh-280px))] flex-col items-center justify-center bg-white px-4 py-12">
+              <div className="mt-6 flex min-h-[min(420px,calc(100vh-280px))] flex-col items-center justify-center rounded-[18px] border border-[#e2e2df] bg-white px-4 py-12 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
                 <PromptLibraryEmptyIllustration />
                 <p className="max-w-md text-center text-[15px] leading-relaxed text-[#71717a]">
                   {tab.kind === "all"
@@ -503,15 +503,15 @@ export function PromptLibraryWorkspace() {
           ) : (
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {filteredPrompts.map((p) => (
-                <Card key={p.id} className="overflow-hidden border-[#e5e7eb]">
-                  <div className="min-h-[140px] bg-[#f5f5f5] px-4 py-4 text-[13px] leading-relaxed text-[#3f3f46]">
+                <Card key={p.id} className="overflow-hidden border-[#e2e2df] shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition hover:border-[#d4d4d0] hover:bg-white">
+                  <div className="min-h-[140px] bg-[#f7f7f7] px-4 py-4 text-[13px] leading-relaxed text-[#34322d]">
                     <p className="line-clamp-6 whitespace-pre-wrap">{p.prompt_text}</p>
                   </div>
-                  <CardContent className="border-t border-[#e5e7eb] px-4 py-3">
+                  <CardContent className="border-t border-[#e2e2df] px-4 py-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-[#18181b]">{p.title}</div>
-                        <div className="mt-1 text-xs text-[#a1a1aa]">{formatDateTime(p.updated_at)}</div>
+                        <div className="font-semibold text-[#111111]">{p.title}</div>
+                        <div className="mt-1 text-xs text-[#8b8c87]">{formatDateTime(p.updated_at)}</div>
                       </div>
                       <Popover>
                         <PopoverTrigger asChild>

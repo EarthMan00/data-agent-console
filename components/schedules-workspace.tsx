@@ -33,7 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { downloadAuthorizedFile, formatAgentApiErrorForUser, getTask, parseFastApiDetail } from "@/lib/agent-api/client";
+import { downloadAuthorizedFile, formatAgentApiErrorForUser, parseFastApiDetail } from "@/lib/agent-api/client";
 import {
   createUserScheduledTaskGroup,
   deleteUserScheduledTask,
@@ -549,7 +549,6 @@ export function SchedulesWorkspace() {
     return filteredTasks.filter((t) => t.title.toLowerCase().includes(q) || t.prompt_text.toLowerCase().includes(q));
   }, [filteredTasks, search]);
 
-  const runApiStatus = runStatusToApi(runStatusFilter);
   const displayRuns = useMemo(
     () => (primaryTab === "运行记录" ? filterRunsBySearch(runs, search) : []),
     [primaryTab, runs, search],
@@ -1177,7 +1176,7 @@ export function SchedulesWorkspace() {
           <div>
             {/* 第一行：与目标稿一致 — 仅 标题 | 搜索 + 创建（同一行、左右分栏） */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h1 className="shrink-0 font-[family:var(--font-jakarta)] text-[24px] font-semibold text-[#18181b]">定时任务</h1>
+              <h1 className="shrink-0 text-[24px] font-semibold leading-8 text-[#111111]">定时任务</h1>
               <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:justify-end">
                 <div className="relative w-full min-w-0 sm:w-[220px]">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
@@ -1185,12 +1184,12 @@ export function SchedulesWorkspace() {
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder={searchPlaceholder}
-                    className="h-9 w-full rounded-[10px] border-[#e5e7eb] pl-9"
+                    className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
                   />
                 </div>
                 <Button
                   type="button"
-                  className="h-9 shrink-0 rounded-[10px] bg-[#18181b] px-3 text-white hover:bg-[#27272a] sm:px-4"
+                  className="h-9 shrink-0 rounded-[10px] bg-[#111111] px-3 text-white hover:bg-[#2a2a2a] sm:px-4"
                   onClick={() => {
                     const g = createGroupIdForChip();
                     const q = g ? `&groupId=${encodeURIComponent(g)}` : "";
@@ -1237,8 +1236,8 @@ export function SchedulesWorkspace() {
                       className={cn(
                         "inline-flex h-8 items-center rounded-[10px] border px-3.5 text-xs font-medium transition",
                         activeChip === chip
-                          ? "border-[#e8e8ec] bg-[#f0f0f0] text-[#18181b] shadow-sm"
-                          : "border-[#e5e7eb] bg-white text-[#64748b] hover:border-[#d4d4d4] hover:bg-[#fafafa]",
+                          ? "border-[#e2e2df] bg-[#f0f0ef] text-[#111111] shadow-none"
+                          : "border-[#e2e2df] bg-white text-[#747571] hover:border-[#d4d4d0] hover:bg-[#f7f7f7]",
                       )}
                     >
                       {chip}
@@ -1251,7 +1250,7 @@ export function SchedulesWorkspace() {
                       value={newGroupName}
                       onChange={(e) => setNewGroupName(e.target.value)}
                       placeholder="请输入分组名称"
-                      className="h-8 w-[160px] rounded-[10px] border-[#e5e7eb] text-xs"
+                      className="h-8 w-[160px] rounded-[10px] border-[#e2e2df] text-xs"
                       onBlur={() => {
                         window.setTimeout(() => {
                           if (skipNewGroupBlurRef.current) {
@@ -1280,7 +1279,7 @@ export function SchedulesWorkspace() {
                       type="button"
                       aria-label="新建分组"
                       onClick={() => setAddGroupOpen(true)}
-                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-[#d4d4d8] bg-[#f7f7f7] text-[#64748b] transition hover:border-[#a1a1aa] hover:bg-[#f0f0f0] hover:text-[#18181b]"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-[#d4d4d0] bg-[#f7f7f7] text-[#747571] transition hover:border-[#a6a6a1] hover:bg-[#f0f0ef] hover:text-[#111111]"
                     >
                       <Plus className="h-4 w-4" />
                     </button>
@@ -1291,13 +1290,13 @@ export function SchedulesWorkspace() {
                     <button
                       type="button"
                       onClick={() => setFilterOpen((o) => !o)}
-                      className="inline-flex h-9 min-w-0 max-w-full items-center gap-1 rounded-[10px] border border-[#e5e7eb] bg-white px-2.5 text-sm text-[#64748b] transition hover:border-[#d4d4d4] sm:px-3"
+                      className="inline-flex h-9 min-w-0 max-w-full items-center gap-1 rounded-[10px] border border-[#e2e2df] bg-white px-2.5 text-sm text-[#747571] transition hover:border-[#d4d4d0] sm:px-3"
                     >
                       <span className="truncate">{currentStatusFilter}</span>
                       <ChevronDown className="h-4 w-4 shrink-0" />
                     </button>
                     {filterOpen ? (
-                      <div className="absolute right-0 top-10 z-30 min-w-[128px] rounded-[10px] border border-[#e5e7eb] bg-white py-1 shadow-lg">
+                      <div className="absolute right-0 top-10 z-30 min-w-[128px] rounded-[10px] border border-[#e2e2df] bg-white py-1 shadow-[0_12px_28px_rgba(17,17,17,0.08)]">
                         {statusOptions.map((item) => (
                           <button
                             key={item}
@@ -1306,7 +1305,7 @@ export function SchedulesWorkspace() {
                               setWorkflowStatusFilter(item as (typeof WORKFLOW_STATUS_OPTIONS)[number]);
                               setFilterOpen(false);
                             }}
-                            className="block w-full px-3 py-2 text-left text-sm text-[#475569] hover:bg-[#f8fafc]"
+                            className="block w-full px-3 py-2 text-left text-sm text-[#52524f] hover:bg-[#f7f7f7]"
                           >
                             {item}
                           </button>
@@ -1321,10 +1320,10 @@ export function SchedulesWorkspace() {
                   >
                     批量操作
                   </button>
-                  <div className="flex h-9 shrink-0 items-center gap-0.5 rounded-[10px] border border-[#e5e7eb] bg-white p-0.5">
+                  <div className="flex h-9 shrink-0 items-center gap-0.5 rounded-[10px] border border-[#e2e2df] bg-white p-0.5">
                     <button
                       type="button"
-                      className={cn("rounded-[8px] p-1.5", viewMode === "list" ? "bg-[#f4f4f5] text-[#18181b]" : "text-[#94a3b8]")}
+                      className={cn("rounded-[8px] p-1.5", viewMode === "list" ? "bg-[#f0f0ef] text-[#111111]" : "text-[#8b8c87]")}
                       onClick={() => setViewMode("list")}
                       aria-label="列表视图"
                     >
@@ -1332,7 +1331,7 @@ export function SchedulesWorkspace() {
                     </button>
                     <button
                       type="button"
-                      className={cn("rounded-[8px] p-1.5", viewMode === "grid" ? "bg-[#f4f4f5] text-[#18181b]" : "text-[#94a3b8]")}
+                      className={cn("rounded-[8px] p-1.5", viewMode === "grid" ? "bg-[#f0f0ef] text-[#111111]" : "text-[#8b8c87]")}
                       onClick={() => setViewMode("grid")}
                       aria-label="卡片视图"
                     >
@@ -1347,7 +1346,7 @@ export function SchedulesWorkspace() {
                   <button
                     type="button"
                     onClick={() => setFilterOpen((o) => !o)}
-                    className="inline-flex h-9 items-center gap-1 rounded-[10px] border border-[#e5e7eb] bg-white px-2.5 text-sm text-[#64748b] transition hover:border-[#d4d4d4] sm:px-3"
+                    className="inline-flex h-9 items-center gap-1 rounded-[10px] border border-[#e2e2df] bg-white px-2.5 text-sm text-[#747571] transition hover:border-[#d4d4d0] sm:px-3"
                   >
                     <span className="truncate">{currentStatusFilter}</span>
                     <ChevronDown className="h-4 w-4 shrink-0" />
@@ -1456,12 +1455,12 @@ export function SchedulesWorkspace() {
           ) : null}
 
           {primaryTab === "运行记录" && !busy && displayRuns.length === 0 ? (
-            <div className="mt-6 flex min-h-[min(360px,calc(100vh-360px))] flex-col items-center justify-center rounded-[16px] border border-[#f0f0f0] bg-white px-4 py-16">
+            <div className="mt-6 flex min-h-[min(360px,calc(100vh-360px))] flex-col items-center justify-center rounded-[18px] border border-[#e2e2df] bg-white px-4 py-16 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
               <div
-                className="mb-6 flex h-[88px] w-[88px] items-center justify-center rounded-2xl border-2 border-dashed border-[#e5e7eb] bg-[#fafafa]"
+                className="mb-6 flex h-[88px] w-[88px] items-center justify-center rounded-[18px] border-2 border-dashed border-[#e2e2df] bg-[#f7f7f7]"
                 aria-hidden
               >
-                <Box className="h-10 w-10 text-[#d1d1d6]" strokeWidth={1.05} />
+                <Box className="h-10 w-10 text-[#c9cac5]" strokeWidth={1.05} />
               </div>
               <p className="text-[15px] text-[#71717a]">暂无运行记录</p>
             </div>
@@ -1516,7 +1515,7 @@ export function SchedulesWorkspace() {
                 取消
               </Button>
               <Button
-                className="bg-[#18181b] text-white"
+                className="bg-[#111111] text-white hover:bg-[#2a2a2a]"
                 onClick={() => {
                   if (!moveTask || !platformAgent) return;
                   const gid = moveGroupId || null;
@@ -1590,8 +1589,8 @@ function ApiScheduledTaskCard({
   return (
     <Card
       className={cn(
-        "box-border flex h-[200px] w-full max-w-[290px] shrink-0 flex-col overflow-hidden border border-[#e2e7ef] bg-white p-0",
-        "min-[300px]:w-[290px] shadow-[0_1px_3px_rgba(15,23,42,0.07)]",
+        "box-border flex h-[200px] w-full max-w-[290px] shrink-0 flex-col overflow-hidden border border-[#e2e2df] bg-white p-0",
+        "min-[300px]:w-[290px] shadow-[0_1px_2px_rgba(17,17,17,0.03)]",
       )}
     >
       <div
@@ -1612,7 +1611,7 @@ function ApiScheduledTaskCard({
           onClick={() => canToggle && onToggleEnabled(!t.enabled)}
           className={cn(
             "flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 transition-colors disabled:opacity-40",
-            t.enabled && canToggle ? "bg-[#18181b]" : "bg-[#e5e7eb]",
+            t.enabled && canToggle ? "bg-[#111111]" : "bg-[#e2e2df]",
           )}
         >
           <span
@@ -1624,19 +1623,19 @@ function ApiScheduledTaskCard({
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden px-3 pt-1.5">
-        <div className="line-clamp-2 break-words text-[14px] font-semibold leading-snug text-[#18181b]">
+        <div className="line-clamp-2 break-words text-[14px] font-semibold leading-snug text-[#111111]">
           {t.title}
         </div>
-        <p className="mt-1 line-clamp-2 break-all text-[11px] leading-snug text-[#94a3b8]">
+        <p className="mt-1 line-clamp-2 break-all text-[11px] leading-snug text-[#8b8c87]">
           执行时间：{nextRunLabel(t)}
         </p>
       </div>
-      <div className="mt-auto flex shrink-0 items-center justify-end gap-1.5 border-t border-dashed border-[#e5e7eb] px-2.5 py-1.5">
+      <div className="mt-auto flex shrink-0 items-center justify-end gap-1.5 border-t border-dashed border-[#e2e2df] px-2.5 py-1.5">
         <Button
           type="button"
           variant="outline"
           size="sm"
-          className="h-7 max-w-full shrink rounded-[8px] border-[#e2e7ef] px-1.5 text-[11px]"
+          className="h-7 max-w-full shrink rounded-[8px] border-[#e2e2df] px-1.5 text-[11px]"
           onClick={onOpenRuns}
         >
           <Clock className="mr-0.5 h-3 w-3 shrink-0" />
@@ -1648,7 +1647,7 @@ function ApiScheduledTaskCard({
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-7 w-7 shrink-0 rounded-[8px] border-[#e2e7ef] text-[#64748b]"
+                className="h-7 w-7 shrink-0 rounded-[8px] border-[#e2e2df] text-[#747571]"
               >
                 <MoreVertical className="h-3.5 w-3.5" />
               </Button>
@@ -1793,8 +1792,8 @@ function ApiRunRecordRow({
   return (
     <div
       className={cn(
-        "flex gap-3 rounded-[12px] border border-[#e8eaef] bg-white p-4 shadow-sm transition-colors hover:bg-[#fafbfc] sm:gap-4 sm:p-5",
-        selected && "border-[#18181b] ring-1 ring-[#18181b] hover:bg-white",
+        "flex gap-3 rounded-[18px] border border-[#e2e2df] bg-white p-4 shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition-colors hover:border-[#d4d4d0] hover:bg-white sm:gap-4 sm:p-5",
+        selected && "border-[#111111] ring-1 ring-[#111111] hover:bg-white",
       )}
     >
       {bulkSelect ? (
@@ -1817,7 +1816,7 @@ function ApiRunRecordRow({
             >
               {st.text}
             </span>
-            <div className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-snug text-[#18181b]">
+            <div className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-snug text-[#111111]">
               {r.task_title_snapshot || "定时任务执行"}
             </div>
           </div>
@@ -1827,7 +1826,7 @@ function ApiRunRecordRow({
                 type="button"
                 disabled={downloading}
                 onClick={() => void onDownloadAll()}
-                className="inline-flex items-center gap-1.5 text-sm text-[#2563eb] transition hover:text-[#1d4ed8] hover:underline disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 text-sm text-[#111111] transition hover:text-[#2a2a2a] hover:underline disabled:opacity-50"
               >
                 <Download className="h-4 w-4 shrink-0" />
                 {downloading ? "准备中…" : "下载所有报告"}
@@ -1837,7 +1836,7 @@ function ApiRunRecordRow({
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#64748b] transition hover:bg-[#f0f0f0] hover:text-[#18181b]"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#747571] transition hover:bg-[#f0f0ef] hover:text-[#111111]"
                   aria-label="更多操作"
                 >
                   <MoreVertical className="h-5 w-5" />
@@ -1846,7 +1845,7 @@ function ApiRunRecordRow({
               <PopoverContent align="end" className="w-48 p-1" onOpenAutoFocus={(e) => e.preventDefault()}>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-[#18181b] hover:bg-[#f4f4f5]"
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-[#111111] hover:bg-[#f7f7f7]"
                   onClick={onViewProcess}
                 >
                   <Eye className="h-4 w-4 shrink-0" />
@@ -1864,8 +1863,8 @@ function ApiRunRecordRow({
             </Popover>
           </div>
         </div>
-        <p className="mt-3 line-clamp-6 text-sm leading-relaxed text-[#64748b] sm:line-clamp-4">{summaryText}</p>
-        <p className="mt-3 text-xs text-[#94a3b8]">完成时间：{finished}</p>
+        <p className="mt-3 line-clamp-6 text-sm leading-relaxed text-[#747571] sm:line-clamp-4">{summaryText}</p>
+        <p className="mt-3 text-xs text-[#8b8c87]">完成时间：{finished}</p>
       </div>
     </div>
   );

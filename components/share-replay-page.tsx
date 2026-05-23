@@ -58,7 +58,7 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
           <div className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-[#171717] text-white">
             <FileText className="h-3.5 w-3.5" />
           </div>
-          <div className="text-[13px] font-semibold tracking-[-0.01em] text-[#171717]">LinkData</div>
+          <div className="text-[13px] font-semibold tracking-[-0.01em] text-[#171717]">Alice</div>
           <div className="h-4 w-px bg-[#e5e7eb]" />
           <div className="truncate text-[12px] font-medium text-[#27272a]">{topTitle}</div>
           {generatedAt ? <div className="text-[11px] text-[#8b949e]">{generatedAt}</div> : null}

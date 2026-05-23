@@ -26,7 +26,7 @@ export default async function AdminLoginPage({ searchParams }: AdminLoginPagePro
         <div className="grid w-full max-w-[980px] gap-10 lg:grid-cols-[minmax(0,1.1fr)_420px]">
           <div className="hidden rounded-[32px] border border-[#ececec] bg-[linear-gradient(180deg,rgba(255,255,255,0.95),rgba(248,248,247,0.98))] p-10 shadow-[0_28px_80px_rgba(15,23,42,0.08)] lg:block">
             <div className="inline-flex items-center rounded-full border border-[#ececec] bg-white px-3 py-1 text-xs font-medium tracking-[0.14em] text-[#52525b]">
-              More Data Agent
+              Alice
             </div>
             <h1 className="mt-6 font-[family:var(--font-jakarta)] text-[40px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#18181b]">
               反馈后台

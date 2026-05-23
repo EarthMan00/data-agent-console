@@ -6,8 +6,8 @@ import { MoreDataShellRoot } from "@/components/more-data-shell";
 import { SuppressNextDevOverlay } from "@/components/suppress-next-dev-overlay";
 
 export const metadata: Metadata = {
-  title: "More Data Agent",
-  description: "More Data Agent 运营与研究工作台",
+  title: "Alice",
+  description: "Alice 跨境运营与研究工作台",
 };
 
 export default function RootLayout({

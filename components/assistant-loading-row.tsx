@@ -20,12 +20,12 @@ export function AssistantLoadingRow({
     label ?? (variant === "task" ? "任务执行中，正在同步结果…" : "助手正在思考，请稍候…");
   const shell =
     variant === "task"
-      ? "max-w-[min(100%,780px)] items-center gap-3 rounded-[16px] border border-dashed border-[#dbeafe] bg-[#eff6ff] px-4 py-3 text-[15px] text-[#475569] shadow-sm"
+      ? "max-w-[min(100%,780px)] items-center gap-3 rounded-[16px] border border-dashed border-[#e2e2df] bg-white px-4 py-3 text-[14px] text-[#747571] shadow-[0_1px_2px_rgba(17,17,17,0.03)]"
       : cn(
           SIMPLE_CHAT_BUBBLE_MAX,
-          "shrink-0 items-center gap-3 rounded-[16px] border border-dashed border-[#d4dbe8] bg-[#f8fafc] px-4 py-3 text-[15px] text-[#64748b] shadow-sm",
+          "shrink-0 items-center gap-3 rounded-[16px] border border-dashed border-[#e2e2df] bg-white px-4 py-3 text-[14px] text-[#747571] shadow-[0_1px_2px_rgba(17,17,17,0.03)]",
         );
-  const dotClass = variant === "task" ? "thinking-dots text-[#2563eb]" : "thinking-dots text-[#3b82f6]";
+  const dotClass = variant === "task" ? "thinking-dots text-[#111111]" : "thinking-dots text-[#111111]";
 
   return (
     <div className="flex w-full justify-start" role="status" aria-live="polite">

@@ -264,7 +264,7 @@ export function FavoritesWorkspace() {
         <div className="mx-auto max-w-[1180px]">
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div className="min-w-0 flex-1">
-              <h1 className="font-[family:var(--font-jakarta)] text-[24px] font-semibold text-[#18181b]">我的收藏夹</h1>
+              <h1 className="text-[24px] font-semibold leading-8 text-[#111111]">我的收藏夹</h1>
               <div className="mt-7 flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
@@ -316,14 +316,14 @@ export function FavoritesWorkspace() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="搜索收藏"
-                  className="h-9 w-full rounded-[10px] border-[#e5e7eb] pl-9"
+                  className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
                 />
               </div>
               <div className="relative w-full min-w-[220px] max-w-[280px] sm:w-[220px]">
                 <select
                   value={typeFilter}
                   onChange={(e) => setTypeFilter(e.target.value)}
-                  className="h-9 w-full cursor-pointer appearance-none rounded-[10px] border border-[#e5e7eb] bg-white py-0 pl-3 pr-9 text-sm text-[#52525b] outline-none transition hover:border-[#d4d4d8] focus-visible:ring-2 focus-visible:ring-[rgba(24,24,27,0.08)]"
+                  className="h-9 w-full cursor-pointer appearance-none rounded-[10px] border border-[#e2e2df] bg-white py-0 pl-3 pr-9 text-sm text-[#52524f] outline-none transition hover:border-[#d4d4d0] focus-visible:ring-2 focus-visible:ring-[rgba(24,24,27,0.1)]"
                   aria-label="按类型筛选"
                 >
                   {TYPE_FILTER_OPTIONS.map((opt) => (
@@ -353,18 +353,18 @@ export function FavoritesWorkspace() {
               filteredItems.map((item) => (
                 <Card
                   key={item.id}
-                  className="overflow-hidden border-[#e5e7eb] transition hover:border-[#d4d4d8]"
+                  className="overflow-hidden border-[#e2e2df] shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition hover:border-[#d4d4d0]"
                 >
                   <button
                     type="button"
                     onClick={() => openFavoriteReport(item.id)}
                     className="block w-full text-left"
                   >
-                    <div className="min-h-[140px] bg-[#fafafa] px-4 py-3 text-[12px] leading-relaxed text-[#64748b]">
+                    <div className="min-h-[140px] bg-[#f7f7f7] px-4 py-3 text-[12px] leading-relaxed text-[#747571]">
                       {(item.card_preview ?? "").slice(0, 600) || "（无预览摘要）"}
                     </div>
                   </button>
-                  <CardContent className="flex items-start justify-between gap-2 border-t border-[#e5e7eb] px-4 py-4">
+                  <CardContent className="flex items-start justify-between gap-2 border-t border-[#e2e2df] px-4 py-4">
                     <div className="flex min-w-0 flex-1 items-center gap-3">
                       <div
                         className={cn(
@@ -375,8 +375,8 @@ export function FavoritesWorkspace() {
                         {iconFor(item.result_kind)}
                       </div>
                       <div className="min-w-0">
-                        <div className="truncate font-medium text-[#18181b]">{item.title}</div>
-                        <div className="mt-1 text-sm text-[#a1a1aa]">{formatCardTime(item.updated_at)}</div>
+                        <div className="truncate font-medium text-[#111111]">{item.title}</div>
+                        <div className="mt-1 text-sm text-[#8b8c87]">{formatCardTime(item.updated_at)}</div>
                       </div>
                     </div>
                     <Popover>

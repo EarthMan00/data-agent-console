@@ -101,13 +101,13 @@ export function FeedbackDialog({
       <DialogContent className="max-w-[580px] rounded-[24px] border-[#ececec] p-0 shadow-[0_28px_80px_rgba(15,23,42,0.14)]">
         <div className="px-7 pb-7 pt-6">
           <div className="inline-flex items-center rounded-full border border-[#ececec] bg-[#fafaf9] px-3 py-1 text-xs font-medium tracking-[0.14em] text-[#52525b]">
-            More Data Agent
+            Alice
           </div>
           <DialogTitle className="mt-4 text-[24px] font-semibold tracking-[-0.03em] text-[#18181b]">
             问题反馈
           </DialogTitle>
           <DialogDescription className="mt-2 text-sm leading-6 text-[#71717a]">
-            你的反馈会直接进入 More Data Agent 的反馈表，方便后续排查与迭代。
+            你的反馈会直接进入 Alice 的反馈表，方便后续排查与迭代。
           </DialogDescription>
 
           <div className="mt-5 grid gap-3 text-sm text-[#52525b]">

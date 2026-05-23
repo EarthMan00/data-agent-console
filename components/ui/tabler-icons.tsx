@@ -21,6 +21,7 @@ export {
   IconCornerDownLeft as CornerDownLeft,
   IconCopy as Copy,
   IconDatabase as Database,
+  IconDeviceMobile as DeviceMobile,
   IconDownload as Download,
   IconDots as Ellipsis,
   IconDotsVertical as EllipsisVertical,

@@ -13,12 +13,14 @@ const ACCESS_KEY = "agent_platform.access_token";
 const REFRESH_KEY = "agent_platform.refresh_token";
 const USER_ID_KEY = "agent_platform.user_id";
 const USER_ROLE_KEY = "agent_platform.user_role";
+const USER_DISPLAY_NAME_KEY = "agent_platform.user_display_name";
 const PLATFORM_SESSION_KEY = "agent_platform.platform_session_id";
 
 export type AgentSessionSnapshot = {
   accessToken: string;
   refreshToken: string;
   userId: string;
+  displayName?: string | null;
   /** 登录时由服务端返回，用于前端展示管理员入口 */
   userRole?: string | null;
 };
@@ -32,13 +34,19 @@ export function loadAgentSession(): AgentSessionSnapshot | null {
     return null;
   }
   const userRole = sessionStorage.getItem(USER_ROLE_KEY);
-  return { accessToken, refreshToken, userId, userRole: userRole || undefined };
+  const displayName = sessionStorage.getItem(USER_DISPLAY_NAME_KEY);
+  return { accessToken, refreshToken, userId, displayName: displayName || undefined, userRole: userRole || undefined };
 }
 
 export function saveAgentSession(snapshot: AgentSessionSnapshot): void {
   sessionStorage.setItem(ACCESS_KEY, snapshot.accessToken);
   sessionStorage.setItem(REFRESH_KEY, snapshot.refreshToken);
   sessionStorage.setItem(USER_ID_KEY, snapshot.userId);
+  if (snapshot.displayName != null && snapshot.displayName !== "") {
+    sessionStorage.setItem(USER_DISPLAY_NAME_KEY, snapshot.displayName);
+  } else {
+    sessionStorage.removeItem(USER_DISPLAY_NAME_KEY);
+  }
   if (snapshot.userRole != null && snapshot.userRole !== "") {
     sessionStorage.setItem(USER_ROLE_KEY, snapshot.userRole);
   } else {
@@ -51,6 +59,7 @@ export function clearAgentSession(): void {
   sessionStorage.removeItem(REFRESH_KEY);
   sessionStorage.removeItem(USER_ID_KEY);
   sessionStorage.removeItem(USER_ROLE_KEY);
+  sessionStorage.removeItem(USER_DISPLAY_NAME_KEY);
   sessionStorage.removeItem(PLATFORM_SESSION_KEY);
 }
 
