@@ -7,7 +7,6 @@ import {
   ArrowRightLeft,
   Box,
   ChevronDown,
-  ChevronLeft,
   Clock,
   Download,
   Eye,
@@ -26,7 +25,7 @@ import { ScheduleResultPushSection, validateResultPushBlocks, type ResultPushBlo
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { RequiredAsterisk } from "@/components/required-mark";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -578,7 +577,8 @@ export function SchedulesWorkspace() {
       setNotice("请选择执行日期。");
       return;
     }
-    if (taskEnabled && !hasValidNextExecution) {
+    const enabledForSubmit = editId ? taskEnabled : true;
+    if (enabledForSubmit && !hasValidNextExecution) {
       setNotice("无法排程，请检查周期、星期/日期或时间。");
       return;
     }
@@ -597,7 +597,7 @@ export function SchedulesWorkspace() {
       saveScheduleCreateDraft({
         title: title.trim(),
         prompt: prompt.trim(),
-        taskEnabled,
+        taskEnabled: enabledForSubmit,
         scheduleKind,
         timeHhmm,
         selectedWeekdayValues: Array.from(selectedWeekdays).sort((a, b) => a - b),
@@ -780,55 +780,31 @@ export function SchedulesWorkspace() {
     [platformAgent, primaryTab, refreshRuns],
   );
 
-  if (createMode) {
-    return (
-      <MoreDataShell currentPath="/schedules" showTopHeader={false}>
-        <AutoToast
-          message={toastMessage}
-          variant={toastVariant}
-          onDismiss={() => {
-            setToastMessage(null);
-            setToastVariant("default");
-          }}
-          durationMs={2200}
-        />
-        <div className="px-8 pb-12 pt-5">
-          <div className="mx-auto max-w-[760px]">
-            {notice ? <p className="mb-6 text-sm text-[#52525b]">{notice}</p> : null}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                resetCreateFormToDefaults();
-                router.push("/schedules");
-              }}
-              className="-ml-2 h-8 px-2 text-[#52525b]"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              返回
-            </Button>
-            <h1 className="mt-4 text-[18px] font-semibold text-[#18181b]">
+  const scheduleFormDialog = createMode ? (
+    <Dialog
+      open={createMode}
+      onOpenChange={(open) => {
+        if (open) return;
+        resetCreateFormToDefaults();
+        router.push("/schedules");
+      }}
+    >
+      <DialogContent
+        className="max-h-[min(86vh,760px)] max-w-[640px] overflow-y-auto rounded-[24px] border-transparent p-0"
+        overlayClassName="bg-[rgba(17,17,17,0.42)] backdrop-blur-[1px]"
+      >
+        <div className="px-8 pb-6 pt-7">
+            <DialogTitle className="text-[22px] font-semibold text-[#18181b]">
               {editId ? "编辑定时任务" : "创建定时任务"}
-            </h1>
-            <p className="mt-2 text-sm text-[#71717a]">
+            </DialogTitle>
+            <p className="mt-3 text-[14px] leading-6 text-[#71717a]">
               {editId
                 ? "与新建相同的配置项；试跑后保存将更新本条任务。"
                 : "定时任务将按设定频率执行，请留意积分消耗"}
             </p>
+            {notice ? <p className="mt-4 text-[14px] text-[#52525b]">{notice}</p> : null}
 
-            <div className="mt-8 space-y-8">
-              <Card className="border-[#e2e2df] bg-white">
-                <CardContent className="flex items-center justify-between px-4 py-4">
-                  <div>
-                    <div className="font-medium text-[#18181b]">任务启用</div>
-                    <div className="mt-2 text-sm text-[#a1a1aa]">关闭后，任务将不会按调度执行</div>
-                  </div>
-                  <Switch checked={taskEnabled} onCheckedChange={setTaskEnabled} aria-label="任务启用" />
-                </CardContent>
-              </Card>
-
-              <div className="space-y-6">
+            <div className="mt-6 space-y-5">
                 <Field label="标题" required>
                   <Input
                     value={title}
@@ -866,13 +842,8 @@ export function SchedulesWorkspace() {
                     className="min-h-[160px] rounded-[12px] border-[#e5e7eb] px-4 py-4"
                   />
                 </Field>
-                <Field label="执行时间">
-                  <div
-                    className={cn(
-                      "grid grid-cols-1 gap-3",
-                      scheduleKind === "每天" ? "md:grid-cols-2" : "md:grid-cols-3",
-                    )}
-                  >
+                <Field label="执行时间" required>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <Select
                       value={scheduleKind}
                       onValueChange={(value) => {
@@ -887,7 +858,7 @@ export function SchedulesWorkspace() {
                         }
                       }}
                     >
-                      <SelectTrigger className="h-12 w-full rounded-[12px] border-[#e5e7eb]">
+                      <SelectTrigger className="h-12 w-full rounded-[12px] border-transparent bg-[#f7f7f7]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -901,12 +872,21 @@ export function SchedulesWorkspace() {
                       </SelectContent>
                     </Select>
 
+                    {scheduleKind === "每天" ? (
+                      <button
+                        type="button"
+                        disabled
+                        className="h-12 w-full rounded-[12px] bg-[#f7f7f7] px-3 text-left text-[14px] text-[#a1a1aa]"
+                      >
+                        无需选择
+                      </button>
+                    ) : null}
                     {scheduleKind === "不重复" ? (
                       <input
                         type="date"
                         value={runOnceDate}
                         onChange={(e) => setRunOnceDate(e.target.value)}
-                        className="h-12 w-full min-w-0 rounded-[12px] border border-[#e5e7eb] bg-white px-3 text-sm text-[#18181b] [color-scheme:light]"
+                        className="h-12 w-full min-w-0 rounded-[12px] border border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] [color-scheme:light]"
                       />
                     ) : null}
                     {scheduleKind === "每周" ? (
@@ -915,7 +895,7 @@ export function SchedulesWorkspace() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-12 w-full justify-between rounded-[12px] border-[#e5e7eb] px-3 text-left font-normal text-[#18181b]"
+                            className="h-12 w-full justify-between rounded-[12px] border-transparent bg-[#f7f7f7] px-3 text-left font-normal text-[#18181b]"
                           >
                             <span className={cn("truncate", selectedWeekdays.size === 0 && "text-[#9ca3af]")}>
                               {weekdayButtonLabel(selectedWeekdays)}
@@ -958,7 +938,7 @@ export function SchedulesWorkspace() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-12 w-full justify-between rounded-[12px] border-[#e5e7eb] px-3 text-left font-normal text-[#18181b]"
+                            className="h-12 w-full justify-between rounded-[12px] border-transparent bg-[#f7f7f7] px-3 text-left font-normal text-[#18181b]"
                           >
                             <span className={cn("truncate", selectedMonthDays.size === 0 && "text-[#9ca3af]")}>
                               {monthDayButtonLabel(selectedMonthDays)}
@@ -1003,7 +983,7 @@ export function SchedulesWorkspace() {
                       value={timeHhmm}
                       onValueChange={setTimeHhmm}
                     >
-                      <SelectTrigger className="h-12 w-full rounded-[12px] border-[#e5e7eb]">
+                      <SelectTrigger className="h-12 w-full rounded-[12px] border-transparent bg-[#f7f7f7]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1037,29 +1017,27 @@ export function SchedulesWorkspace() {
                     </p>
                   ) : null}
                 </Field>
-                <Field label="结果推送">
-                  <ScheduleResultPushSection
-                    key={resultPushFormKey}
-                    defaultBlocks={resultPushRef.current.length > 0 ? resultPushRef.current : undefined}
-                    onConfigSnapshot={({ blocks }) => {
-                      resultPushRef.current = blocks;
-                      if (editId) {
-                        persistResultPushBlocksForTask(editId, blocks);
-                      }
-                    }}
-                    onNotify={setNotice}
-                  />
-                </Field>
-              </div>
+                <ScheduleResultPushSection
+                  key={resultPushFormKey}
+                  headerLabel="结果推送"
+                  inlineAddTrigger
+                  defaultBlocks={resultPushRef.current.length > 0 ? resultPushRef.current : undefined}
+                  onConfigSnapshot={({ blocks }) => {
+                    resultPushRef.current = blocks;
+                    if (editId) {
+                      persistResultPushBlocksForTask(editId, blocks);
+                    }
+                  }}
+                  onNotify={setNotice}
+                />
             </div>
-          </div>
         </div>
         <div className="sticky bottom-0 z-20 border-t border-[#e5e7eb] bg-white px-8 py-4">
-          <div className="mx-auto flex max-w-[760px] flex-wrap items-center justify-end gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             {editId ? (
               <span className="mr-auto min-w-0 text-xs text-[#a1a1aa]">保存后将在列表中显示最新配置</span>
             ) : (
-              <span className="mr-auto min-w-0 text-xs text-[#a1a1aa]">试运行同样会消耗运行次数</span>
+              <span className="mr-auto min-w-0 text-xs text-[#a1a1aa]">确认后默认启用，试运行同样会消耗运行次数</span>
             )}
             <div className="relative z-10 flex flex-shrink-0 items-center justify-end gap-3">
               <Button
@@ -1143,15 +1121,15 @@ export function SchedulesWorkspace() {
                   }}
                   disabled={busy || tryRunSubmitBlocked}
                 >
-                  试运行
+                  确定
                 </Button>
               )}
             </div>
           </div>
         </div>
-      </MoreDataShell>
-    );
-  }
+      </DialogContent>
+    </Dialog>
+  ) : null;
 
   if (!isPlatformBackendEnabled() || !platformAgent) {
     return (
@@ -1174,6 +1152,7 @@ export function SchedulesWorkspace() {
         }}
         durationMs={2200}
       />
+      {scheduleFormDialog}
       <div className="px-8 pb-14 pt-5">
         <div className="mx-auto max-w-[1040px]">
           {error && !showScheduledLoadError && !showRunsLoadError ? (
@@ -1211,6 +1190,7 @@ export function SchedulesWorkspace() {
                   onClick={() => {
                     const g = createGroupIdForChip();
                     const q = g ? `&groupId=${encodeURIComponent(g)}` : "";
+                    setTaskEnabled(true);
                     router.push(`/schedules?create=1${q}`);
                   }}
                 >

@@ -48,6 +48,9 @@ const emptyFei = (): FeishuBlock => ({ id: newId(), type: "feishu", webhook: "",
 type ScheduleResultPushProps = {
   /** 从「试跑-上一步」等场景还原时的初始块 */
   defaultBlocks?: ResultPushBlock[] | null;
+  /** 弹窗表单内使用：标题与「添加提醒」放在同一行 */
+  headerLabel?: string;
+  inlineAddTrigger?: boolean;
   /** 配置变更时回传当前 blocks（试跑草稿等） */
   onConfigSnapshot?: (payload: { blocks: ResultPushBlock[] }) => void;
   /** 校验、说明类提示（如联调中） */
@@ -81,7 +84,13 @@ export function validateResultPushBlocks(blocks: ResultPushBlock[]): string | nu
  * 结果推送：多选渠道（图一）+ 邮箱/钉钉/飞书配置 cards（图二~五）。
  * 保存任务时写入服务端 `result_push_config`，执行结束后按渠道推送执行结果通知。
  */
-export function ScheduleResultPushSection({ defaultBlocks, onConfigSnapshot, onNotify }: ScheduleResultPushProps) {
+export function ScheduleResultPushSection({
+  defaultBlocks,
+  headerLabel,
+  inlineAddTrigger = false,
+  onConfigSnapshot,
+  onNotify,
+}: ScheduleResultPushProps) {
   const [blocks, setBlocks] = useState<PushBlock[]>(defaultBlocks != null ? defaultBlocks : []);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -150,32 +159,43 @@ export function ScheduleResultPushSection({ defaultBlocks, onConfigSnapshot, onN
     );
   };
 
+  const addTrigger = (
+    <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant={inlineAddTrigger ? "ghost" : "outline"}
+          className={cn(
+            inlineAddTrigger
+              ? "h-auto gap-1 rounded-[8px] px-0 py-0 text-[14px] font-medium text-[#18181b] hover:bg-transparent hover:text-[#111111]"
+              : "h-11 w-full justify-center gap-1.5 rounded-[12px] border-[#e5e7eb] text-[#52525b] shadow-sm",
+          )}
+        >
+          <Plus className="h-4 w-4" />
+          添加提醒
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[min(18rem,100vw-2rem)] p-0" align="end" onOpenAutoFocus={(e) => e.preventDefault()}>
+        <ChannelPickerBody
+          hasEmail={hasEmail}
+          hasDing={hasDing}
+          hasFei={hasFei}
+          onToggle={toggleChannel}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+
   return (
     <div className="space-y-4">
-      {blocks.length === 0 ? (
-        <div>
-          <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 w-full justify-center gap-1.5 rounded-[12px] border-[#e5e7eb] text-[#52525b] shadow-sm"
-              >
-                <Plus className="h-4 w-4" />
-                添加提醒
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[min(18rem,100vw-2rem)] p-0" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
-              <ChannelPickerBody
-                hasEmail={hasEmail}
-                hasDing={hasDing}
-                hasFei={hasFei}
-                onToggle={toggleChannel}
-              />
-            </PopoverContent>
-          </Popover>
+      {headerLabel ? (
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-[14px] font-medium text-[#52525b]">{headerLabel}</div>
+          {inlineAddTrigger ? addTrigger : null}
         </div>
       ) : null}
+
+      {blocks.length === 0 && !inlineAddTrigger ? <div>{addTrigger}</div> : null}
 
       {blocks.map((b) => {
         if (b.type === "email")
@@ -238,7 +258,7 @@ export function ScheduleResultPushSection({ defaultBlocks, onConfigSnapshot, onN
         );
       })}
 
-      {blocks.length > 0 ? (
+      {blocks.length > 0 && !inlineAddTrigger ? (
         <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
           <PopoverTrigger asChild>
             <Button
