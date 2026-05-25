@@ -429,6 +429,11 @@ function MoreDataShellComponent({
     return () => observer.disconnect();
   }, [historyBusy, historyHasMore, historySessions.length, loadMoreHistory]);
   const activeSessionId = platformAgent?.platformSessionId ?? null;
+  const urlRunId = searchParams.get("runId");
+  const urlSessionId = searchParams.get("sessionId");
+  const activeRun = (urlRunId ? runs.find((run) => run.id === urlRunId) : null) ?? runs.find((run) => run.id === currentRunId);
+  const effectiveActiveSessionId = urlSessionId || activeRun?.platformSessionId || activeSessionId;
+  const agentHasSpecificSelection = currentPath === "/agent" && Boolean(urlRunId || urlSessionId);
   const showAuthSidebar = clientMounted && isLoggedIn;
   /** 账户区：mount 前固定为「登录」，避免 token 仅在客户端存在时 hydration 不一致 */
   const headerAuth = platformAgent?.auth;
@@ -633,7 +638,7 @@ function MoreDataShellComponent({
 
               <nav className={cn("space-y-px", effectiveSidebarCollapsed ? "mt-3 px-2" : "px-2 pt-2")}>
               {sidebarNavItems.map(({ href, label, icon: Icon }) => {
-                const active = currentPath === href || (href === "/" && currentPath === "/agent");
+                const active = currentPath === href || (href === "/" && currentPath === "/agent" && !agentHasSpecificSelection);
                 return (
                   <Link
                     key={href}
@@ -690,7 +695,7 @@ function MoreDataShellComponent({
                     ) : null
                   ) : (
                     filteredHistorySessions.map((s) => {
-                      const historyItemActive = currentPath === "/agent" && activeSessionId === s.session_id;
+                      const historyItemActive = currentPath === "/agent" && effectiveActiveSessionId === s.session_id;
                       return (
                       <div
                         key={s.session_id}
