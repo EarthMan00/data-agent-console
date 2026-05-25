@@ -112,6 +112,8 @@ export function PromptLibraryWorkspace() {
   const [groups, setGroups] = useState<UserPromptGroupDto[]>([]);
   const [prompts, setPrompts] = useState<UserPromptDto[]>([]);
   const [search, setSearch] = useState("");
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const searchDialogInputRef = useRef<HTMLInputElement | null>(null);
   const [tab, setTab] = useState<FilterTab>({ kind: "all" });
 
   const [addGroupOpen, setAddGroupOpen] = useState(false);
@@ -134,6 +136,12 @@ export function PromptLibraryWorkspace() {
   const [renamePromptId, setRenamePromptId] = useState<string | null>(null);
   const [deletePromptId, setDeletePromptId] = useState<string | null>(null);
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!searchDialogOpen) return;
+    const timer = window.setTimeout(() => searchDialogInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [searchDialogOpen]);
 
   const refresh = useCallback(async () => {
     if (!platformAgent?.auth) return;
@@ -373,11 +381,40 @@ export function PromptLibraryWorkspace() {
       />
       <div className="px-8 pb-14 pt-5">
         <div className="mx-auto max-w-[1040px]">
-          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-5">
-            <div className="min-w-0 flex-1">
-              <h1 className="text-[24px] font-semibold leading-8 text-[#111111]">我的提示词</h1>
+          <div className="space-y-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h1 className="shrink-0 whitespace-nowrap text-[24px] font-semibold leading-8 text-[#111111]">我的提示词</h1>
+              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:justify-end">
+                <div className="relative w-full min-w-0 max-[960px]:hidden sm:w-[220px]">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="搜索提示词"
+                    className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label="搜索提示词"
+                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[#f7f7f5] max-[960px]:inline-flex"
+                  onClick={() => setSearchDialogOpen(true)}
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
+                <Button
+                  className="h-9 shrink-0 rounded-[10px] bg-[#111111] px-3 text-white hover:bg-[#2a2a2a] sm:px-4"
+                  onClick={openCreate}
+                >
+                  <Plus />
+                  创建提示词
+                </Button>
+              </div>
+            </div>
 
-              <div className="mt-5 flex flex-wrap items-center gap-2">
+            <div className="flex min-h-[40px] flex-wrap items-center gap-2">
                 <Tabs value={tabToValue(tab)} onValueChange={(value) => setTab(valueToTab(value))}>
                   <TabsList className="flex-wrap justify-start">
                     <TabsTrigger value="all">全部</TabsTrigger>
@@ -446,26 +483,6 @@ export function PromptLibraryWorkspace() {
                     <Plus />
                   </Button>
                 )}
-              </div>
-            </div>
-
-            <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="搜索提示词"
-                  className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9 sm:w-[220px]"
-                />
-              </div>
-              <Button
-                className="h-9 rounded-[10px] bg-[#111111] px-4 text-white hover:bg-[#2a2a2a]"
-                onClick={openCreate}
-              >
-                <Plus />
-                创建提示词
-              </Button>
             </div>
           </div>
 
@@ -600,6 +617,44 @@ export function PromptLibraryWorkspace() {
           )}
         </div>
       </div>
+
+      <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
+        <DialogContent className="max-w-[420px] rounded-[16px] p-5">
+          <DialogTitle className="text-[18px] font-semibold text-[#111111]">搜索提示词</DialogTitle>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+            <Input
+              ref={searchDialogInputRef}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") setSearchDialogOpen(false);
+              }}
+              placeholder="搜索提示词"
+              className="h-10 w-full rounded-[12px] border-[#e2e2df] pl-9"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            {search ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 rounded-[10px] border-[#e2e2df] px-3 text-[14px]"
+                onClick={() => setSearch("")}
+              >
+                清空
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              className="h-9 rounded-[10px] bg-[#111111] px-4 text-[14px] text-white hover:bg-[#2a2a2a]"
+              onClick={() => setSearchDialogOpen(false)}
+            >
+              完成
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent className="max-w-[540px] rounded-[18px] border-[#e5e7eb] p-0">
