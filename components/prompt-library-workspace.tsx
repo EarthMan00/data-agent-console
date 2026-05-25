@@ -119,7 +119,6 @@ export function PromptLibraryWorkspace() {
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const newGroupInputRef = useRef<HTMLInputElement | null>(null);
-  const skipNewGroupBlurRef = useRef(false);
 
   const [saveOpen, setSaveOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -439,51 +438,18 @@ export function PromptLibraryWorkspace() {
                     ))}
                   </TabsList>
                 </Tabs>
-                {addGroupOpen ? (
-                  <div className="flex items-center gap-1">
-                    <Input
-                      ref={newGroupInputRef}
-                      autoFocus
-                      value={newGroupName}
-                      onChange={(e) => setNewGroupName(e.target.value)}
-                      placeholder="请输入分组名称"
-                      className="h-9 w-[160px] rounded-[10px] border-[#e2e2df] text-[14px]"
-                      onBlur={() => {
-                        window.setTimeout(() => {
-                          if (skipNewGroupBlurRef.current) {
-                            skipNewGroupBlurRef.current = false;
-                            return;
-                          }
-                          void commitNewGroupInput();
-                        }, 0);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          skipNewGroupBlurRef.current = true;
-                          void commitNewGroupInput();
-                          return;
-                        }
-                        if (e.key === "Escape") {
-                          e.preventDefault();
-                          skipNewGroupBlurRef.current = true;
-                          setAddGroupOpen(false);
-                          setNewGroupName("");
-                        }
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="iconSm"
-                    aria-label="新建分组"
-                    onClick={() => setAddGroupOpen(true)}
-                  >
-                    <Plus />
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="iconSm"
+                  aria-label="新建分组"
+                  onClick={() => {
+                    setNewGroupName("");
+                    setAddGroupOpen(true);
+                  }}
+                >
+                  <Plus />
+                </Button>
               </div>
             </div>
           </div>
@@ -653,6 +619,56 @@ export function PromptLibraryWorkspace() {
               onClick={() => setSearchDialogOpen(false)}
             >
               完成
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={addGroupOpen}
+        onOpenChange={(open) => {
+          setAddGroupOpen(open);
+          if (!open) setNewGroupName("");
+        }}
+      >
+        <DialogContent className="max-w-[400px] rounded-[16px] p-5">
+          <DialogTitle className="text-[18px] font-semibold text-[#111111]">新建分组</DialogTitle>
+          <div>
+            <Input
+              id="prompt-library-new-group-name"
+              ref={newGroupInputRef}
+              autoFocus
+              aria-label="分组名称"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void commitNewGroupInput();
+                }
+              }}
+              placeholder="请输入分组名称"
+              className="h-10 rounded-[12px] border-[#e2e2df] text-[14px]"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-[10px] border-[#e2e2df] px-3 text-[14px]"
+              onClick={() => {
+                setAddGroupOpen(false);
+                setNewGroupName("");
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              className="h-9 rounded-[10px] bg-[#111111] px-4 text-[14px] text-white hover:bg-[#2a2a2a]"
+              onClick={() => void commitNewGroupInput()}
+            >
+              创建
             </Button>
           </div>
         </DialogContent>

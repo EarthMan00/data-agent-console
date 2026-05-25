@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   createContext,
@@ -15,6 +16,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  Bell,
   Bookmark,
   BookOpen,
   Clock3,
@@ -37,6 +39,7 @@ import {
 import { BrandLogo } from "@/components/brand-logo";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { isPlatformBackendEnabled } from "@/lib/agent-runtime";
 import {
@@ -378,6 +381,7 @@ function MoreDataShellComponent({
   const [historyPurgeConfirmId, setHistoryPurgeConfirmId] = useState<string | null>(null);
   const [historySearch, setHistorySearch] = useState("");
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const historySearchInputRef = useRef<HTMLInputElement | null>(null);
@@ -440,6 +444,12 @@ function MoreDataShellComponent({
   const showHeaderUserMenu = clientMounted && Boolean(headerAuth);
   const accountDisplayName = headerAuth?.displayName || headerAuth?.userId || "账号与设置";
   const accountAvatar = useMemo(() => getAccountAvatarMeta(accountDisplayName), [accountDisplayName]);
+
+  useEffect(() => {
+    if (!showHeaderUserMenu) {
+      setNotificationOpen(false);
+    }
+  }, [showHeaderUserMenu]);
 
   useEffect(() => {
     if (!historySearchOpen) return;
@@ -794,100 +804,117 @@ function MoreDataShellComponent({
             {!effectiveSidebarCollapsed && isPlatformBackendEnabled() && platformAgent ? (
               <div className="mt-auto shrink-0 px-2 pb-5 pt-4">
                 <div className="mx-[9px] mb-3 h-px bg-[#e7e7e4]" />
-                {showHeaderUserMenu && headerAuth ? (
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button
-                        type="button"
-                        className="flex h-9 w-full items-center gap-3 rounded-[10px] pl-[9px] pr-0.5 text-left text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
-                        aria-label="用户中心"
-                        title={headerAuth.userId}
+                <div className="flex h-9 w-full items-center gap-1">
+                  {showHeaderUserMenu && headerAuth ? (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className="flex h-9 min-w-0 flex-1 items-center gap-3 rounded-[10px] pl-[9px] pr-1 text-left text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
+                          aria-label="用户中心"
+                          title={headerAuth.userId}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold leading-none text-white"
+                            style={{ backgroundColor: accountAvatar.color }}
+                          >
+                            {accountAvatar.initial}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-[14px] font-normal leading-[21px] tracking-normal">
+                            {accountDisplayName}
+                          </span>
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        align="start"
+                        side="top"
+                        sideOffset={8}
+                        className="w-[300px] rounded-[20px] border border-[rgba(0,0,0,0.12)] bg-white p-0 text-[#34322d] shadow-[0_8px_32px_rgba(0,0,0,0.06)]"
                       >
-                        <span
-                          aria-hidden="true"
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold leading-none text-white"
-                          style={{ backgroundColor: accountAvatar.color }}
-                        >
-                          {accountAvatar.initial}
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-[14px] font-normal leading-[21px] tracking-normal">
-                          {accountDisplayName}
-                        </span>
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      align="start"
-                      side="top"
-                      sideOffset={8}
-                      className="w-[300px] rounded-[20px] border border-[rgba(0,0,0,0.12)] bg-white p-0 text-[#34322d] shadow-[0_8px_32px_rgba(0,0,0,0.06)]"
-                    >
-                      <div className="flex w-full gap-2 px-4 pb-3 pt-5">
-                        <span
-                          aria-hidden="true"
-                          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-[17px] font-semibold leading-none text-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]"
-                          style={{ backgroundColor: accountAvatar.color }}
-                        >
-                          {accountAvatar.initial}
-                        </span>
-                        <div className="flex min-w-0 flex-1 flex-col justify-center">
-                          <div className="truncate text-[14px] font-medium leading-[22px] text-[#34322d]">{accountDisplayName}</div>
-                          <div className="truncate text-[13px] font-normal leading-5 text-[#858481]" title={headerAuth.userId}>
-                            {headerAuth.userId}
+                        <div className="flex w-full gap-2 px-4 pb-3 pt-5">
+                          <span
+                            aria-hidden="true"
+                            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-[17px] font-semibold leading-none text-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]"
+                            style={{ backgroundColor: accountAvatar.color }}
+                          >
+                            {accountAvatar.initial}
+                          </span>
+                          <div className="flex min-w-0 flex-1 flex-col justify-center">
+                            <div className="truncate text-[14px] font-medium leading-[22px] text-[#34322d]">{accountDisplayName}</div>
+                            <div className="truncate text-[13px] font-normal leading-5 text-[#858481]" title={headerAuth.userId}>
+                              {headerAuth.userId}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex flex-col gap-3 px-3 pb-3">
-                        <div className="flex flex-col gap-0.5">
-                          <button
-                            type="button"
-                            className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-[14px] font-medium leading-5 text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
-                            onClick={() => router.replace("/")}
-                          >
-                            <Home className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                            主页
-                          </button>
-                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                            <UserRound className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                            账户
+                        <div className="flex flex-col gap-3 px-3 pb-3">
+                          <div className="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-[14px] font-medium leading-5 text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                              onClick={() => router.replace("/")}
+                            >
+                              <Home className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                              主页
+                            </button>
+                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
+                              <UserRound className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                              账户
+                            </div>
+                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
+                              <Settings className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                              设置
+                            </div>
+                            <div className="my-1 h-px bg-[rgba(0,0,0,0.06)]" />
+                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
+                              <HelpCircle className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                              获取帮助
+                            </div>
+                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
+                              <BookOpen className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                              文档
+                            </div>
+                            <button
+                              type="button"
+                              className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-[14px] font-medium leading-5 text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                              onClick={() => void platformAgent.logout()}
+                            >
+                              <LogOut className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                              退出登录
+                            </button>
                           </div>
-                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                            <Settings className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                            设置
-                          </div>
-                          <div className="my-1 h-px bg-[rgba(0,0,0,0.06)]" />
-                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                            <HelpCircle className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                            获取帮助
-                          </div>
-                          <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                            <BookOpen className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                            文档
-                          </div>
-                          <button
-                            type="button"
-                            className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-[14px] font-medium leading-5 text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
-                            onClick={() => void platformAgent.logout()}
-                          >
-                            <LogOut className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                            退出登录
-                          </button>
                         </div>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                ) : (
+                      </PopoverContent>
+                    </Popover>
+                  ) : (
+                    <button
+                      type="button"
+                      className="flex h-9 min-w-0 flex-1 items-center gap-3 rounded-[10px] pl-[9px] pr-1 text-left text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
+                      onClick={() => platformAgent.openLogin()}
+                    >
+                      <UserRound className="h-[18px] w-[18px] shrink-0 text-[#34322d]" strokeWidth={1.8} />
+                      <span className="min-w-0 flex-1 truncate text-[14px] font-normal leading-[21px] tracking-normal">
+                        账号与设置
+                      </span>
+                    </button>
+                  )}
                   <button
                     type="button"
-                    className="flex h-9 w-full items-center gap-3 rounded-[10px] pl-[9px] pr-0.5 text-left text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
-                    onClick={() => platformAgent.openLogin()}
+                    aria-label="通知提醒"
+                    title="通知提醒"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
+                    onClick={() => {
+                      if (!headerAuth) {
+                        platformAgent.openLogin("请先登录后再查看通知。");
+                        return;
+                      }
+                      setNotificationOpen(true);
+                    }}
                   >
-                    <UserRound className="h-[18px] w-[18px] shrink-0 text-[#34322d]" strokeWidth={1.8} />
-                    <span className="min-w-0 flex-1 truncate text-[14px] font-normal leading-[21px] tracking-normal">
-                      账号与设置
-                    </span>
+                    <Bell className="h-[18px] w-[18px]" strokeWidth={1.8} />
                   </button>
-                )}
+                </div>
               </div>
             ) : null}
 
@@ -933,7 +960,7 @@ function MoreDataShellComponent({
                 <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
                   <button
                     type="button"
-                    className="flex h-12 w-full items-center gap-2.5 rounded-lg bg-[rgba(55,53,47,0.06)] py-2 pl-2 pr-3 text-left text-sm text-[#34322d] transition hover:bg-[rgba(55,53,47,0.08)]"
+                    className="flex h-12 w-full items-center gap-2.5 rounded-lg py-2 pl-2 pr-3 text-left text-sm text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] focus-visible:bg-[rgba(55,53,47,0.06)]"
                     onClick={() => {
                       setHistorySearch("");
                       setHistorySearchOpen(false);
@@ -993,6 +1020,57 @@ function MoreDataShellComponent({
             </div>
           </div>
         ) : null}
+
+        <Dialog open={notificationOpen} onOpenChange={setNotificationOpen}>
+          <DialogContent
+            hideClose
+            aria-describedby={undefined}
+            overlayClassName="bg-[rgba(22,24,28,0.32)] backdrop-blur-[1px]"
+            className="h-[min(620px,calc(100vh-56px))] w-[min(828px,calc(100vw-32px))] max-w-none overflow-hidden rounded-[22px] border border-[rgba(0,0,0,0.06)] bg-white p-0 shadow-[0_28px_90px_rgba(15,23,42,0.18)] sm:rounded-[22px]"
+          >
+            <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[188px_minmax(0,1fr)] sm:grid-rows-none md:grid-cols-[228px_minmax(0,1fr)]">
+              <aside className="min-h-0 border-b border-[rgba(0,0,0,0.04)] bg-white px-[18px] py-4 sm:border-b-0 sm:border-r sm:py-6">
+                <div className="text-[18px] font-normal leading-7 text-[#858481]">消息盒子</div>
+                <nav className="mt-3 flex gap-2 overflow-x-auto sm:mt-5 sm:block sm:space-y-2 sm:overflow-visible">
+                  <button
+                    type="button"
+                    className="flex h-[49px] w-auto shrink-0 items-center gap-3 rounded-[10px] bg-[rgba(55,53,47,0.06)] px-4 text-left text-[#111111] sm:w-full sm:px-5"
+                  >
+                    <Bell className="h-5 w-5 shrink-0" strokeWidth={2.2} />
+                    <span className="text-[14px] font-medium leading-[21px]">通知提醒</span>
+                  </button>
+                </nav>
+              </aside>
+              <section className="relative flex min-h-0 flex-col bg-[#fbfbfb]">
+                <div className="flex h-[56px] shrink-0 items-center justify-between px-5 sm:px-8">
+                  <DialogTitle className="text-[16px] font-semibold leading-6 text-[#111111]">通知提醒</DialogTitle>
+                  <button
+                    type="button"
+                    aria-label="关闭消息盒子"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#9b9b98] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
+                    onClick={() => setNotificationOpen(false)}
+                  >
+                    <X className="h-6 w-6" strokeWidth={1.6} />
+                  </button>
+                </div>
+                <div className="flex min-h-0 flex-1 items-center justify-center pb-[34px]">
+                  <div className="flex flex-col items-center text-center">
+                    <Image
+                      src="/mdata-logo.png"
+                      alt=""
+                      width={48}
+                      height={48}
+                      aria-hidden="true"
+                      className="h-12 w-12 object-contain opacity-[0.12] grayscale"
+                      draggable={false}
+                    />
+                    <div className="mt-5 text-[18px] font-normal leading-7 text-[#9b9b98]">暂无消息</div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <main className={childManagedScroll ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-transparent" : "flex min-h-screen min-w-0 flex-col bg-transparent"}>
           {showTopHeader || currentRunLabel ? (

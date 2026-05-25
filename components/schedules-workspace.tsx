@@ -1037,7 +1037,9 @@ export function SchedulesWorkspace() {
             {editId ? (
               <span className="mr-auto min-w-0 text-xs text-[#a1a1aa]">保存后将在列表中显示最新配置</span>
             ) : (
-              <span className="mr-auto min-w-0 text-xs text-[#a1a1aa]">确认后默认启用，试运行同样会消耗运行次数</span>
+              <span className="mr-auto min-w-0 text-xs text-[#a1a1aa]">
+                创建流程：配置 -&gt; 试运行 -&gt; 保存启用，试运行同样会消耗运行次数
+              </span>
             )}
             <div className="relative z-10 flex flex-shrink-0 items-center justify-end gap-3">
               <Button
@@ -1121,7 +1123,7 @@ export function SchedulesWorkspace() {
                   }}
                   disabled={busy || tryRunSubmitBlocked}
                 >
-                  确定
+                  试运行并继续保存
                 </Button>
               )}
             </div>
@@ -1420,15 +1422,13 @@ export function SchedulesWorkspace() {
       >
         <DialogContent className="max-w-[400px] rounded-[16px] p-5">
           <DialogTitle className="text-[18px] font-semibold text-[#111111]">新建分组</DialogTitle>
-          <div className="space-y-2">
-            <label className="text-[14px] text-[#52525b]" htmlFor="schedule-new-group-name">
-              分组名称
-            </label>
+          <div>
             <Input
               id="schedule-new-group-name"
               ref={newGroupInputRef}
               autoFocus
               value={newGroupName}
+              aria-label="分组名称"
               onChange={(e) => setNewGroupName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {

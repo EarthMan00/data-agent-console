@@ -40,6 +40,7 @@ import { ArrowLeft, ArrowRight, Power } from "@/components/ui/tabler-icons";
 const LOGIN_INTRO_TEXT =
   "我是 Alice，跨境电商运营助手，掌握数据，洞察数据的神。请先登录";
 const LOGIN_INTRO_CHAR_INTERVAL_MS = 34;
+type LoginContinuation = () => void | Promise<void>;
 
 export type PlatformAgentContextValue = {
   auth: AgentSessionSnapshot | null;
@@ -51,7 +52,7 @@ export type PlatformAgentContextValue = {
    */
   authValidated: boolean;
   platformSessionId: string | null;
-  openLogin: (banner?: string) => void;
+  openLogin: (banner?: string, afterLogin?: LoginContinuation) => void;
   closeLogin: () => void;
   loginWithPassword: (account: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -110,11 +111,13 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const [loginStep, setLoginStep] = useState<"account" | "password">("account");
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [loginBanner, setLoginBanner] = useState("");
   const [loginIntroText, setLoginIntroText] = useState("");
   const [loginIntroDone, setLoginIntroDone] = useState(false);
   const accountInputRef = useRef<HTMLInputElement | null>(null);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
   const suppressLoginOpenUntilRef = useRef(0);
+  const loginContinuationRef = useRef<LoginContinuation | null>(null);
 
   useEffect(() => {
     const snap = loadAgentSession();
@@ -145,12 +148,13 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     };
   }, [auth]);
 
-  const openLogin = useCallback((banner?: string) => {
-    void banner;
+  const openLogin = useCallback((banner?: string, afterLogin?: LoginContinuation) => {
     if (Date.now() < suppressLoginOpenUntilRef.current) return;
+    loginContinuationRef.current = afterLogin ?? null;
     setAccount("");
     setPassword("");
     setLoginError("");
+    setLoginBanner(banner?.trim() ?? "");
     setLoginStep("account");
     setLoginIntroText("");
     setLoginIntroDone(false);
@@ -162,6 +166,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setAccount("");
     setPassword("");
     setLoginError("");
+    setLoginBanner("");
+    loginContinuationRef.current = null;
     setLoginStep("account");
     setLoginIntroText("");
     setLoginIntroDone(false);
@@ -287,6 +293,18 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       clearPlatformSessionId();
       setPlatformSessionId(null);
       setLoginOpen(false);
+      setLoginBanner("");
+      const continuation = loginContinuationRef.current;
+      loginContinuationRef.current = null;
+      if (continuation) {
+        try {
+          await continuation();
+        } catch (e) {
+          console.warn("[platform-agent] login_continuation_failed", {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
     },
     [],
   );
@@ -521,9 +539,14 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                       />
                     ) : null}
                   </h2>
+                  {loginBanner ? (
+                    <p className="mt-1 max-w-[640px] text-[14px] font-medium leading-6 text-white/70">
+                      {loginBanner}
+                    </p>
+                  ) : null}
 
                   <form
-                    className={`mt-5 h-[121px] w-full transition-[opacity,transform] duration-500 ${
+                    className={`mt-4 h-[121px] w-full transition-[opacity,transform] duration-500 ${
                       loginIntroDone
                         ? "translate-y-0 opacity-100"
                         : "pointer-events-none translate-y-2 opacity-0"

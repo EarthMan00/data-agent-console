@@ -108,7 +108,9 @@ export function MoreDataHomePage() {
         return;
       }
       if (!platformAgent.auth) {
-        platformAgent.openLogin("请先登录再发起任务。");
+        platformAgent.openLogin("登录后将继续发送当前任务。", () => {
+          void launchAgent(nextQuery);
+        });
         return;
       }
       setLaunching(true);

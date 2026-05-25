@@ -8,6 +8,7 @@ export {
   IconArrowUp as ArrowUp,
   IconArrowsExchange as ArrowRightLeft,
   IconArrowUpRight as ArrowUpRight,
+  IconBell as Bell,
   IconBookmark as Bookmark,
   IconBook as BookOpen,
   IconRobot as Bot,
