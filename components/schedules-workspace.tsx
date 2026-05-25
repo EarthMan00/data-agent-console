@@ -1186,7 +1186,7 @@ export function SchedulesWorkspace() {
           <div>
             {/* 第一行：与目标稿一致 — 仅 标题 | 搜索 + 创建（同一行、左右分栏） */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h1 className="shrink-0 text-[24px] font-semibold leading-8 text-[#111111]">定时任务</h1>
+              <h1 className="shrink-0 whitespace-nowrap text-[24px] font-semibold leading-8 text-[#111111]">定时任务</h1>
               <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:justify-end">
                 <div className="relative w-full min-w-0 max-[960px]:hidden sm:w-[220px]">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />

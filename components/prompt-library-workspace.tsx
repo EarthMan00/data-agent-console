@@ -414,7 +414,8 @@ export function PromptLibraryWorkspace() {
               </div>
             </div>
 
-            <div className="flex min-h-[40px] flex-wrap items-center gap-2">
+            <div className="flex min-h-[40px] flex-wrap items-center justify-between gap-x-4 gap-y-3">
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                 <Tabs value={tabToValue(tab)} onValueChange={(value) => setTab(valueToTab(value))}>
                   <TabsList className="flex-wrap justify-start">
                     <TabsTrigger value="all">全部</TabsTrigger>
@@ -483,6 +484,7 @@ export function PromptLibraryWorkspace() {
                     <Plus />
                   </Button>
                 )}
+              </div>
             </div>
           </div>
 

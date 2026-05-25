@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Download,
@@ -79,6 +79,8 @@ export function FavoritesWorkspace() {
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const searchDialogInputRef = useRef<HTMLInputElement | null>(null);
   const [typeFilter, setTypeFilter] = useState(TYPE_FILTER_ALL);
   const [activeChip, setActiveChip] = useState<ChipFilter>("全部");
   const [newFolderOpen, setNewFolderOpen] = useState(false);
@@ -92,6 +94,12 @@ export function FavoritesWorkspace() {
     () => folders.find((f) => f.name === "默认")?.id ?? null,
     [folders],
   );
+
+  useEffect(() => {
+    if (!searchDialogOpen) return;
+    const timer = window.setTimeout(() => searchDialogInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [searchDialogOpen]);
 
   const folderIdForRequest = useMemo(() => {
     if (activeChip === "全部") return undefined;
@@ -268,9 +276,9 @@ export function FavoritesWorkspace() {
         <div className="mx-auto max-w-[1040px]">
           <div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h1 className="text-[24px] font-semibold leading-8 text-[#111111]">我的收藏夹</h1>
+              <h1 className="shrink-0 whitespace-nowrap text-[24px] font-semibold leading-8 text-[#111111]">我的收藏夹</h1>
               <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:justify-end">
-                <div className="relative w-full min-w-0 sm:w-[220px]">
+                <div className="relative w-full min-w-0 max-[960px]:hidden sm:w-[220px]">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
                   <Input
                     value={search}
@@ -279,6 +287,16 @@ export function FavoritesWorkspace() {
                     className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
                   />
                 </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label="搜索收藏"
+                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[#f7f7f5] max-[960px]:inline-flex"
+                  onClick={() => setSearchDialogOpen(true)}
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
               </div>
             </div>
 
@@ -418,6 +436,44 @@ export function FavoritesWorkspace() {
               <FavoritesEmptyIllustration />
             ) : null}
           </div>
+
+          <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
+            <DialogContent className="max-w-[420px] rounded-[16px] p-5">
+              <DialogTitle className="text-[18px] font-semibold text-[#111111]">搜索收藏</DialogTitle>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+                <Input
+                  ref={searchDialogInputRef}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") setSearchDialogOpen(false);
+                  }}
+                  placeholder="搜索收藏"
+                  className="h-10 w-full rounded-[12px] border-[#e2e2df] pl-9"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                {search ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 rounded-[10px] border-[#e2e2df] px-3 text-[14px]"
+                    onClick={() => setSearch("")}
+                  >
+                    清空
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  className="h-9 rounded-[10px] bg-[#111111] px-4 text-[14px] text-white hover:bg-[#2a2a2a]"
+                  onClick={() => setSearchDialogOpen(false)}
+                >
+                  完成
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={Boolean(unfavoriteTarget)} onOpenChange={(o) => !o && setUnfavoriteTarget(null)}>
             <DialogContent className="max-w-[420px] gap-3">
