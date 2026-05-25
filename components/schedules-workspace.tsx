@@ -16,6 +16,7 @@ import {
   Plus,
   Search,
   Trash2,
+  X,
 } from "@/components/ui/tabler-icons";
 
 import { AutoToast } from "@/components/auto-toast";
@@ -44,6 +45,7 @@ import { Switch } from "@/components/ui/switch";
 import { downloadAuthorizedFile, formatAgentApiErrorForUser, parseFastApiDetail } from "@/lib/agent-api/client";
 import {
   createUserScheduledTaskGroup,
+  deleteUserScheduledTaskGroup,
   deleteUserScheduledTask,
   fetchAllScheduledTaskRuns,
   deleteScheduledTaskRun,
@@ -258,8 +260,6 @@ export function SchedulesWorkspace() {
     },
     [applyResultPushBlocks],
   );
-
-  const chipOptions = useMemo(() => ["全部", "默认", ...groups.map((g) => g.name).filter(Boolean)], [groups]);
 
   const restoreParam = useSyncExternalStore(
     () => () => {},
@@ -538,6 +538,25 @@ export function SchedulesWorkspace() {
       setBusy(false);
     }
   }, [newGroupName, groups, platformAgent, refreshGroupsAndTasks]);
+
+  const handleDeleteGroup = useCallback(async (group: UserScheduledTaskGroupDto) => {
+    if (!platformAgent) return;
+    const name = (group.name || "未命名").trim() || "未命名";
+    if (!window.confirm(`确定删除分组「${name}」？该分组下的定时任务将移回默认分组。`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      await platformAgent.withFreshToken(async (token) => {
+        await deleteUserScheduledTaskGroup(token, group.id);
+      });
+      if (activeChip === group.name) setActiveChip("全部");
+      await refreshGroupsAndTasks();
+    } catch (e) {
+      setError(formatAgentApiErrorForUser(e) || "删除分组失败");
+    } finally {
+      setBusy(false);
+    }
+  }, [activeChip, platformAgent, refreshGroupsAndTasks]);
 
   const filteredByChip = useMemo(
     () => filterTasksByChip(tasks, activeChip, groups),
@@ -1225,11 +1244,35 @@ export function SchedulesWorkspace() {
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                   <Tabs value={activeChip} onValueChange={setActiveChip}>
                     <TabsList className="flex-wrap justify-start">
-                      {chipOptions.map((chip) => (
-                        <TabsTrigger key={chip} value={chip}>
-                          <span className="max-w-[160px] truncate">{chip}</span>
-                        </TabsTrigger>
-                      ))}
+                      <TabsTrigger value="全部">全部</TabsTrigger>
+                      <TabsTrigger value="默认">默认</TabsTrigger>
+                      {groups.map((g) => {
+                        const name = g.name || "未命名";
+                        return (
+                          <div key={g.id} className="group/chip relative inline-flex items-center rounded-[8px]">
+                            <TabsTrigger value={name}>
+                              <span className="max-w-[160px] truncate">{name}</span>
+                            </TabsTrigger>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              aria-label={`删除分组 ${name}`}
+                              className="pointer-events-none absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-[#71717a] opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/chip:pointer-events-auto group-hover/chip:opacity-100"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void handleDeleteGroup(g);
+                              }}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        );
+                      })}
                     </TabsList>
                   </Tabs>
                   <Button

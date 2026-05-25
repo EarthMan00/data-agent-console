@@ -13,6 +13,7 @@ import {
   Plus,
   Search,
   StarOff,
+  X,
 } from "@/components/ui/tabler-icons";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { PageLostState } from "@/components/page-lost-state";
@@ -251,10 +252,7 @@ export function FavoritesWorkspace() {
     }
   };
 
-  const chipFolders = useMemo(() => {
-    const extras = folders.filter((f) => f.name !== "默认").map((f) => f.name);
-    return extras;
-  }, [folders]);
+  const chipFolders = useMemo(() => folders.filter((f) => f.name !== "默认"), [folders]);
 
   const iconFor = (kind: string | null | undefined) => {
     const k = (kind ?? "").toLowerCase();
@@ -306,11 +304,33 @@ export function FavoritesWorkspace() {
                   <TabsList className="flex-wrap justify-start">
                     <TabsTrigger value="全部">全部</TabsTrigger>
                     <TabsTrigger value="默认">默认</TabsTrigger>
-                    {chipFolders.map((name) => (
-                      <TabsTrigger key={name} value={name}>
-                        <span className="max-w-[160px] truncate">{name}</span>
-                      </TabsTrigger>
-                    ))}
+                    {chipFolders.map((folder) => {
+                      const name = folder.name || "未命名";
+                      return (
+                        <div key={folder.id} className="group/chip relative inline-flex items-center rounded-[8px]">
+                          <TabsTrigger value={name}>
+                            <span className="max-w-[160px] truncate">{name}</span>
+                          </TabsTrigger>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            aria-label={`删除文件夹 ${name}`}
+                            className="pointer-events-none absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-[#71717a] opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/chip:pointer-events-auto group-hover/chip:opacity-100"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void deleteEmptyFolder(folder.id, name);
+                            }}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      );
+                    })}
                   </TabsList>
                 </Tabs>
                 <Button
@@ -562,29 +582,6 @@ export function FavoritesWorkspace() {
             </DialogContent>
           </Dialog>
 
-          {folders.filter((f) => f.name !== "默认").length > 0 ? (
-            <div className="mt-10 border-t border-[#e5e7eb] pt-6 text-sm text-[#71717a]">
-              <span className="font-medium text-[#18181b]">管理文件夹</span>
-              <ul className="mt-2 space-y-1">
-                {folders
-                  .filter((f) => f.name !== "默认")
-                  .map((f) => (
-                    <li key={f.id} className="flex items-center justify-between gap-2">
-                      <span>{f.name}</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 text-xs text-red-600 hover:bg-red-50"
-                        onClick={() => void deleteEmptyFolder(f.id, f.name)}
-                      >
-                        删除（需为空）
-                      </Button>
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          ) : null}
         </div>
       </div>
     </MoreDataShell>

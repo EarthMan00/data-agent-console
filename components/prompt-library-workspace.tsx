@@ -420,19 +420,26 @@ export function PromptLibraryWorkspace() {
                     <TabsTrigger value="all">全部</TabsTrigger>
                     <TabsTrigger value="default">默认</TabsTrigger>
                     {groups.map((g) => (
-                      <div key={g.id} className="inline-flex items-center rounded-[8px]">
-                        <TabsTrigger value={`group:${g.id}`} className="rounded-r-none pr-2">
+                      <div key={g.id} className="group/chip relative inline-flex items-center rounded-[8px]">
+                        <TabsTrigger value={`group:${g.id}`}>
                           <span className="max-w-[160px] truncate">{g.name || "未命名"}</span>
                         </TabsTrigger>
                         <Button
                           type="button"
                           variant="ghost"
-                          size="iconSm"
                           aria-label={`删除分组 ${g.name || "未命名"}`}
-                          className="rounded-l-none rounded-r-[8px]"
-                          onClick={() => setDeleteGroupId(g.id)}
+                          className="pointer-events-none absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-[#71717a] opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/chip:pointer-events-auto group-hover/chip:opacity-100"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDeleteGroupId(g.id);
+                          }}
                         >
-                          <X />
+                          <X className="h-3 w-3" />
                         </Button>
                       </div>
                     ))}

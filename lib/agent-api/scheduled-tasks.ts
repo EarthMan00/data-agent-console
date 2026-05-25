@@ -69,6 +69,17 @@ export async function createUserScheduledTaskGroup(accessToken: string, name: st
   return data as UserScheduledTaskGroupDto;
 }
 
+export async function deleteUserScheduledTaskGroup(accessToken: string, groupId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/api/user-scheduled-task-groups/${encodeURIComponent(groupId)}`), {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await parseJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("delete scheduled task group failed", res.status, data);
+  }
+}
+
 export type ListUserScheduledTasksParams = {
   page?: number;
   page_size?: number;
