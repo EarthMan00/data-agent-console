@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { ChevronDown, FileText } from "@/components/ui/tabler-icons";
 
 import { ChatMarkdown } from "@/components/chat-markdown";
@@ -60,12 +61,21 @@ export function SimpleAssistantBubble({
     const t = streaming ? stripModelThinkingForStreamPartial(body) : stripModelThinkingForUi(body);
     return t === "（无回复）" ? "" : t;
   })();
-  const runTypewriter = typewriter && streaming && charLen(targetNorm) > 0;
+  const latchedStreamRef = useRef(false);
+  if (streaming) latchedStreamRef.current = true;
+
+  const runTypewriter = typewriter && latchedStreamRef.current && charLen(targetNorm) > 0;
   const { text: shown, revealing } = useTypewriterReveal(targetNorm, runTypewriter, {
     charIntervalMs: 22,
   });
   /** 仅在 SSE 进行中显示光标；流结束后继续打字机追平但不闪光标 */
   const showCursor = Boolean(streaming && runTypewriter && revealing);
+
+  useEffect(() => {
+    if (!revealing && !streaming) {
+      latchedStreamRef.current = false;
+    }
+  }, [revealing, streaming]);
 
   return (
     <div className="flex w-full justify-start">
