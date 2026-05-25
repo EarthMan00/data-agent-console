@@ -130,7 +130,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const [loginStep, setLoginStep] = useState<"account" | "password">("account");
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
-  const [loginBanner, setLoginBanner] = useState("");
   const [loginIntroFullText, setLoginIntroFullText] = useState(LOGIN_INTRO_TEXT);
   const [loginIntroText, setLoginIntroText] = useState("");
   const [loginIntroDone, setLoginIntroDone] = useState(false);
@@ -177,7 +176,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setAccount("");
     setPassword("");
     setLoginError("");
-    setLoginBanner(banner?.trim() ?? "");
     setLoginStep("account");
     setLoginIntroFullText(
       hasLoggedInOnThisDevice() ? LOGIN_RETURNING_TEXT : LOGIN_INTRO_TEXT,
@@ -197,7 +195,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setAccount("");
     setPassword("");
     setLoginError("");
-    setLoginBanner("");
     loginContinuationRef.current = null;
     setLoginStep("account");
     setLoginIntroText("");
@@ -325,7 +322,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       clearPlatformSessionId();
       setPlatformSessionId(null);
       setLoginOpen(false);
-      setLoginBanner("");
       const continuation = loginContinuationRef.current;
       loginContinuationRef.current = null;
       if (continuation) {
@@ -573,11 +569,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                       />
                     ) : null}
                   </h2>
-                  {loginBanner ? (
-                    <p className="mt-1 max-w-[640px] text-[14px] font-medium leading-6 text-white/70">
-                      {loginBanner}
-                    </p>
-                  ) : null}
                   <form
                     className={`mt-4 h-[121px] w-full transition-[opacity,transform] duration-500 ${
                       loginIntroDone

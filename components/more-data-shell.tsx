@@ -67,11 +67,12 @@ type MoreDataShellProps = {
   mainDecoration?: ReactNode;
   contentScrollMode?: "shell" | "child";
   showTopHeader?: boolean;
+  mainClassName?: string;
 };
 
 type ShellMeta = Pick<
   MoreDataShellProps,
-  "currentPath" | "rightRail" | "currentRunLabel" | "mainDecoration" | "contentScrollMode" | "showTopHeader"
+  "currentPath" | "rightRail" | "currentRunLabel" | "mainDecoration" | "contentScrollMode" | "showTopHeader" | "mainClassName"
 >;
 
 type ShellMetaContextValue = {
@@ -368,6 +369,7 @@ export function MoreDataShell({
   mainDecoration,
   contentScrollMode = "shell",
   showTopHeader = true,
+  mainClassName,
 }: MoreDataShellProps) {
   const shellMetaContext = useContext(ShellMetaContext);
   const setShellMeta = shellMetaContext?.setMeta;
@@ -380,8 +382,9 @@ export function MoreDataShell({
       mainDecoration,
       contentScrollMode,
       showTopHeader,
+      mainClassName,
     });
-  }, [currentPath, rightRail, currentRunLabel, mainDecoration, contentScrollMode, showTopHeader, setShellMeta]);
+  }, [currentPath, rightRail, currentRunLabel, mainDecoration, contentScrollMode, showTopHeader, mainClassName, setShellMeta]);
 
   return <>{children}</>;
 }
@@ -417,6 +420,7 @@ function MoreDataShellInner({ children }: { children: ReactNode }) {
       mainDecoration={meta.mainDecoration}
       contentScrollMode={meta.contentScrollMode}
       showTopHeader={meta.showTopHeader}
+      mainClassName={meta.mainClassName}
     >
       {children}
     </MoreDataShellComponent>
@@ -431,6 +435,7 @@ function MoreDataShellComponent({
   mainDecoration,
   contentScrollMode = "shell",
   showTopHeader = true,
+  mainClassName,
 }: MoreDataShellProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -1151,7 +1156,14 @@ function MoreDataShellComponent({
           </DialogContent>
         </Dialog>
 
-        <main className={childManagedScroll ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden" : "flex min-h-screen min-w-0 flex-col"}>
+        <main
+          className={cn(
+            childManagedScroll
+              ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+              : "flex min-h-screen min-w-0 flex-col",
+            mainClassName,
+          )}
+        >
           {showTopHeader || currentRunLabel ? (
             <header className="sticky top-0 z-50 flex h-14.5 items-center bg-white px-3 sm:px-4 md:px-6">
               <div className="flex min-w-0 items-center gap-3">

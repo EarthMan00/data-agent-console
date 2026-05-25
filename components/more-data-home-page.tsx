@@ -338,8 +338,8 @@ export function MoreDataHomePage() {
   }
 
   return (
-    <MoreDataShell currentPath="/">
-      <div className="flex flex-col pb-10 sm:pb-14">
+    <MoreDataShell currentPath="/" showTopHeader={false} mainClassName="bg-transparent">
+      <div className="flex min-h-screen flex-col bg-[#f7f7f7] pb-10 sm:pb-14">
         <section className="mx-auto w-full max-w-[1040px] px-4 pt-4 sm:px-6 sm:pt-8 lg:px-8 lg:pt-[56px]">
           <div className="flex items-center gap-3 sm:gap-5">
             <Image
