@@ -187,7 +187,6 @@ export function SchedulesWorkspace() {
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const newGroupInputRef = useRef<HTMLInputElement | null>(null);
-  const skipNewGroupBlurRef = useRef(false);
 
   const [search, setSearch] = useState("");
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
@@ -505,7 +504,6 @@ export function SchedulesWorkspace() {
   }, [activeChip, groups]);
 
   const commitNewGroup = useCallback(async () => {
-    if (!addGroupOpen) return;
     const name = newGroupName.trim();
     if (!name) {
       setAddGroupOpen(false);
@@ -540,7 +538,7 @@ export function SchedulesWorkspace() {
     } finally {
       setBusy(false);
     }
-  }, [addGroupOpen, newGroupName, groups, platformAgent, refreshGroupsAndTasks]);
+  }, [newGroupName, groups, platformAgent, refreshGroupsAndTasks]);
 
   const filteredByChip = useMemo(
     () => filterTasksByChip(tasks, activeChip, groups),
@@ -1252,49 +1250,19 @@ export function SchedulesWorkspace() {
                       ))}
                     </TabsList>
                   </Tabs>
-                  {addGroupOpen ? (
-                    <Input
-                      ref={newGroupInputRef}
-                      autoFocus
-                      value={newGroupName}
-                      onChange={(e) => setNewGroupName(e.target.value)}
-                      placeholder="请输入分组名称"
-                      className="h-8 w-[160px] rounded-[10px] border-[#e2e2df] text-[14px]"
-                      onBlur={() => {
-                        window.setTimeout(() => {
-                          if (skipNewGroupBlurRef.current) {
-                            skipNewGroupBlurRef.current = false;
-                            return;
-                          }
-                          void commitNewGroup();
-                        }, 0);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          skipNewGroupBlurRef.current = true;
-                          void commitNewGroup();
-                        }
-                        if (e.key === "Escape") {
-                          e.preventDefault();
-                          skipNewGroupBlurRef.current = true;
-                          setAddGroupOpen(false);
-                          setNewGroupName("");
-                        }
-                      }}
-                    />
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="iconSm"
-                      aria-label="新建分组"
-                      onClick={() => setAddGroupOpen(true)}
-                      className="shrink-0"
-                    >
-                      <Plus />
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="iconSm"
+                    aria-label="新建分组"
+                    onClick={() => {
+                      setNewGroupName("");
+                      setAddGroupOpen(true);
+                    }}
+                    className="shrink-0"
+                  >
+                    <Plus />
+                  </Button>
                 </div>
                 <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:shrink-0">
                   <Select
@@ -1458,6 +1426,58 @@ export function SchedulesWorkspace() {
               onClick={() => setSearchDialogOpen(false)}
             >
               完成
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={addGroupOpen}
+        onOpenChange={(open) => {
+          setAddGroupOpen(open);
+          if (!open) setNewGroupName("");
+        }}
+      >
+        <DialogContent className="max-w-[400px] rounded-[16px] p-5">
+          <DialogTitle className="text-[18px] font-semibold text-[#111111]">新建分组</DialogTitle>
+          <div className="space-y-2">
+            <label className="text-[14px] text-[#52525b]" htmlFor="schedule-new-group-name">
+              分组名称
+            </label>
+            <Input
+              id="schedule-new-group-name"
+              ref={newGroupInputRef}
+              autoFocus
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void commitNewGroup();
+                }
+              }}
+              placeholder="请输入分组名称"
+              className="h-10 rounded-[12px] border-[#e2e2df] text-[14px]"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-[10px] border-[#e2e2df] px-3 text-[14px]"
+              onClick={() => {
+                setAddGroupOpen(false);
+                setNewGroupName("");
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              className="h-9 rounded-[10px] bg-[#111111] px-4 text-[14px] text-white hover:bg-[#2a2a2a]"
+              onClick={() => void commitNewGroup()}
+            >
+              创建
             </Button>
           </div>
         </DialogContent>
