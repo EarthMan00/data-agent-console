@@ -72,7 +72,7 @@ export function FavoriteReportPage({ favoriteId }: { favoriteId: string }) {
       <div className="flex min-h-screen flex-col bg-[#f8fafc]">
         <header className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-[#e5e7eb] bg-white px-4 py-3 shadow-sm sm:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-[10px]" asChild>
+            <Button type="button" variant="ghost" size="icon" asChild>
               <Link href="/artifacts" aria-label="返回收藏夹">
                 <ArrowLeft className="h-4 w-4" />
               </Link>

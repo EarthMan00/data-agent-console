@@ -67,14 +67,9 @@ const PlatformAgentContext = createContext<PlatformAgentContextValue | null>(
 
 function formatLoginError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
-  const proxyHint =
-    /failed to fetch|load failed|networkerror/i.test(msg) &&
-    (process.env.NEXT_PUBLIC_AGENT_API_USE_PROXY ?? "").trim() !== "1"
-      ? " 若为从其它电脑访问，请在 .env.local 设置 NEXT_PUBLIC_AGENT_API_USE_PROXY=1 并重启 dev。"
-      : "";
 
   if (/failed to fetch|load failed|networkerror/i.test(msg)) {
-    return `无法连接登录服务，请检查网络或服务配置。${proxyHint}`;
+    return "当前无法连接登录服务，请检查网络后重试。若仍无法登录，请联系管理员。";
   }
   if (
     (e instanceof AgentApiError && (e.status === 401 || e.status === 403)) ||
@@ -83,6 +78,9 @@ function formatLoginError(e: unknown): string {
     )
   ) {
     return "账号或密码错误，请重新输入。";
+  }
+  if (/NEXT_PUBLIC|\.env|API_ORIGIN|API_USE_PROXY|dev/i.test(msg)) {
+    return "登录服务暂时不可用，请稍后重试或联系管理员。";
   }
   if (/[\u4e00-\u9fa5]/.test(msg)) {
     return msg;
@@ -460,7 +458,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     draggable={false}
                     priority
                   />
-                  <span className="text-[27px] font-semibold leading-[31px] text-white">
+                  <span className="mdata-auth-title text-[27px] font-medium leading-[31px] text-white">
                     Alice
                   </span>
                 </div>
@@ -485,7 +483,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                 <div className="h-[250px] w-[min(730px,calc(100vw-120px))]">
                   <h2
                     id="mdata-login-title"
-                    className="h-[90px] max-w-[730px] text-left text-[30px] font-semibold leading-[45px] tracking-normal text-white transition-colors duration-300"
+                    className="mdata-auth-title h-[90px] max-w-[730px] text-left text-[30px] font-medium leading-[45px] tracking-normal text-white transition-colors duration-300"
                   >
                     我是
                     Alice，跨境电商运营助手，掌握数据，洞察数据的神。请先登录
@@ -505,7 +503,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                       密码
                     </label>
                     <div className="flex h-[45px] items-center">
-                      <span className="inline-flex h-[45px] w-[103px] shrink-0 items-center text-[30px] font-bold leading-[45px] text-white">
+                      <span className="mdata-auth-label inline-flex h-[45px] w-[103px] shrink-0 items-center text-[30px] font-medium leading-[45px] text-white">
                         {loginStep === "account" ? "账号" : "密码"}
                       </span>
                       <input
@@ -531,7 +529,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                         onKeyDown={handleLoginInputKeyDown}
                         className={
                           loginStep === "account"
-                            ? "h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-bold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                            ? "mdata-auth-input h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-medium leading-none text-white caret-white outline-none placeholder:font-normal placeholder:text-[#4d4d4d]"
                             : "hidden"
                         }
                         autoComplete="username"
@@ -561,7 +559,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                         onKeyDown={handleLoginInputKeyDown}
                         className={
                           loginStep === "password"
-                            ? "h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-bold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                            ? "mdata-auth-input h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-medium leading-none text-white caret-white outline-none placeholder:font-normal placeholder:text-[#4d4d4d]"
                             : "hidden"
                         }
                         autoComplete="current-password"

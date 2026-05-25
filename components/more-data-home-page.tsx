@@ -100,9 +100,7 @@ export function MoreDataHomePage() {
 
     if (isPlatformBackendEnabled()) {
       if (!isAgentRuntimeConfigured()) {
-        setNotice(
-          "请配置 NEXT_PUBLIC_AGENT_API_ORIGIN，或设置 NEXT_PUBLIC_AGENT_API_USE_PROXY=1（局域网访问时推荐，避免访客机请求 127.0.0.1 导致 failed to fetch）。",
-        );
+        setNotice("当前服务暂时不可用，请稍后重试或联系管理员。");
         return;
       }
       if (!platformAgent) {
@@ -231,29 +229,29 @@ export function MoreDataHomePage() {
         </>
       }
     >
-      <div className="flex flex-col pb-14">
-        <section className="mx-auto w-full max-w-[1040px] px-8 pt-[56px]">
-          <div className="flex items-center gap-5">
+      <div className="flex flex-col pb-10 sm:pb-14">
+        <section className="mx-auto w-full max-w-[1040px] px-4 pt-4 sm:px-6 sm:pt-8 lg:px-8 lg:pt-[56px]">
+          <div className="flex items-center gap-3 sm:gap-5">
             <Image
               src="/mdata-logo.png"
               alt="Alice"
               width={76}
               height={76}
-              className="h-[76px] w-[76px] shrink-0 object-contain"
+              className="h-12 w-12 shrink-0 object-contain sm:h-[76px] sm:w-[76px]"
               draggable={false}
               priority
             />
             <div className="min-w-0">
-              <h1 className="text-[38px] font-semibold leading-[46px] text-[#111111]">
+              <h1 className="text-[32px] font-semibold leading-10 text-[#111111] sm:text-[38px] sm:leading-[46px]">
                 Alice
               </h1>
-              <div className="mt-1 text-[18px] font-normal leading-7 text-[#34322d]">
+              <div className="mt-0.5 text-[15px] font-normal leading-6 text-[#34322d] sm:mt-1 sm:text-[18px] sm:leading-7">
                 💬 你的跨境运营助手，24h随时在线
               </div>
             </div>
           </div>
 
-          <div className="mt-7">
+          <div className="mt-5 sm:mt-7">
             <div id="sym:TaskComposer" className="transition">
               <AssistantThreadFrame>
                 <TaskComposer
@@ -272,8 +270,8 @@ export function MoreDataHomePage() {
                     }
                   }}
                   visualStyle="heroMinimal"
-                  containerClassName="relative z-30 w-full rounded-[24px] border border-[#e2e2df] bg-white shadow-[0_18px_44px_rgba(17,17,17,0.05)]"
-                  textareaClassName="min-h-[136px] max-h-[10em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-[14px] font-normal leading-6 text-[#34322d] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
+                  containerClassName="relative z-30 w-full rounded-[20px] border border-[#e2e2df] bg-white shadow-[0_18px_44px_rgba(17,17,17,0.05)] sm:rounded-[24px]"
+                  textareaClassName="min-h-[112px] max-h-[10em] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-[14px] font-normal leading-6 text-[#34322d] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 sm:min-h-[136px]"
                   sendButtonClassName={cn(
                     "h-10 w-10 min-w-0 rounded-full border border-transparent p-0 text-white shadow-none transition",
                     composerCanSubmit ? "bg-[#111111] hover:bg-[#2a2a2a]" : "bg-[#dededc] hover:bg-[#d1d1cf]",
@@ -288,7 +286,7 @@ export function MoreDataHomePage() {
 
           <div
             id="sym:homeCapabilityItems"
-            className="mt-10 flex w-full flex-wrap items-center gap-x-6 gap-y-3 text-[16px] leading-6"
+            className="mt-7 flex w-full flex-wrap items-center gap-x-4 gap-y-2 text-[14px] leading-5 sm:mt-10 sm:gap-x-6 sm:gap-y-3 sm:text-[16px] sm:leading-6"
           >
             {homeCapabilityItems.map((item) => {
               const active = item.id === activeCapabilityId;
@@ -313,8 +311,8 @@ export function MoreDataHomePage() {
             })}
           </div>
 
-          <div className="pt-7">
-            <div className="grid gap-5 pb-6 md:grid-cols-2 xl:grid-cols-3">
+          <div className="pt-5 sm:pt-7">
+            <div className="grid gap-3 pb-6 sm:gap-5 md:grid-cols-2 xl:grid-cols-3">
               {cards.map((card) => {
                 const capability = homeCapabilityItems.find((item) => card.capabilityIds.includes(item.id));
                 return (
@@ -331,9 +329,9 @@ export function MoreDataHomePage() {
                         openPromptCard(card.id);
                       }
                     }}
-                    className="group relative overflow-hidden rounded-[18px] border border-white/70 bg-white/72 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)] outline-none transition duration-200 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)] focus-visible:bg-white focus-visible:shadow-[0_10px_24px_rgba(17,17,17,0.06)]"
+                    className="group relative overflow-hidden rounded-[14px] border border-white/70 bg-white/72 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)] outline-none transition duration-200 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)] focus-visible:bg-white focus-visible:shadow-[0_10px_24px_rgba(17,17,17,0.06)] sm:rounded-[18px]"
                   >
-                    <div className="flex min-h-[132px] flex-col px-5 py-[18px]">
+                    <div className="flex min-h-[112px] flex-col px-4 py-4 sm:min-h-[132px] sm:px-5 sm:py-[18px]">
                       <div className="flex items-start gap-2.5">
                         <span className="mt-1 inline-flex h-4 w-4 shrink-0 items-center justify-center">
                           <PlatformLogo
@@ -392,27 +390,13 @@ export function MoreDataHomePage() {
               </div>
 
               <div className="mt-7 flex items-center justify-end gap-2.5">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 rounded-[10px] border-[rgba(0,0,0,0.08)] bg-white px-4 text-[13px] text-[#34322d] shadow-none hover:bg-[rgba(55,53,47,0.06)]"
-                  onClick={() => setSelectedPromptId(null)}
-                >
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedPromptId(null)}>
                   取消
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 rounded-[10px] border-[rgba(0,0,0,0.08)] bg-white px-4 text-[13px] text-[#34322d] shadow-none hover:bg-[rgba(55,53,47,0.06)]"
-                  onClick={previewPromptRun}
-                >
+                <Button type="button" variant="outline" size="sm" onClick={previewPromptRun}>
                   查看回放
                 </Button>
-                <Button
-                  type="button"
-                  className="h-9 rounded-[10px] border border-[#34322d] bg-[#34322d] px-4 text-[13px] text-white shadow-none hover:bg-[#2f2d28]"
-                  onClick={usePromptCard}
-                >
+                <Button type="button" size="sm" onClick={usePromptCard}>
                   使用
                 </Button>
               </div>

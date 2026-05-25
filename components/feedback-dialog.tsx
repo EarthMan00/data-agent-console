@@ -136,10 +136,10 @@ export function FeedbackDialog({
           {notice ? <p className="mt-4 text-sm text-red-600">{notice}</p> : null}
 
           <div className="mt-6 flex justify-end gap-3">
-            <Button variant="outline" className="rounded-[10px]" onClick={() => onOpenChange(false)} disabled={submitting}>
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
               取消
             </Button>
-            <Button className="rounded-[10px]" onClick={submitFeedback} disabled={submitting || !message.trim()}>
+            <Button onClick={submitFeedback} disabled={submitting || !message.trim()}>
               {submitting ? (
                 <>
                   <LoaderCircle className="h-4 w-4 animate-spin" />

@@ -46,16 +46,16 @@ export function ReportView() {
             <div className="mt-1 text-sm text-[#747571]">{report.subtitle}</div>
           </div>
           <div className="flex items-center gap-2 text-[#747571]">
-            <Button aria-label="分享结果页" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setNotice("分享能力待接入。")}>
+            <Button aria-label="分享结果页" variant="ghost" size="iconSm" onClick={() => setNotice("分享能力待接入。")}>
               <Share2 className="h-4 w-4" />
             </Button>
-            <Button aria-label="下载结果页" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setNotice("导出能力待接入。")}>
+            <Button aria-label="下载结果页" variant="ghost" size="iconSm" onClick={() => setNotice("导出能力待接入。")}>
               <Download className="h-4 w-4" />
             </Button>
-            <Button aria-label="展开结果页" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setNotice("当前结果页已是全宽展开状态。")}>
+            <Button aria-label="展开结果页" variant="ghost" size="iconSm" onClick={() => setNotice("当前结果页已是全宽展开状态。")}>
               <Expand className="h-4 w-4" />
             </Button>
-            <Button aria-label="更多结果页操作" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setNotice("更多操作待接入。")}
+            <Button aria-label="更多结果页操作" variant="ghost" size="iconSm" onClick={() => setNotice("更多操作待接入。")}
             >
               <Ellipsis className="h-4 w-4" />
             </Button>
@@ -73,14 +73,13 @@ export function ReportView() {
                   onClick={() => setActiveTab(tab.id)}
                   variant={activeTab === tab.id ? "default" : "secondary"}
                   size="sm"
-                  className={`rounded-[10px] ${activeTab === tab.id ? "bg-[#111111] text-white hover:bg-[#2a2a2a]" : ""}`}
                 >
                   {tab.label}
                 </Button>
               ))}
             </div>
             <div className="flex items-center gap-3">
-              <Button className="rounded-[10px]" onClick={() => router.push(`/agent?runId=${run.id}`)}>
+              <Button onClick={() => router.push(`/agent?runId=${run.id}`)}>
                 返回任务页
               </Button>
             </div>

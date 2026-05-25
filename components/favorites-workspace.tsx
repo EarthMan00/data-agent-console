@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ChevronDown,
   Download,
   EllipsisVertical,
   FileSpreadsheet,
@@ -11,6 +10,7 @@ import {
   FolderInput,
   PackageOpen,
   Pencil,
+  Plus,
   Search,
   StarOff,
 } from "@/components/ui/tabler-icons";
@@ -19,8 +19,16 @@ import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   createFavoriteFolder,
   deleteFavoriteFolder,
@@ -53,20 +61,11 @@ const TYPE_FILTER_OPTIONS: { value: string; label: string }[] = [
 
 function FavoritesEmptyIllustration() {
   return (
-    <div className="flex flex-col items-center justify-center py-16">
-      <div className="relative flex flex-col items-center">
-        <div
-          className="pointer-events-none absolute left-1/2 top-[55%] h-10 w-[min(280px,72vw)] -translate-x-1/2 rounded-[50%] bg-[#eef2f7]/90 blur-[2px]"
-          aria-hidden
-        />
-        <span className="relative mb-1 flex h-[140px] w-[140px] items-center justify-center rounded-full bg-[#fafbfc] shadow-[inset_0_0_0_1px_#eef2f7]">
-          <PackageOpen className="h-[72px] w-[72px] text-[#d1d9e6]" strokeWidth={1.15} aria-hidden />
-        </span>
-        <span className="pointer-events-none absolute left-[18%] top-[22%] h-1.5 w-1.5 rounded-full bg-[#e2e8f0]" aria-hidden />
-        <span className="pointer-events-none absolute right-[16%] top-[28%] h-1 w-1 rounded-full bg-[#e2e8f0]" aria-hidden />
-        <span className="pointer-events-none absolute right-[22%] top-[40%] h-1.5 w-1.5 rounded-full bg-[#e8edf4]" aria-hidden />
-        <p className="relative mt-10 text-sm text-[#94a3b8]">暂无数据</p>
+    <div className="flex min-h-[min(420px,calc(100vh-320px))] flex-col items-center justify-center rounded-[18px] border border-white/70 bg-white/72 px-4 py-12 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
+      <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-[18px] border border-[#e2e2df] bg-[#f7f7f7]" aria-hidden>
+        <PackageOpen className="h-8 w-8 text-[#b1b2ae]" strokeWidth={1.35} />
       </div>
+      <p className="text-[15px] text-[#71717a]">暂无数据</p>
     </div>
   );
 }
@@ -254,63 +253,44 @@ export function FavoritesWorkspace() {
 
   const iconBgFor = (kind: string | null | undefined) => {
     const k = (kind ?? "").toLowerCase();
-    if (k === "csv" || k === "json" || k === "chatexcel") return "bg-[#16a34a]";
-    return "bg-[#3b82f6]";
+    if (k === "csv" || k === "json" || k === "chatexcel") return "bg-[#34322d]";
+    return "bg-[#747571]";
   };
 
   return (
-    <MoreDataShell currentPath="/artifacts">
-      <div className="px-8 pb-12 pt-8">
-        <div className="mx-auto max-w-[1180px]">
-          <div className="flex flex-wrap items-start justify-between gap-6">
+    <MoreDataShell currentPath="/artifacts" showTopHeader={false}>
+      <div className="px-8 pb-14 pt-5">
+        <div className="mx-auto max-w-[1040px]">
+          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-5">
             <div className="min-w-0 flex-1">
               <h1 className="text-[24px] font-semibold leading-8 text-[#111111]">我的收藏夹</h1>
-              <div className="mt-7 flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  onClick={() => setActiveChip("全部")}
-                  variant={activeChip === "全部" ? "secondary" : "ghost"}
-                  size="sm"
-                  className="h-7 rounded-[8px] px-3 text-xs"
-                >
-                  全部
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => setActiveChip("默认")}
-                  variant={activeChip === "默认" ? "secondary" : "ghost"}
-                  size="sm"
-                  className="h-7 rounded-[8px] px-3 text-xs"
-                >
-                  默认
-                </Button>
-                {chipFolders.map((name) => (
-                  <Button
-                    key={name}
-                    type="button"
-                    onClick={() => setActiveChip(name)}
-                    variant={activeChip === name ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-7 rounded-[8px] px-3 text-xs"
-                  >
-                    {name}
-                  </Button>
-                ))}
+              <div className="mt-5 flex flex-wrap items-center gap-2">
+                <Tabs value={activeChip} onValueChange={setActiveChip}>
+                  <TabsList className="h-9 flex-wrap justify-start">
+                    <TabsTrigger value="全部">全部</TabsTrigger>
+                    <TabsTrigger value="默认">默认</TabsTrigger>
+                    {chipFolders.map((name) => (
+                      <TabsTrigger key={name} value={name}>
+                        <span className="max-w-[160px] truncate">{name}</span>
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 rounded-[8px]"
+                  className="h-8 w-8 rounded-[10px]"
                   title="新建文件夹"
                   onClick={() => setNewFolderOpen(true)}
                 >
-                  +
+                  <Plus className="h-4 w-4" />
                 </Button>
               </div>
             </div>
 
-            <div className="flex shrink-0 flex-col items-end gap-2">
-              <div className="relative w-full min-w-[220px] max-w-[280px] sm:w-[220px]">
+            <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+              <div className="relative w-full min-w-[220px] sm:w-[220px]">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
                 <Input
                   value={search}
@@ -319,115 +299,108 @@ export function FavoritesWorkspace() {
                   className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
                 />
               </div>
-              <div className="relative w-full min-w-[220px] max-w-[280px] sm:w-[220px]">
-                <select
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                  className="h-9 w-full cursor-pointer appearance-none rounded-[10px] border border-[#e2e2df] bg-white py-0 pl-3 pr-9 text-sm text-[#52524f] outline-none transition hover:border-[#d4d4d0] focus-visible:ring-2 focus-visible:ring-[rgba(24,24,27,0.1)]"
-                  aria-label="按类型筛选"
-                >
-                  {TYPE_FILTER_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94a3b8]"
-                  aria-hidden
-                />
+              <div className="relative w-full min-w-[220px] sm:w-[220px]">
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="h-9 rounded-[10px] border-[#e2e2df]">
+                    <SelectValue placeholder="全部类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {TYPE_FILTER_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>
 
           {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
-          {busy ? <p className="mt-6 text-sm text-[#71717a]">加载中…</p> : null}
+          {busy ? <p className="mt-8 text-sm text-[#71717a]">加载中…</p> : null}
 
           <div
             className={cn(
               "mt-8",
-              !busy && filteredItems.length > 0 ? "grid gap-4 sm:grid-cols-2" : "min-h-[min(420px,calc(100vh-280px))]",
+              !busy && filteredItems.length > 0 ? "grid gap-5 md:grid-cols-2" : "",
             )}
           >
             {!busy && filteredItems.length > 0 ? (
               filteredItems.map((item) => (
                 <Card
                   key={item.id}
-                  className="overflow-hidden border-[#e2e2df] shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition hover:border-[#d4d4d0]"
+                  className="group relative overflow-hidden rounded-[18px] border border-white/70 bg-white/72 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition duration-200 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)]"
                 >
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
                     onClick={() => openFavoriteReport(item.id)}
-                    className="block w-full text-left"
+                    className="block h-auto w-full whitespace-normal rounded-none p-0 text-left font-normal hover:bg-transparent"
                   >
-                    <div className="min-h-[140px] bg-[#f7f7f7] px-4 py-3 text-[12px] leading-relaxed text-[#747571]">
-                      {(item.card_preview ?? "").slice(0, 600) || "（无预览摘要）"}
-                    </div>
-                  </button>
-                  <CardContent className="flex items-start justify-between gap-2 border-t border-[#e2e2df] px-4 py-4">
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <div
-                        className={cn(
-                          "flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px]",
-                          iconBgFor(item.result_kind),
-                        )}
-                      >
-                        {iconFor(item.result_kind)}
+                    <CardContent className="flex min-h-[178px] flex-col px-5 py-[18px]">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div
+                          className={cn(
+                            "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]",
+                            iconBgFor(item.result_kind),
+                          )}
+                        >
+                          {iconFor(item.result_kind)}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="line-clamp-1 text-[16px] font-semibold leading-6 text-[#111111]">{item.title}</div>
+                          <div className="mt-1 text-xs text-[#8b8c87]">{formatCardTime(item.updated_at)}</div>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <div className="truncate font-medium text-[#111111]">{item.title}</div>
-                        <div className="mt-1 text-sm text-[#8b8c87]">{formatCardTime(item.updated_at)}</div>
-                      </div>
-                    </div>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button
+                      <p className="mt-3 line-clamp-4 text-[14px] leading-6 text-[#747571]">
+                        {(item.card_preview ?? "").slice(0, 600) || "（无预览摘要）"}
+                      </p>
+                    </CardContent>
+                  </Button>
+                  <CardContent className="flex items-center justify-end gap-2 border-t border-[#e2e2df] px-4 py-3">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
                           type="button"
-                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-[#71717a] hover:bg-[#f4f4f5]"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0 rounded-[8px] text-[#71717a]"
                           aria-label="更多操作"
-                          onClick={(e) => e.stopPropagation()}
                         >
                           <EllipsisVertical className="h-4 w-4" />
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent align="end" className="w-48 p-1" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
-                          onClick={() => {
-                            setRenameTarget(item);
-                            setRenameValue(item.title);
-                          }}
-                        >
-                          <Pencil className="h-4 w-4 shrink-0" />
-                          重命名
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
-                          onClick={() => setMoveItem(item)}
-                        >
-                          <FolderInput className="h-4 w-4 shrink-0" />
-                          移动到
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-red-700 hover:bg-red-50"
-                          onClick={() => setUnfavoriteTarget(item)}
-                        >
-                          <StarOff className="h-4 w-4 shrink-0" />
-                          取消收藏
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
-                          onClick={() => onDownload(item.id, item.title)}
-                        >
-                          <Download className="h-4 w-4 shrink-0" />
-                          下载报告
-                        </button>
-                      </PopoverContent>
-                    </Popover>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuGroup>
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              setRenameTarget(item);
+                              setRenameValue(item.title);
+                            }}
+                          >
+                            <Pencil className="h-4 w-4 shrink-0" />
+                            重命名
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setMoveItem(item)}>
+                            <FolderInput className="h-4 w-4 shrink-0" />
+                            移动到
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-red-700 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-700"
+                            onSelect={() => setUnfavoriteTarget(item)}
+                          >
+                            <StarOff className="h-4 w-4 shrink-0" />
+                            取消收藏
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => onDownload(item.id, item.title)}>
+                            <Download className="h-4 w-4 shrink-0" />
+                            下载报告
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </CardContent>
                 </Card>
               ))
@@ -445,12 +418,12 @@ export function FavoritesWorkspace() {
                 取消收藏后，内容将从收藏列表移除，之后可重新收藏。
               </DialogDescription>
               <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" className="rounded-[10px]" onClick={() => setUnfavoriteTarget(null)}>
+                <Button type="button" variant="outline" onClick={() => setUnfavoriteTarget(null)}>
                   再想想
                 </Button>
                 <Button
                   type="button"
-                  className="rounded-[10px] border-0 bg-[#ef5350] text-white shadow-none hover:bg-[#e53935]"
+                  variant="destructive"
                   onClick={() => void confirmUnfavorite()}
                 >
                   确定取消
@@ -467,7 +440,7 @@ export function FavoritesWorkspace() {
                 <Button type="button" variant="outline" onClick={() => setRenameTarget(null)}>
                   取消
                 </Button>
-                <Button type="button" className="rounded-[10px]" onClick={() => void submitRename()}>
+                <Button type="button" onClick={() => void submitRename()}>
                   保存
                 </Button>
               </div>
@@ -479,11 +452,12 @@ export function FavoritesWorkspace() {
               <DialogTitle>移动到文件夹</DialogTitle>
               <div className="max-h-64 space-y-1 overflow-y-auto">
                 {folders.map((f) => (
-                  <button
+                  <Button
                     key={f.id}
                     type="button"
+                    variant="ghost"
                     disabled={moveItem ? f.id === moveItem.folder_id : true}
-                    className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-[#f4f4f5] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="h-9 w-full justify-start rounded-md px-3 text-left text-sm"
                     onClick={() => {
                       if (!moveItem) return;
                       void moveToFolder(moveItem.id, f.id);
@@ -491,7 +465,7 @@ export function FavoritesWorkspace() {
                     }}
                   >
                     {f.name}
-                  </button>
+                  </Button>
                 ))}
               </div>
               <div className="flex justify-end pt-2">
@@ -515,7 +489,7 @@ export function FavoritesWorkspace() {
                 <Button type="button" variant="outline" onClick={() => setNewFolderOpen(false)}>
                   取消
                 </Button>
-                <Button type="button" className="rounded-[10px]" onClick={() => void submitNewFolder()}>
+                <Button type="button" onClick={() => void submitNewFolder()}>
                   创建
                 </Button>
               </div>

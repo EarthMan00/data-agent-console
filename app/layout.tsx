@@ -17,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="zh-CN"
       className="h-full antialiased"
       style={
         {

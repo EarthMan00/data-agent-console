@@ -886,16 +886,16 @@ function AgentRunWorkspaceView({
             </div>
 
             <div className="flex items-center gap-1 text-[#8a97a8]">
-                <Button aria-label="继续追问" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => handleFeedback("需要继续")}>
+                <Button aria-label="继续追问" variant="ghost" size="iconSm" onClick={() => handleFeedback("需要继续")}>
                   <ListRestart className="h-4 w-4" />
                 </Button>
-                <Button aria-label="反馈喜欢" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => handleFeedback("喜欢")}>
+                <Button aria-label="反馈喜欢" variant="ghost" size="iconSm" onClick={() => handleFeedback("喜欢")}>
                   <ThumbsUp className="h-4 w-4" />
                 </Button>
-                <Button aria-label="反馈不喜欢" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => handleFeedback("不喜欢")}>
+                <Button aria-label="反馈不喜欢" variant="ghost" size="iconSm" onClick={() => handleFeedback("不喜欢")}>
                   <ThumbsDown className="h-4 w-4" />
                 </Button>
-                <Button aria-label="添加会话备注" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setNotice("评论接口入口已预留。")}>
+                <Button aria-label="添加会话备注" variant="ghost" size="iconSm" onClick={() => setNotice("评论接口入口已预留。")}>
                   <MessageCircleMore className="h-4 w-4" />
                 </Button>
             </div>

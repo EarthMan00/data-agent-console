@@ -28,11 +28,22 @@ import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { RequiredAsterisk } from "@/components/required-mark";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { downloadAuthorizedFile, formatAgentApiErrorForUser, parseFastApiDetail } from "@/lib/agent-api/client";
 import {
   createUserScheduledTaskGroup,
@@ -82,6 +93,7 @@ import { cn } from "@/lib/utils";
 const PRIMARY_TABS = ["已定时", "运行记录"] as const;
 const WORKFLOW_STATUS_OPTIONS = ["全部状态", "生效中", "已暂停", "已完结"] as const;
 const RUN_STATUS_OPTIONS = ["全部状态", "运行成功", "运行失败", "运行超时"] as const;
+const DEFAULT_GROUP_VALUE = "__default__";
 
 /** 与后端一致：0=周一 … 6=周日；界面按「周日—周六」展示 */
 const WEEKDAY_OPTIONS: { label: string; value: number }[] = [
@@ -149,31 +161,21 @@ function filterRunsBySearch(runs: ScheduledTaskRunItemApi[], q: string) {
 
 function ScheduleEmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="flex min-h-[min(420px,calc(100vh-320px))] flex-col items-center justify-center rounded-[16px] border border-[#f0f0f0] bg-white px-4 py-20">
-      <div className="mb-7 flex flex-col items-center" aria-hidden>
-        <div className="mb-1 flex w-[100px] justify-center gap-2">
-          <span className="h-0.5 w-6 border-t border-dotted border-[#cbd5e1]" />
-          <span className="h-0.5 w-5 border-t border-dotted border-[#cbd5e1]" />
-          <span className="h-0.5 w-4 border-t border-dotted border-[#e2e8f0]" />
-        </div>
-        <div
-          className="flex h-[100px] w-[112px] items-center justify-center rounded-[20px] border-2 border-dashed border-[#e5e7eb] bg-[#fafafa]"
-        >
-          <div className="flex flex-col items-center">
-            <Box className="h-11 w-11 text-[#bfc4c9]" strokeWidth={1.1} />
-            <div className="mt-0.5 h-1 w-12 rounded-t-sm border border-b-0 border-[#e2e8f0] bg-white/80" />
-          </div>
-        </div>
+    <div className="mt-8 flex min-h-[min(420px,calc(100vh-320px))] flex-col items-center justify-center rounded-[18px] border border-white/70 bg-white/72 px-4 py-12 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
+      <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-[18px] border border-[#e2e2df] bg-[#f7f7f7]" aria-hidden>
+        <Box className="h-8 w-8 text-[#b1b2ae]" strokeWidth={1.35} />
       </div>
       <p className="text-center text-[15px] text-[#71717a]">
         暂无定时任务{" "}
-        <button
+        <Button
           type="button"
-          className="font-medium text-[#2563eb] no-underline transition hover:text-[#1d4ed8] hover:underline"
+          variant="ghost"
+          size="sm"
+          className="h-auto rounded-none px-0 py-0 align-baseline font-medium text-[#111111] underline decoration-[#b1b2ae] underline-offset-4 hover:bg-transparent hover:text-[#2a2a2a]"
           onClick={onCreate}
         >
           立即创建
-        </button>
+        </Button>
       </p>
     </div>
   );
@@ -200,7 +202,6 @@ export function SchedulesWorkspace() {
 
   const [workflowStatusFilter, setWorkflowStatusFilter] = useState<(typeof WORKFLOW_STATUS_OPTIONS)[number]>("全部状态");
   const [runStatusFilter, setRunStatusFilter] = useState<(typeof RUN_STATUS_OPTIONS)[number]>("全部状态");
-  const [filterOpen, setFilterOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastVariant, setToastVariant] = useState<"default" | "error">("default");
@@ -775,7 +776,7 @@ export function SchedulesWorkspace() {
 
   if (createMode) {
     return (
-      <MoreDataShell currentPath="/schedules">
+      <MoreDataShell currentPath="/schedules" showTopHeader={false}>
         <AutoToast
           message={toastMessage}
           variant={toastVariant}
@@ -785,20 +786,22 @@ export function SchedulesWorkspace() {
           }}
           durationMs={2200}
         />
-        <div className="px-8 pb-12 pt-8">
+        <div className="px-8 pb-12 pt-5">
           <div className="mx-auto max-w-[760px]">
             {notice ? <p className="mb-6 text-sm text-[#52525b]">{notice}</p> : null}
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 resetCreateFormToDefaults();
                 router.push("/schedules");
               }}
-              className="inline-flex items-center gap-2 text-sm text-[#52525b]"
+              className="-ml-2 h-8 px-2 text-[#52525b]"
             >
               <ChevronLeft className="h-4 w-4" />
               返回
-            </button>
+            </Button>
             <h1 className="mt-4 text-[18px] font-semibold text-[#18181b]">
               {editId ? "编辑定时任务" : "创建定时任务"}
             </h1>
@@ -809,29 +812,13 @@ export function SchedulesWorkspace() {
             </p>
 
             <div className="mt-8 space-y-8">
-              <Card className="border-[#e5e7eb] bg-[#fafafa]">
+              <Card className="border-[#e2e2df] bg-white">
                 <CardContent className="flex items-center justify-between px-4 py-4">
                   <div>
                     <div className="font-medium text-[#18181b]">任务启用</div>
                     <div className="mt-2 text-sm text-[#a1a1aa]">关闭后，任务将不会按调度执行</div>
                   </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={taskEnabled}
-                    onClick={() => setTaskEnabled((v) => !v)}
-                    className={cn(
-                      "flex h-7 w-12 items-center rounded-full px-0.5 transition-colors",
-                      taskEnabled ? "bg-[#18181b]" : "bg-[#e5e7eb]",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "block h-5 w-5 rounded-full bg-white shadow transition-transform",
-                        taskEnabled ? "translate-x-5" : "translate-x-0",
-                      )}
-                    />
-                  </button>
+                  <Switch checked={taskEnabled} onCheckedChange={setTaskEnabled} aria-label="任务启用" />
                 </CardContent>
               </Card>
 
@@ -845,18 +832,24 @@ export function SchedulesWorkspace() {
                   />
                 </Field>
                 <Field label="分组">
-                  <select
-                    value={formGroupId ?? ""}
-                    onChange={(e) => setFormGroupId(e.target.value || null)}
-                    className="h-12 w-full rounded-[12px] border border-[#e5e7eb] bg-white px-3 text-sm text-[#18181b]"
+                  <Select
+                    value={formGroupId ?? DEFAULT_GROUP_VALUE}
+                    onValueChange={(value) => setFormGroupId(value === DEFAULT_GROUP_VALUE ? null : value)}
                   >
-                    <option value="">默认</option>
-                    {groups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-12 w-full rounded-[12px] border-[#e5e7eb]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value={DEFAULT_GROUP_VALUE}>默认</SelectItem>
+                        {groups.map((g) => (
+                          <SelectItem key={g.id} value={g.id}>
+                            {g.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                   <p className="mt-1.5 text-xs text-[#a1a1aa]">可在主列表通过分组名筛选；新分组在列表左侧添加。</p>
                 </Field>
                 <Field label="提示词" required>
@@ -874,10 +867,10 @@ export function SchedulesWorkspace() {
                       scheduleKind === "每天" ? "md:grid-cols-2" : "md:grid-cols-3",
                     )}
                   >
-                    <select
+                    <Select
                       value={scheduleKind}
-                      onChange={(e) => {
-                        const v = e.target.value as ScheduleKind;
+                      onValueChange={(value) => {
+                        const v = value as ScheduleKind;
                         setScheduleKind(v);
                         if (v !== "每周") setSelectedWeekdays(new Set());
                         if (v !== "每月") setSelectedMonthDays(new Set());
@@ -887,14 +880,20 @@ export function SchedulesWorkspace() {
                           setRunOnceDate("");
                         }
                       }}
-                      className="h-12 w-full rounded-[12px] border border-[#e5e7eb] bg-white px-3 text-sm text-[#18181b]"
                     >
-                      {SCHEDULE_KINDS.map((k) => (
-                        <option key={k} value={k}>
-                          {k}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="h-12 w-full rounded-[12px] border-[#e5e7eb]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {SCHEDULE_KINDS.map((k) => (
+                            <SelectItem key={k} value={k}>
+                              {k}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
 
                     {scheduleKind === "不重复" ? (
                       <input
@@ -907,15 +906,16 @@ export function SchedulesWorkspace() {
                     {scheduleKind === "每周" ? (
                       <Popover>
                         <PopoverTrigger asChild>
-                          <button
+                          <Button
                             type="button"
-                            className="flex h-12 w-full items-center justify-between gap-2 rounded-[12px] border border-[#e5e7eb] bg-white px-3 text-left text-sm text-[#18181b] transition hover:border-[#d4d4d4]"
+                            variant="outline"
+                            className="h-12 w-full justify-between rounded-[12px] border-[#e5e7eb] px-3 text-left font-normal text-[#18181b]"
                           >
                             <span className={cn("truncate", selectedWeekdays.size === 0 && "text-[#9ca3af]")}>
                               {weekdayButtonLabel(selectedWeekdays)}
                             </span>
                             <ChevronDown className="h-4 w-4 shrink-0 text-[#71717a]" />
-                          </button>
+                          </Button>
                         </PopoverTrigger>
                         <PopoverContent
                           className="w-[min(100vw-2rem,16rem)] p-0"
@@ -928,11 +928,9 @@ export function SchedulesWorkspace() {
                                 key={w.value}
                                 className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[#f4f4f5]"
                               >
-                                <input
-                                  type="checkbox"
-                                  className="h-4 w-4 rounded border-[#cbd5e1]"
+                                <Checkbox
                                   checked={selectedWeekdays.has(w.value)}
-                                  onChange={() => {
+                                  onCheckedChange={() => {
                                     setSelectedWeekdays((prev) => {
                                       const n = new Set(prev);
                                       if (n.has(w.value)) n.delete(w.value);
@@ -951,15 +949,16 @@ export function SchedulesWorkspace() {
                     {scheduleKind === "每月" ? (
                       <Popover>
                         <PopoverTrigger asChild>
-                          <button
+                          <Button
                             type="button"
-                            className="flex h-12 w-full items-center justify-between gap-2 rounded-[12px] border border-[#e5e7eb] bg-white px-3 text-left text-sm text-[#18181b] transition hover:border-[#d4d4d4]"
+                            variant="outline"
+                            className="h-12 w-full justify-between rounded-[12px] border-[#e5e7eb] px-3 text-left font-normal text-[#18181b]"
                           >
                             <span className={cn("truncate", selectedMonthDays.size === 0 && "text-[#9ca3af]")}>
                               {monthDayButtonLabel(selectedMonthDays)}
                             </span>
                             <ChevronDown className="h-4 w-4 shrink-0 text-[#71717a]" />
-                          </button>
+                          </Button>
                         </PopoverTrigger>
                         <PopoverContent
                           className="w-[min(100vw-2rem,18rem)] p-0"
@@ -973,11 +972,10 @@ export function SchedulesWorkspace() {
                                   key={d}
                                   className="flex cursor-pointer items-center gap-1.5 rounded-md border border-transparent px-1 py-1.5 text-xs hover:bg-[#f4f4f5] sm:text-sm"
                                 >
-                                  <input
-                                    type="checkbox"
-                                    className="h-3.5 w-3.5 shrink-0 rounded border-[#cbd5e1] sm:h-4 sm:w-4"
+                                  <Checkbox
+                                    className="h-3.5 w-3.5 sm:h-4 sm:w-4"
                                     checked={selectedMonthDays.has(d)}
-                                    onChange={() => {
+                                    onCheckedChange={() => {
                                       setSelectedMonthDays((prev) => {
                                         const n = new Set(prev);
                                         if (n.has(d)) n.delete(d);
@@ -995,17 +993,23 @@ export function SchedulesWorkspace() {
                       </Popover>
                     ) : null}
 
-                    <select
+                    <Select
                       value={timeHhmm}
-                      onChange={(e) => setTimeHhmm(e.target.value)}
-                      className="h-12 w-full rounded-[12px] border border-[#e5e7eb] bg-white px-3 text-sm text-[#18181b]"
+                      onValueChange={setTimeHhmm}
                     >
-                      {HALF_HOUR_TIME_OPTIONS.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="h-12 w-full rounded-[12px] border-[#e5e7eb]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {HALF_HOUR_TIME_OPTIONS.map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {t}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   {scheduleKind === "不重复" && runOnceDate.trim() ? (
@@ -1073,7 +1077,7 @@ export function SchedulesWorkspace() {
                     <span className="inline-flex">
                       <Button
                         type="button"
-                        className="shrink-0 rounded-[10px] bg-[#18181b] text-white hover:bg-[#27272a]"
+                        className="shrink-0 rounded-[10px] bg-[#111111] text-white hover:bg-[#2a2a2a]"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -1109,7 +1113,7 @@ export function SchedulesWorkspace() {
                       <Button
                         type="button"
                         size="sm"
-                        className="rounded-[10px] bg-[#18181b] text-white hover:bg-[#27272a]"
+                        className="rounded-[10px] bg-[#111111] text-white hover:bg-[#2a2a2a]"
                         disabled={busy}
                         onClick={() => {
                           setEditPromptChangedSaveGateOpen(false);
@@ -1124,7 +1128,7 @@ export function SchedulesWorkspace() {
               ) : (
                 <Button
                   type="button"
-                  className="shrink-0 rounded-[10px] bg-[#18181b] text-white hover:bg-[#27272a]"
+                  className="shrink-0 rounded-[10px] bg-[#111111] text-white hover:bg-[#2a2a2a]"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1146,17 +1150,15 @@ export function SchedulesWorkspace() {
   if (!isPlatformBackendEnabled() || !platformAgent) {
     return (
       <MoreDataShell currentPath="/schedules">
-        <div className="px-8 py-12 text-sm text-[#64748b]">当前未启用平台后端，无法管理定时任务。</div>
+        <div className="px-8 py-12 text-sm text-[#747571]">当前未启用平台后端，无法管理定时任务。</div>
       </MoreDataShell>
     );
   }
 
   const searchPlaceholder = primaryTab === "已定时" ? "搜索定时任务" : "搜索运行记录";
-  const statusOptions = primaryTab === "已定时" ? WORKFLOW_STATUS_OPTIONS : RUN_STATUS_OPTIONS;
-  const currentStatusFilter = primaryTab === "已定时" ? workflowStatusFilter : runStatusFilter;
 
   return (
-    <MoreDataShell currentPath="/schedules">
+    <MoreDataShell currentPath="/schedules" showTopHeader={false}>
       <AutoToast
         message={toastMessage}
         variant={toastVariant}
@@ -1166,8 +1168,8 @@ export function SchedulesWorkspace() {
         }}
         durationMs={2200}
       />
-      <div className="px-8 pb-12 pt-8">
-        <div className="mx-auto max-w-[1180px]">
+      <div className="px-8 pb-14 pt-5">
+        <div className="mx-auto max-w-[1040px]">
           {error ? (
             <div className="mb-4 text-sm text-red-600" role="alert">
               {error}
@@ -1196,28 +1198,23 @@ export function SchedulesWorkspace() {
                     router.push(`/schedules?create=1${q}`);
                   }}
                 >
-                  <span className="font-medium">+</span> 创建定时任务
+                  <Plus className="h-4 w-4" /> 创建定时任务
                 </Button>
               </div>
             </div>
 
-            {/* 第二行：主 Tab，纯文字下划线 */}
+            {/* 第二行：主 Tab */}
             <Tabs
               value={primaryTab}
               onValueChange={(value) => {
                 setPrimaryTab(value as (typeof PRIMARY_TABS)[number]);
                 setSearch("");
-                setFilterOpen(false);
               }}
-              className="mt-4 w-full"
+              className="mt-5 inline-flex"
             >
-              <TabsList className="h-auto w-full justify-start gap-8 bg-transparent p-0 sm:gap-10">
+              <TabsList>
                 {PRIMARY_TABS.map((tab) => (
-                  <TabsTrigger
-                    key={tab}
-                    value={tab}
-                    className="rounded-none border-b-2 border-transparent bg-transparent px-0 pb-2.5 pt-0 text-[15px] text-[#8a97aa] data-[state=active]:border-[#18181b] data-[state=active]:bg-transparent data-[state=active]:text-[#18181b] data-[state=active]:shadow-none"
-                  >
+                  <TabsTrigger key={tab} value={tab}>
                     {tab}
                   </TabsTrigger>
                 ))}
@@ -1226,23 +1223,17 @@ export function SchedulesWorkspace() {
 
             {/* 第三行：已定时 = 左分组胶囊 + 右（状态/批量/视图，与目标稿第二幅图对齐）；运行记录 = 仅右侧筛选区 */}
             {primaryTab === "已定时" ? (
-              <div className="mt-4 flex min-h-[40px] flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b border-[#f0f0f0] pb-4">
+              <div className="mt-5 flex min-h-[40px] flex-wrap items-center justify-between gap-x-4 gap-y-3">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                  {chipOptions.map((chip) => (
-                    <button
-                      key={chip}
-                      type="button"
-                      onClick={() => setActiveChip(chip)}
-                      className={cn(
-                        "inline-flex h-8 items-center rounded-[10px] border px-3.5 text-xs font-medium transition",
-                        activeChip === chip
-                          ? "border-[#e2e2df] bg-[#f0f0ef] text-[#111111] shadow-none"
-                          : "border-[#e2e2df] bg-white text-[#747571] hover:border-[#d4d4d0] hover:bg-[#f7f7f7]",
-                      )}
-                    >
-                      {chip}
-                    </button>
-                  ))}
+                  <Tabs value={activeChip} onValueChange={setActiveChip}>
+                    <TabsList className="h-9 flex-wrap justify-start">
+                      {chipOptions.map((chip) => (
+                        <TabsTrigger key={chip} value={chip}>
+                          <span className="max-w-[160px] truncate">{chip}</span>
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </Tabs>
                   {addGroupOpen ? (
                     <Input
                       ref={newGroupInputRef}
@@ -1250,7 +1241,7 @@ export function SchedulesWorkspace() {
                       value={newGroupName}
                       onChange={(e) => setNewGroupName(e.target.value)}
                       placeholder="请输入分组名称"
-                      className="h-8 w-[160px] rounded-[10px] border-[#e2e2df] text-xs"
+                      className="h-8 w-[160px] rounded-[10px] border-[#e2e2df] text-[14px]"
                       onBlur={() => {
                         window.setTimeout(() => {
                           if (skipNewGroupBlurRef.current) {
@@ -1275,122 +1266,104 @@ export function SchedulesWorkspace() {
                       }}
                     />
                   ) : (
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="icon"
                       aria-label="新建分组"
                       onClick={() => setAddGroupOpen(true)}
-                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-[#d4d4d0] bg-[#f7f7f7] text-[#747571] transition hover:border-[#a6a6a1] hover:bg-[#f0f0ef] hover:text-[#111111]"
+                      className="h-8 w-8 shrink-0 rounded-[10px] border-[#e2e2df] text-[#747571]"
                     >
                       <Plus className="h-4 w-4" />
-                    </button>
+                    </Button>
                   )}
                 </div>
                 <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:shrink-0">
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setFilterOpen((o) => !o)}
-                      className="inline-flex h-9 min-w-0 max-w-full items-center gap-1 rounded-[10px] border border-[#e2e2df] bg-white px-2.5 text-sm text-[#747571] transition hover:border-[#d4d4d0] sm:px-3"
-                    >
-                      <span className="truncate">{currentStatusFilter}</span>
-                      <ChevronDown className="h-4 w-4 shrink-0" />
-                    </button>
-                    {filterOpen ? (
-                      <div className="absolute right-0 top-10 z-30 min-w-[128px] rounded-[10px] border border-[#e2e2df] bg-white py-1 shadow-[0_12px_28px_rgba(17,17,17,0.08)]">
-                        {statusOptions.map((item) => (
-                          <button
-                            key={item}
-                            type="button"
-                            onClick={() => {
-                              setWorkflowStatusFilter(item as (typeof WORKFLOW_STATUS_OPTIONS)[number]);
-                              setFilterOpen(false);
-                            }}
-                            className="block w-full px-3 py-2 text-left text-sm text-[#52524f] hover:bg-[#f7f7f7]"
-                          >
+                  <Select
+                    value={workflowStatusFilter}
+                    onValueChange={(value) => setWorkflowStatusFilter(value as (typeof WORKFLOW_STATUS_OPTIONS)[number])}
+                  >
+                    <SelectTrigger className="h-9 w-[128px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {WORKFLOW_STATUS_OPTIONS.map((item) => (
+                          <SelectItem key={item} value={item}>
                             {item}
-                          </button>
+                          </SelectItem>
                         ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  <button
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <Button
                     type="button"
-                    className="text-sm text-[#64748b] transition hover:text-[#18181b]"
+                    variant="ghost"
+                    className="h-9 px-2 text-sm"
                     onClick={() => setNotice("请在「运行记录」中使用批量操作。")}
                   >
                     批量操作
-                  </button>
-                  <div className="flex h-9 shrink-0 items-center gap-0.5 rounded-[10px] border border-[#e2e2df] bg-white p-0.5">
-                    <button
-                      type="button"
-                      className={cn("rounded-[8px] p-1.5", viewMode === "list" ? "bg-[#f0f0ef] text-[#111111]" : "text-[#8b8c87]")}
-                      onClick={() => setViewMode("list")}
-                      aria-label="列表视图"
-                    >
+                  </Button>
+                  <ToggleGroup
+                    type="single"
+                    value={viewMode}
+                    onValueChange={(value) => value && setViewMode(value as "list" | "grid")}
+                    aria-label="视图模式"
+                  >
+                    <ToggleGroupItem value="list" aria-label="列表视图">
                       <List className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className={cn("rounded-[8px] p-1.5", viewMode === "grid" ? "bg-[#f0f0ef] text-[#111111]" : "text-[#8b8c87]")}
-                      onClick={() => setViewMode("grid")}
-                      aria-label="卡片视图"
-                    >
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="grid" aria-label="卡片视图">
                       <LayoutGrid className="h-4 w-4" />
-                    </button>
-                  </div>
+                    </ToggleGroupItem>
+                  </ToggleGroup>
                 </div>
               </div>
             ) : (
-              <div className="mt-4 flex min-h-[40px] flex-wrap items-center justify-end gap-2 border-b border-[#f0f0f0] pb-4">
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setFilterOpen((o) => !o)}
-                    className="inline-flex h-9 items-center gap-1 rounded-[10px] border border-[#e2e2df] bg-white px-2.5 text-sm text-[#747571] transition hover:border-[#d4d4d0] sm:px-3"
-                  >
-                    <span className="truncate">{currentStatusFilter}</span>
-                    <ChevronDown className="h-4 w-4 shrink-0" />
-                  </button>
-                  {filterOpen ? (
-                    <div className="absolute right-0 top-10 z-30 min-w-[128px] rounded-[10px] border border-[#e5e7eb] bg-white py-1 shadow-lg">
-                      {statusOptions.map((item) => (
-                        <button
-                          key={item}
-                          type="button"
-                          onClick={() => {
-                            setRunStatusFilter(item as (typeof RUN_STATUS_OPTIONS)[number]);
-                            void (async () => {
-                              if (!platformAgent) return;
-                              setBusy(true);
-                              try {
-                                const rs = runStatusToApi(item as (typeof RUN_STATUS_OPTIONS)[number]);
-                                await platformAgent.withFreshToken(async (token) => {
-                                  const r = await fetchAllScheduledTaskRuns(token, { run_status: rs });
-                                  setRuns(r);
-                                });
-                              } catch (e) {
-                                setError(formatAgentApiErrorForUser(e) || "加载失败");
-                              } finally {
-                                setBusy(false);
-                              }
-                            })();
-                            setFilterOpen(false);
-                          }}
-                          className="block w-full px-3 py-2 text-left text-sm text-[#475569] hover:bg-[#f8fafc]"
-                        >
+              <div className="mt-5 flex min-h-[40px] flex-wrap items-center justify-end gap-2">
+                <Select
+                  value={runStatusFilter}
+                  onValueChange={(value) => {
+                    const next = value as (typeof RUN_STATUS_OPTIONS)[number];
+                    setRunStatusFilter(next);
+                    void (async () => {
+                      if (!platformAgent) return;
+                      setBusy(true);
+                      try {
+                        const rs = runStatusToApi(next);
+                        await platformAgent.withFreshToken(async (token) => {
+                          const r = await fetchAllScheduledTaskRuns(token, { run_status: rs });
+                          setRuns(r);
+                        });
+                      } catch (e) {
+                        setError(formatAgentApiErrorForUser(e) || "加载失败");
+                      } finally {
+                        setBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-[128px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {RUN_STATUS_OPTIONS.map((item) => (
+                        <SelectItem key={item} value={item}>
                           {item}
-                        </button>
+                        </SelectItem>
                       ))}
-                    </div>
-                  ) : null}
-                </div>
-                <button
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <Button
                   type="button"
-                  className="text-sm text-[#64748b] transition hover:text-[#18181b]"
+                  variant="ghost"
+                  className="h-9 px-2 text-sm"
                   onClick={() => setBulkSelectRuns(true)}
                 >
                   批量操作
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -1400,22 +1373,24 @@ export function SchedulesWorkspace() {
           {busy && primaryTab === "运行记录" && runs.length === 0 ? <p className="mt-6 text-sm text-[#71717a]">加载中…</p> : null}
 
           {primaryTab === "运行记录" && bulkSelectRuns ? (
-            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-[12px] border border-[#e5e7eb] bg-[#fafafa] px-4 py-3 text-sm">
-              <span className="text-[#64748b]">已选 {selectedRunIds.size} 个</span>
-              <Button type="button" size="sm" variant="secondary" disabled className="rounded-[8px]" onClick={() => {}}>
+            <div className="mt-5 flex flex-wrap items-center gap-3 rounded-[12px] border border-[#e2e2df] bg-white/72 px-4 py-3 text-sm">
+              <span className="text-[#747571]">已选 {selectedRunIds.size} 个</span>
+              <Button type="button" size="sm" variant="secondary" disabled onClick={() => {}}>
                 删除
               </Button>
-              <span className="text-xs text-[#94a3b8]">删除单条请使用记录卡片上的「⋯」菜单。批量删除待支持。</span>
-              <button
+              <span className="text-xs text-[#8b8c87]">删除单条请使用记录卡片上的「⋯」菜单。批量删除待支持。</span>
+              <Button
                 type="button"
-                className="text-[#64748b] underline underline-offset-2"
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-[#747571] underline underline-offset-2 hover:text-[#111111]"
                 onClick={() => {
                   setBulkSelectRuns(false);
                   setSelectedRunIds(new Set());
                 }}
               >
                 取消多选
-              </button>
+              </Button>
             </div>
           ) : null}
 
@@ -1429,7 +1404,7 @@ export function SchedulesWorkspace() {
             />
           ) : null}
           {primaryTab === "已定时" && displayTasks.length > 0 ? (
-            <div className="mt-8 flex flex-wrap content-start items-start justify-start gap-4">
+            <div className="mt-8 flex flex-wrap content-start items-start justify-start gap-5">
               {displayTasks.map((t) => (
                 <ApiScheduledTaskCard
                   key={t.id}
@@ -1455,12 +1430,12 @@ export function SchedulesWorkspace() {
           ) : null}
 
           {primaryTab === "运行记录" && !busy && displayRuns.length === 0 ? (
-            <div className="mt-6 flex min-h-[min(360px,calc(100vh-360px))] flex-col items-center justify-center rounded-[18px] border border-[#e2e2df] bg-white px-4 py-16 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
+            <div className="mt-8 flex min-h-[min(360px,calc(100vh-360px))] flex-col items-center justify-center rounded-[18px] border border-white/70 bg-white/72 px-4 py-12 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
               <div
-                className="mb-6 flex h-[88px] w-[88px] items-center justify-center rounded-[18px] border-2 border-dashed border-[#e2e2df] bg-[#f7f7f7]"
+                className="mb-6 flex h-16 w-16 items-center justify-center rounded-[18px] border border-[#e2e2df] bg-[#f7f7f7]"
                 aria-hidden
               >
-                <Box className="h-10 w-10 text-[#c9cac5]" strokeWidth={1.05} />
+                <Box className="h-8 w-8 text-[#b1b2ae]" strokeWidth={1.35} />
               </div>
               <p className="text-[15px] text-[#71717a]">暂无运行记录</p>
             </div>
@@ -1498,18 +1473,24 @@ export function SchedulesWorkspace() {
         <DialogContent className="max-w-[400px] rounded-[16px]">
           <DialogTitle>移动到分组</DialogTitle>
           <div className="mt-4 space-y-3">
-            <select
-              value={moveGroupId}
-              onChange={(e) => setMoveGroupId(e.target.value as string | "")}
-              className="h-11 w-full rounded-[10px] border border-[#e5e7eb] px-3"
+            <Select
+              value={moveGroupId || DEFAULT_GROUP_VALUE}
+              onValueChange={(value) => setMoveGroupId(value === DEFAULT_GROUP_VALUE ? "" : value)}
             >
-              <option value="">默认</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-11 w-full rounded-[10px] border-[#e5e7eb]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value={DEFAULT_GROUP_VALUE}>默认</SelectItem>
+                  {groups.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setMoveTask(null)}>
                 取消
@@ -1581,16 +1562,16 @@ function ApiScheduledTaskCard({
   const canToggle = !ended;
   const statusHeader =
     ui === "已完结"
-      ? { bar: "bg-slate-100/95", text: "text-slate-600", dot: "bg-slate-400" }
+      ? { bar: "bg-[#f7f7f7]", text: "text-[#747571]", dot: "bg-[#b1b2ae]" }
       : ui === "已暂停"
-        ? { bar: "bg-amber-50", text: "text-amber-800", dot: "bg-amber-400" }
-        : { bar: "bg-emerald-50", text: "text-emerald-800", dot: "bg-emerald-500" };
+        ? { bar: "bg-[#f7f7f7]", text: "text-[#747571]", dot: "bg-[#d68a29]" }
+        : { bar: "bg-[#f7f7f7]", text: "text-[#34322d]", dot: "bg-[#111111]" };
 
   return (
     <Card
       className={cn(
-        "box-border flex h-[200px] w-full max-w-[290px] shrink-0 flex-col overflow-hidden border border-[#e2e2df] bg-white p-0",
-        "min-[300px]:w-[290px] shadow-[0_1px_2px_rgba(17,17,17,0.03)]",
+        "box-border flex h-[200px] w-full max-w-[304px] shrink-0 flex-col overflow-hidden rounded-[18px] border border-white/70 bg-white/72 p-0",
+        "min-[300px]:w-[304px] shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition duration-200 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)]",
       )}
     >
       <div
@@ -1603,90 +1584,65 @@ function ApiScheduledTaskCard({
           <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", statusHeader.dot)} />
           {ui}
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={t.enabled}
+        <Switch
+          checked={t.enabled}
           disabled={!canToggle}
-          onClick={() => canToggle && onToggleEnabled(!t.enabled)}
-          className={cn(
-            "flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 transition-colors disabled:opacity-40",
-            t.enabled && canToggle ? "bg-[#111111]" : "bg-[#e2e2df]",
-          )}
-        >
-          <span
-            className={cn(
-              "block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform",
-              t.enabled && canToggle ? "translate-x-4" : "translate-x-0",
-            )}
-          />
-        </button>
+          onCheckedChange={(checked) => onToggleEnabled(checked)}
+          aria-label="切换任务启用状态"
+          className="h-5 w-9 [&>span]:h-3.5 [&>span]:w-3.5 [&>span[data-state=checked]]:translate-x-4"
+        />
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden px-3 pt-1.5">
-        <div className="line-clamp-2 break-words text-[14px] font-semibold leading-snug text-[#111111]">
+      <div className="min-h-0 flex-1 overflow-hidden px-4 pt-3">
+        <div className="line-clamp-2 break-words text-[16px] font-semibold leading-6 text-[#111111]">
           {t.title}
         </div>
-        <p className="mt-1 line-clamp-2 break-all text-[11px] leading-snug text-[#8b8c87]">
+        <p className="mt-2 line-clamp-2 break-all text-[13px] leading-5 text-[#8b8c87]">
           执行时间：{nextRunLabel(t)}
         </p>
       </div>
-      <div className="mt-auto flex shrink-0 items-center justify-end gap-1.5 border-t border-dashed border-[#e2e2df] px-2.5 py-1.5">
+      <div className="mt-auto flex shrink-0 items-center justify-end gap-1.5 border-t border-[#e2e2df] px-3 py-2">
         <Button
           type="button"
           variant="outline"
           size="sm"
-          className="h-7 max-w-full shrink rounded-[8px] border-[#e2e2df] px-1.5 text-[11px]"
+          className="h-8 max-w-full shrink rounded-[8px] border-[#e2e2df] px-2 text-[12px]"
           onClick={onOpenRuns}
         >
           <Clock className="mr-0.5 h-3 w-3 shrink-0" />
           <span className="truncate">运行记录</span>
         </Button>
-        <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-7 w-7 shrink-0 rounded-[8px] border-[#e2e2df] text-[#747571]"
-              >
-                <MoreVertical className="h-3.5 w-3.5" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-44 p-1">
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-[#f4f4f5]"
-                onClick={onRun}
-              >
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 shrink-0 rounded-[8px] border-[#e2e2df] text-[#747571]"
+            >
+              <MoreVertical className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuGroup>
+              <DropdownMenuItem onSelect={onRun}>
                 <Play className="h-4 w-4" />
                 运行
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-[#f4f4f5]"
-                onClick={onEdit}
-              >
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onEdit}>
                 <Pencil className="h-4 w-4" />
                 编辑
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-[#f4f4f5]"
-                onClick={onMove}
-              >
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onMove}>
                 <ArrowRightLeft className="h-4 w-4" />
                 移动到
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-red-600 hover:bg-red-50"
-                onClick={onDelete}
-              >
+              </DropdownMenuItem>
+              <DropdownMenuItem className="text-red-600 focus:bg-red-50 focus:text-red-600" onSelect={onDelete}>
                 <Trash2 className="h-4 w-4" />
                 删除
-              </button>
-            </PopoverContent>
-          </Popover>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </Card>
   );
@@ -1711,7 +1667,6 @@ function ApiRunRecordRow({
 }) {
   const router = useRouter();
   const platformAgent = useOptionalPlatformAgent();
-  const [runMenuOpen, setRunMenuOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const st = runStatusDisplay(r.status);
   const finished = formatRunRecordFinishedAtLocal(r.finished_at ?? r.started_at);
@@ -1743,7 +1698,6 @@ function ApiRunRecordRow({
   }, [onApiError, onNotify, platformAgent, taskId]);
 
   const onViewProcess = useCallback(() => {
-    setRunMenuOpen(false);
     if (!sessionId) {
       onNotify("该记录无关联会话，无法查看对话", "error");
       return;
@@ -1769,7 +1723,6 @@ function ApiRunRecordRow({
       onApiError("请登录后重试。");
       return;
     }
-    setRunMenuOpen(false);
     void (async () => {
       try {
         await platformAgent.withFreshToken(async (token) => {
@@ -1797,11 +1750,10 @@ function ApiRunRecordRow({
       )}
     >
       {bulkSelect ? (
-        <input
-          type="checkbox"
+        <Checkbox
           className="mt-1.5 h-4 w-4 shrink-0 rounded border-[#cbd5e1]"
           checked={selected}
-          onChange={onToggleSelect}
+          onCheckedChange={onToggleSelect}
           aria-label="选择"
         />
       ) : null}
@@ -1822,45 +1774,43 @@ function ApiRunRecordRow({
           </div>
           <div className="inline-flex shrink-0 items-center gap-0.5 pl-1">
             {showDownload ? (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 disabled={downloading}
                 onClick={() => void onDownloadAll()}
-                className="inline-flex items-center gap-1.5 text-sm text-[#111111] transition hover:text-[#2a2a2a] hover:underline disabled:opacity-50"
+                className="h-9 px-2 text-sm text-[#111111] hover:text-[#2a2a2a] hover:underline"
               >
                 <Download className="h-4 w-4 shrink-0" />
                 {downloading ? "准备中…" : "下载所有报告"}
-              </button>
+              </Button>
             ) : null}
-            <Popover open={runMenuOpen} onOpenChange={setRunMenuOpen}>
-              <PopoverTrigger asChild>
-                <button
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
                   type="button"
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#747571] transition hover:bg-[#f0f0ef] hover:text-[#111111]"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 rounded-[10px] text-[#747571]"
                   aria-label="更多操作"
                 >
                   <MoreVertical className="h-5 w-5" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-48 p-1" onOpenAutoFocus={(e) => e.preventDefault()}>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-[#111111] hover:bg-[#f7f7f7]"
-                  onClick={onViewProcess}
-                >
-                  <Eye className="h-4 w-4 shrink-0" />
-                  查看执行过程
-                </button>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                  onClick={onDeleteRun}
-                >
-                  <Trash2 className="h-4 w-4 shrink-0" />
-                  删除
-                </button>
-              </PopoverContent>
-            </Popover>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onSelect={onViewProcess}>
+                    <Eye className="h-4 w-4 shrink-0" />
+                    查看执行过程
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="text-red-600 focus:bg-red-50 focus:text-red-600" onSelect={onDeleteRun}>
+                    <Trash2 className="h-4 w-4 shrink-0" />
+                    删除
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
         <p className="mt-3 line-clamp-6 text-sm leading-relaxed text-[#747571] sm:line-clamp-4">{summaryText}</p>

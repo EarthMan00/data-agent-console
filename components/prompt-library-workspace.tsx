@@ -22,8 +22,16 @@ import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { AgentApiError, parseFastApiDetail } from "@/lib/agent-api/client";
@@ -38,9 +46,17 @@ import {
   listUserPrompts,
   patchUserPrompt,
 } from "@/lib/agent-api/user-prompts";
-import { cn } from "@/lib/utils";
 
 type FilterTab = { kind: "all" } | { kind: "default" } | { kind: "group"; id: string };
+const DEFAULT_GROUP_VALUE = "__default__";
+
+const tabToValue = (tab: FilterTab) => (tab.kind === "group" ? `group:${tab.id}` : tab.kind);
+
+function valueToTab(value: string): FilterTab {
+  if (value === "default") return { kind: "default" };
+  if (value.startsWith("group:")) return { kind: "group", id: value.slice("group:".length) };
+  return { kind: "all" };
+}
 
 function formatDateTime(iso: string) {
   const d = new Date(iso);
@@ -48,16 +64,10 @@ function formatDateTime(iso: string) {
   return d.toLocaleString();
 }
 
-/** 参考稿：浅灰空箱 + 点缀圆点，居中空白态 */
 function PromptLibraryEmptyIllustration() {
   return (
-    <div className="relative mx-auto mb-7 flex h-[112px] w-[112px] shrink-0 items-center justify-center" aria-hidden>
-      <span className="absolute left-1 top-3 h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
-      <span className="absolute right-2 top-5 h-1 w-1 rounded-full bg-[#e5e7eb]" />
-      <span className="absolute bottom-5 left-0 h-1 w-1 rounded-full bg-[#e5e7eb]" />
-      <span className="absolute bottom-8 right-1 h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
-      <span className="absolute left-2 top-[46%] h-1 w-1 -translate-y-1/2 rounded-full bg-[#e5e7eb]" />
-      <Package className="relative h-[72px] w-[72px] text-[#d4d4d8]" strokeWidth={1.15} />
+    <div className="mx-auto mb-6 flex h-16 w-16 shrink-0 items-center justify-center rounded-[18px] border border-[#e2e2df] bg-[#f7f7f7]" aria-hidden>
+      <Package className="h-8 w-8 text-[#b1b2ae]" strokeWidth={1.35} />
     </div>
   );
 }
@@ -354,7 +364,7 @@ export function PromptLibraryWorkspace() {
   };
 
   return (
-    <MoreDataShell currentPath="/prompt-library">
+    <MoreDataShell currentPath="/prompt-library" showTopHeader={false}>
       <AutoToast
         message={toastMessage}
         variant={toastVariant}
@@ -364,35 +374,36 @@ export function PromptLibraryWorkspace() {
         }}
         durationMs={2000}
       />
-      <div className="px-8 pb-12 pt-8">
-        <div className="mx-auto max-w-[1180px]">
-          <div className="flex flex-wrap items-start justify-between gap-6">
+      <div className="px-8 pb-14 pt-5">
+        <div className="mx-auto max-w-[1040px]">
+          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-5">
             <div className="min-w-0 flex-1">
               <h1 className="text-[24px] font-semibold leading-8 text-[#111111]">我的提示词</h1>
 
               <div className="mt-5 flex flex-wrap items-center gap-2">
-                <FilterChip
-                  active={tab.kind === "all"}
-                  onClick={() => setTab({ kind: "all" })}
-                  label="全部"
-                  deletable={false}
-                />
-                <FilterChip
-                  active={tab.kind === "default"}
-                  onClick={() => setTab({ kind: "default" })}
-                  label="默认"
-                  deletable={false}
-                />
-                {groups.map((g) => (
-                  <FilterChip
-                    key={g.id}
-                    active={tab.kind === "group" && tab.id === g.id}
-                    onClick={() => setTab({ kind: "group", id: g.id })}
-                    label={g.name || "未命名"}
-                    deletable
-                    onDelete={() => setDeleteGroupId(g.id)}
-                  />
-                ))}
+                <Tabs value={tabToValue(tab)} onValueChange={(value) => setTab(valueToTab(value))}>
+                  <TabsList className="h-9 flex-wrap justify-start">
+                    <TabsTrigger value="all">全部</TabsTrigger>
+                    <TabsTrigger value="default">默认</TabsTrigger>
+                    {groups.map((g) => (
+                      <div key={g.id} className="inline-flex items-center rounded-[8px]">
+                        <TabsTrigger value={`group:${g.id}`} className="rounded-r-none pr-2">
+                          <span className="max-w-[160px] truncate">{g.name || "未命名"}</span>
+                        </TabsTrigger>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`删除分组 ${g.name || "未命名"}`}
+                          className="h-8 w-7 rounded-l-none rounded-r-[8px] px-0 text-[#8b8c87] hover:bg-[#e2e2df] hover:text-[#111111]"
+                          onClick={() => setDeleteGroupId(g.id)}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </TabsList>
+                </Tabs>
                 {addGroupOpen ? (
                   <div className="flex items-center gap-1">
                     <Input
@@ -401,7 +412,7 @@ export function PromptLibraryWorkspace() {
                       value={newGroupName}
                       onChange={(e) => setNewGroupName(e.target.value)}
                       placeholder="请输入分组名称"
-                      className="h-8 w-[160px] rounded-[10px] border-[#e2e2df] text-sm"
+                      className="h-9 w-[160px] rounded-[10px] border-[#e2e2df] text-[14px]"
                       onBlur={() => {
                         window.setTimeout(() => {
                           if (skipNewGroupBlurRef.current) {
@@ -432,7 +443,7 @@ export function PromptLibraryWorkspace() {
                     type="button"
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8 rounded-[10px] border-[#e2e2df]"
+                    className="h-9 w-9 rounded-[10px] border-[#e2e2df] bg-white"
                     aria-label="新建分组"
                     onClick={() => setAddGroupOpen(true)}
                   >
@@ -442,14 +453,14 @@ export function PromptLibraryWorkspace() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="搜索提示词"
-                  className="h-9 w-[220px] rounded-[10px] border-[#e2e2df] pl-9"
+                  className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9 sm:w-[220px]"
                 />
               </div>
               <Button
@@ -467,11 +478,11 @@ export function PromptLibraryWorkspace() {
               {error}
             </div>
           ) : null}
-          {busy ? <div className="mt-6 text-sm text-[#71717a]">加载中…</div> : null}
+          {busy ? <div className="mt-8 text-sm text-[#71717a]">加载中…</div> : null}
 
           {!busy && filteredPrompts.length === 0 ? (
             prompts.length === 0 ? (
-              <div className="mt-6 flex min-h-[min(420px,calc(100vh-280px))] flex-col items-center justify-center rounded-[18px] border border-[#e2e2df] bg-white px-4 py-12 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
+              <div className="mt-8 flex min-h-[min(420px,calc(100vh-320px))] flex-col items-center justify-center rounded-[18px] border border-white/70 bg-white/72 px-4 py-12 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
                 <PromptLibraryEmptyIllustration />
                 <p className="max-w-md text-center text-[15px] leading-relaxed text-[#71717a]">
                   {tab.kind === "all"
@@ -479,70 +490,67 @@ export function PromptLibraryWorkspace() {
                     : tab.kind === "default"
                       ? "默认分组下暂无提示词"
                       : "该分组下暂无提示词"}{" "}
-                  <button
+                  <Button
                     type="button"
-                    className="text-[#18181b] underline decoration-[#a1a1aa] underline-offset-[5px] transition hover:text-[#27272a] hover:decoration-[#71717a]"
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto rounded-none px-0 py-0 align-baseline text-[#18181b] underline decoration-[#a1a1aa] underline-offset-[5px] hover:bg-transparent hover:text-[#27272a] hover:decoration-[#71717a]"
                     onClick={openCreate}
                   >
                     马上创建提示词
-                  </button>
+                  </Button>
                 </p>
               </div>
             ) : (
               <div className="mt-16 flex flex-col items-center justify-center px-4 text-center">
                 <p className="text-[15px] text-[#71717a]">未找到匹配的提示词</p>
-                <button
+                <Button
                   type="button"
-                  className="mt-3 text-sm text-[#18181b] underline decoration-[#d4d4d8] underline-offset-4 transition hover:text-[#27272a]"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 h-8 px-2 text-sm text-[#18181b] underline decoration-[#d4d4d8] underline-offset-4 hover:text-[#27272a]"
                   onClick={() => setSearch("")}
                 >
                   清空搜索条件
-                </button>
+                </Button>
               </div>
             )
           ) : (
-            <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {filteredPrompts.map((p) => (
-                <Card key={p.id} className="overflow-hidden border-[#e2e2df] shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition hover:border-[#d4d4d0] hover:bg-white">
-                  <div className="min-h-[140px] bg-[#f7f7f7] px-4 py-4 text-[13px] leading-relaxed text-[#34322d]">
-                    <p className="line-clamp-6 whitespace-pre-wrap">{p.prompt_text}</p>
-                  </div>
-                  <CardContent className="border-t border-[#e2e2df] px-4 py-3">
+                <Card
+                  key={p.id}
+                  className="group relative overflow-hidden rounded-[18px] border border-white/70 bg-white/72 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition duration-200 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)]"
+                >
+                  <CardContent className="flex min-h-[198px] flex-col px-5 py-[18px]">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-[#111111]">{p.title}</div>
+                        <div className="line-clamp-1 text-[16px] font-semibold leading-6 text-[#111111]">{p.title}</div>
                         <div className="mt-1 text-xs text-[#8b8c87]">{formatDateTime(p.updated_at)}</div>
                       </div>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-[8px]">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button type="button" variant="ghost" size="iconSm">
                             <MoreVertical className="h-4 w-4 text-[#71717a]" />
                           </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-48 p-1" align="end">
-                          <button
-                            type="button"
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
-                            onClick={() => openEdit(p)}
-                          >
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-48" align="end">
+                          <DropdownMenuGroup>
+                          <DropdownMenuItem onSelect={() => openEdit(p)}>
                             <Pencil className="h-4 w-4" />
                             编辑
-                          </button>
-                          <button
-                            type="button"
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
-                            onClick={() => {
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => {
                               setMoveTarget(p);
                               setMoveGroupId(p.group_id);
                             }}
                           >
                             <ArrowRightLeft className="h-4 w-4" />
                             移动到
-                          </button>
-                          <button
-                            type="button"
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
-                            onClick={() => {
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => {
                               setRenamePromptId(p.id);
                               setRenameTitle(p.title);
                               setRenameOpen(true);
@@ -550,27 +558,24 @@ export function PromptLibraryWorkspace() {
                           >
                             <Pencil className="h-4 w-4" />
                             重命名
-                          </button>
-                          <button
-                            type="button"
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5]"
-                            onClick={() => void copyText(p.prompt_text)}
-                          >
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => void copyText(p.prompt_text)}>
                             <Copy className="h-4 w-4" />
                             复制提示词
-                          </button>
-                          <button
-                            type="button"
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                            onClick={() => setDeletePromptId(p.id)}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-red-600 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-600"
+                            onSelect={() => setDeletePromptId(p.id)}
                           >
                             <Trash2 className="h-4 w-4" />
                             删除
-                          </button>
-                        </PopoverContent>
-                      </Popover>
+                          </DropdownMenuItem>
+                          </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-                    <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    <p className="mt-3 line-clamp-4 whitespace-pre-wrap text-[14px] leading-6 text-[#747571]">{p.prompt_text}</p>
+                    <div className="mt-auto flex flex-wrap justify-end gap-2 pt-4">
                       <Button
                         type="button"
                         variant="outline"
@@ -584,7 +589,7 @@ export function PromptLibraryWorkspace() {
                       <Button
                         type="button"
                         size="sm"
-                        className="rounded-[8px] bg-[#1f2b1f] text-white hover:bg-[#283728]"
+                        className="rounded-[8px] bg-[#111111] text-white hover:bg-[#2a2a2a]"
                         onClick={() => void handleUsePrompt(p.prompt_text)}
                       >
                         使用
@@ -621,18 +626,24 @@ export function PromptLibraryWorkspace() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm text-[#52525b]">分组</label>
-                <select
-                  value={formGroupId ?? ""}
-                  onChange={(e) => setFormGroupId(e.target.value === "" ? null : e.target.value)}
-                  className="h-12 w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 text-sm text-[#18181b]"
+                <Select
+                  value={formGroupId ?? DEFAULT_GROUP_VALUE}
+                  onValueChange={(value) => setFormGroupId(value === DEFAULT_GROUP_VALUE ? null : value)}
                 >
-                  <option value="">默认</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name || "未命名"}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="h-12 rounded-[12px] border-[#e2e2df] text-[#34322d]">
+                    <SelectValue placeholder="默认" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={DEFAULT_GROUP_VALUE}>默认</SelectItem>
+                      {groups.map((g) => (
+                        <SelectItem key={g.id} value={g.id}>
+                          {g.name || "未命名"}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <label className="text-sm text-[#52525b]">简介</label>
@@ -658,10 +669,10 @@ export function PromptLibraryWorkspace() {
               </div>
             </div>
             <div className="mt-8 flex justify-end gap-3">
-              <Button variant="outline" className="rounded-[10px]" onClick={() => setSaveOpen(false)}>
+              <Button variant="outline" onClick={() => setSaveOpen(false)}>
                 取消
               </Button>
-              <Button className="rounded-[10px] bg-[#18181b] text-white hover:bg-[#27272a]" onClick={() => void submitSave()}>
+              <Button onClick={() => void submitSave()}>
                 保存
               </Button>
             </div>
@@ -680,23 +691,23 @@ export function PromptLibraryWorkspace() {
               <div className="mt-4 rounded-[12px] bg-[#f5f5f5] p-4">
                 <div className="flex items-center justify-between border-b border-[#e5e7eb] pb-2 text-xs text-[#71717a]">
                   <span>提示词(Prompt)</span>
-                  <button
+                  <Button
                     type="button"
-                    className="inline-flex items-center gap-1 text-[#18181b] hover:underline"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => void copyText(preview.prompt_text)}
                   >
                     <Copy className="h-3.5 w-3.5" />
                     复制
-                  </button>
+                  </Button>
                 </div>
                 <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-[#18181b]">{preview.prompt_text}</p>
               </div>
               <div className="mt-6 flex justify-end gap-3">
-                <Button variant="outline" className="rounded-[10px]" onClick={() => setPreview(null)}>
+                <Button variant="outline" onClick={() => setPreview(null)}>
                   取消
                 </Button>
                 <Button
-                  className="rounded-[10px] bg-[#1f2b1f] text-white hover:bg-[#283728]"
                   onClick={() => {
                     void handleUsePrompt(preview.prompt_text);
                     setPreview(null);
@@ -714,23 +725,29 @@ export function PromptLibraryWorkspace() {
         <DialogContent className="max-w-[400px] rounded-[16px]">
           <DialogTitle>移动到</DialogTitle>
           <DialogDescription>选择目标分组（默认表示未分组）</DialogDescription>
-          <select
-            value={moveGroupId ?? ""}
-            onChange={(e) => setMoveGroupId(e.target.value === "" ? null : e.target.value)}
-            className="mt-4 h-11 w-full rounded-[10px] border border-[#e5e7eb] px-3"
+          <Select
+            value={moveGroupId ?? DEFAULT_GROUP_VALUE}
+            onValueChange={(value) => setMoveGroupId(value === DEFAULT_GROUP_VALUE ? null : value)}
           >
-            <option value="">默认</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name || "未命名"}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="mt-4 h-11 rounded-[10px] border-[#e2e2df]">
+              <SelectValue placeholder="默认" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value={DEFAULT_GROUP_VALUE}>默认</SelectItem>
+                {groups.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.name || "未命名"}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setMoveTarget(null)}>
               取消
             </Button>
-            <Button className="bg-[#18181b] text-white" onClick={() => void submitMove()}>
+            <Button onClick={() => void submitMove()}>
               确定
             </Button>
           </div>
@@ -745,7 +762,7 @@ export function PromptLibraryWorkspace() {
             <Button variant="outline" onClick={() => setRenameOpen(false)}>
               取消
             </Button>
-            <Button className="bg-[#18181b] text-white" onClick={() => void submitRename()}>
+            <Button onClick={() => void submitRename()}>
               保存
             </Button>
           </div>
@@ -824,47 +841,5 @@ export function PromptLibraryWorkspace() {
         </DialogContent>
       </Dialog>
     </MoreDataShell>
-  );
-}
-
-function FilterChip({
-  label,
-  active,
-  onClick,
-  deletable,
-  onDelete,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  deletable: boolean;
-  onDelete?: () => void;
-}) {
-  return (
-    <div
-      className={cn(
-        "group relative inline-flex items-center rounded-[8px] border px-3 py-1.5 text-sm transition",
-        active
-          ? "border-[#e4e4e7] bg-[linear-gradient(180deg,#f5f5f5,#efefef)] font-medium text-[#18181b]"
-          : "border-transparent bg-[#f4f4f5] text-[#52525b] hover:bg-[#e4e4e7]/50",
-      )}
-    >
-      <button type="button" className="max-w-[200px] truncate pr-0.5 text-left" onClick={onClick}>
-        {label}
-      </button>
-      {deletable && onDelete ? (
-        <button
-          type="button"
-          className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#e4e4e7] text-[#52525b] opacity-0 shadow-sm transition hover:bg-[#d4d4d8] group-hover:opacity-100"
-          aria-label={`删除分组 ${label}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-        >
-          <X className="h-3 w-3" />
-        </button>
-      ) : null}
-    </div>
   );
 }

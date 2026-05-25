@@ -11,6 +11,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import {
@@ -63,9 +64,13 @@ type MoreDataShellProps = {
   currentRunLabel?: string;
   mainDecoration?: ReactNode;
   contentScrollMode?: "shell" | "child";
+  showTopHeader?: boolean;
 };
 
-type ShellMeta = Pick<MoreDataShellProps, "currentPath" | "rightRail" | "currentRunLabel" | "mainDecoration" | "contentScrollMode">;
+type ShellMeta = Pick<
+  MoreDataShellProps,
+  "currentPath" | "rightRail" | "currentRunLabel" | "mainDecoration" | "contentScrollMode" | "showTopHeader"
+>;
 
 type ShellMetaContextValue = {
   meta: ShellMeta;
@@ -286,6 +291,7 @@ export function MoreDataShell({
   currentRunLabel,
   mainDecoration,
   contentScrollMode = "shell",
+  showTopHeader = true,
 }: MoreDataShellProps) {
   const shellMetaContext = useContext(ShellMetaContext);
   const setShellMeta = shellMetaContext?.setMeta;
@@ -297,8 +303,9 @@ export function MoreDataShell({
       currentRunLabel,
       mainDecoration,
       contentScrollMode,
+      showTopHeader,
     });
-  }, [currentPath, rightRail, currentRunLabel, mainDecoration, contentScrollMode, setShellMeta]);
+  }, [currentPath, rightRail, currentRunLabel, mainDecoration, contentScrollMode, showTopHeader, setShellMeta]);
 
   return <>{children}</>;
 }
@@ -333,6 +340,7 @@ function MoreDataShellInner({ children }: { children: ReactNode }) {
       currentRunLabel={meta.currentRunLabel}
       mainDecoration={meta.mainDecoration}
       contentScrollMode={meta.contentScrollMode}
+      showTopHeader={meta.showTopHeader}
     >
       {children}
     </MoreDataShellComponent>
@@ -346,6 +354,7 @@ function MoreDataShellComponent({
   currentRunLabel,
   mainDecoration,
   contentScrollMode = "shell",
+  showTopHeader = true,
 }: MoreDataShellProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -369,6 +378,8 @@ function MoreDataShellComponent({
   const [historyPurgeConfirmId, setHistoryPurgeConfirmId] = useState<string | null>(null);
   const [historySearch, setHistorySearch] = useState("");
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const historySearchInputRef = useRef<HTMLInputElement | null>(null);
   const historyListScrollRef = useRef<HTMLDivElement | null>(null);
   const historyLoadSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -380,8 +391,21 @@ function MoreDataShellComponent({
   const childManagedScroll = contentScrollMode === "child";
   const sidebarExpandedWidth = 300;
   const sidebarCollapsedWidth = 68;
+  const effectiveSidebarCollapsed = !isMobileViewport && sidebarCollapsed;
 
   const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobileViewport(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [pathname]);
 
   /** 从对话页返回首页等路由时再拉一次列表，避免仅靠首屏加载看不到刚结束的会话 */
   useEffect(() => {
@@ -528,13 +552,33 @@ function MoreDataShellComponent({
   return (
     <div className={childManagedScroll ? "h-screen overflow-hidden bg-transparent" : "min-h-screen bg-transparent"}>
       <div
-        className={childManagedScroll ? "grid h-screen overflow-hidden bg-[#f7f7f7]" : "grid min-h-screen bg-[#f7f7f7]"}
-        style={{ gridTemplateColumns: sidebarCollapsed ? `${sidebarCollapsedWidth}px minmax(0,1fr)` : `${sidebarExpandedWidth}px minmax(0,1fr)` }}
+        className={cn(
+          "grid grid-cols-[minmax(0,1fr)] bg-[#f7f7f7] md:[grid-template-columns:var(--sidebar-width)_minmax(0,1fr)]",
+          childManagedScroll ? "h-screen overflow-hidden" : "min-h-screen",
+        )}
+        style={
+          {
+            "--sidebar-width": `${effectiveSidebarCollapsed ? sidebarCollapsedWidth : sidebarExpandedWidth}px`,
+          } as CSSProperties
+        }
       >
-        <aside className="sticky top-0 self-start flex h-screen min-h-0 flex-col overflow-hidden bg-white transition-[padding,width]">
+        {mobileSidebarOpen ? (
+          <button
+            type="button"
+            className="fixed inset-0 z-[80] bg-black/20 backdrop-blur-[1px] md:hidden"
+            aria-label="关闭侧边栏遮罩"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+        ) : null}
+        <aside
+          className={cn(
+            "fixed inset-y-0 left-0 z-[90] flex h-dvh min-h-0 w-[min(300px,86vw)] max-w-[calc(100vw-24px)] flex-col overflow-hidden bg-white shadow-[16px_0_40px_rgba(15,23,42,0.12)] transition-transform duration-200 md:sticky md:top-0 md:z-auto md:h-screen md:w-auto md:self-start md:translate-x-0 md:shadow-none",
+            mobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
+          )}
+        >
           <div className="relative flex min-h-0 flex-1 flex-col">
             <div className="shrink-0">
-              {sidebarCollapsed ? (
+              {effectiveSidebarCollapsed ? (
                 <div className="flex flex-col items-center gap-2 px-2 pt-3">
                   <BrandLogo compact />
                   <button
@@ -566,12 +610,28 @@ function MoreDataShellComponent({
                       >
                         <Search className="h-[18px] w-[18px]" strokeWidth={1.8} />
                       </button>
+                      <button
+                        type="button"
+                        aria-label="收起侧边栏"
+                        className="hidden h-8 w-8 items-center justify-center rounded-[8px] text-[#5f625f] transition hover:bg-[#e9e9e7] hover:text-[#22221f] md:inline-flex"
+                        onClick={() => setSidebarCollapsed(true)}
+                      >
+                        <PanelLeft className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="关闭侧边栏"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-[#5f625f] transition hover:bg-[#e9e9e7] hover:text-[#22221f] md:hidden"
+                        onClick={() => setMobileSidebarOpen(false)}
+                      >
+                        <X className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                      </button>
                     </div>
                   </div>
                 </div>
               )}
 
-              <nav className={cn("space-y-px", sidebarCollapsed ? "mt-3 px-2" : "px-2 pt-2")}>
+              <nav className={cn("space-y-px", effectiveSidebarCollapsed ? "mt-3 px-2" : "px-2 pt-2")}>
               {sidebarNavItems.map(({ href, label, icon: Icon }) => {
                 const active = currentPath === href || (href === "/" && currentPath === "/agent");
                 return (
@@ -583,6 +643,7 @@ function MoreDataShellComponent({
                         e.preventDefault();
                         platformAgent?.clearActivePlatformSession();
                         router.replace("/");
+                        setMobileSidebarOpen(false);
                         return;
                       }
                       platformAgent?.clearActivePlatformSession();
@@ -591,16 +652,17 @@ function MoreDataShellComponent({
                         e.preventDefault();
                         platformAgent.openLogin("请先登录后再继续操作。");
                       }
+                      setMobileSidebarOpen(false);
                     }}
                     className={`group flex h-9 items-center rounded-[10px] text-[16px] font-normal leading-6 transition-colors ${
                     active
                         ? "bg-[rgba(55,53,47,0.06)] text-[#34322d]"
                         : "text-[#34322d] hover:bg-[rgba(55,53,47,0.06)]"
-                  } ${sidebarCollapsed ? "justify-center px-0" : "gap-3 pl-[9px] pr-0.5"}`}
-                    title={sidebarCollapsed ? label : undefined}
+                  } ${effectiveSidebarCollapsed ? "justify-center px-0" : "gap-3 pl-[9px] pr-0.5"}`}
+                    title={effectiveSidebarCollapsed ? label : undefined}
                   >
                     <Icon className="h-[18px] w-[18px] shrink-0 text-[#34322d]" strokeWidth={1.8} />
-                    {!sidebarCollapsed ? (
+                    {!effectiveSidebarCollapsed ? (
                       <>
                         <span className="text-[14px] leading-[21px]">{label}</span>
                       </>
@@ -611,7 +673,7 @@ function MoreDataShellComponent({
               </nav>
             </div>
 
-            {!sidebarCollapsed && showAuthSidebar ? (
+            {!effectiveSidebarCollapsed && showAuthSidebar ? (
               <div className="mt-[98px] flex min-h-0 flex-1 flex-col px-2">
                 <div className="flex h-9 shrink-0 items-center justify-between rounded-[10px] px-[9px] text-[16px] font-normal leading-6 text-[#858481]">
                   <span className="text-[13px] font-medium leading-[18px] text-[#858481]">所有任务</span>
@@ -643,6 +705,7 @@ function MoreDataShellComponent({
                           onClick={() => {
                             platformAgent?.setActivePlatformSession(s.session_id);
                             router.push(`/agent?sessionId=${encodeURIComponent(s.session_id)}`);
+                            setMobileSidebarOpen(false);
                           }}
                           className="flex min-w-0 flex-1 items-center px-[9px] py-1.5 text-left"
                         >
@@ -695,9 +758,8 @@ function MoreDataShellComponent({
                               </Button>
                               <Button
                                 type="button"
-                                variant="default"
+                                variant="destructive"
                                 size="sm"
-                                className="h-8 rounded-lg bg-red-600 px-3 text-xs hover:bg-red-700"
                                 disabled={deletingId === s.session_id}
                                 onClick={() => void executePurgeHistorySession(s.session_id)}
                               >
@@ -724,7 +786,7 @@ function MoreDataShellComponent({
               </div>
             ) : null}
 
-            {!sidebarCollapsed && isPlatformBackendEnabled() && platformAgent ? (
+            {!effectiveSidebarCollapsed && isPlatformBackendEnabled() && platformAgent ? (
               <div className="mt-auto shrink-0 px-2 pb-5 pt-4">
                 <div className="mx-[9px] mb-3 h-px bg-[#e7e7e4]" />
                 {showHeaderUserMenu && headerAuth ? (
@@ -928,20 +990,30 @@ function MoreDataShellComponent({
         ) : null}
 
         <main className={childManagedScroll ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-transparent" : "flex min-h-screen min-w-0 flex-col bg-transparent"}>
-          <header className="sticky top-0 z-50 flex h-14.5 items-center bg-transparent px-6">
-            <div className="flex min-w-0 items-center gap-3">
-              {currentRunLabel ? (
-                <div className="min-w-0 truncate text-[15px] font-medium text-[#243248]">
-                  {currentRunLabel}
-                </div>
-              ) : null}
-            </div>
-          </header>
+          {showTopHeader || currentRunLabel ? (
+            <header className="sticky top-0 z-50 flex h-14.5 items-center bg-transparent px-3 sm:px-4 md:px-6">
+              <div className="flex min-w-0 items-center gap-3">
+                <button
+                  type="button"
+                  aria-label="打开侧边栏"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] md:hidden"
+                  onClick={() => setMobileSidebarOpen(true)}
+                >
+                  <PanelLeft className="h-5 w-5" strokeWidth={1.8} />
+                </button>
+                {currentRunLabel ? (
+                  <div className="min-w-0 truncate text-[15px] font-medium text-[#243248]">
+                    {currentRunLabel}
+                  </div>
+                ) : null}
+              </div>
+            </header>
+          ) : null}
 
           <div
             className={cn(
               "min-h-0 flex-1",
-              rightRail && "grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(580px,61%)]",
+              rightRail && "grid min-h-0 grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(580px,61%)]",
             )}
           >
             <div
@@ -966,6 +1038,7 @@ function MoreDataShellComponent({
               <aside
                 className={cn(
                   "flex min-h-0 min-w-0 flex-col border-l border-[#e3e8ef] bg-[rgba(255,255,255,0.7)] backdrop-blur-xl",
+                  "border-l-0 border-t md:border-l md:border-t-0",
                   childManagedScroll ? "overflow-hidden" : "overflow-visible",
                 )}
               >

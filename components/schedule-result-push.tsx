@@ -87,7 +87,15 @@ export function ScheduleResultPushSection({ defaultBlocks, onConfigSnapshot, onN
 
   useEffect(() => {
     if (defaultBlocks == null) return;
-    setBlocks(defaultBlocks);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setBlocks(defaultBlocks);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [defaultBlocks]);
 
   const hasEmail = blocks.some((b) => b.type === "email");
@@ -426,7 +434,7 @@ function DingTalkCard({
       )}
       <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-[#f0f0f0] pt-3">
         <span className="text-xs text-[#94a3b8]">配置完成后请点击右侧验证</span>
-        <Button type="button" size="sm" variant="outline" className="rounded-[8px]" onClick={onVerify}>
+        <Button type="button" size="sm" variant="outline" onClick={onVerify}>
           校验
         </Button>
       </div>
@@ -503,7 +511,7 @@ function FeishuCard({
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-[#f0f0f0] pt-3">
         <span className="text-xs text-[#94a3b8]">配置完成后请点击右侧验证</span>
-        <Button type="button" size="sm" variant="outline" className="rounded-[8px]" onClick={onVerify}>
+        <Button type="button" size="sm" variant="outline" onClick={onVerify}>
           校验
         </Button>
       </div>

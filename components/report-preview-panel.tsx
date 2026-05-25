@@ -37,7 +37,7 @@ export function ReportPreviewPanel({
         data-testid={dataTestId === false ? undefined : dataTestId}
       >
         <p className="text-sm">无匹配的预览内容</p>
-        <Button type="button" variant="outline" className="rounded-[10px]" onClick={onClose}>
+        <Button type="button" variant="outline" onClick={onClose}>
           关闭
         </Button>
       </div>
@@ -57,16 +57,16 @@ export function ReportPreviewPanel({
           <div className="mt-1 text-[11px] text-[#8b9490]">{preview.subtitle}</div>
         </div>
         <div className="flex items-center gap-2 text-[#7b8797]">
-          <Button aria-label="下载预览结果" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setActionNotice("导出能力待接入。")}>
+          <Button aria-label="下载预览结果" variant="ghost" size="iconSm" onClick={() => setActionNotice("导出能力待接入。")}>
             <Download className="h-4 w-4" />
           </Button>
-          <Button aria-label="展开预览结果" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setActionNotice("全屏预览待接入。")}>
+          <Button aria-label="展开预览结果" variant="ghost" size="iconSm" onClick={() => setActionNotice("全屏预览待接入。")}>
             <Expand className="h-4 w-4" />
           </Button>
-          <Button aria-label="更多预览操作" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={() => setActionNotice("更多操作待接入。")}>
+          <Button aria-label="更多预览操作" variant="ghost" size="iconSm" onClick={() => setActionNotice("更多操作待接入。")}>
             <Ellipsis className="h-4 w-4" />
           </Button>
-          <Button aria-label="关闭预览面板" variant="ghost" size="icon" className="h-8 w-8 rounded-[10px]" onClick={onClose}>
+          <Button aria-label="关闭预览面板" variant="ghost" size="iconSm" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
         </div>
