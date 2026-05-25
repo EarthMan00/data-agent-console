@@ -19,7 +19,7 @@ export function ChatMarkdown({ className, children }: ChatMarkdownProps) {
   }
 
   return (
-    <div className={cn("chat-md text-[15px] leading-7 text-inherit [&_a]:break-all", className)}>
+    <div className={cn("chat-md text-[14px] leading-7 text-inherit [&_a]:break-all", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
@@ -43,14 +43,14 @@ export function ChatMarkdown({ className, children }: ChatMarkdownProps) {
             </a>
           ),
           pre: ({ children: c }) => (
-            <pre className="my-2 overflow-x-auto rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-3 py-2 text-[13px]">
+            <pre className="my-2 overflow-x-auto rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-3 py-2 text-[14px]">
               {c}
             </pre>
           ),
           code: ({ className, children: c }) => {
             const isBlock = typeof className === "string" && className.includes("language-");
             if (isBlock) {
-              return <code className="font-mono text-[13px] text-[#334155]">{c}</code>;
+              return <code className="font-mono text-[14px] text-[#334155]">{c}</code>;
             }
             return (
               <code className="rounded bg-[#f1f5f9] px-1 py-0.5 font-mono text-[0.9em] text-[#334155]">{c}</code>

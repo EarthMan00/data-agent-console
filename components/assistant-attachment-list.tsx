@@ -35,7 +35,7 @@ export function AssistantAttachmentList({ attachments, className }: AssistantAtt
             <span className="block max-w-[220px] truncate text-[12px] font-medium text-[#202124]">
               {attachment.name}
             </span>
-            <span className="mt-0.5 block text-[11px] text-[#9a9ea6]">
+            <span className="mt-0.5 block text-[12px] text-[#9a9ea6]">
               {[attachment.extension?.toUpperCase(), formatAttachmentSize(attachment.size)].filter(Boolean).join(" · ") || "附件"}
             </span>
           </span>

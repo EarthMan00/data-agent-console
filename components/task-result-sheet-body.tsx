@@ -6,7 +6,6 @@ import { Loader2 } from "@/components/ui/tabler-icons";
 import { LazyCsvArtifactTable } from "@/components/lazy-csv-artifact-table";
 import { TaskSingleDataArtifactPreview } from "@/components/task-single-data-preview";
 import { fetchAuthorizedText } from "@/lib/agent-api/client";
-import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import type { TaskResultSheet } from "@/lib/task-result-sheets";
 
 function tryFormatJson(text: string): string {
@@ -68,14 +67,14 @@ function JsonCodeBlock({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 py-8 text-[13px] text-[#64748b]">
+      <div className="flex items-center gap-2 py-8 text-[14px] text-[#64748b]">
         <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
         正在加载 JSON…
       </div>
     );
   }
   if (error) {
-    return <p className="py-4 text-[13px] text-red-600">{error}</p>;
+    return <p className="py-4 text-[14px] text-red-600">{error}</p>;
   }
   return (
     <pre className="min-h-0 min-w-0 flex-1 overflow-auto rounded-[10px] border border-[#e5e7eb] bg-[#0f172a] p-3 text-[12px] leading-relaxed text-[#e2e8f0]">
@@ -122,5 +121,5 @@ export function TaskResultSheetBody({ sheet, viewMode, withFreshToken }: TaskRes
     return <JsonCodeBlock downloadApi={sheet.json.download_api} withFreshToken={withFreshToken} />;
   }
 
-  return <p className="text-[13px] text-[#64748b]">暂无可展示内容。</p>;
+  return <p className="text-[14px] text-[#64748b]">暂无可展示内容。</p>;
 }

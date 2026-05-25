@@ -21,7 +21,6 @@ export function TaskResultSummaryCard({
 }: TaskResultSummaryCardProps) {
   return (
     <div className="space-y-3" data-testid="agent-result-section">
-      <div className="text-[14px] font-semibold text-[#202124]">任务结果</div>
       <div className="rounded-[18px] border border-[#e2e2df] bg-white px-4 py-4 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="flex min-w-0 items-center gap-4">
@@ -31,7 +30,7 @@ export function TaskResultSummaryCard({
               </div>
             </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[15px] font-semibold text-[#202124]">{title}</div>
+              <div className="truncate text-[14px] font-semibold text-[#202124]">{title}</div>
             </div>
           </div>
           {hasResult ? (
@@ -39,7 +38,7 @@ export function TaskResultSummaryCard({
               type="button"
               onClick={onToggle}
               className={cn(
-                "shrink-0 rounded-[10px] border border-transparent bg-[#111111] px-3 py-1.5 text-[11px] font-medium text-white shadow-none",
+                "shrink-0 rounded-[10px] border border-transparent bg-[#111111] px-3 py-1.5 text-[12px] font-medium text-white shadow-none",
                 "hover:bg-[#2a2a2a]",
               )}
             >
@@ -49,7 +48,7 @@ export function TaskResultSummaryCard({
         </div>
       </div>
       {summary ? (
-        <div className="line-clamp-3 max-w-[720px] px-1 text-[13px] leading-6.5 text-[#747571]">{summary}</div>
+        <div className="line-clamp-3 max-w-[720px] px-1 text-[14px] leading-6.5 text-[#747571]">{summary}</div>
       ) : null}
     </div>
   );

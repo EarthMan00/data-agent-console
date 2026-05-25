@@ -82,7 +82,7 @@ export function FavoriteReportPage({ favoriteId }: { favoriteId: string }) {
                 <FileSpreadsheet className="h-4 w-4" aria-hidden />
               </span>
               <div className="min-w-0">
-                <div className="truncate text-[15px] font-semibold text-[#0f172a]">{title || "任务执行结果"}</div>
+                <div className="truncate text-[14px] font-semibold text-[#0f172a]">{title || "任务执行结果"}</div>
                 {dateLine ? (
                   <div className="mt-0.5 text-[12px] text-[#64748b]">最后生成时间：{dateLine}</div>
                 ) : null}

@@ -1,14 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
   useSearchParamFlagSnapshot,
   useSearchParamSnapshot,
 } from "@/lib/use-search-param-snapshot";
-import { ChevronDown, ListRestart, MessageCircleMore, ThumbsDown, ThumbsUp } from "@/components/ui/tabler-icons";
+import { ListRestart, MessageCircleMore, ThumbsDown, ThumbsUp } from "@/components/ui/tabler-icons";
 import type {
   AgentAttachment,
   PlatformSubtaskSnapshot,
@@ -23,7 +22,6 @@ import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
 import { buildAttachmentItems } from "@/components/agent-workspace/attachment-utils";
 import {
-  CollapsedStatusRow,
   ConversationBubble,
   SIMPLE_CHAT_BUBBLE_MAX,
   SIMPLE_CHAT_COLUMN_MAX,
@@ -32,7 +30,7 @@ import {
   SimpleUserBubble,
   ToolCard,
 } from "@/components/agent-workspace/chat-bubbles";
-import { TaskSplitSection } from "@/components/agent-workspace/task-split-section";
+import { TaskOrchestrationBlock } from "@/components/agent-workspace/task-orchestration-block";
 import { PlatformRoundStepTimeline } from "@/components/agent-workspace/platform-step-views";
 import { PlatformSessionAgentWorkspace } from "@/components/agent-workspace/platform-session-agent-workspace";
 import { ReportPreviewPanel } from "@/components/report-preview-panel";
@@ -69,7 +67,7 @@ export {
 };
 export type { RoundViewModel, TaskRunLike };
 
-/** 各轮任务执行区内步骤卡片高亮：最新一轮用全局页签状态；历史轮仅在本轮子任务内推算 */
+/** 各轮任务执行区内步骤卡片高亮：仅在该轮仍有执行中步骤时展示，完成后不保留选中态。 */
 function activeHighlightForRound(
   roundId: string,
   latestRoundId: string | undefined,
@@ -87,6 +85,10 @@ function activeHighlightForRound(
     .sort((a, b) => b.stepIndex - a.stepIndex);
   if (withData.length > 0) return withData[0]!.taskId;
   return subs.length > 0 ? subs[subs.length - 1]!.taskId : null;
+}
+
+function shouldHighlightRoundStep(executionSteps: RoundViewModel["executionSteps"]) {
+  return Boolean(executionSteps?.some((step) => isExecutionStepActivelyBusy(step.status)));
 }
 
 export function AgentWorkspace() {
@@ -133,7 +135,7 @@ export function AgentWorkspace() {
 
   if (awaitingAgentRouteParams) {
     return (
-      <MoreDataShell currentPath="/agent" contentScrollMode="child" currentRunLabel="对话" mainDecoration={null}>
+      <MoreDataShell currentPath="/agent" contentScrollMode="child" currentRunLabel="历史对话" mainDecoration={null}>
         <div className="flex h-full min-h-0 flex-1 items-center justify-center text-sm text-[#71717a]">加载中…</div>
       </MoreDataShell>
     );
@@ -713,159 +715,117 @@ function AgentRunWorkspaceView({
                     </div>
                   ) : (
                   <div className="w-full max-w-[780px]">
-                    <div className="space-y-3.5">
-                      <div className="flex items-center gap-3 text-[14px] font-medium text-[#303734]">
-                        <div className="flex h-9 w-9 items-center justify-center">
-                          <Image
-                            src="/mdata-logo.png"
-                            alt="Alice"
-                            width={36}
-                            height={36}
-                            className="h-9 w-9 shrink-0 object-contain"
-                            draggable={false}
-                          />
-                        </div>
-                        <div>
-                          <div className="text-[14px] font-semibold text-[#1f2421]">Alice</div>
-                        </div>
-                      </div>
-
-                      {round.assistantPending &&
-                      round.executionGroups.length === 0 &&
-                      !round.executionSteps?.length ? (
-                        <AssistantLoadingRow variant="task" />
-                      ) : null}
-
-                      {round.splitItems.length > 0 ? (
-                        <TaskSplitSection
-                          items={round.splitItems}
-                          reveal={Boolean(round.splitReveal)}
-                          streamEnded={Boolean(round.splitStreamEnded)}
-                          onRevealComplete={() => {
-                            workspaceActions.applyRuntimeEvent(run.id, {
-                              type: "split_reveal_complete",
-                              roundId: round.roundId,
-                            });
-                            notifySplitRevealComplete(round.roundId);
-                          }}
-                        />
-                      ) : null}
-
-                      {splitRevealDone ? (
-                        executionExpanded ? (
-                        <div className="rounded-[18px] border border-[#e2e2df] bg-white px-4 py-4 shadow-[0_1px_2px_rgba(17,17,17,0.03)]" data-testid="agent-execution-panel">
-                          <div className="flex items-center justify-between gap-4">
-                            <div>
-                              <div className="text-[16px] font-semibold text-[#1f2421]">任务执行</div>
-                            </div>
-                            <div className="flex items-center">
-                              {round.collapseExecution ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setExecutionCardExpandedByRound((current) => ({
-                                      ...current,
-                                      [round.roundId]: false,
-                                    }))
-                                  }
-                                  aria-label="收起任务执行"
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-[10px] border border-[#e5e7eb] bg-white text-[#303734]"
-                                >
-                                  <ChevronDown className="h-4 w-4" />
-                                </button>
-                              ) : null}
-                            </div>
-                          </div>
-
-                          <div className="mt-4 space-y-3">
-                            {round.executionSteps?.length ? (
-                              <PlatformRoundStepTimeline
-                                executionSteps={round.executionSteps}
-                                platformSubtasks={round.platformSubtasks}
-                                activeHighlightTaskId={activeHighlightForRound(
-                                  round.roundId,
-                                  latestRoundIdForPanel,
-                                  round.platformSubtasks,
-                                  stepTimelineHighlightTaskId,
-                                  panelSubtaskFocus,
-                                )}
-                                runId={run.id}
-                                setPanelSubtaskFocus={setPanelSubtaskFocus}
-                                setPanelVisibility={setPanelVisibility}
-                              />
-                            ) : (
-                              <>
-                                {round.executionGroups.map((group) => (
-                                  <div key={group.id} className="space-y-2.5">
-                                    {group.tools.map((tool) => (
-                                      <ToolCard
-                                        key={tool.id}
-                                        title={tool.title}
-                                        detail={tool.detail}
-                                        tone={tool.tone}
-                                        onAction={
-                                          tool.previewId
-                                            ? () => {
-                                                workspaceActions.setActivePreview(run.id, tool.previewId!);
-                                                setPreviewOverrides((current) => ({
-                                                  ...current,
-                                                  [run.id]: tool.previewId!,
-                                                }));
-                                                setPanelVisibility((current) => ({ ...current, [run.id]: true }));
-                                              }
-                                            : undefined
-                                        }
-                                      />
-                                    ))}
-                                  </div>
-                                ))}
-                                {round.executionGroups.length === 0 && !round.assistantPending ? (
-                                  <div className="rounded-[18px] border border-dashed border-[#e5e7eb] bg-[#fcfcfd] px-4 py-5 text-[14px] leading-7 text-[#6c7571]">
-                                    正在为这轮任务准备执行节点，稍后会把关键过程同步到这里。
-                                  </div>
-                                ) : null}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
+                    <TaskOrchestrationBlock
+                      splitItems={round.splitItems}
+                      splitReveal={Boolean(round.splitReveal)}
+                      splitStreamEnded={Boolean(round.splitStreamEnded)}
+                      onSplitRevealComplete={() => {
+                        workspaceActions.applyRuntimeEvent(run.id, {
+                          type: "split_reveal_complete",
+                          roundId: round.roundId,
+                        });
+                        notifySplitRevealComplete(round.roundId);
+                      }}
+                      beforeSplit={
+                        round.assistantPending &&
+                        round.executionGroups.length === 0 &&
+                        !round.executionSteps?.length ? (
+                          <AssistantLoadingRow variant="task" />
+                        ) : null
+                      }
+                      showExecutionPanel={splitRevealDone}
+                      executionExpanded={executionExpanded}
+                      onExecutionExpandedChange={(next) =>
+                        setExecutionCardExpandedByRound((current) => ({
+                          ...current,
+                          [round.roundId]: next,
+                        }))
+                      }
+                      executionCollapsible={round.collapseExecution}
+                      executionTestId="agent-execution-panel"
+                      afterExecution={
                         <>
-                          <CollapsedStatusRow
-                            title={round.errorMessage ? "任务执行失败" : "任务已完成"}
-                            expanded={false}
-                            onClick={() =>
-                              setExecutionCardExpandedByRound((current) => ({
-                                ...current,
-                                [round.roundId]: true,
-                              }))
-                            }
-                            testId="agent-execution-summary-bar"
-                          />
+                          {round.errorMessage ? <p className="text-sm text-red-600">{round.errorMessage}</p> : null}
+
+                          {round.showTaskResultInChat && (run.activePreviewId || latestRoundWantsTaskPanel) ? (
+                            <TaskResultSummaryCard
+                              title={compactText(round.resultTitle, 48)}
+                              summary={compactText(round.resultSummary, 220)}
+                              hasResult={round.hasResult}
+                              expanded={taskPanelOpen}
+                              onToggle={() => {
+                                if (!latestRoundWantsTaskPanel && !run.activePreviewId) return;
+                                const currentOpen = panelVisibility[run.id] ?? false;
+                                const next = !currentOpen;
+                                if (next && run.activePreviewId) {
+                                  workspaceActions.setActivePreview(run.id, run.activePreviewId);
+                                  setPreviewOverrides((current) => ({ ...current, [run.id]: run.activePreviewId! }));
+                                }
+                                setPanelVisibility((current) => ({ ...current, [run.id]: next }));
+                              }}
+                            />
+                          ) : null}
                         </>
-                      )
+                      }
+                    >
+                      {splitRevealDone ? (
+                        <>
+                          {round.executionSteps?.length ? (
+                            <PlatformRoundStepTimeline
+                              executionSteps={round.executionSteps}
+                              platformSubtasks={round.platformSubtasks}
+                              activeHighlightTaskId={
+                                shouldHighlightRoundStep(round.executionSteps)
+                                  ? activeHighlightForRound(
+                                      round.roundId,
+                                      latestRoundIdForPanel,
+                                      round.platformSubtasks,
+                                      stepTimelineHighlightTaskId,
+                                      panelSubtaskFocus,
+                                    )
+                                  : null
+                              }
+                              runId={run.id}
+                              setPanelSubtaskFocus={setPanelSubtaskFocus}
+                              setPanelVisibility={setPanelVisibility}
+                            />
+                          ) : (
+                            <>
+                              {round.executionGroups.map((group) => (
+                                <div key={group.id} className="space-y-2.5">
+                                  {group.tools.map((tool) => (
+                                    <ToolCard
+                                      key={tool.id}
+                                      title={tool.title}
+                                      detail={tool.detail}
+                                      tone={tool.tone}
+                                      onAction={
+                                        tool.previewId
+                                          ? () => {
+                                              workspaceActions.setActivePreview(run.id, tool.previewId!);
+                                              setPreviewOverrides((current) => ({
+                                                ...current,
+                                                [run.id]: tool.previewId!,
+                                              }));
+                                              setPanelVisibility((current) => ({ ...current, [run.id]: true }));
+                                            }
+                                          : undefined
+                                      }
+                                    />
+                                  ))}
+                                </div>
+                              ))}
+                              {round.executionGroups.length === 0 && !round.assistantPending ? (
+                                <div className="rounded-[18px] border border-dashed border-[#e5e7eb] bg-[#fcfcfd] px-4 py-5 text-[14px] leading-7 text-[#6c7571]">
+                                  正在为这轮任务准备执行节点，稍后会把关键过程同步到这里。
+                                </div>
+                              ) : null}
+                            </>
+                          )}
+                        </>
                       ) : null}
 
-                      {round.errorMessage ? <p className="text-sm text-red-600">{round.errorMessage}</p> : null}
-
-                      {round.showTaskResultInChat && (run.activePreviewId || latestRoundWantsTaskPanel) ? (
-                        <TaskResultSummaryCard
-                          title={compactText(round.resultTitle, 48)}
-                          summary={compactText(round.resultSummary, 220)}
-                          hasResult={round.hasResult}
-                          expanded={taskPanelOpen}
-                          onToggle={() => {
-                            if (!latestRoundWantsTaskPanel && !run.activePreviewId) return;
-                            const currentOpen = panelVisibility[run.id] ?? false;
-                            const next = !currentOpen;
-                            if (next && run.activePreviewId) {
-                              workspaceActions.setActivePreview(run.id, run.activePreviewId);
-                              setPreviewOverrides((current) => ({ ...current, [run.id]: run.activePreviewId! }));
-                            }
-                            setPanelVisibility((current) => ({ ...current, [run.id]: next }));
-                          }}
-                        />
-                      ) : null}
-                    </div>
+                    </TaskOrchestrationBlock>
                   </div>
                   )}
 

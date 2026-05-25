@@ -217,7 +217,7 @@ export function UserManagementWorkspace() {
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-8 rounded-[8px] text-[13px] text-[#52524f]"
+                          className="h-8 rounded-[8px] text-[14px] text-[#52524f]"
                           onClick={() => {
                             setPwdTarget(row);
                             setPwdValue("");
@@ -229,7 +229,7 @@ export function UserManagementWorkspace() {
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-8 rounded-[8px] text-[13px] text-red-600 hover:text-red-700 disabled:opacity-40"
+                          className="h-8 rounded-[8px] text-[14px] text-red-600 hover:text-red-700 disabled:opacity-40"
                           disabled={isAdminRole}
                           title={isAdminRole ? "不可删除管理员账号" : undefined}
                           onClick={() => setDeleteTarget(row)}
@@ -248,7 +248,7 @@ export function UserManagementWorkspace() {
 
       <Dialog open={createOpen} onOpenChange={(o) => !o && setCreateOpen(false)}>
         <DialogContent className="max-w-md rounded-[14px]" aria-describedby={undefined}>
-          <DialogTitle className="text-lg text-[#111111]">新增账号</DialogTitle>
+          <DialogTitle className="text-[16px] text-[#111111]">新增账号</DialogTitle>
           <div className="grid gap-3 pt-2">
             <div className="grid gap-1">
               <label className="text-xs text-[#747571]">用户名</label>
@@ -289,7 +289,7 @@ export function UserManagementWorkspace() {
 
       <Dialog open={!!pwdTarget} onOpenChange={(o) => !o && setPwdTarget(null)}>
         <DialogContent className="max-w-md rounded-[14px]" aria-describedby={undefined}>
-          <DialogTitle className="text-lg text-[#111111]">
+          <DialogTitle className="text-[16px] text-[#111111]">
             修改密码{pwdTarget ? `：${pwdTarget.username}` : ""}
           </DialogTitle>
           <p className="text-sm text-[#747571]">直接设置新密码，无需验证旧密码。</p>
@@ -318,7 +318,7 @@ export function UserManagementWorkspace() {
 
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent className="max-w-md rounded-[14px]" aria-describedby={undefined}>
-          <DialogTitle className="text-lg text-[#111111]">确认删除</DialogTitle>
+          <DialogTitle className="text-[16px] text-[#111111]">确认删除</DialogTitle>
           <p className="text-sm text-[#747571]">
             确定删除用户「{deleteTarget?.username}」？该用户在库中的会话、任务等关联数据将一并删除，且不可恢复。
           </p>

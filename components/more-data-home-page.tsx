@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowUp, Check, Copy } from "@/components/ui/tabler-icons";
@@ -12,6 +12,7 @@ import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { PlatformLogo } from "@/components/platform-logo";
 import { sanitizeObjective } from "@/lib/agent-attachments";
+import { parseComposerPrefillStorageValue, parseDatasourceMentions } from "@/lib/composer-prefill";
 import { workspaceActions } from "@/lib/workspace-store";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
@@ -26,10 +27,99 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { copyTextToClipboard } from "@/lib/clipboard";
 
+const PENDING_HOME_TASK_STORAGE_KEY = "mdata:pending-home-task-after-login";
+const PENDING_HOME_TASK_MAX_AGE_MS = 30 * 60 * 1000;
+
+type PendingHomeTask = {
+  text: string;
+  selectedSourceIds: string[];
+  activeCapabilityId: string;
+  composerMode: "普通模式" | "深度模式";
+  createdAt: number;
+};
+
+type HomePromptCacheEntry = {
+  cards: HomePromptCard[] | null;
+  promise: Promise<HomePromptCard[]> | null;
+};
+
+const HOME_PROMPT_ANONYMOUS_CACHE_KEY = "__anonymous__";
+const homePromptCardCache = new Map<string, HomePromptCacheEntry>();
+
+function mapHomePromptCards(rows: Awaited<ReturnType<typeof fetchHomePromptRecommendations>>): HomePromptCard[] {
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    body: r.description,
+    prompt: r.prompt,
+    meta: r.meta,
+    capabilityIds: r.capability_ids,
+    replayRunId: r.replay_run_id ?? undefined,
+    replayShareId: r.replay_share_id ?? undefined,
+  }));
+}
+
+function getCachedHomePromptCards(cacheKey: string) {
+  return homePromptCardCache.get(cacheKey)?.cards ?? null;
+}
+
+function loadHomePromptCardsOnce(cacheKey: string) {
+  const cached = homePromptCardCache.get(cacheKey);
+  if (cached?.cards) return Promise.resolve(cached.cards);
+  if (cached?.promise) return cached.promise;
+
+  const promise = fetchHomePromptRecommendations()
+    .then(mapHomePromptCards)
+    .then((cards) => {
+      homePromptCardCache.set(cacheKey, { cards, promise: null });
+      return cards;
+    })
+    .catch((error) => {
+      homePromptCardCache.delete(cacheKey);
+      throw error;
+    });
+
+  homePromptCardCache.set(cacheKey, { cards: null, promise });
+  return promise;
+}
+
+function savePendingHomeTaskAfterLogin(task: Omit<PendingHomeTask, "createdAt">) {
+  try {
+    sessionStorage.setItem(
+      PENDING_HOME_TASK_STORAGE_KEY,
+      JSON.stringify({ ...task, createdAt: Date.now() } satisfies PendingHomeTask),
+    );
+  } catch {
+    // If sessionStorage is unavailable, the in-memory login prompt still preserves the typed text on screen.
+  }
+}
+
+function consumePendingHomeTaskAfterLogin(): PendingHomeTask | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_HOME_TASK_STORAGE_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(PENDING_HOME_TASK_STORAGE_KEY);
+    const parsed = JSON.parse(raw) as Partial<PendingHomeTask>;
+    if (!parsed.text || typeof parsed.text !== "string") return null;
+    if (!parsed.createdAt || Date.now() - parsed.createdAt > PENDING_HOME_TASK_MAX_AGE_MS) return null;
+    return {
+      text: parsed.text,
+      selectedSourceIds: Array.isArray(parsed.selectedSourceIds) ? parsed.selectedSourceIds.filter((id) => typeof id === "string") : [],
+      activeCapabilityId: typeof parsed.activeCapabilityId === "string" ? parsed.activeCapabilityId : "scenarios",
+      composerMode: parsed.composerMode === "普通模式" ? "普通模式" : "深度模式",
+      createdAt: parsed.createdAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function MoreDataHomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
+  const homePromptCacheKey = platformAgent?.auth?.userId ?? (platformAgent?.authHydrated ? HOME_PROMPT_ANONYMOUS_CACHE_KEY : null);
+  const cachedPromptCards = homePromptCacheKey ? getCachedHomePromptCards(homePromptCacheKey) : null;
   const [query, setQuery] = useState("");
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [activeCapabilityId, setActiveCapabilityId] = useState(homeCapabilityItems[0]?.id ?? "scenarios");
@@ -38,45 +128,50 @@ export function MoreDataHomePage() {
   const [notice, setNotice] = useState("");
   const [launching, setLaunching] = useState(false);
   const [promptCopied, setPromptCopied] = useState(false);
-  const [remotePromptCards, setRemotePromptCards] = useState<HomePromptCard[]>([]);
+  const [remotePromptCards, setRemotePromptCards] = useState<HomePromptCard[]>(() => cachedPromptCards ?? []);
+  const [promptCardsLoading, setPromptCardsLoading] = useState(() => !cachedPromptCards);
   const activeRunId = searchParams.get("runId");
 
   useEffect(() => {
     if (typeof sessionStorage === "undefined") return;
     const raw = sessionStorage.getItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
     if (raw) {
-      setQuery(raw);
+      const prefill = parseComposerPrefillStorageValue(raw);
+      setQuery(prefill.text);
+      setSelectedSourceIds(prefill.selectedSourceIds);
+      setActiveCapabilityId(prefill.selectedSourceIds[0] ?? "scenarios");
       sessionStorage.removeItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
     }
   }, []);
 
   useEffect(() => {
+    if (!homePromptCacheKey) return;
+    const cached = getCachedHomePromptCards(homePromptCacheKey);
+    if (cached) {
+      setRemotePromptCards(cached);
+      setPromptCardsLoading(false);
+      return;
+    }
+
     let cancelled = false;
-    void fetchHomePromptRecommendations()
-      .then((rows) => {
+    setPromptCardsLoading(true);
+    void loadHomePromptCardsOnce(homePromptCacheKey)
+      .then((cards) => {
         if (cancelled) return;
-        setRemotePromptCards(
-          rows.map((r) => ({
-            id: r.id,
-            title: r.title,
-            body: r.description,
-            prompt: r.prompt,
-            meta: r.meta,
-            capabilityIds: r.capability_ids,
-            replayRunId: r.replay_run_id ?? undefined,
-            replayShareId: r.replay_share_id ?? undefined,
-          })),
-        );
+        setRemotePromptCards(cards);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : String(err);
         console.warn("[home-prompt-recommendations]", msg);
+      })
+      .finally(() => {
+        if (!cancelled) setPromptCardsLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [homePromptCacheKey]);
 
   const cards = useMemo(() => {
     const source = remotePromptCards;
@@ -86,17 +181,20 @@ export function MoreDataHomePage() {
   }, [activeCapabilityId, remotePromptCards]);
   const composerCanSubmit = sanitizeObjective(query).length > 0 && !launching;
 
-  const launchAgent = async (seed?: string) => {
-    const nextQuery = sanitizeObjective(seed ?? query);
+  const launchAgent = useCallback(async (seed?: string, pending?: PendingHomeTask) => {
+    const nextQuery = sanitizeObjective(seed ?? pending?.text ?? query);
     if (!nextQuery) {
       setNotice("请先输入一个研究目标，或从下方示例任务中直接发起。");
       return;
     }
-    const selectedCapabilities = selectedSourceIds.length > 0
-      ? selectedSourceIds
-      : activeCapabilityId === "scenarios"
+    const effectiveSelectedSourceIds = pending?.selectedSourceIds ?? selectedSourceIds;
+    const effectiveActiveCapabilityId = pending?.activeCapabilityId ?? activeCapabilityId;
+    const effectiveComposerMode = pending?.composerMode ?? composerMode;
+    const selectedCapabilities = effectiveSelectedSourceIds.length > 0
+      ? effectiveSelectedSourceIds
+      : effectiveActiveCapabilityId === "scenarios"
         ? []
-        : [activeCapabilityId];
+        : [effectiveActiveCapabilityId];
 
     if (isPlatformBackendEnabled()) {
       if (!isAgentRuntimeConfigured()) {
@@ -108,9 +206,13 @@ export function MoreDataHomePage() {
         return;
       }
       if (!platformAgent.auth) {
-        platformAgent.openLogin("登录后将继续发送当前任务。", () => {
-          void launchAgent(nextQuery);
+        savePendingHomeTaskAfterLogin({
+          text: nextQuery,
+          selectedSourceIds: effectiveSelectedSourceIds,
+          activeCapabilityId: effectiveActiveCapabilityId,
+          composerMode: effectiveComposerMode,
         });
+        platformAgent.openLogin("登录后将继续发送当前任务。");
         return;
       }
       setLaunching(true);
@@ -120,7 +222,7 @@ export function MoreDataHomePage() {
         const runId = workspaceActions.startPlatformTask({
           platformSessionId: sid,
           objective: nextQuery,
-          mode: composerMode === "深度模式" ? "专业模式" : "轻量模式",
+          mode: effectiveComposerMode === "深度模式" ? "专业模式" : "轻量模式",
           selectedCapabilities,
         });
         setNotice("已连接 Data Agent Server，正在执行任务。");
@@ -139,7 +241,7 @@ export function MoreDataHomePage() {
     try {
       const snapshot = await createAgentRun({
         objective: nextQuery,
-        mode: composerMode === "深度模式" ? "专业模式" : "轻量模式",
+        mode: effectiveComposerMode === "深度模式" ? "专业模式" : "轻量模式",
         selectedCapabilities,
       });
       workspaceActions.upsertRunSnapshot(snapshot.run, snapshot.report);
@@ -147,7 +249,18 @@ export function MoreDataHomePage() {
     } finally {
       setLaunching(false);
     }
-  };
+  }, [activeCapabilityId, composerMode, platformAgent, query, router, selectedSourceIds]);
+
+  useEffect(() => {
+    if (!platformAgent?.auth || launching || activeRunId) return;
+    const pending = consumePendingHomeTaskAfterLogin();
+    if (!pending) return;
+    setQuery(pending.text);
+    setSelectedSourceIds(pending.selectedSourceIds);
+    setActiveCapabilityId(pending.activeCapabilityId);
+    setComposerMode(pending.composerMode);
+    void launchAgent(pending.text, pending);
+  }, [activeRunId, launching, launchAgent, platformAgent?.auth]);
 
   const applyBrowseCapability = (capabilityId: string) => {
     const item = homeCapabilityItems.find((entry) => entry.id === capabilityId);
@@ -180,9 +293,11 @@ export function MoreDataHomePage() {
   };
 
   const applyPromptCard = (card: HomePromptCard) => {
-    setQuery(card.prompt);
-    setSelectedSourceIds(card.capabilityIds);
-    setActiveCapabilityId(card.capabilityIds[0] ?? "scenarios");
+    const prefill = parseDatasourceMentions(card.prompt);
+    const selectedIds = Array.from(new Set([...card.capabilityIds, ...prefill.selectedSourceIds]));
+    setQuery(prefill.text);
+    setSelectedSourceIds(selectedIds);
+    setActiveCapabilityId(selectedIds[0] ?? "scenarios");
     setNotice(`已载入示例任务「${card.title}」，可继续补充要求后发送。`);
   };
 
@@ -223,14 +338,7 @@ export function MoreDataHomePage() {
   }
 
   return (
-    <MoreDataShell
-      currentPath="/"
-      mainDecoration={
-        <>
-          <div className="absolute inset-0 z-0 bg-[#f7f7f7]" />
-        </>
-      }
-    >
+    <MoreDataShell currentPath="/">
       <div className="flex flex-col pb-10 sm:pb-14">
         <section className="mx-auto w-full max-w-[1040px] px-4 pt-4 sm:px-6 sm:pt-8 lg:px-8 lg:pt-[56px]">
           <div className="flex items-center gap-3 sm:gap-5">
@@ -247,7 +355,7 @@ export function MoreDataHomePage() {
               <h1 className="text-[32px] font-semibold leading-10 text-[#111111] sm:text-[38px] sm:leading-[46px]">
                 Alice
               </h1>
-              <div className="mt-0.5 text-[15px] font-normal leading-6 text-[#34322d] sm:mt-1 sm:text-[18px] sm:leading-7">
+              <div className="mt-0.5 text-[14px] font-normal leading-6 text-[#34322d] sm:mt-1 sm:text-[18px] sm:leading-7">
                 💬 你的跨境运营助手，24h随时在线
               </div>
             </div>
@@ -315,7 +423,24 @@ export function MoreDataHomePage() {
 
           <div className="pt-5 sm:pt-7">
             <div className="grid gap-3 pb-6 sm:gap-5 md:grid-cols-2 xl:grid-cols-3">
-              {cards.map((card) => {
+              {promptCardsLoading ? (
+                Array.from({ length: 6 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="min-h-[112px] rounded-[14px] border border-white/70 bg-white/72 px-4 py-4 shadow-[0_1px_2px_rgba(17,17,17,0.03)] sm:min-h-[132px] sm:rounded-[18px] sm:px-5 sm:py-[18px]"
+                    aria-hidden="true"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div className="mt-1 h-4 w-4 shrink-0 animate-pulse rounded-full bg-[#e8e8e5]" />
+                      <div className="min-w-0 flex-1">
+                        <div className="h-5 w-[76%] animate-pulse rounded-full bg-[#e9e9e6]" />
+                        <div className="mt-4 h-4 w-full animate-pulse rounded-full bg-[#f0f0ee]" />
+                        <div className="mt-2 h-4 w-[68%] animate-pulse rounded-full bg-[#f0f0ee]" />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : cards.map((card) => {
                 const capability = homeCapabilityItems.find((item) => card.capabilityIds.includes(item.id));
                 return (
                   <div
@@ -367,26 +492,26 @@ export function MoreDataHomePage() {
         <DialogContent className="max-w-[608px] !rounded-[18px] border-[rgba(0,0,0,0.08)] bg-white p-0 shadow-[0_20px_48px_rgba(24,24,27,0.12)] sm:!rounded-[18px]">
           {selectedPrompt ? (
             <div className="p-5">
-              <DialogTitle className="pr-8 text-[18px] font-normal leading-7 tracking-normal text-[#34322d]">
+              <DialogTitle className="pr-8 text-[16px] font-normal leading-6 tracking-normal text-[#34322d]">
                 {selectedPrompt.title}
               </DialogTitle>
-              <DialogDescription className="mt-3 text-[13px] leading-6 text-[#858481]">
+              <DialogDescription className="mt-3 text-[14px] leading-6 text-[#858481]">
                 {selectedPrompt.body}
               </DialogDescription>
 
               <div className="mt-5 overflow-hidden rounded-[14px] border border-[rgba(0,0,0,0.06)] bg-white">
                 <div className="flex items-center justify-between border-b border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.04)] px-4 py-3">
-                  <div className="text-[13px] text-[#858481]">提示词(Prompt)</div>
+                  <div className="text-[14px] text-[#858481]">提示词(Prompt)</div>
                   <button
                     type="button"
                     onClick={copyPromptCard}
-                    className="inline-flex items-center gap-1.5 text-[13px] text-[#34322d] transition hover:text-[#111111]"
+                    className="inline-flex items-center gap-1.5 text-[14px] text-[#34322d] transition hover:text-[#111111]"
                   >
                     {promptCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                     {promptCopied ? "已复制" : "复制"}
                   </button>
                 </div>
-                <div className="bg-white px-4 py-4 text-[13px] leading-7 text-[#34322d]">
+                <div className="bg-white px-4 py-4 text-[14px] leading-7 text-[#34322d]">
                   <p className="whitespace-pre-wrap">{selectedPrompt.prompt}</p>
                 </div>
               </div>

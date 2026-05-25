@@ -42,7 +42,7 @@ function PlatformSubtaskResultCard({
         onSelect();
       }}
       className={cn(
-        "w-full rounded-[16px] border px-4 py-3 text-left shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition-colors",
+        "w-full rounded-[16px] border px-4 py-3 text-left shadow-none transition-colors",
         isActive ? "border-[#2563eb] bg-[#eff6ff]" : "border-[#eceef1] bg-white",
         hasPreviewFiles
           ? "cursor-pointer hover:border-[#bfdbfe] hover:bg-[#f8fafc]"

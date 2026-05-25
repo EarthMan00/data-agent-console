@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { Mail, Plus, Trash2 } from "@/components/ui/tabler-icons";
+import { Plus, Trash2 } from "@/components/ui/tabler-icons";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,39 @@ type FeishuBlock = { id: string; type: "feishu"; webhook: string; signSecret: st
 export type ResultPushBlock = EmailBlock | DingTalkBlock | FeishuBlock;
 type PushBlock = ResultPushBlock;
 
+function ChannelLogo({ type, className = "h-5 w-5" }: { type: ChannelKey; className?: string }) {
+  if (type === "email") {
+    return (
+      <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
+        <path fill="#4caf50" d="M45,16.2l-5,2.75l-5,4.75L35,40h7c1.657,0,3-1.343,3-3V16.2z" />
+        <path fill="#1e88e5" d="M3,16.2l3.614,1.71L13,23.7V40H6c-1.657,0-3-1.343-3-3V16.2z" />
+        <polygon fill="#e53935" points="35,11.2 24,19.45 13,11.2 12,17 13,23.7 24,31.95 35,23.7 36,17" />
+        <path fill="#c62828" d="M3,12.298V16.2l10,7.5V11.2L9.876,8.859C9.132,8.301,8.228,8,7.298,8h0C4.924,8,3,9.924,3,12.298z" />
+        <path fill="#fbc02d" d="M45,12.298V16.2l-10,7.5V11.2l3.124-2.341C38.868,8.301,39.772,8,40.702,8h0 C43.076,8,45,9.924,45,12.298z" />
+      </svg>
+    );
+  }
+
+  if (type === "dingtalk") {
+    return (
+      <svg viewBox="0 0 1024 1024" className={className} aria-hidden="true">
+        <path
+          fill="#1296DB"
+          d="M573.7 252.5C422.5 197.4 201.3 96.7 201.3 96.7c-15.7-4.1-17.9 11.1-17.9 11.1-5 61.1 33.6 160.5 53.6 182.8 19.9 22.3 319.1 113.7 319.1 113.7S326 357.9 270.5 341.9c-55.6-16-37.9 17.8-37.9 17.8 11.4 61.7 64.9 131.8 107.2 138.4 42.2 6.6 220.1 4 220.1 4s-35.5 4.1-93.2 11.9c-42.7 5.8-97 12.5-111.1 17.8-33.1 12.5 24 62.6 24 62.6 84.7 76.8 129.7 50.5 129.7 50.5 33.3-10.7 61.4-18.5 85.2-24.2L565 743.1h84.6L603 928l205.3-271.9H700.8l22.3-38.7c0.3 0.5 0.4 0.8 0.4 0.8S799.8 496.1 829 433.8l0.6-1h-0.1c5-10.8 8.6-19.7 10-25.8 17-71.3-114.5-99.4-265.8-154.5z"
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 1024 1024" className={className} aria-hidden="true">
+      <path d="M144.27516326 116.98308522h480.26874726s135.02396377 124.46623895 135.02396376 295.54447359l-225.08782102 155.4930223S414.46673211 288.06131985 144.27516326 116.98308522z" fill="#00DAB8" />
+      <path d="M1014.7488005 381.42895405s-165.11707043-62.26902944-270.11974744-15.58521234c-105.0744999 46.6838171-150.1064278 108.8810266-195.13835719 155.5648437-59.97074913 62.1972095-165.04524903 171.07823465-255.10910481 108.88102514-90.06385728-62.26902944 360.18360471 217.76205173 360.18360472 217.76205172s187.74076645-105.50542681 255.1091063-280.03108116C969.7168726 412.52755881 1014.7488005 381.42895405 1014.7488005 381.42895405z" fill="#0C3AA0" />
+      <path d="M9.2511995 350.33034929v466.55088832s165.40435602 203.4696216 555.25013901 93.36763417c165.11707043-46.6838171 300.21285559-264.44586883 300.21285559-264.44586884S669.50401702 972.44607982 9.2511995 350.40217069z" fill="#296DFF" />
+    </svg>
+  );
+}
+
 const emptyDing = (): DingTalkBlock => ({
   id: newId(),
   type: "dingtalk",
@@ -53,8 +86,6 @@ type ScheduleResultPushProps = {
   inlineAddTrigger?: boolean;
   /** 配置变更时回传当前 blocks（试跑草稿等） */
   onConfigSnapshot?: (payload: { blocks: ResultPushBlock[] }) => void;
-  /** 校验、说明类提示（如联调中） */
-  onNotify?: (message: string) => void;
 };
 
 export function validateResultPushBlocks(blocks: ResultPushBlock[]): string | null {
@@ -64,17 +95,14 @@ export function validateResultPushBlocks(blocks: ResultPushBlock[]): string | nu
     }
     if (b.type === "dingtalk") {
       if (!b.webhook.trim()) {
-        return "请填写钉钉的 WEBHOOK 地址。";
+        return "请填写钉钉的 Webhook 地址。";
       }
-      if (b.security === "signature" && !b.secret.trim()) {
+      if (!b.secret.trim()) {
         return "请填写钉钉的签名密钥。";
-      }
-      if (b.security === "keyword" && !b.keyword.trim()) {
-        return "请填写钉钉的关键词。";
       }
     }
     if (b.type === "feishu" && !b.webhook.trim()) {
-      return "请填写飞书的 WEBHOOK 地址。";
+      return "请填写飞书的 Webhook 地址。";
     }
   }
   return null;
@@ -89,7 +117,6 @@ export function ScheduleResultPushSection({
   headerLabel,
   inlineAddTrigger = false,
   onConfigSnapshot,
-  onNotify,
 }: ScheduleResultPushProps) {
   const [blocks, setBlocks] = useState<PushBlock[]>(defaultBlocks != null ? defaultBlocks : []);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -200,42 +227,17 @@ export function ScheduleResultPushSection({
       {blocks.map((b) => {
         if (b.type === "email")
           return (
-            <div key={b.id} className="space-y-1">
-              <div className="flex items-stretch gap-2">
-                <div className="relative min-w-0 flex-1">
-                  <Mail
-                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#2563eb]"
-                    aria-hidden
-                  />
-                  <Input
-                    value={b.address}
-                    onChange={(e) => {
-                      const address = e.target.value;
-                      updateBlock(b.id, { address, touched: true } as Partial<EmailBlock>);
-                    }}
-                    onBlur={() => {
-                      setBlocksWithNotify((prev) =>
-                        prev.map((x) => (x.id === b.id && x.type === "email" ? { ...x, touched: true } : x)),
-                      );
-                    }}
-                    placeholder="请输入邮箱地址"
-                    className="h-12 rounded-[12px] border-[#e5e7eb] pl-10 pr-2"
-                    autoComplete="email"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-12 w-12 shrink-0 text-[#94a3b8] hover:text-red-600"
-                  onClick={() => removeBlock(b.id)}
-                  aria-label="删除此邮箱"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-              {b.touched && !b.address.trim() ? <p className="text-sm text-red-500">地址不能为空</p> : null}
-            </div>
+            <EmailCard
+              key={b.id}
+              b={b}
+              onUpdate={(p) => updateBlock(b.id, p)}
+              onTouch={() => {
+                setBlocksWithNotify((prev) =>
+                  prev.map((x) => (x.id === b.id && x.type === "email" ? { ...x, touched: true } : x)),
+                );
+              }}
+              onRemove={() => removeBlock(b.id)}
+            />
           );
         if (b.type === "dingtalk")
           return (
@@ -244,7 +246,6 @@ export function ScheduleResultPushSection({
               b={b}
               onUpdate={(p) => updateBlock(b.id, p)}
               onRemove={() => removeBlock(b.id)}
-              onVerify={() => onNotify?.("校验联调中，已记录当前钉钉配置。")}
             />
           );
         return (
@@ -253,7 +254,6 @@ export function ScheduleResultPushSection({
             b={b}
             onUpdate={(p) => updateBlock(b.id, p)}
             onRemove={() => removeBlock(b.id)}
-            onVerify={() => onNotify?.("校验联调中，已记录当前飞书配置。")}
           />
         );
       })}
@@ -314,6 +314,7 @@ function ChannelPickerBody({
                 onToggle(row.key, e.target.checked);
               }}
             />
+            <ChannelLogo type={row.key} className="h-5 w-5 shrink-0" />
             <span className="text-[#18181b]">{row.label}</span>
           </label>
         </li>
@@ -322,18 +323,66 @@ function ChannelPickerBody({
   );
 }
 
-function HowToLink({ id }: { id: string }) {
+function HowToLink({ id, href }: { id: string; href: string }) {
   return (
     <a
-      href="#"
+      href={href}
       id={id}
+      target="_blank"
+      rel="noreferrer"
       className="text-xs text-[#2563eb] hover:underline"
-      onClick={(e) => {
-        e.preventDefault();
-      }}
     >
       如何获取？
     </a>
+  );
+}
+
+function EmailCard({
+  b,
+  onUpdate,
+  onTouch,
+  onRemove,
+}: {
+  b: EmailBlock;
+  onUpdate: (p: Partial<EmailBlock>) => void;
+  onTouch: () => void;
+  onRemove: () => void;
+}) {
+  const emailId = useId();
+  return (
+    <div className="rounded-[12px] border border-[#e5e7eb] bg-white p-4 shadow-none">
+      <div className="flex items-center justify-between gap-2 border-b border-[#f0f0f0] pb-3">
+        <div className="flex items-center gap-2.5">
+          <ChannelLogo type="email" className="h-8 w-8 shrink-0" />
+          <span className="text-[14px] font-medium text-[#18181b]">邮箱</span>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-[#94a3b8] hover:text-red-600"
+          onClick={onRemove}
+          aria-label="删除邮箱推送"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+      <div className="mt-4">
+        <label className="mb-1.5 block text-sm text-[#52525b]" htmlFor={emailId}>
+          邮箱地址
+        </label>
+        <Input
+          id={emailId}
+          value={b.address}
+          onChange={(e) => onUpdate({ address: e.target.value, touched: true })}
+          onBlur={onTouch}
+          placeholder="请输入邮箱地址"
+          className="h-10 rounded-[10px] border-[#e5e7eb] text-sm"
+          autoComplete="email"
+        />
+        {b.touched && !b.address.trim() ? <p className="mt-1.5 text-sm text-red-500">地址不能为空</p> : null}
+      </div>
+    </div>
   );
 }
 
@@ -341,27 +390,19 @@ function DingTalkCard({
   b,
   onUpdate,
   onRemove,
-  onVerify,
 }: {
   b: DingTalkBlock;
   onUpdate: (p: Partial<DingTalkBlock>) => void;
   onRemove: () => void;
-  onVerify: () => void;
 }) {
   const hWebhook = useId();
   const hSec = useId();
-  const hKey = useId();
   return (
-    <div className="rounded-[12px] border border-[#e5e7eb] bg-white p-4 shadow-sm">
+    <div className="rounded-[12px] border border-[#e5e7eb] bg-white p-4 shadow-none">
       <div className="flex items-center justify-between gap-2 border-b border-[#f0f0f0] pb-3">
         <div className="flex items-center gap-2.5">
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1890ff] text-xs font-bold text-white"
-            aria-hidden
-          >
-            钉
-          </div>
-          <span className="text-[15px] font-medium text-[#18181b]">钉钉</span>
+          <ChannelLogo type="dingtalk" className="h-8 w-8 shrink-0" />
+          <span className="text-[14px] font-medium text-[#18181b]">钉钉</span>
         </div>
         <Button
           type="button"
@@ -374,41 +415,12 @@ function DingTalkCard({
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>
-      <p className="mt-4 text-sm text-[#52525b]">安全校验方式</p>
-      <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <button
-          type="button"
-          onClick={() => onUpdate({ security: "signature" })}
-          className={cn(
-            "rounded-[10px] border-2 p-3 text-left transition",
-            b.security === "signature"
-              ? "border-[#18181b] bg-[#fafafa]"
-              : "border-[#e5e7eb] bg-white hover:border-[#d4d4d4]",
-          )}
-        >
-          <div className="text-sm font-medium text-[#18181b]">签名校验(推荐)</div>
-          <p className="mt-1.5 text-xs leading-relaxed text-[#64748b]">只有密钥正确的可信来源信息才会被接收</p>
-        </button>
-        <button
-          type="button"
-          onClick={() => onUpdate({ security: "keyword" })}
-          className={cn(
-            "rounded-[10px] border-2 p-3 text-left transition",
-            b.security === "keyword"
-              ? "border-[#18181b] bg-[#fafafa]"
-              : "border-[#e5e7eb] bg-white hover:border-[#d4d4d4]",
-          )}
-        >
-          <div className="text-sm font-medium text-[#18181b]">关键词校验</div>
-          <p className="mt-1.5 text-xs leading-relaxed text-[#64748b]">以关键词为暗号，暗号匹配方可接收信息。</p>
-        </button>
-      </div>
       <div className="mt-4">
         <div className="mb-1.5 flex items-center justify-between gap-2">
           <label className="text-sm text-[#52525b]" htmlFor={hWebhook}>
-            <span className="text-red-500">*</span> WEBHOOK 地址
+            Webhook 地址
           </label>
-          <HowToLink id={`${hWebhook}-help`} />
+          <HowToLink id={`${hWebhook}-help`} href="https://open.dingtalk.com/document/dingstart/obtain-the-webhook-address-of-a-custom-robot" />
         </div>
         <Input
           id={hWebhook}
@@ -418,45 +430,20 @@ function DingTalkCard({
           className="h-10 rounded-[10px] border-[#e5e7eb] text-sm"
         />
       </div>
-      {b.security === "signature" ? (
-        <div className="mt-3">
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <label className="text-sm text-[#52525b]" htmlFor={hSec}>
-              <span className="text-red-500">*</span> 签名密钥
-            </label>
-            <HowToLink id={`${hSec}-help`} />
-          </div>
-          <Input
-            id={hSec}
-            value={b.secret}
-            onChange={(e) => onUpdate({ secret: e.target.value })}
-            placeholder="请粘贴签名密钥"
-            className="h-10 rounded-[10px] border-[#e5e7eb] text-sm"
-            autoComplete="off"
-          />
+      <div className="mt-3">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <label className="text-sm text-[#52525b]" htmlFor={hSec}>
+            <span className="text-red-500">*</span> 签名密钥
+          </label>
         </div>
-      ) : (
-        <div className="mt-3">
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <label className="text-sm text-[#52525b]" htmlFor={hKey}>
-              <span className="text-red-500">*</span> 关键词
-            </label>
-            <HowToLink id={`${hKey}-help`} />
-          </div>
-          <Input
-            id={hKey}
-            value={b.keyword}
-            onChange={(e) => onUpdate({ keyword: e.target.value })}
-            placeholder="请输入关键词"
-            className="h-10 rounded-[10px] border-[#e5e7eb] text-sm"
-          />
-        </div>
-      )}
-      <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-[#f0f0f0] pt-3">
-        <span className="text-xs text-[#94a3b8]">配置完成后请点击右侧验证</span>
-        <Button type="button" size="sm" variant="outline" onClick={onVerify}>
-          校验
-        </Button>
+        <Input
+          id={hSec}
+          value={b.secret}
+          onChange={(e) => onUpdate({ secret: e.target.value, security: "signature", keyword: "" })}
+          placeholder="请粘贴签名密钥"
+          className="h-10 rounded-[10px] border-[#e5e7eb] text-sm"
+          autoComplete="off"
+        />
       </div>
     </div>
   );
@@ -466,26 +453,19 @@ function FeishuCard({
   b,
   onUpdate,
   onRemove,
-  onVerify,
 }: {
   b: FeishuBlock;
   onUpdate: (p: Partial<FeishuBlock>) => void;
   onRemove: () => void;
-  onVerify: () => void;
 }) {
   const wId = useId();
   const sId = useId();
   return (
-    <div className="rounded-[12px] border border-[#e5e7eb] bg-white p-4 shadow-sm">
+    <div className="rounded-[12px] border border-[#e5e7eb] bg-white p-4 shadow-none">
       <div className="flex items-center justify-between gap-2 border-b border-[#f0f0f0] pb-3">
         <div className="flex items-center gap-2.5">
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3c8cff] text-xs font-bold text-white"
-            aria-hidden
-          >
-            飞
-          </div>
-          <span className="text-[15px] font-medium text-[#18181b]">飞书</span>
+          <ChannelLogo type="feishu" className="h-8 w-8 shrink-0" />
+          <span className="text-[14px] font-medium text-[#18181b]">飞书</span>
         </div>
         <Button
           type="button"
@@ -501,9 +481,9 @@ function FeishuCard({
       <div className="mt-4">
         <div className="mb-1.5 flex items-center justify-between gap-2">
           <label className="text-sm text-[#52525b]" htmlFor={wId}>
-            <span className="text-red-500">*</span> WEBHOOK 地址
+            Webhook 地址
           </label>
-          <HowToLink id={`${wId}-help`} />
+          <HowToLink id={`${wId}-help`} href="https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot" />
         </div>
         <Textarea
           id={wId}
@@ -518,7 +498,6 @@ function FeishuCard({
           <label className="text-sm text-[#52525b]" htmlFor={sId}>
             签名秘钥（选填）
           </label>
-          <HowToLink id={`${sId}-help`} />
         </div>
         <Input
           id={sId}
@@ -528,12 +507,6 @@ function FeishuCard({
           className="h-10 rounded-[10px] border-[#e5e7eb] text-sm"
           autoComplete="off"
         />
-      </div>
-      <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-[#f0f0f0] pt-3">
-        <span className="text-xs text-[#94a3b8]">配置完成后请点击右侧验证</span>
-        <Button type="button" size="sm" variant="outline" onClick={onVerify}>
-          校验
-        </Button>
       </div>
     </div>
   );

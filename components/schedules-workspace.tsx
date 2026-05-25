@@ -5,24 +5,28 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRightLeft,
-  Box,
   ChevronDown,
   Clock,
   Download,
   Eye,
+  InfoCircle,
+  Loader2,
   MoreVertical,
   Pencil,
   Play,
   Plus,
+  PlusThin,
   Search,
   Trash2,
   X,
 } from "@/components/ui/tabler-icons";
 
 import { AutoToast } from "@/components/auto-toast";
+import { EmptyState } from "@/components/empty-state";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { PageLostState } from "@/components/page-lost-state";
 import { ScheduleResultPushSection, validateResultPushBlocks, type ResultPushBlock } from "@/components/schedule-result-push";
+import { TaskComposer } from "@/components/task-composer";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { RequiredAsterisk } from "@/components/required-mark";
 import { Button } from "@/components/ui/button";
@@ -39,7 +43,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { downloadAuthorizedFile, formatAgentApiErrorForUser, parseFastApiDetail } from "@/lib/agent-api/client";
@@ -78,6 +81,9 @@ import {
 } from "@/lib/schedule-next-run";
 import { buildCreatePayloads, toHhmm, SCHEDULE_KINDS, type ScheduleKind } from "@/lib/schedule-payloads";
 import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
+import { parseComposerPrefillStorageValue } from "@/lib/composer-prefill";
+import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
+import { homeCapabilityItems } from "@/lib/home-capability-items";
 import {
   persistResultPushBlocksForTask,
   resultPushBlocksForEditingTask,
@@ -93,6 +99,29 @@ const PRIMARY_TABS = ["已定时", "运行记录"] as const;
 const WORKFLOW_STATUS_OPTIONS = ["全部状态", "生效中", "已暂停", "已完结"] as const;
 const RUN_STATUS_OPTIONS = ["全部状态", "运行成功", "运行失败", "运行超时"] as const;
 const DEFAULT_GROUP_VALUE = "__default__";
+
+function serializeScheduleComposerPrompt(text: string, sourceIds: string[]) {
+  const sourceText = sourceIds
+    .map((id) => homeCapabilityItems.find((item) => item.id === id && item.id !== "scenarios")?.label)
+    .filter((label): label is string => Boolean(label))
+    .map((label) => `@${label}`)
+    .join(" ");
+  return `${sourceText ? `${sourceText} ` : ""}${text}`.trim();
+}
+
+function sortGroupsByCreatedAsc(groups: UserScheduledTaskGroupDto[]) {
+  return groups
+    .map((group, index) => ({ group, index }))
+    .sort((a, b) => {
+      const at = Date.parse(a.group.created_at);
+      const bt = Date.parse(b.group.created_at);
+      if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
+      return a.index - b.index;
+    })
+    .map(({ group }) => group);
+}
+const SCHEDULE_TITLE_MAX_LENGTH = 50;
+const SCHEDULE_PROMPT_MAX_LENGTH = 8000;
 
 /** 与后端一致：0=周一 … 6=周日；界面按「周日—周六」展示 */
 const WEEKDAY_OPTIONS: { label: string; value: number }[] = [
@@ -116,21 +145,12 @@ function buildHalfHourTimeOptions(): string[] {
 
 const HALF_HOUR_TIME_OPTIONS = buildHalfHourTimeOptions();
 const MONTH_DAY_OPTIONS = Array.from({ length: 31 }, (_, i) => i + 1);
-
 function weekdayButtonLabel(weekdays: Set<number>) {
   if (weekdays.size === 0) return "选择星期";
   const order = [6, 0, 1, 2, 3, 4, 5];
   return order
     .filter((v) => weekdays.has(v))
     .map((v) => WEEKDAY_OPTIONS.find((o) => o.value === v)?.label ?? "")
-    .join("、");
-}
-
-function monthDayButtonLabel(days: Set<number>) {
-  if (days.size === 0) return "选择日期";
-  return Array.from(days)
-    .sort((a, b) => a - b)
-    .map((d) => `${d}号`)
     .join("、");
 }
 
@@ -160,21 +180,20 @@ function filterRunsBySearch(runs: ScheduledTaskRunItemApi[], q: string) {
 
 function ScheduleEmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="mt-8 flex min-h-[calc(100vh-300px)] flex-col items-center justify-center px-4 text-center">
-      <Box className="mb-4 text-[#b1b2ae]" strokeWidth={1.35} aria-hidden />
-      <p className="text-center text-[14px] text-[#71717a]">
-        暂无定时任务{" "}
+    <EmptyState
+      message="暂无定时任务"
+      action={
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="h-auto px-1 py-0 align-baseline text-[14px] font-medium text-[#111111] hover:bg-transparent hover:text-[#2a2a2a]"
+          className="h-auto px-1 py-0 text-[14px] font-medium text-[#18181b] hover:bg-transparent hover:text-[#27272a]"
           onClick={onCreate}
         >
           立即创建
         </Button>
-      </p>
-    </div>
+      }
+    />
   );
 }
 
@@ -187,6 +206,9 @@ export function SchedulesWorkspace() {
   const [activeChip, setActiveChip] = useState("全部");
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupSaving, setNewGroupSaving] = useState(false);
+  const [newGroupNameConflict, setNewGroupNameConflict] = useState(false);
+  const [deleteGroupConfirmId, setDeleteGroupConfirmId] = useState<string | null>(null);
   const newGroupInputRef = useRef<HTMLInputElement | null>(null);
 
   const [search, setSearch] = useState("");
@@ -195,6 +217,10 @@ export function SchedulesWorkspace() {
   const [groups, setGroups] = useState<UserScheduledTaskGroupDto[]>([]);
   const [tasks, setTasks] = useState<UserScheduledTaskItemApi[]>([]);
   const [runs, setRuns] = useState<ScheduledTaskRunItemApi[]>([]);
+  const newGroupNameTrimmed = newGroupName.trim();
+  const newGroupNameReserved = newGroupNameTrimmed === "全部" || newGroupNameTrimmed === "默认";
+  const newGroupNameDuplicate = groups.some((g) => (g.name || "").trim() === newGroupNameTrimmed);
+  const newGroupCreateDisabled = newGroupSaving || !newGroupNameTrimmed;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -206,6 +232,7 @@ export function SchedulesWorkspace() {
   const [toastVariant, setToastVariant] = useState<"default" | "error">("default");
   /** 编辑态：提示词已改时点「保存」的拦截说明层 */
   const [editPromptChangedSaveGateOpen, setEditPromptChangedSaveGateOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [moveTask, setMoveTask] = useState<UserScheduledTaskItemApi | null>(null);
   const [moveGroupId, setMoveGroupId] = useState<string | "">("");
 
@@ -231,9 +258,11 @@ export function SchedulesWorkspace() {
 
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [scheduleSourceIds, setScheduleSourceIds] = useState<string[]>([]);
+  const [scheduleComposerMode, setScheduleComposerMode] = useState<"普通模式" | "深度模式">("深度模式");
   /** 定时任务所在分组，null 为「默认」；与 `UserScheduledTaskItemApi.group_id` 一致 */
   const [formGroupId, setFormGroupId] = useState<string | null>(null);
-  const [scheduleKind, setScheduleKind] = useState<ScheduleKind>("每天");
+  const [scheduleKind, setScheduleKind] = useState<ScheduleKind>("非定时");
   const [timeHhmm, setTimeHhmm] = useState(() => defaultNearestHalfHourHhmm(HALF_HOUR_TIME_OPTIONS));
   const [selectedWeekdays, setSelectedWeekdays] = useState<Set<number>>(() => new Set());
   const [selectedMonthDays, setSelectedMonthDays] = useState<Set<number>>(() => new Set());
@@ -283,9 +312,11 @@ export function SchedulesWorkspace() {
       const d = loadScheduleCreateDraft();
       if (d) {
         setTitle(d.title);
-        setPrompt(d.prompt);
+        const restoredPrompt = parseComposerPrefillStorageValue(d.prompt);
+        setPrompt(restoredPrompt.text);
+        setScheduleSourceIds(restoredPrompt.selectedSourceIds);
         setTaskEnabled(d.taskEnabled);
-        setScheduleKind(d.scheduleKind);
+        setScheduleKind(String(d.scheduleKind) === "不重复" ? "单次" : d.scheduleKind);
         setTimeHhmm(d.timeHhmm);
         setSelectedWeekdays(new Set(d.selectedWeekdayValues));
         setSelectedMonthDays(new Set(d.selectedMonthDayValues));
@@ -321,9 +352,11 @@ export function SchedulesWorkspace() {
   const resetCreateFormToDefaults = useCallback(() => {
     setTitle("");
     setPrompt("");
+    setScheduleSourceIds([]);
+    setScheduleComposerMode("深度模式");
     setFormGroupId(null);
     setTaskEnabled(true);
-    setScheduleKind("每天");
+    setScheduleKind("非定时");
     setTimeHhmm(defaultNearestHalfHourHhmm(HALF_HOUR_TIME_OPTIONS));
     setSelectedWeekdays(new Set());
     setSelectedMonthDays(new Set());
@@ -332,6 +365,7 @@ export function SchedulesWorkspace() {
     setNotice("");
     editPromptBaselineRef.current = null;
     setEditPromptChangedSaveGateOpen(false);
+    setAdvancedOpen(false);
     clearScheduleTrialStorage();
   }, [applyResultPushBlocks]);
 
@@ -345,9 +379,25 @@ export function SchedulesWorkspace() {
     wasInCreateMode.current = createMode;
   }, [createMode, restoreParam, resetCreateFormToDefaults, searchParams]);
 
+  useEffect(() => {
+    if (!createMode || restoreParam || searchParams.get("edit")) return;
+    if (typeof sessionStorage === "undefined") return;
+    const raw = sessionStorage.getItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
+    if (!raw) return;
+
+    const prefill = parseComposerPrefillStorageValue(raw);
+    if (prefill.text.trim()) {
+      setPrompt(prefill.text);
+    }
+    setScheduleSourceIds(prefill.selectedSourceIds);
+    sessionStorage.removeItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
+  }, [createMode, restoreParam, searchParams]);
+
   const applyTaskToScheduleForm = useCallback((t: UserScheduledTaskItemApi) => {
+    const taskPrompt = parseComposerPrefillStorageValue(t.prompt_text);
     setTitle(t.title);
-    setPrompt(t.prompt_text);
+    setPrompt(taskPrompt.text);
+    setScheduleSourceIds(taskPrompt.selectedSourceIds);
     setTaskEnabled(t.enabled);
     const r = String(t.recurrence || "daily");
     if (r === "daily") {
@@ -366,20 +416,20 @@ export function SchedulesWorkspace() {
       setSelectedMonthDays(t.day_of_month != null ? new Set([t.day_of_month]) : new Set());
       setRunOnceDate("");
     } else if (r === "once") {
-      setScheduleKind("不重复");
+      setScheduleKind(!t.enabled && !String(t.run_once_date ?? "").trim() ? "非定时" : "单次");
       setSelectedWeekdays(new Set());
       setSelectedMonthDays(new Set());
       const ro = t.run_once_date;
       setRunOnceDate(typeof ro === "string" && ro.trim() ? ro.trim().slice(0, 10) : "");
     } else {
-      setScheduleKind("每天");
+      setScheduleKind("非定时");
       setSelectedWeekdays(new Set());
       setSelectedMonthDays(new Set());
       setRunOnceDate("");
     }
     setTimeHhmm(toHhmm(t.time_hhmm));
     setFormGroupId(t.group_id ?? null);
-    editPromptBaselineRef.current = String(t.prompt_text ?? "").trim();
+    editPromptBaselineRef.current = serializeScheduleComposerPrompt(taskPrompt.text, taskPrompt.selectedSourceIds);
   }, []);
 
   useEffect(() => {
@@ -435,10 +485,25 @@ export function SchedulesWorkspace() {
   );
   const hasValidNextExecution = useMemo(
     () =>
-      scheduleBodiesForNext.length > 0 && scheduleBodiesForNext.every((b) => computeNextRunForCreateBody(b) != null),
-    [scheduleBodiesForNext],
+      scheduleKind === "非定时" ||
+      (scheduleBodiesForNext.length > 0 && scheduleBodiesForNext.every((b) => computeNextRunForCreateBody(b) != null)),
+    [scheduleBodiesForNext, scheduleKind],
   );
-  const tryRunSubmitBlocked = taskEnabled && !hasValidNextExecution;
+  const tryRunSubmitBlocked = scheduleKind !== "非定时" && taskEnabled && !hasValidNextExecution;
+  const serializedPrompt = useMemo(
+    () => serializeScheduleComposerPrompt(prompt, scheduleSourceIds),
+    [prompt, scheduleSourceIds],
+  );
+  const addScheduleComposerSource = useCallback((capabilityId: string) => {
+    const item = homeCapabilityItems.find((entry) => entry.id === capabilityId && entry.id !== "scenarios");
+    if (!item) return;
+    setScheduleSourceIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
+  }, []);
+  const removeScheduleComposerSource = useCallback((capabilityId: string) => {
+    setScheduleSourceIds((current) => current.filter((id) => id !== capabilityId));
+  }, []);
+  const requiredFieldsMissing = !title.trim() || !serializedPrompt.trim();
+  const formSubmitDisabled = busy || requiredFieldsMissing || tryRunSubmitBlocked;
 
   const refreshGroupsAndTasks = useCallback(async () => {
     if (!platformAgent?.auth) return;
@@ -448,7 +513,7 @@ export function SchedulesWorkspace() {
     try {
       await platformAgent.withFreshToken(async (token) => {
         const [g, t] = await Promise.all([fetchAllUserScheduledTaskGroups(token), fetchAllUserScheduledTasks(token)]);
-        setGroups(g);
+        setGroups(sortGroupsByCreatedAsc(g));
         setTasks(t);
       });
     } catch (e) {
@@ -503,46 +568,44 @@ export function SchedulesWorkspace() {
   }, [activeChip, groups]);
 
   const commitNewGroup = useCallback(async () => {
-    const name = newGroupName.trim();
+    if (newGroupSaving) return;
+    const name = newGroupNameTrimmed;
     if (!name) {
       setAddGroupOpen(false);
       setNewGroupName("");
+      setNewGroupNameConflict(false);
       return;
     }
-    if (name === "全部" || name === "默认") {
-      setToastMessage("该名称与系统分组冲突");
-      setToastVariant("error");
-      window.requestAnimationFrame(() => newGroupInputRef.current?.focus());
-      return;
-    }
-    if (groups.some((g) => g.name.trim() === name)) {
-      setToastMessage("已存在同名分组");
-      setToastVariant("error");
+    if (newGroupNameReserved || newGroupNameDuplicate) {
+      setNewGroupNameConflict(true);
       window.requestAnimationFrame(() => newGroupInputRef.current?.focus());
       return;
     }
     if (!platformAgent) return;
+    setNewGroupNameConflict(false);
+    setNewGroupSaving(true);
     setBusy(true);
     try {
       await platformAgent.withFreshToken(async (token) => {
-        await createUserScheduledTaskGroup(token, name);
+        const group = await createUserScheduledTaskGroup(token, name);
+        setGroups((prev) => sortGroupsByCreatedAsc([...prev.filter((x) => x.id !== group.id), group]));
       });
       setAddGroupOpen(false);
       setNewGroupName("");
+      setNewGroupNameConflict(false);
       setActiveChip(name);
       await refreshGroupsAndTasks();
     } catch (e) {
       const msg = e && typeof e === "object" && "body" in e ? parseFastApiDetail((e as { body: unknown }).body) : null;
       setError(msg || formatAgentApiErrorForUser(e) || "创建分组失败");
     } finally {
+      setNewGroupSaving(false);
       setBusy(false);
     }
-  }, [newGroupName, groups, platformAgent, refreshGroupsAndTasks]);
+  }, [newGroupNameTrimmed, newGroupNameReserved, newGroupNameDuplicate, newGroupSaving, platformAgent, refreshGroupsAndTasks]);
 
   const handleDeleteGroup = useCallback(async (group: UserScheduledTaskGroupDto) => {
     if (!platformAgent) return;
-    const name = (group.name || "未命名").trim() || "未命名";
-    if (!window.confirm(`确定删除分组「${name}」？该分组下的定时任务将移回默认分组。`)) return;
     setBusy(true);
     setError("");
     try {
@@ -550,6 +613,7 @@ export function SchedulesWorkspace() {
         await deleteUserScheduledTaskGroup(token, group.id);
       });
       if (activeChip === group.name) setActiveChip("全部");
+      setDeleteGroupConfirmId(null);
       await refreshGroupsAndTasks();
     } catch (e) {
       setError(formatAgentApiErrorForUser(e) || "删除分组失败");
@@ -580,7 +644,7 @@ export function SchedulesWorkspace() {
   const showRunsLoadError = Boolean(loadError && !busy && primaryTab === "运行记录" && runs.length === 0);
 
   const startScheduleTrial = useCallback(async () => {
-    if (!title.trim() || !prompt.trim()) {
+    if (!title.trim() || !serializedPrompt.trim()) {
       setNotice("请先补全标题和提示词。");
       return;
     }
@@ -592,11 +656,11 @@ export function SchedulesWorkspace() {
       setNotice("请选择日期。");
       return;
     }
-    if (scheduleKind === "不重复" && !runOnceDate.trim()) {
+    if (scheduleKind === "单次" && !runOnceDate.trim()) {
       setNotice("请选择执行日期。");
       return;
     }
-    const enabledForSubmit = editId ? taskEnabled : true;
+    const enabledForSubmit = scheduleKind === "非定时" ? false : editId ? taskEnabled : true;
     if (enabledForSubmit && !hasValidNextExecution) {
       setNotice("无法排程，请检查周期、星期/日期或时间。");
       return;
@@ -615,7 +679,7 @@ export function SchedulesWorkspace() {
     try {
       saveScheduleCreateDraft({
         title: title.trim(),
-        prompt: prompt.trim(),
+        prompt: serializedPrompt,
         taskEnabled: enabledForSubmit,
         scheduleKind,
         timeHhmm,
@@ -643,7 +707,7 @@ export function SchedulesWorkspace() {
     }
   }, [
     title,
-    prompt,
+    serializedPrompt,
     platformAgent,
     createGroupIdQ,
     formGroupId,
@@ -662,7 +726,7 @@ export function SchedulesWorkspace() {
     if (!editId) {
       return;
     }
-    if (!title.trim() || !prompt.trim()) {
+    if (!title.trim() || !serializedPrompt.trim()) {
       setNotice("请先补全标题和提示词。");
       return;
     }
@@ -674,11 +738,11 @@ export function SchedulesWorkspace() {
       setNotice("请选择日期。");
       return;
     }
-    if (scheduleKind === "不重复" && !runOnceDate.trim()) {
+    if (scheduleKind === "单次" && !runOnceDate.trim()) {
       setNotice("请选择执行日期。");
       return;
     }
-    if (taskEnabled && !hasValidNextExecution) {
+    if (scheduleKind !== "非定时" && taskEnabled && !hasValidNextExecution) {
       setNotice("无法排程，请检查周期、星期/日期或时间。");
       return;
     }
@@ -696,8 +760,8 @@ export function SchedulesWorkspace() {
     try {
       saveScheduleCreateDraft({
         title: title.trim(),
-        prompt: prompt.trim(),
-        taskEnabled,
+        prompt: serializedPrompt,
+        taskEnabled: scheduleKind === "非定时" ? false : taskEnabled,
         scheduleKind,
         timeHhmm,
         selectedWeekdayValues: Array.from(selectedWeekdays).sort((a, b) => a - b),
@@ -725,7 +789,7 @@ export function SchedulesWorkspace() {
   }, [
     editId,
     title,
-    prompt,
+    serializedPrompt,
     platformAgent,
     createGroupIdQ,
     formGroupId,
@@ -742,15 +806,15 @@ export function SchedulesWorkspace() {
   ]);
 
   const onEditSaveButtonClick = useCallback(() => {
-    if (busy || tryRunSubmitBlocked) return;
+    if (formSubmitDisabled) return;
     if (!editId) return;
     const baseline = editPromptBaselineRef.current;
-    if (baseline !== null && prompt.trim() !== baseline) {
+    if (baseline !== null && serializedPrompt !== baseline) {
       setEditPromptChangedSaveGateOpen(true);
       return;
     }
     void saveEditedSchedule();
-  }, [editId, prompt, busy, tryRunSubmitBlocked, saveEditedSchedule]);
+  }, [editId, serializedPrompt, formSubmitDisabled, saveEditedSchedule]);
 
   const onToggleEnabled = useCallback(
     async (t: UserScheduledTaskItemApi, enabled: boolean) => {
@@ -770,7 +834,6 @@ export function SchedulesWorkspace() {
   const onDeleteTask = useCallback(
     async (t: UserScheduledTaskItemApi) => {
       if (!platformAgent) return;
-      if (!window.confirm("确定删除该定时任务？")) return;
       try {
         await platformAgent.withFreshToken(async (token) => {
           await deleteUserScheduledTask(token, t.id);
@@ -809,60 +872,70 @@ export function SchedulesWorkspace() {
       }}
     >
       <DialogContent
-        className="max-h-[min(86vh,760px)] max-w-[640px] overflow-y-auto rounded-[24px] border-transparent p-0"
+        className="flex max-h-[min(calc(100vh-48px),680px)] max-w-[520px] flex-col overflow-hidden rounded-[16px] border-transparent p-0 shadow-[0_18px_48px_rgba(0,0,0,0.14)] [&>button]:right-5 [&>button]:top-5"
         overlayClassName="bg-[rgba(17,17,17,0.42)] backdrop-blur-[1px]"
       >
-        <div className="px-8 pb-6 pt-7">
-            <DialogTitle className="text-[22px] font-semibold text-[#18181b]">
-              {editId ? "编辑定时任务" : "创建定时任务"}
-            </DialogTitle>
-            <p className="mt-3 text-[14px] leading-6 text-[#71717a]">
-              {editId
-                ? "与新建相同的配置项；试跑后保存将更新本条任务。"
-                : "定时任务将按设定频率执行，请留意积分消耗"}
-            </p>
-            {notice ? <p className="mt-4 text-[14px] text-[#52525b]">{notice}</p> : null}
+        <div className="shrink-0 bg-white px-6 pb-3 pt-5">
+          <DialogTitle className="text-lg font-medium leading-7 text-[#18181b]">
+            {editId ? "编辑定时任务" : "创建定时任务"}
+          </DialogTitle>
+        </div>
+        <div className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto px-6 pb-3">
+            {notice ? <p className="mt-3 text-sm text-[#52525b]">{notice}</p> : null}
 
-            <div className="mt-6 space-y-5">
+            <div className="mt-4 space-y-4">
                 <Field label="标题" required>
-                  <Input
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="请输入定时任务标题"
-                    className="h-12 rounded-[12px] border-[#e5e7eb]"
-                  />
-                </Field>
-                <Field label="分组">
-                  <Select
-                    value={formGroupId ?? DEFAULT_GROUP_VALUE}
-                    onValueChange={(value) => setFormGroupId(value === DEFAULT_GROUP_VALUE ? null : value)}
-                  >
-                    <SelectTrigger className="h-12 w-full rounded-[12px] border-[#e5e7eb]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value={DEFAULT_GROUP_VALUE}>默认</SelectItem>
-                        {groups.map((g) => (
-                          <SelectItem key={g.id} value={g.id}>
-                            {g.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <p className="mt-1.5 text-xs text-[#a1a1aa]">可在主列表通过分组名筛选；新分组在列表左侧添加。</p>
+                  <div className="relative">
+                    <Input
+                      value={title}
+                      maxLength={SCHEDULE_TITLE_MAX_LENGTH}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="请输入任务名称"
+                      className="h-10 rounded-[10px] border-transparent bg-[#f7f7f7] px-3 pr-14 text-sm text-[#18181b] placeholder:text-[#a1a1aa] focus-visible:ring-0"
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#71717a]">
+                      {title.length}/{SCHEDULE_TITLE_MAX_LENGTH}
+                    </span>
+                  </div>
                 </Field>
                 <Field label="提示词" required>
-                  <Textarea
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder="需要查看 Keepa 数据？尝试 @Keepa-亚马逊-价格历史。"
-                    className="min-h-[160px] rounded-[12px] border-[#e5e7eb] px-4 py-4"
-                  />
+                  <div className="relative">
+                    <TaskComposer
+                      value={prompt}
+                      onValueChange={(value) => setPrompt(value.slice(0, SCHEDULE_PROMPT_MAX_LENGTH))}
+                      placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
+                      mode={scheduleComposerMode}
+                      onModeChange={setScheduleComposerMode}
+                      selectedSourceIds={scheduleSourceIds}
+                      onToolSelect={addScheduleComposerSource}
+                      onSourceRemove={removeScheduleComposerSource}
+                      onFilesSelected={(files) => {
+                        const names = Array.from(files).map((file) => file.name).join("、");
+                        if (names) setNotice(`已添加附件：${names}。`);
+                      }}
+                      onSubmit={() => undefined}
+                      showSubmitButton={false}
+                      submitOnEnter={false}
+                      visualStyle="heroMinimal"
+                      containerClassName="relative z-30 w-full rounded-[10px] border border-transparent bg-[#f7f7f7] shadow-none"
+                      textareaClassName="min-h-[84px] max-h-[9em] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1 pr-2 text-sm font-normal leading-6 text-[#34322d] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
+                      sendButtonClassName={cn(
+                        "h-8 w-8 min-w-0 rounded-full border border-transparent p-0 text-white shadow-none transition",
+                        serializedPrompt ? "bg-[#111111] hover:bg-[#2a2a2a]" : "bg-[#dededc] hover:bg-[#d1d1cf]",
+                      )}
+                    />
+                    <span className="pointer-events-none absolute bottom-3 right-3 text-xs text-[#71717a]">
+                      {serializedPrompt.length}/{SCHEDULE_PROMPT_MAX_LENGTH}
+                    </span>
+                  </div>
                 </Field>
-                <Field label="执行时间" required>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Field label="执行方式" required>
+                  <div
+                    className={cn(
+                      "grid grid-cols-1 gap-2.5 sm:grid-cols-3",
+                      scheduleKind === "每天" && "sm:grid-cols-2",
+                    )}
+                  >
                     <Select
                       value={scheduleKind}
                       onValueChange={(value) => {
@@ -870,14 +943,14 @@ export function SchedulesWorkspace() {
                         setScheduleKind(v);
                         if (v !== "每周") setSelectedWeekdays(new Set());
                         if (v !== "每月") setSelectedMonthDays(new Set());
-                        if (v === "不重复") {
+                        if (v === "单次") {
                           setRunOnceDate((prev) => (prev.trim() ? prev : runOnceDateYmdImpliedToday()));
                         } else {
                           setRunOnceDate("");
                         }
                       }}
                     >
-                      <SelectTrigger className="h-12 w-full rounded-[12px] border-transparent bg-[#f7f7f7]">
+                      <SelectTrigger className="h-10 w-full rounded-[10px] border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] focus-visible:ring-0">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -891,21 +964,12 @@ export function SchedulesWorkspace() {
                       </SelectContent>
                     </Select>
 
-                    {scheduleKind === "每天" ? (
-                      <button
-                        type="button"
-                        disabled
-                        className="h-12 w-full rounded-[12px] bg-[#f7f7f7] px-3 text-left text-[14px] text-[#a1a1aa]"
-                      >
-                        无需选择
-                      </button>
-                    ) : null}
-                    {scheduleKind === "不重复" ? (
+                    {scheduleKind === "单次" ? (
                       <input
                         type="date"
                         value={runOnceDate}
                         onChange={(e) => setRunOnceDate(e.target.value)}
-                        className="h-12 w-full min-w-0 rounded-[12px] border border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] [color-scheme:light]"
+                        className="h-10 w-full min-w-0 rounded-[10px] border border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] outline-none [color-scheme:light]"
                       />
                     ) : null}
                     {scheduleKind === "每周" ? (
@@ -914,7 +978,7 @@ export function SchedulesWorkspace() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-12 w-full justify-between rounded-[12px] border-transparent bg-[#f7f7f7] px-3 text-left font-normal text-[#18181b]"
+                            className="h-10 w-full justify-between rounded-[10px] border-transparent bg-[#f7f7f7] px-3 text-left text-sm font-normal text-[#18181b] hover:bg-[#eeeeee]"
                           >
                             <span className={cn("truncate", selectedWeekdays.size === 0 && "text-[#9ca3af]")}>
                               {weekdayButtonLabel(selectedWeekdays)}
@@ -931,7 +995,7 @@ export function SchedulesWorkspace() {
                             {WEEKDAY_OPTIONS.map((w) => (
                               <label
                                 key={w.value}
-                                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[#f4f4f5]"
+                                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[rgba(55,53,47,0.06)]"
                               >
                                 <Checkbox
                                   checked={selectedWeekdays.has(w.value)}
@@ -952,143 +1016,140 @@ export function SchedulesWorkspace() {
                       </Popover>
                     ) : null}
                     {scheduleKind === "每月" ? (
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-12 w-full justify-between rounded-[12px] border-transparent bg-[#f7f7f7] px-3 text-left font-normal text-[#18181b]"
-                          >
-                            <span className={cn("truncate", selectedMonthDays.size === 0 && "text-[#9ca3af]")}>
-                              {monthDayButtonLabel(selectedMonthDays)}
-                            </span>
-                            <ChevronDown className="h-4 w-4 shrink-0 text-[#71717a]" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent
-                          className="w-[min(100vw-2rem,18rem)] p-0"
-                          align="start"
-                          onOpenAutoFocus={(ev) => ev.preventDefault()}
-                        >
-                          <div className="max-h-64 space-y-1 overflow-y-auto p-2">
-                            <div className="grid grid-cols-4 gap-1 sm:grid-cols-5">
-                              {MONTH_DAY_OPTIONS.map((d) => (
-                                <label
-                                  key={d}
-                                  className="flex cursor-pointer items-center gap-1.5 rounded-md border border-transparent px-1 py-1.5 text-xs hover:bg-[#f4f4f5] sm:text-sm"
-                                >
-                                  <Checkbox
-                                    className="h-3.5 w-3.5 sm:h-4 sm:w-4"
-                                    checked={selectedMonthDays.has(d)}
-                                    onCheckedChange={() => {
-                                      setSelectedMonthDays((prev) => {
-                                        const n = new Set(prev);
-                                        if (n.has(d)) n.delete(d);
-                                        else n.add(d);
-                                        return n;
-                                      });
-                                    }}
-                                  />
-                                  <span className="tabular-nums">{d}号</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
+                      <Select
+                        value={
+                          selectedMonthDays.size > 0
+                            ? String(Array.from(selectedMonthDays).sort((a, b) => a - b)[0])
+                            : undefined
+                        }
+                        onValueChange={(value) => {
+                          const next = Number.parseInt(value, 10);
+                          setSelectedMonthDays(Number.isInteger(next) && next >= 1 && next <= 31 ? new Set([next]) : new Set());
+                        }}
+                      >
+                            <SelectTrigger className="h-10 w-full rounded-[10px] border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] focus-visible:ring-0">
+                              <SelectValue placeholder="选择日期" />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-64">
+                              <SelectGroup>
+                                {MONTH_DAY_OPTIONS.map((d) => (
+                                  <SelectItem key={d} value={String(d)}>
+                                    {d}号
+                                  </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
                     ) : null}
 
-                    <Select
-                      value={timeHhmm}
-                      onValueChange={setTimeHhmm}
-                    >
-                      <SelectTrigger className="h-12 w-full rounded-[12px] border-transparent bg-[#f7f7f7]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {HALF_HOUR_TIME_OPTIONS.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {t}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
+                    {scheduleKind === "非定时" ? null : (
+                      <Select
+                        value={timeHhmm}
+                        onValueChange={setTimeHhmm}
+                      >
+                        <SelectTrigger className="h-10 w-full rounded-[10px] border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] focus-visible:ring-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            {HALF_HOUR_TIME_OPTIONS.map((t) => (
+                              <SelectItem key={t} value={t}>
+                                {t}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
 
-                  {scheduleKind === "不重复" && runOnceDate.trim() ? (
-                    <p className="mt-2 text-sm text-[#a1a1aa]">
+                  {scheduleKind === "单次" && runOnceDate.trim() ? (
+                    <p className="mt-2 text-xs text-[#a1a1aa]">
                       仅执行一次: {runOnceDate} {toHhmm(timeHhmm)}
                     </p>
                   ) : null}
-                  {scheduleKind === "不重复" && !runOnceDate ? (
-                    <p className="mt-2 text-sm text-[#a1a1aa]">请选择执行日期</p>
+                  {scheduleKind === "单次" && !runOnceDate && !tryRunSubmitBlocked ? (
+                    <p className="mt-2 text-xs text-[#a1a1aa]">请选择执行日期</p>
                   ) : null}
-                  {scheduleKind === "每周" && selectedWeekdays.size === 0 ? (
-                    <p className="mt-2 text-sm text-[#a1a1aa]">请选择星期</p>
-                  ) : scheduleKind === "每月" && selectedMonthDays.size === 0 ? (
-                    <p className="mt-2 text-sm text-[#a1a1aa]">请选择日期</p>
+                  {scheduleKind === "每周" && selectedWeekdays.size === 0 && !tryRunSubmitBlocked ? (
+                    <p className="mt-2 text-xs text-[#a1a1aa]">请选择星期</p>
+                  ) : scheduleKind === "每月" && selectedMonthDays.size === 0 && !tryRunSubmitBlocked ? (
+                    <p className="mt-2 text-xs text-[#a1a1aa]">请选择日期</p>
                   ) : null}
                   {tryRunSubmitBlocked ? (
-                    <p className="mt-2 text-sm text-red-600" role="alert">
+                    <p className="mt-2 text-xs text-red-600" role="alert">
                       无法排程，请检查周期、星期/日期或时间。
                     </p>
                   ) : null}
                 </Field>
-                <ScheduleResultPushSection
-                  key={resultPushFormKey}
-                  headerLabel="结果推送"
-                  inlineAddTrigger
-                  defaultBlocks={resultPushRef.current.length > 0 ? resultPushRef.current : undefined}
-                  onConfigSnapshot={({ blocks }) => {
-                    resultPushRef.current = blocks;
-                    if (editId) {
-                      persistResultPushBlocksForTask(editId, blocks);
-                    }
-                  }}
-                  onNotify={setNotice}
-                />
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    className="flex h-10 w-full items-center justify-between rounded-[10px] bg-[#f7f7f7] px-3 text-left text-sm font-medium text-[#18181b] transition hover:bg-[#eeeeee]"
+                    aria-expanded={advancedOpen}
+                    onClick={() => setAdvancedOpen((open) => !open)}
+                  >
+                    <span>高级设置</span>
+                    <ChevronDown
+                      className={cn("h-4 w-4 text-[#71717a] transition-transform", advancedOpen && "rotate-180")}
+                    />
+                  </button>
+                  {advancedOpen ? (
+                    <div className="mt-3 space-y-4">
+                      <Field label="分组">
+                        <Select
+                          value={formGroupId ?? DEFAULT_GROUP_VALUE}
+                          onValueChange={(value) => setFormGroupId(value === DEFAULT_GROUP_VALUE ? null : value)}
+                        >
+                          <SelectTrigger className="h-10 w-full rounded-[10px] border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] focus-visible:ring-0">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value={DEFAULT_GROUP_VALUE}>默认</SelectItem>
+                              {groups.map((g) => (
+                                <SelectItem key={g.id} value={g.id}>
+                                  {g.name}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <ScheduleResultPushSection
+                        key={resultPushFormKey}
+                        headerLabel="结果推送"
+                        inlineAddTrigger
+                        defaultBlocks={resultPushRef.current.length > 0 ? resultPushRef.current : undefined}
+                        onConfigSnapshot={({ blocks }) => {
+                          resultPushRef.current = blocks;
+                          if (editId) {
+                            persistResultPushBlocksForTask(editId, blocks);
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                </div>
             </div>
         </div>
-        <div className="sticky bottom-0 z-20 border-t border-[#e5e7eb] bg-white px-8 py-4">
+        <div className="shrink-0 border-t border-[#e5e7eb] bg-white px-6 py-3">
           <div className="flex flex-wrap items-center justify-end gap-3">
-            {editId ? (
-              <span className="mr-auto min-w-0 text-xs text-[#a1a1aa]">保存后将在列表中显示最新配置</span>
-            ) : (
-              <span className="mr-auto min-w-0 text-xs text-[#a1a1aa]">
-                创建流程：配置 -&gt; 试运行 -&gt; 保存启用，试运行同样会消耗运行次数
-              </span>
-            )}
+            {editId ? <span className="mr-auto" aria-hidden /> : null}
             <div className="relative z-10 flex flex-shrink-0 items-center justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="shrink-0 rounded-[10px]"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (busy) return;
-                  resetCreateFormToDefaults();
-                  router.push("/schedules");
-                }}
-                disabled={busy}
-              >
-                取消
-              </Button>
               {editId ? (
                 <Popover open={editPromptChangedSaveGateOpen} onOpenChange={setEditPromptChangedSaveGateOpen}>
                   <PopoverAnchor asChild>
                     <span className="inline-flex">
                       <Button
                         type="button"
-                        className="shrink-0 rounded-[10px] bg-[#111111] text-white hover:bg-[#2a2a2a]"
+                        className="h-9 shrink-0 rounded-[10px] bg-[#111111] px-4 text-sm text-white hover:bg-[#2a2a2a]"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
                           onEditSaveButtonClick();
                         }}
-                        disabled={busy || tryRunSubmitBlocked}
+                        disabled={formSubmitDisabled}
                       >
                         保存
                       </Button>
@@ -1133,16 +1194,16 @@ export function SchedulesWorkspace() {
               ) : (
                 <Button
                   type="button"
-                  className="shrink-0 rounded-[10px] bg-[#111111] text-white hover:bg-[#2a2a2a]"
+                  className="h-9 shrink-0 rounded-[10px] bg-[#111111] px-4 text-sm text-white hover:bg-[#2a2a2a]"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (busy || tryRunSubmitBlocked) return;
+                    if (formSubmitDisabled) return;
                     void startScheduleTrial();
                   }}
-                  disabled={busy || tryRunSubmitBlocked}
+                  disabled={formSubmitDisabled}
                 >
-                  试运行并继续保存
+                  确认
                 </Button>
               )}
             </div>
@@ -1200,7 +1261,7 @@ export function SchedulesWorkspace() {
                   variant="outline"
                   size="icon"
                   aria-label={searchPlaceholder}
-                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[#f7f7f5] max-[960px]:inline-flex"
+                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[rgba(55,53,47,0.06)] max-[960px]:inline-flex"
                   onClick={() => setSearchDialogOpen(true)}
                 >
                   <Search className="h-4 w-4" />
@@ -1253,23 +1314,64 @@ export function SchedulesWorkspace() {
                             <TabsTrigger value={name}>
                               <span className="max-w-[160px] truncate">{name}</span>
                             </TabsTrigger>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              aria-label={`删除分组 ${name}`}
-                              className="pointer-events-none absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-[#71717a] opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/chip:pointer-events-auto group-hover/chip:opacity-100"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                              }}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                void handleDeleteGroup(g);
-                              }}
+                            <Popover
+                              open={deleteGroupConfirmId === g.id}
+                              onOpenChange={(open) => setDeleteGroupConfirmId(open ? g.id : null)}
                             >
-                              <X className="h-3 w-3" />
-                            </Button>
+                              <PopoverAnchor asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  aria-label={`删除分组 ${name}`}
+                                  aria-expanded={deleteGroupConfirmId === g.id}
+                                  className="pointer-events-auto absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-[#71717a] opacity-0 transition hover:bg-transparent hover:text-red-600 focus-visible:opacity-100 group-hover/chip:opacity-100 data-[state=open]:opacity-100"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                  }}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setDeleteGroupConfirmId(g.id);
+                                  }}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </PopoverAnchor>
+                              <PopoverContent
+                                side="bottom"
+                                align="end"
+                                sideOffset={8}
+                                className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
+                                onCloseAutoFocus={(e) => e.preventDefault()}
+                              >
+                                <p className="text-[14px] leading-6 text-[#34322d]">
+                                  确定删除吗？该分组下的定时任务将移回默认分组
+                                </p>
+                                <div className="mt-4 flex justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
+                                    disabled={busy}
+                                    onClick={() => setDeleteGroupConfirmId(null)}
+                                  >
+                                    取消
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
+                                    disabled={busy}
+                                    onClick={() => void handleDeleteGroup(g)}
+                                  >
+                                    {busy ? "删除中…" : "确定删除"}
+                                  </Button>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
                           </div>
                         );
                       })}
@@ -1286,7 +1388,7 @@ export function SchedulesWorkspace() {
                     }}
                     className="shrink-0"
                   >
-                    <Plus />
+                    <PlusThin />
                   </Button>
                 </div>
                 <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:shrink-0">
@@ -1381,7 +1483,7 @@ export function SchedulesWorkspace() {
                     setMoveTask(t);
                     setMoveGroupId(t.group_id ?? "");
                   }}
-                  onDelete={() => void onDeleteTask(t)}
+                  onDelete={() => onDeleteTask(t)}
                   onOpenRuns={() => {
                     setPrimaryTab("运行记录");
                     setSearch(t.title.slice(0, 16));
@@ -1394,10 +1496,7 @@ export function SchedulesWorkspace() {
           {showRunsLoadError ? (
             <PageLostState onRetry={() => void refreshRuns()} />
           ) : primaryTab === "运行记录" && !busy && displayRuns.length === 0 ? (
-            <div className="mt-8 flex min-h-[calc(100vh-300px)] flex-col items-center justify-center px-4 text-center">
-              <Box className="mb-4 text-[#b1b2ae]" strokeWidth={1.35} aria-hidden />
-              <p className="text-[14px] text-[#71717a]">暂无运行记录</p>
-            </div>
+            <EmptyState message="暂无运行记录" />
           ) : null}
           {primaryTab === "运行记录" && displayRuns.length > 0 ? (
             <div className="mt-8 flex flex-col gap-4">
@@ -1420,7 +1519,7 @@ export function SchedulesWorkspace() {
 
       <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
         <DialogContent className="max-w-[420px] rounded-[16px] p-5">
-          <DialogTitle className="text-[18px] font-semibold text-[#111111]">{searchPlaceholder}</DialogTitle>
+          <DialogTitle className="text-[16px] font-semibold text-[#111111]">{searchPlaceholder}</DialogTitle>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
             <Input
@@ -1459,12 +1558,16 @@ export function SchedulesWorkspace() {
       <Dialog
         open={addGroupOpen}
         onOpenChange={(open) => {
+          if (newGroupSaving) return;
           setAddGroupOpen(open);
-          if (!open) setNewGroupName("");
+          if (!open) {
+            setNewGroupName("");
+            setNewGroupNameConflict(false);
+          }
         }}
       >
         <DialogContent className="max-w-[400px] rounded-[16px] p-5">
-          <DialogTitle className="text-[18px] font-semibold text-[#111111]">新建分组</DialogTitle>
+          <DialogTitle className="text-[16px] font-semibold text-[#111111]">新建分组</DialogTitle>
           <div>
             <Input
               id="schedule-new-group-name"
@@ -1472,7 +1575,11 @@ export function SchedulesWorkspace() {
               autoFocus
               value={newGroupName}
               aria-label="分组名称"
-              onChange={(e) => setNewGroupName(e.target.value)}
+              disabled={newGroupSaving}
+              onChange={(e) => {
+                setNewGroupName(e.target.value);
+                setNewGroupNameConflict(false);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -1480,17 +1587,29 @@ export function SchedulesWorkspace() {
                 }
               }}
               placeholder="请输入分组名称"
-              className="h-10 rounded-[12px] border-[#e2e2df] text-[14px]"
+              className={`h-10 rounded-[12px] text-[14px] ${
+                newGroupNameConflict
+                  ? "!border-red-500 focus-visible:!ring-red-500/20"
+                  : "border-[#e2e2df]"
+              }`}
             />
+            {newGroupNameConflict ? (
+              <p className="mt-2 flex items-center gap-1.5 text-[14px] leading-5 text-red-600">
+                <InfoCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                名称已存在
+              </p>
+            ) : null}
           </div>
           <div className="flex justify-end gap-2">
             <Button
               type="button"
               variant="outline"
               className="h-9 rounded-[10px] border-[#e2e2df] px-3 text-[14px]"
+              disabled={newGroupSaving}
               onClick={() => {
                 setAddGroupOpen(false);
                 setNewGroupName("");
+                setNewGroupNameConflict(false);
               }}
             >
               取消
@@ -1498,9 +1617,17 @@ export function SchedulesWorkspace() {
             <Button
               type="button"
               className="h-9 rounded-[10px] bg-[#111111] px-4 text-[14px] text-white hover:bg-[#2a2a2a]"
+              disabled={newGroupCreateDisabled}
               onClick={() => void commitNewGroup()}
             >
-              创建
+              {newGroupSaving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  创建中
+                </>
+              ) : (
+                "创建"
+              )}
             </Button>
           </div>
         </DialogContent>
@@ -1563,7 +1690,7 @@ export function SchedulesWorkspace() {
 function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <div>
-      <div className="mb-3 text-sm font-medium text-[#52525b]">
+      <div className="mb-2 text-sm font-medium leading-5 text-[#18181b]">
         {label}
         {required ? (
           <>
@@ -1591,9 +1718,11 @@ function ApiScheduledTaskCard({
   onRun: () => void;
   onEdit: () => void;
   onMove: () => void;
-  onDelete: () => void;
+  onDelete: () => Promise<void>;
   onOpenRuns: () => void;
 }) {
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const ui = deriveTaskUiStatus(t);
   const ended = ui === "已完结";
   const canToggle = !ended;
@@ -1648,38 +1777,89 @@ function ApiScheduledTaskCard({
           <Clock className="mr-0.5 h-3 w-3 shrink-0" />
           <span className="truncate">运行记录</span>
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-8 w-8 shrink-0 rounded-[8px] border-[#e2e2df] text-[#747571]"
-            >
-              <MoreVertical className="h-3.5 w-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuGroup>
-              <DropdownMenuItem onSelect={onRun}>
-                <Play className="h-4 w-4" />
-                运行
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onEdit}>
-                <Pencil className="h-4 w-4" />
-                编辑
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onMove}>
-                <ArrowRightLeft className="h-4 w-4" />
-                移动到
-              </DropdownMenuItem>
-              <DropdownMenuItem className="text-red-600 focus:bg-red-50 focus:text-red-600" onSelect={onDelete}>
-                <Trash2 className="h-4 w-4" />
-                删除
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Popover open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <DropdownMenu>
+            <PopoverAnchor asChild>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 rounded-[8px] border-[#e2e2df] text-[#747571]"
+                >
+                  <MoreVertical className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+            </PopoverAnchor>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuGroup>
+                <DropdownMenuItem onSelect={onRun}>
+                  <Play className="h-4 w-4" />
+                  运行
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onEdit}>
+                  <Pencil className="h-4 w-4" />
+                  编辑
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onMove}>
+                  <ArrowRightLeft className="h-4 w-4" />
+                  移动到
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-red-600 focus:bg-red-50 focus:text-red-600"
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    setDeleteOpen(true);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  删除
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <PopoverContent
+            side="bottom"
+            align="end"
+            sideOffset={8}
+            className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
+            onCloseAutoFocus={(e) => e.preventDefault()}
+          >
+            <p className="text-[14px] leading-6 text-[#34322d]">
+              确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
+                disabled={deleteBusy}
+                onClick={() => setDeleteOpen(false)}
+              >
+                取消
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
+                disabled={deleteBusy}
+                onClick={async () => {
+                  setDeleteBusy(true);
+                  try {
+                    await onDelete();
+                    setDeleteOpen(false);
+                  } finally {
+                    setDeleteBusy(false);
+                  }
+                }}
+              >
+                {deleteBusy ? "删除中…" : "确定删除"}
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
     </Card>
   );
@@ -1699,6 +1879,8 @@ function ApiRunRecordRow({
   const router = useRouter();
   const platformAgent = useOptionalPlatformAgent();
   const [downloading, setDownloading] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const st = runStatusDisplay(r.status);
   const finished = formatRunRecordFinishedAtLocal(r.finished_at ?? r.started_at);
   const showDownload = scheduledRunShowsDownloadAllReports(r);
@@ -1746,25 +1928,24 @@ function ApiRunRecordRow({
     router.push(`/agent?${q.toString()}`);
   }, [onNotify, platformAgent, router, sessionId, r.task_title_snapshot, taskId]);
 
-  const onDeleteRun = useCallback(() => {
-    if (!window.confirm("确定删除该条运行记录？将同时清理该次执行产生的会话、对话与任务文件。")) {
-      return;
-    }
+  const onDeleteRun = useCallback(async () => {
     if (!platformAgent) {
       onApiError("请登录后重试。");
       return;
     }
-    void (async () => {
-      try {
-        await platformAgent.withFreshToken(async (token) => {
-          await deleteScheduledTaskRun(token, r.id);
-        });
-        onNotify("已删除", "default");
-        await onRunRecordsChanged();
-      } catch (e) {
-        onApiError(formatAgentApiErrorForUser(e) || "删除失败");
-      }
-    })();
+    setDeleteBusy(true);
+    try {
+      await platformAgent.withFreshToken(async (token) => {
+        await deleteScheduledTaskRun(token, r.id);
+      });
+      setDeleteOpen(false);
+      onNotify("已删除", "default");
+      await onRunRecordsChanged();
+    } catch (e) {
+      onApiError(formatAgentApiErrorForUser(e) || "删除失败");
+    } finally {
+      setDeleteBusy(false);
+    }
   }, [onApiError, onNotify, onRunRecordsChanged, platformAgent, r.id]);
 
   const summaryText = (() => {
@@ -1806,31 +1987,74 @@ function ApiRunRecordRow({
                 {downloading ? "准备中…" : "下载所有报告"}
               </Button>
             ) : null}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 shrink-0 rounded-[10px] text-[#747571]"
-                  aria-label="更多操作"
-                >
-                  <MoreVertical className="h-5 w-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuGroup>
-                  <DropdownMenuItem onSelect={onViewProcess}>
-                    <Eye className="h-4 w-4 shrink-0" />
-                    查看执行过程
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="text-red-600 focus:bg-red-50 focus:text-red-600" onSelect={onDeleteRun}>
-                    <Trash2 className="h-4 w-4 shrink-0" />
-                    删除
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Popover open={deleteOpen} onOpenChange={setDeleteOpen}>
+              <DropdownMenu>
+                <PopoverAnchor asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 rounded-[10px] text-[#747571]"
+                      aria-label="更多操作"
+                    >
+                      <MoreVertical className="h-5 w-5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </PopoverAnchor>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem onSelect={onViewProcess}>
+                      <Eye className="h-4 w-4 shrink-0" />
+                      查看执行过程
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-red-600 focus:bg-red-50 focus:text-red-600"
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        setDeleteOpen(true);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 shrink-0" />
+                      删除
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <PopoverContent
+                side="bottom"
+                align="end"
+                sideOffset={8}
+                className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
+                onCloseAutoFocus={(e) => e.preventDefault()}
+              >
+                <p className="text-[14px] leading-6 text-[#34322d]">
+                  确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
+                </p>
+                <div className="mt-4 flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
+                    disabled={deleteBusy}
+                    onClick={() => setDeleteOpen(false)}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
+                    disabled={deleteBusy}
+                    onClick={() => void onDeleteRun()}
+                  >
+                    {deleteBusy ? "删除中…" : "确定删除"}
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
         <p className="mt-3 line-clamp-6 text-sm leading-relaxed text-[#747571] sm:line-clamp-4">{summaryText}</p>

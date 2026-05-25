@@ -26,9 +26,12 @@ type TaskComposerProps = {
   /** 任务执行中显示为停止按钮 */
   submitVariant?: "send" | "stop";
   onStop?: () => void;
+  showSubmitButton?: boolean;
+  submitOnEnter?: boolean;
   visualStyle?: "default" | "heroMinimal";
   containerClassName?: string;
   textareaClassName?: string;
+  placeholderClassName?: string;
   sendButtonClassName?: string;
 };
 
@@ -271,9 +274,12 @@ export function TaskComposer({
   onSubmit,
   submitVariant = "send",
   onStop,
+  showSubmitButton = true,
+  submitOnEnter = true,
   visualStyle = "default",
   containerClassName,
   textareaClassName,
+  placeholderClassName,
   sendButtonClassName,
 }: TaskComposerProps) {
   const isHeroMinimal = visualStyle === "heroMinimal";
@@ -732,7 +738,7 @@ export function TaskComposer({
                           removeLastSource();
                           return;
                         }
-                        if (event.key === "Enter" && !event.shiftKey) {
+                        if (submitOnEnter && event.key === "Enter" && !event.shiftKey) {
                           event.preventDefault();
                           if (showStop && onStop) {
                             onStop();
@@ -773,13 +779,14 @@ export function TaskComposer({
                       )}
                     />
                   </div>
-                  {!value && selectedSources.length === 0 && !editorFocused ? (
-                    <div className={cn(
-                      "pointer-events-none absolute left-[1px] max-w-[520px] leading-7",
-                      isHeroMinimal ? "top-[8px] text-[15px] text-[#858481]" : "top-[4px] text-[13px] text-[#a1a1aa]",
-                    )}>
-                      {placeholder}
-                    </div>
+	                  {!value && selectedSources.length === 0 && !editorFocused ? (
+	                    <div className={cn(
+	                      "pointer-events-none absolute left-[1px] max-w-[520px] leading-7",
+	                      isHeroMinimal ? "top-[8px] text-[14px] text-[#858481]" : "top-[4px] text-[14px] text-[#a1a1aa]",
+                        placeholderClassName,
+	                    )}>
+	                      {placeholder}
+	                    </div>
                   ) : null}
 
                   {mentionOpen && typeof document !== "undefined"
@@ -794,7 +801,7 @@ export function TaskComposer({
                       }}
                     >
                       <div className="flex items-center border-b border-[rgba(0,0,0,0.06)] px-4 py-3">
-                        <div className="text-[13px] font-medium text-[#34322d]">@数据源</div>
+                        <div className="text-[14px] font-medium text-[#34322d]">@数据源</div>
                       </div>
                       <div ref={toolListRef} className="grid gap-1 overflow-y-auto p-2.5" style={{ maxHeight: mentionMenuStyle.maxHeight }}>
                         {mentionTools.map((item, index) => (
@@ -820,7 +827,7 @@ export function TaskComposer({
                             </span>
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-[14px] font-medium leading-5 text-[#34322d]">{item.label}</span>
-                              <span className="mt-1 line-clamp-2 block text-[13px] leading-5 text-[#858481]">
+                              <span className="mt-1 line-clamp-2 block text-[14px] leading-5 text-[#858481]">
                                 {item.promptHint}
                               </span>
                             </span>
@@ -840,13 +847,13 @@ export function TaskComposer({
                 {attachmentNames.slice(0, 3).map((name) => (
                   <span
                     key={name}
-                    className="inline-flex h-7 items-center rounded-full border border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.04)] px-2.5 text-[13px] text-[#858481]"
+                    className="inline-flex h-7 items-center rounded-full border border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.04)] px-2.5 text-[14px] text-[#858481]"
                   >
                     {name}
                   </span>
                 ))}
                 {attachmentNames.length > 3 ? (
-                  <span className="inline-flex h-7 items-center rounded-full border border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.04)] px-2.5 text-[13px] text-[#858481]">
+                  <span className="inline-flex h-7 items-center rounded-full border border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.04)] px-2.5 text-[14px] text-[#858481]">
                     +{attachmentNames.length - 3}
                   </span>
                 ) : null}
@@ -893,7 +900,7 @@ export function TaskComposer({
                   className="w-[520px] rounded-[18px] border-[rgba(0,0,0,0.08)] bg-white p-0 shadow-[0_20px_48px_rgba(24,24,27,0.12)]"
                 >
                   <div className="flex items-center border-b border-[rgba(0,0,0,0.06)] px-4 py-3">
-                    <div className="text-[13px] font-medium text-[#34322d]">@数据源</div>
+                    <div className="text-[14px] font-medium text-[#34322d]">@数据源</div>
                   </div>
                   <div className="grid max-h-[320px] gap-1 overflow-y-auto p-2.5">
                     {filteredTools.map((item) => (
@@ -908,7 +915,7 @@ export function TaskComposer({
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[14px] font-medium leading-5 text-[#34322d]">{item.label}</span>
-                          <span className="mt-1 line-clamp-2 block text-[13px] leading-5 text-[#858481]">
+                          <span className="mt-1 line-clamp-2 block text-[14px] leading-5 text-[#858481]">
                             {item.promptHint}
                           </span>
                         </span>
@@ -1012,34 +1019,36 @@ export function TaskComposer({
                 </PopoverContent>
               </Popover> */}
 
-              <Button
-                type="button"
-                onClick={() => (showStop ? onStop?.() : onSubmit())}
-                size="icon"
-                aria-label={showStop ? "停止任务" : "发送任务"}
-                data-testid="task-composer-submit"
-                className={
-                  showStop
-                    ? cn(
-                        sendButtonClassName,
-                        "h-12 w-12 shrink-0 rounded-full border border-transparent !bg-[#171a1f] p-0 text-white shadow-none transition hover:!bg-[#111318] focus-visible:ring-2 focus-visible:ring-[#171a1f]/20",
-                      )
-                    : sendButtonClassName ??
-                      (isHeroMinimal
-                        ? hasText
-                          ? "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[#37352f] p-0 text-white shadow-none transition hover:bg-[#2f2d28]"
-                          : "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[rgba(55,53,47,0.08)] p-0 text-white shadow-none transition hover:bg-[rgba(55,53,47,0.08)]"
-                        : hasText
-                          ? "h-[38px] w-[38px] rounded-[14px] border border-transparent bg-[#111111] text-white shadow-none transition hover:bg-[#2a2a2a]"
-                          : "h-[38px] w-[38px] rounded-[14px] border border-transparent bg-[#dededc] text-white shadow-none transition hover:bg-[#d1d1cf]" )
-                }
-              >
-                {showStop ? (
-                  <span className="block h-4 w-4 rounded-[3px] bg-white" aria-hidden />
-                ) : (
-                  <ArrowUp className="h-[15px] w-[15px]" strokeWidth={2.4} />
-                )}
-              </Button>
+              {showSubmitButton ? (
+                <Button
+                  type="button"
+                  onClick={() => (showStop ? onStop?.() : onSubmit())}
+                  size="icon"
+                  aria-label={showStop ? "停止任务" : "发送任务"}
+                  data-testid="task-composer-submit"
+                  className={
+                    showStop
+                      ? cn(
+                          sendButtonClassName,
+                          "h-12 w-12 shrink-0 rounded-full border border-transparent !bg-[#171a1f] p-0 text-white shadow-none transition hover:!bg-[#111318] focus-visible:ring-2 focus-visible:ring-[#171a1f]/20",
+                        )
+                      : sendButtonClassName ??
+                        (isHeroMinimal
+                          ? hasText
+                            ? "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[#37352f] p-0 text-white shadow-none transition hover:bg-[#2f2d28]"
+                            : "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[rgba(55,53,47,0.08)] p-0 text-white shadow-none transition hover:bg-[rgba(55,53,47,0.08)]"
+                          : hasText
+                            ? "h-[38px] w-[38px] rounded-[14px] border border-transparent bg-[#111111] text-white shadow-none transition hover:bg-[#2a2a2a]"
+                            : "h-[38px] w-[38px] rounded-[14px] border border-transparent bg-[#dededc] text-white shadow-none transition hover:bg-[#d1d1cf]" )
+                  }
+                >
+                  {showStop ? (
+                    <span className="block h-4 w-4 rounded-[3px] bg-white" aria-hidden />
+                  ) : (
+                    <ArrowUp className="h-[15px] w-[15px]" strokeWidth={2.4} />
+                  )}
+                </Button>
+              ) : null}
             </div>
           </div>
         </div>

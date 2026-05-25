@@ -6,16 +6,19 @@ import {
   ArrowRightLeft,
   Copy,
   Eye,
+  InfoCircle,
   MoreVertical,
-  Package,
   Pencil,
   Plus,
+  PlusThin,
+  Loader2,
   Search,
   Trash2,
   X,
 } from "@/components/ui/tabler-icons";
 
 import { AutoToast } from "@/components/auto-toast";
+import { EmptyState } from "@/components/empty-state";
 import { MoreDataShell } from "@/components/more-data-shell";
 import { PageLostState } from "@/components/page-lost-state";
 import { RequiredAsterisk } from "@/components/required-mark";
@@ -31,10 +34,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { createComposerPrefillStorageValue } from "@/lib/composer-prefill";
 import { AgentApiError, parseFastApiDetail } from "@/lib/agent-api/client";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import type { UserPromptDto, UserPromptGroupDto } from "@/lib/agent-api/types";
@@ -50,6 +55,18 @@ import {
 
 type FilterTab = { kind: "all" } | { kind: "default" } | { kind: "group"; id: string };
 const DEFAULT_GROUP_VALUE = "__default__";
+
+function sortGroupsByCreatedAsc(groups: UserPromptGroupDto[]) {
+  return groups
+    .map((group, index) => ({ group, index }))
+    .sort((a, b) => {
+      const at = Date.parse(a.group.created_at);
+      const bt = Date.parse(b.group.created_at);
+      if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
+      return a.index - b.index;
+    })
+    .map(({ group }) => group);
+}
 
 const tabToValue = (tab: FilterTab) => (tab.kind === "group" ? `group:${tab.id}` : tab.kind);
 
@@ -118,12 +135,13 @@ export function PromptLibraryWorkspace() {
 
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupSaving, setNewGroupSaving] = useState(false);
+  const [newGroupNameConflict, setNewGroupNameConflict] = useState(false);
   const newGroupInputRef = useRef<HTMLInputElement | null>(null);
 
   const [saveOpen, setSaveOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formTitle, setFormTitle] = useState("");
-  const [formDescription, setFormDescription] = useState("");
   const [formPrompt, setFormPrompt] = useState("");
   const [formGroupId, setFormGroupId] = useState<string | null>(null);
 
@@ -135,6 +153,10 @@ export function PromptLibraryWorkspace() {
   const [renamePromptId, setRenamePromptId] = useState<string | null>(null);
   const [deletePromptId, setDeletePromptId] = useState<string | null>(null);
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
+  const newGroupNameTrimmed = newGroupName.trim();
+  const newGroupNameReserved = newGroupNameTrimmed === "全部" || newGroupNameTrimmed === "默认";
+  const newGroupNameDuplicate = groups.some((g) => (g.name || "").trim() === newGroupNameTrimmed);
+  const newGroupCreateDisabled = newGroupSaving || !newGroupNameTrimmed;
 
   useEffect(() => {
     if (!searchDialogOpen) return;
@@ -150,7 +172,7 @@ export function PromptLibraryWorkspace() {
     try {
       await platformAgent.withFreshToken(async (token) => {
         const [g, p] = await Promise.all([fetchAllGroups(token), fetchAllPromptsForFilter(token, tab)]);
-        setGroups(g);
+        setGroups(sortGroupsByCreatedAsc(g));
         setPrompts(p);
       });
     } catch (e) {
@@ -187,7 +209,6 @@ export function PromptLibraryWorkspace() {
     setError("");
     setEditingId(null);
     setFormTitle("");
-    setFormDescription("");
     setFormPrompt("");
     setFormGroupId(tab.kind === "default" ? null : tab.kind === "group" ? tab.id : null);
     setSaveOpen(true);
@@ -197,7 +218,6 @@ export function PromptLibraryWorkspace() {
     setError("");
     setEditingId(p.id);
     setFormTitle(p.title);
-    setFormDescription(p.description);
     setFormPrompt(p.prompt_text);
     setFormGroupId(p.group_id);
     setSaveOpen(true);
@@ -215,14 +235,12 @@ export function PromptLibraryWorkspace() {
         if (editingId) {
           await patchUserPrompt(token, editingId, {
             title: formTitle.trim(),
-            description: formDescription,
             prompt_text: formPrompt.trim(),
             group_id: formGroupId,
           });
         } else {
           await createUserPrompt(token, {
             title: formTitle.trim(),
-            description: formDescription,
             prompt_text: formPrompt.trim(),
             group_id: formGroupId,
           });
@@ -242,31 +260,33 @@ export function PromptLibraryWorkspace() {
   };
 
   const commitNewGroupInput = useCallback(async () => {
-    if (!addGroupOpen) return;
-    const name = newGroupName.trim();
+    if (!addGroupOpen || newGroupSaving) return;
+    const name = newGroupNameTrimmed;
     if (!name) {
       setAddGroupOpen(false);
       setNewGroupName("");
+      setNewGroupNameConflict(false);
       return;
     }
     if (!platformAgent?.auth) return;
 
-    const duplicate = groups.some((g) => (g.name || "").trim() === name);
-    if (duplicate) {
-      setToastMessage("已存在同名分组");
-      setToastVariant("error");
+    if (newGroupNameReserved || newGroupNameDuplicate) {
+      setNewGroupNameConflict(true);
       window.requestAnimationFrame(() => newGroupInputRef.current?.focus());
       return;
     }
 
     setError("");
+    setNewGroupNameConflict(false);
+    setNewGroupSaving(true);
     try {
       await platformAgent.withFreshToken(async (token) => {
         const g = await createUserPromptGroup(token, name);
-        setGroups((prev) => [g, ...prev.filter((x) => x.id !== g.id)]);
+        setGroups((prev) => sortGroupsByCreatedAsc([...prev.filter((x) => x.id !== g.id), g]));
         setTab({ kind: "group", id: g.id });
         setAddGroupOpen(false);
         setNewGroupName("");
+        setNewGroupNameConflict(false);
       });
     } catch (e) {
       const msg =
@@ -276,8 +296,10 @@ export function PromptLibraryWorkspace() {
             ? e.message
             : String(e);
       setError(msg || "创建分组失败");
+    } finally {
+      setNewGroupSaving(false);
     }
-  }, [addGroupOpen, newGroupName, groups, platformAgent]);
+  }, [addGroupOpen, newGroupNameTrimmed, newGroupNameReserved, newGroupNameDuplicate, newGroupSaving, platformAgent]);
 
   const handleDeleteGroup = async (id: string) => {
     if (!platformAgent?.auth) return;
@@ -306,7 +328,7 @@ export function PromptLibraryWorkspace() {
       return;
     }
     try {
-      sessionStorage.setItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY, text);
+      sessionStorage.setItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY, createComposerPrefillStorageValue(text));
     } catch {
       /* ignore */
     }
@@ -398,7 +420,7 @@ export function PromptLibraryWorkspace() {
                   variant="outline"
                   size="icon"
                   aria-label="搜索提示词"
-                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[#f7f7f5] max-[960px]:inline-flex"
+                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[rgba(55,53,47,0.06)] max-[960px]:inline-flex"
                   onClick={() => setSearchDialogOpen(true)}
                 >
                   <Search className="h-4 w-4" />
@@ -424,23 +446,62 @@ export function PromptLibraryWorkspace() {
                         <TabsTrigger value={`group:${g.id}`}>
                           <span className="max-w-[160px] truncate">{g.name || "未命名"}</span>
                         </TabsTrigger>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          aria-label={`删除分组 ${g.name || "未命名"}`}
-                          className="pointer-events-none absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-[#71717a] opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/chip:pointer-events-auto group-hover/chip:opacity-100"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                          }}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setDeleteGroupId(g.id);
-                          }}
+                        <Popover
+                          open={deleteGroupId === g.id}
+                          onOpenChange={(open) => setDeleteGroupId(open ? g.id : null)}
                         >
-                          <X className="h-3 w-3" />
-                        </Button>
+                          <PopoverAnchor asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              aria-label={`删除分组 ${g.name || "未命名"}`}
+                              aria-expanded={deleteGroupId === g.id}
+                              className="pointer-events-auto absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-[#71717a] opacity-0 transition hover:bg-transparent hover:text-red-600 focus-visible:opacity-100 group-hover/chip:opacity-100 data-[state=open]:opacity-100"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setDeleteGroupId(g.id);
+                              }}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </PopoverAnchor>
+                          <PopoverContent
+                            side="bottom"
+                            align="end"
+                            sideOffset={8}
+                            className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
+                            onCloseAutoFocus={(e) => e.preventDefault()}
+                          >
+                            <p className="text-[14px] leading-6 text-[#34322d]">
+                              确定删除吗？该分组下的提示词将移回默认分组
+                            </p>
+                            <div className="mt-4 flex justify-end gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
+                                onClick={() => setDeleteGroupId(null)}
+                              >
+                                取消
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
+                                onClick={() => void handleDeleteGroup(g.id)}
+                              >
+                                确定删除
+                              </Button>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       </div>
                     ))}
                   </TabsList>
@@ -455,7 +516,7 @@ export function PromptLibraryWorkspace() {
                     setAddGroupOpen(true);
                   }}
                 >
-                  <Plus />
+                  <PlusThin />
                 </Button>
               </div>
             </div>
@@ -472,38 +533,37 @@ export function PromptLibraryWorkspace() {
             <PageLostState onRetry={() => void refresh()} />
           ) : !busy && filteredPrompts.length === 0 ? (
             prompts.length === 0 ? (
-              <div className="mt-8 flex min-h-[calc(100vh-260px)] flex-col items-center justify-center px-4 text-center">
-                <Package className="mb-4 text-[#b1b2ae]" strokeWidth={1.35} aria-hidden />
-                <p className="max-w-md text-center text-[14px] leading-relaxed text-[#71717a]">
-                  {tab.kind === "all"
-                    ? "暂无提示词"
-                    : tab.kind === "default"
-                      ? "默认分组下暂无提示词"
-                      : "该分组下暂无提示词"}{" "}
+              <EmptyState
+                className="min-h-[calc(100vh-260px)]"
+                message={tab.kind === "all" ? "暂无提示词" : tab.kind === "default" ? "默认分组下暂无提示词" : "该分组下暂无提示词"}
+                action={
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-auto px-1 py-0 align-baseline text-[14px] font-medium text-[#18181b] hover:bg-transparent hover:text-[#27272a]"
+                    className="h-auto px-1 py-0 text-[14px] font-medium text-[#18181b] hover:bg-transparent hover:text-[#27272a]"
                     onClick={openCreate}
                   >
                     马上创建提示词
                   </Button>
-                </p>
-              </div>
+                }
+              />
             ) : (
-              <div className="mt-16 flex flex-col items-center justify-center px-4 text-center">
-                <p className="text-[14px] text-[#71717a]">未找到匹配的提示词</p>
+              <EmptyState
+                className="mt-16 min-h-[240px]"
+                message="未找到匹配的提示词"
+                action={
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="mt-2 h-8 px-2 text-sm text-[#18181b] underline decoration-[#d4d4d8] underline-offset-4 hover:text-[#27272a]"
+                    className="h-8 px-2 text-sm text-[#18181b] underline decoration-[#d4d4d8] underline-offset-4 hover:bg-transparent hover:text-[#27272a]"
                   onClick={() => setSearch("")}
                 >
                   清空搜索条件
                 </Button>
-              </div>
+                }
+              />
             )
           ) : (
             <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -518,51 +578,109 @@ export function PromptLibraryWorkspace() {
                         <div className="line-clamp-1 text-[16px] font-semibold leading-6 text-[#111111]">{p.title}</div>
                         <div className="mt-1 text-xs text-[#8b8c87]">{formatDateTime(p.updated_at)}</div>
                       </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button type="button" variant="ghost" size="iconSm">
-                            <MoreVertical className="h-4 w-4 text-[#71717a]" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-48" align="end">
-                          <DropdownMenuGroup>
-                          <DropdownMenuItem onSelect={() => openEdit(p)}>
-                            <Pencil className="h-4 w-4" />
-                            编辑
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={() => {
-                              setMoveTarget(p);
-                              setMoveGroupId(p.group_id);
-                            }}
-                          >
-                            <ArrowRightLeft className="h-4 w-4" />
-                            移动到
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={() => {
-                              setRenamePromptId(p.id);
-                              setRenameTitle(p.title);
-                              setRenameOpen(true);
-                            }}
-                          >
-                            <Pencil className="h-4 w-4" />
-                            重命名
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => void copyText(p.prompt_text)}>
-                            <Copy className="h-4 w-4" />
-                            复制提示词
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-red-600 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-600"
-                            onSelect={() => setDeletePromptId(p.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            删除
-                          </DropdownMenuItem>
-                          </DropdownMenuGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <Popover
+                        open={deletePromptId === p.id}
+                        onOpenChange={(open) => setDeletePromptId(open ? p.id : null)}
+                      >
+                        <DropdownMenu>
+                          <PopoverAnchor asChild>
+                            <DropdownMenuTrigger asChild>
+                              <Button type="button" variant="ghost" size="iconSm">
+                                <MoreVertical className="h-4 w-4 text-[#71717a]" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                          </PopoverAnchor>
+                          <DropdownMenuContent className="w-48" align="end">
+                            <DropdownMenuGroup>
+                              <DropdownMenuItem onSelect={() => openEdit(p)}>
+                                <Pencil className="h-4 w-4" />
+                                编辑
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  setMoveTarget(p);
+                                  setMoveGroupId(p.group_id);
+                                }}
+                              >
+                                <ArrowRightLeft className="h-4 w-4" />
+                                移动到
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  setRenamePromptId(p.id);
+                                  setRenameTitle(p.title);
+                                  setRenameOpen(true);
+                                }}
+                              >
+                                <Pencil className="h-4 w-4" />
+                                重命名
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={() => void copyText(p.prompt_text)}>
+                                <Copy className="h-4 w-4" />
+                                复制提示词
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-red-600 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-600"
+                                onSelect={(event) => {
+                                  event.preventDefault();
+                                  setDeletePromptId(p.id);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                删除
+                              </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <PopoverContent
+                          side="bottom"
+                          align="end"
+                          sideOffset={8}
+                          className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
+                          onCloseAutoFocus={(e) => e.preventDefault()}
+                        >
+                          <p className="text-[14px] leading-6 text-[#34322d]">
+                            确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
+                          </p>
+                          <div className="mt-4 flex justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
+                              onClick={() => setDeletePromptId(null)}
+                            >
+                              取消
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
+                              onClick={async () => {
+                                if (!platformAgent?.auth) return;
+                                try {
+                                  await platformAgent.withFreshToken(async (token) => {
+                                    await deleteUserPrompt(token, p.id);
+                                  });
+                                  setDeletePromptId(null);
+                                  await refresh();
+                                } catch (e) {
+                                  const msg =
+                                    e instanceof AgentApiError
+                                      ? parseFastApiDetail(e.body) ?? e.message
+                                      : e instanceof Error
+                                        ? e.message
+                                        : String(e);
+                                  setError(msg || "删除失败");
+                                }
+                              }}
+                            >
+                              确定删除
+                            </Button>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     <p className="mt-3 line-clamp-4 whitespace-pre-wrap text-[14px] leading-6 text-[#747571]">{p.prompt_text}</p>
                     <div className="mt-auto flex flex-wrap justify-end gap-2 pt-4">
@@ -595,7 +713,7 @@ export function PromptLibraryWorkspace() {
 
       <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
         <DialogContent className="max-w-[420px] rounded-[16px] p-5">
-          <DialogTitle className="text-[18px] font-semibold text-[#111111]">搜索提示词</DialogTitle>
+          <DialogTitle className="text-[16px] font-semibold text-[#111111]">搜索提示词</DialogTitle>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
             <Input
@@ -634,12 +752,16 @@ export function PromptLibraryWorkspace() {
       <Dialog
         open={addGroupOpen}
         onOpenChange={(open) => {
+          if (newGroupSaving) return;
           setAddGroupOpen(open);
-          if (!open) setNewGroupName("");
+          if (!open) {
+            setNewGroupName("");
+            setNewGroupNameConflict(false);
+          }
         }}
       >
         <DialogContent className="max-w-[400px] rounded-[16px] p-5">
-          <DialogTitle className="text-[18px] font-semibold text-[#111111]">新建分组</DialogTitle>
+          <DialogTitle className="text-[16px] font-semibold text-[#111111]">新建分组</DialogTitle>
           <div>
             <Input
               id="prompt-library-new-group-name"
@@ -647,7 +769,11 @@ export function PromptLibraryWorkspace() {
               autoFocus
               aria-label="分组名称"
               value={newGroupName}
-              onChange={(e) => setNewGroupName(e.target.value)}
+              disabled={newGroupSaving}
+              onChange={(e) => {
+                setNewGroupName(e.target.value);
+                setNewGroupNameConflict(false);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -655,17 +781,29 @@ export function PromptLibraryWorkspace() {
                 }
               }}
               placeholder="请输入分组名称"
-              className="h-10 rounded-[12px] border-[#e2e2df] text-[14px]"
+              className={`h-10 rounded-[12px] text-[14px] ${
+                newGroupNameConflict
+                  ? "!border-red-500 focus-visible:!ring-red-500/20"
+                  : "border-[#e2e2df]"
+              }`}
             />
+            {newGroupNameConflict ? (
+              <p className="mt-2 flex items-center gap-1.5 text-[14px] leading-5 text-red-600">
+                <InfoCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                名称已存在
+              </p>
+            ) : null}
           </div>
           <div className="flex justify-end gap-2">
             <Button
               type="button"
               variant="outline"
               className="h-9 rounded-[10px] border-[#e2e2df] px-3 text-[14px]"
+              disabled={newGroupSaving}
               onClick={() => {
                 setAddGroupOpen(false);
                 setNewGroupName("");
+                setNewGroupNameConflict(false);
               }}
             >
               取消
@@ -673,9 +811,17 @@ export function PromptLibraryWorkspace() {
             <Button
               type="button"
               className="h-9 rounded-[10px] bg-[#111111] px-4 text-[14px] text-white hover:bg-[#2a2a2a]"
+              disabled={newGroupCreateDisabled}
               onClick={() => void commitNewGroupInput()}
             >
-              创建
+              {newGroupSaving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  创建中
+                </>
+              ) : (
+                "创建"
+              )}
             </Button>
           </div>
         </DialogContent>
@@ -684,12 +830,9 @@ export function PromptLibraryWorkspace() {
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent className="max-w-[540px] rounded-[18px] border-[#e5e7eb] p-0">
           <div className="px-8 pb-8 pt-7">
-            <DialogTitle className="text-[18px] font-semibold text-[#18181b]">
+            <DialogTitle className="text-[16px] font-semibold text-[#18181b]">
               {editingId ? "编辑提示词" : "保存提示词"}
             </DialogTitle>
-            <DialogDescription className="mt-2 text-sm leading-6 text-[#71717a]">
-              标题与提示词为必填；分组留空为默认分组。可使用 {"{{}}"} 与 [[]] 编写可编辑参数（示例见占位）。
-            </DialogDescription>
             <div className="mt-6 space-y-5">
               <div className="space-y-2">
                 <label className="text-sm text-[#52525b]">
@@ -724,15 +867,6 @@ export function PromptLibraryWorkspace() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-[#52525b]">简介</label>
-                <Input
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                  placeholder="请填写简介信息"
-                  className="h-11 rounded-[12px] border-[#e5e7eb]"
-                />
-              </div>
-              <div className="space-y-2">
                 <label className="text-sm text-[#52525b]">
                   提示词 prompt <RequiredAsterisk />
                 </label>
@@ -762,7 +896,7 @@ export function PromptLibraryWorkspace() {
         <DialogContent className="max-w-[520px] rounded-[16px] p-0">
           {preview ? (
             <div className="px-6 pb-6 pt-5">
-              <DialogTitle className="pr-8 text-lg font-semibold text-[#18181b]">{preview.title}</DialogTitle>
+              <DialogTitle className="pr-8 text-[16px] font-semibold text-[#18181b]">{preview.title}</DialogTitle>
               {preview.description ? (
                 <p className="mt-2 text-sm text-[#71717a]">{preview.description}</p>
               ) : null}
@@ -847,77 +981,6 @@ export function PromptLibraryWorkspace() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(deletePromptId)} onOpenChange={(o) => !o && setDeletePromptId(null)}>
-        <DialogContent className="max-w-[400px] rounded-[16px]">
-          <DialogTitle>删除提示词</DialogTitle>
-          <DialogDescription>确定删除？此操作不可恢复。</DialogDescription>
-          <div className="mt-6 flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setDeletePromptId(null)}>
-              取消
-            </Button>
-            <Button
-              className="bg-red-600 text-white hover:bg-red-700"
-              onClick={async () => {
-                if (!platformAgent?.auth || !deletePromptId) return;
-                try {
-                  await platformAgent.withFreshToken(async (token) => {
-                    await deleteUserPrompt(token, deletePromptId);
-                  });
-                  setDeletePromptId(null);
-                  await refresh();
-                } catch (e) {
-                  const msg =
-                    e instanceof AgentApiError
-                      ? parseFastApiDetail(e.body) ?? e.message
-                      : e instanceof Error
-                        ? e.message
-                        : String(e);
-                  setError(msg || "删除失败");
-                }
-              }}
-            >
-              删除
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(deleteGroupId)}
-        onOpenChange={(o) => {
-          if (!o) setDeleteGroupId(null);
-        }}
-      >
-        <DialogContent className="max-w-[420px] rounded-[16px] border-[#e8e8ea] p-0 pt-8 [&>button]:hidden">
-          <div className="px-8 pb-8">
-            <DialogTitle className="text-[16px] font-semibold leading-snug text-[#18181b]">
-              是否确认删除分组？
-            </DialogTitle>
-            <DialogDescription className="mt-3 text-sm leading-relaxed text-[#71717a]">
-              删除后，该分组的提示词，可在【默认】查看
-            </DialogDescription>
-            <div className="mt-8 flex justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-9 min-w-[88px] rounded-[10px] border-[#e4e4e7] bg-white text-[#18181b] hover:bg-[#fafafa]"
-                onClick={() => setDeleteGroupId(null)}
-              >
-                取消
-              </Button>
-              <Button
-                type="button"
-                className="h-9 min-w-[88px] rounded-[10px] border-0 bg-[#f26b5b] text-white hover:bg-[#e05548]"
-                onClick={() => {
-                  if (deleteGroupId) void handleDeleteGroup(deleteGroupId);
-                }}
-              >
-                删除
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </MoreDataShell>
   );
 }

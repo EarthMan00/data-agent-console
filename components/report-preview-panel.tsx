@@ -54,7 +54,7 @@ export function ReportPreviewPanel({
           <div className="text-[14px] font-semibold text-[#1f2421]">
             {reportTitle ?? preview.title}
           </div>
-          <div className="mt-1 text-[11px] text-[#8b9490]">{preview.subtitle}</div>
+          <div className="mt-1 text-[12px] text-[#8b9490]">{preview.subtitle}</div>
         </div>
         <div className="flex items-center gap-2 text-[#7b8797]">
           <Button aria-label="下载预览结果" variant="ghost" size="iconSm" onClick={() => setActionNotice("导出能力待接入。")}>
@@ -148,7 +148,7 @@ export function ReportPreviewPanel({
             className={`rounded-[8px] px-3 py-2 text-sm ${
               activeTab === tab.id
                 ? "bg-[#f4f4f5] text-[#18181b]"
-                : "text-[#7e8692] hover:bg-[#f2f5fa]"
+                : "text-[#7e8692] hover:bg-[rgba(55,53,47,0.06)]"
             }`}
           >
             {tab.label}

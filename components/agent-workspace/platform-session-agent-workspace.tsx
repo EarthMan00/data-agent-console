@@ -26,6 +26,7 @@ import {
   sendSessionMessageStream,
 } from "@/lib/session-chat-send";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
+import { parseComposerPrefillStorageValue } from "@/lib/composer-prefill";
 import type { ChatSendResult, SessionMessageItem, TaskResponse } from "@/lib/agent-api/types";
 import type { ScheduleTrialSendState } from "@/lib/schedule-create-draft";
 import {
@@ -310,7 +311,7 @@ export function PlatformSessionAgentWorkspace({
     try {
       const raw = sessionStorage.getItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
       if (raw) {
-        setDraft(raw);
+        setDraft(parseComposerPrefillStorageValue(raw).text);
         sessionStorage.removeItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
       }
     } catch {
@@ -318,11 +319,18 @@ export function PlatformSessionAgentWorkspace({
     }
   }, [sessionId, scheduleTrial, scheduledRunRecord]);
 
+  const firstUserMessageTitle = useMemo(() => {
+    const firstUserMessage = [...messages]
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      .find((message) => message.role === "user" && message.content.trim());
+    return firstUserMessage ? compactText(firstUserMessage.content, 52) : "";
+  }, [messages]);
+
   const headerLabel = scheduleTrial
     ? (loadScheduleCreateDraft()?.title?.trim() || "试跑")
     : scheduledRunRecord
       ? (runLabel?.trim() || "定时任务记录")
-      : "对话";
+      : firstUserMessageTitle || "历史对话";
   const scheduleControlsLocked = scheduleTrial && (busy || trialRunInFlight || saveBusy);
   /** 试跑页：除保存提交中外都允许点「终止」并回到配置，避免 404/轮询异常时无法离开 */
   const terminateEnabled = scheduleTrial && !saveBusy;
@@ -916,7 +924,7 @@ export function PlatformSessionAgentWorkspace({
               <TaskComposer
                 value={draft}
                 onValueChange={setDraft}
-                placeholder="基于历史对话继续追问…"
+                placeholder="您可以继续追问或者让我做其他工作哦～"
                 mode="普通模式"
                 onModeChange={() => {}}
                 selectedSourceIds={[]}
@@ -927,6 +935,7 @@ export function PlatformSessionAgentWorkspace({
                 visualStyle="default"
                 containerClassName="overflow-visible rounded-[18px] border border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]"
                 textareaClassName="min-h-[84px] max-h-[12em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-[14px] leading-6 text-[#34322d] caret-[#34322d] outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-visible:[box-shadow:none!important]"
+                placeholderClassName="top-[8px] text-[14px] text-[#858481]"
               />
             )}
           </div>

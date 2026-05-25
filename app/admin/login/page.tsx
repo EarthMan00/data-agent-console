@@ -31,7 +31,7 @@ export default async function AdminLoginPage({ searchParams }: AdminLoginPagePro
             <h1 className="mt-6 font-[family:var(--font-jakarta)] text-[40px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#18181b]">
               反馈后台
             </h1>
-            <p className="mt-5 max-w-[38ch] text-[15px] leading-7 text-[#71717a]">
+            <p className="mt-5 max-w-[38ch] text-[14px] leading-7 text-[#71717a]">
               用统一的浅色工作台集中查看用户反馈，按页面和关键词快速定位问题。
             </p>
 

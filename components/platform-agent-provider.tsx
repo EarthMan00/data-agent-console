@@ -39,7 +39,10 @@ import { ArrowLeft, ArrowRight, Power } from "@/components/ui/tabler-icons";
 
 const LOGIN_INTRO_TEXT =
   "我是 Alice，跨境电商运营助手，掌握数据，洞察数据的神。请先登录";
+const LOGIN_RETURNING_TEXT = "我是 Alice，欢迎回来";
 const LOGIN_INTRO_CHAR_INTERVAL_MS = 34;
+const LOGIN_RETURNING_STORAGE_KEY = "mdata:alice-has-logged-in";
+const PENDING_HOME_TASK_STORAGE_KEY = "mdata:pending-home-task-after-login";
 type LoginContinuation = () => void | Promise<void>;
 
 export type PlatformAgentContextValue = {
@@ -93,6 +96,22 @@ function formatLoginError(e: unknown): string {
   return "登录失败，请稍后重试。";
 }
 
+function hasLoggedInOnThisDevice(): boolean {
+  try {
+    return window.localStorage.getItem(LOGIN_RETURNING_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markLoggedInOnThisDevice() {
+  try {
+    window.localStorage.setItem(LOGIN_RETURNING_STORAGE_KEY, "1");
+  } catch {
+    // localStorage may be unavailable in restricted browser contexts.
+  }
+}
+
 export function useOptionalPlatformAgent(): PlatformAgentContextValue | null {
   return useContext(PlatformAgentContext);
 }
@@ -112,6 +131,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [loginBanner, setLoginBanner] = useState("");
+  const [loginIntroFullText, setLoginIntroFullText] = useState(LOGIN_INTRO_TEXT);
   const [loginIntroText, setLoginIntroText] = useState("");
   const [loginIntroDone, setLoginIntroDone] = useState(false);
   const accountInputRef = useRef<HTMLInputElement | null>(null);
@@ -122,6 +142,9 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   useEffect(() => {
     const snap = loadAgentSession();
     setAuth(snap);
+    if (snap) {
+      markLoggedInOnThisDevice();
+    }
     setPlatformSessionId(loadPlatformSessionId());
     setAuthHydrated(true);
     const sync = () => setAuth(loadAgentSession());
@@ -156,6 +179,9 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setLoginError("");
     setLoginBanner(banner?.trim() ?? "");
     setLoginStep("account");
+    setLoginIntroFullText(
+      hasLoggedInOnThisDevice() ? LOGIN_RETURNING_TEXT : LOGIN_INTRO_TEXT,
+    );
     setLoginIntroText("");
     setLoginIntroDone(false);
     setLoginOpen(true);
@@ -163,6 +189,11 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
 
   const closeLogin = useCallback(() => {
     suppressLoginOpenUntilRef.current = Date.now() + 650;
+    try {
+      sessionStorage.removeItem(PENDING_HOME_TASK_STORAGE_KEY);
+    } catch {
+      // sessionStorage may be unavailable in restricted browser contexts.
+    }
     setAccount("");
     setPassword("");
     setLoginError("");
@@ -179,7 +210,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setLoginIntroText("");
     setLoginIntroDone(false);
     let index = 0;
-    const chars = [...LOGIN_INTRO_TEXT];
+    const chars = [...loginIntroFullText];
     const t = window.setInterval(() => {
       index += 1;
       setLoginIntroText(chars.slice(0, index).join(""));
@@ -189,7 +220,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       }
     }, LOGIN_INTRO_CHAR_INTERVAL_MS);
     return () => window.clearInterval(t);
-  }, [loginOpen]);
+  }, [loginIntroFullText, loginOpen]);
 
   useEffect(() => {
     if (!loginOpen || !loginIntroDone) return;
@@ -289,6 +320,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
         userRole: res.user_role,
       };
       saveAgentSession(snap);
+      markLoggedInOnThisDevice();
       setAuth(snap);
       clearPlatformSessionId();
       setPlatformSessionId(null);
@@ -503,7 +535,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     draggable={false}
                     priority
                   />
-                  <span className="mdata-auth-title text-[27px] font-medium leading-[31px] text-white">
+                  <span className="mdata-auth-title text-[28px] font-medium leading-[31px] text-white">
                     Alice
                   </span>
                 </div>
@@ -528,8 +560,10 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                 <div className="h-[250px] w-[min(730px,calc(100vw-120px))]">
                   <h2
                     id="mdata-login-title"
-                    aria-label={LOGIN_INTRO_TEXT}
-                    className="mdata-auth-title h-[90px] max-w-[730px] text-left text-[30px] font-medium leading-[45px] tracking-normal text-white transition-colors duration-300"
+                    aria-label={loginIntroFullText}
+                    className={`mdata-auth-title h-[90px] max-w-[730px] text-left text-[30px] font-medium leading-[45px] tracking-normal transition-colors duration-300 ${
+                      loginIntroDone ? "mdata-auth-title-muted" : "text-white"
+                    }`}
                   >
                     {loginIntroText}
                     {!loginIntroDone ? (
@@ -544,7 +578,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                       {loginBanner}
                     </p>
                   ) : null}
-
                   <form
                     className={`mt-4 h-[121px] w-full transition-[opacity,transform] duration-500 ${
                       loginIntroDone

@@ -44,7 +44,7 @@ function ArtifactJsonTable({ columns, rows }: { columns: string[]; rows: string[
   const colCount = Math.max(1, columns.length);
   return (
     <div className="mt-3 max-h-[320px] overflow-auto rounded-[10px] border border-[#e5e7eb] bg-white">
-      <table className="w-full min-w-[320px] border-collapse text-left text-[11px]">
+      <table className="w-full min-w-[320px] border-collapse text-left text-[12px]">
         {columns.length > 0 ? (
           <thead>
             <tr className="border-b border-[#e5e7eb]">
@@ -169,8 +169,8 @@ function ArtifactCard({
             <FileJson className="h-4 w-4 shrink-0 text-[#64748b]" aria-hidden />
           )}
           <div className="min-w-0">
-            <div className="truncate text-[13px] font-semibold text-[#1f2421]">{artifact.original_name}</div>
-            <div className="text-[11px] text-[#8b9490]">{artifact.artifact_type}</div>
+            <div className="truncate text-[14px] font-semibold text-[#1f2421]">{artifact.original_name}</div>
+            <div className="text-[12px] text-[#8b9490]">{artifact.artifact_type}</div>
           </div>
         </div>
       </div>
@@ -190,18 +190,18 @@ function ArtifactCard({
       ) : mode === "json" && jsonTable ? (
         <ArtifactJsonTable columns={jsonTable.columns} rows={jsonTable.rows} />
       ) : mode === "json" && jsonFallback != null ? (
-        <pre className="mt-3 max-h-[320px] overflow-auto rounded-[10px] border border-[#e5e7eb] bg-[#0f172a] p-3 text-[11px] leading-5 text-[#e2e8f0]">
+        <pre className="mt-3 max-h-[320px] overflow-auto rounded-[10px] border border-[#e5e7eb] bg-[#0f172a] p-3 text-[12px] leading-5 text-[#e2e8f0]">
           {jsonFallback}
         </pre>
       ) : mode === "binary" ? (
         <p className="mt-3 text-[12px] text-[#6b7280]">该文件类型不在页面内预览；若有 CSV 可使用侧栏底部「下载 CSV」。</p>
       ) : mode === "text" && text != null && text.length > 0 ? (
-        <pre className="mt-3 max-h-[320px] overflow-auto rounded-[10px] border border-[#e5e7eb] bg-white p-3 text-[11px] leading-5 text-[#475569]">
+        <pre className="mt-3 max-h-[320px] overflow-auto rounded-[10px] border border-[#e5e7eb] bg-white p-3 text-[12px] leading-5 text-[#475569]">
           {text.slice(0, 120_000)}
           {text.length > 120_000 ? "\n…（内容过长已截断）" : ""}
         </pre>
       ) : text != null && text.length > 0 ? (
-        <pre className="mt-3 max-h-[240px] overflow-auto rounded-[10px] border border-[#e5e7eb] bg-white p-3 text-[11px] leading-5 text-[#475569]">
+        <pre className="mt-3 max-h-[240px] overflow-auto rounded-[10px] border border-[#e5e7eb] bg-white p-3 text-[12px] leading-5 text-[#475569]">
           {text.slice(0, 120_000)}
           {text.length > 120_000 ? "\n…（内容过长已截断）" : ""}
         </pre>

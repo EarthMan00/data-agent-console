@@ -4,7 +4,7 @@ import type { ChatexcelPreviewModel } from "@/lib/chatexcel-artifact";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const chip =
-  "inline-flex items-center rounded-md border border-[#e5e7eb] bg-[#f8fafc] px-2 py-0.5 text-[11px] text-[#475569]";
+  "inline-flex items-center rounded-md border border-[#e5e7eb] bg-[#f8fafc] px-2 py-0.5 text-[12px] text-[#475569]";
 
 function ChatexcelTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
   const colCount = Math.max(1, columns.length);
@@ -18,7 +18,7 @@ function ChatexcelTable({ columns, rows }: { columns: string[]; rows: string[][]
                 {columns.map((c, i) => (
                   <TableHead
                     key={`cx-${i}`}
-                    className="max-w-[280px] min-w-0 !whitespace-nowrap !break-normal text-left text-[11px] font-semibold text-[#166534]"
+                    className="max-w-[280px] min-w-0 !whitespace-nowrap !break-normal text-left text-[12px] font-semibold text-[#166534]"
                     title={c}
                   >
                     {c || `列 ${i + 1}`}
@@ -42,7 +42,7 @@ function ChatexcelTable({ columns, rows }: { columns: string[]; rows: string[][]
                     return (
                       <TableCell
                         key={`cxc-${ri}-${ci}`}
-                        className="max-w-[280px] min-w-0 align-top p-0 text-[11px]"
+                        className="max-w-[280px] min-w-0 align-top p-0 text-[12px]"
                         title={v}
                       >
                         <span className="block min-w-0 max-w-full whitespace-normal break-words px-3 py-1.5 leading-snug">
@@ -83,14 +83,14 @@ export function ChatexcelArtifactPreview({ model }: ChatexcelArtifactPreviewProp
 
       {!model.ok && model.error ? (
         <div className="rounded-[8px] border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-800">
-          {model.errorType ? <span className="font-mono text-[11px] text-red-600">[{model.errorType}] </span> : null}
+          {model.errorType ? <span className="font-mono text-[12px] text-red-600">[{model.errorType}] </span> : null}
           {model.error}
         </div>
       ) : null}
 
       {model.table && (model.table.columns.length > 0 || model.table.rows.length > 0) ? (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col pt-1">
-          <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-[#64748b]">
+          <p className="mb-1 text-[12px] font-medium uppercase tracking-wide text-[#64748b]">
             结果输出（CSV 解析）
           </p>
           <ChatexcelTable columns={model.table.columns} rows={model.table.rows} />
@@ -99,8 +99,8 @@ export function ChatexcelArtifactPreview({ model }: ChatexcelArtifactPreviewProp
 
       {model.jsonFallback ? (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <p className="mb-1 text-[11px] font-medium text-[#64748b]">结构化 JSON</p>
-          <pre className="max-h-[min(60vh,480px)] min-h-0 overflow-auto rounded-[10px] border border-[#e5e7eb] bg-[#0f172a] p-3 text-[11px] leading-5 text-[#e2e8f0]">
+          <p className="mb-1 text-[12px] font-medium text-[#64748b]">结构化 JSON</p>
+          <pre className="max-h-[min(60vh,480px)] min-h-0 overflow-auto rounded-[10px] border border-[#e5e7eb] bg-[#0f172a] p-3 text-[12px] leading-5 text-[#e2e8f0]">
             {model.jsonFallback}
           </pre>
         </div>

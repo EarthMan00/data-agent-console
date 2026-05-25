@@ -98,9 +98,9 @@ export function ReportView() {
                 ))}
               </div>
               <div className="rounded-[18px] border border-[#e2e2df] bg-white p-5 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
-                <div className="text-[13px] font-medium text-[#34322d]">任务上下文</div>
+                <div className="text-[14px] font-medium text-[#34322d]">任务上下文</div>
                 <div className="mt-4 text-[18px] font-semibold text-[#111111]">{run.title}</div>
-                <p className="mt-3 text-[13px] leading-7 text-[#52524f]">{run.objective}</p>
+                <p className="mt-3 text-[14px] leading-7 text-[#52524f]">{run.objective}</p>
                 <div className="mt-5 space-y-3 text-[12px] text-[#8b8c87]">
                   <div>生成时间：{report.generatedAt}</div>
                   <div>任务模式：{run.mode}</div>

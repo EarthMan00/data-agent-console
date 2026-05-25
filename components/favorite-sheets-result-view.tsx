@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { FavoriteSnapshotView } from "@/components/favorite-snapshot-view";
 import { InlineJsonArtifactBlock } from "@/components/task-result-sheet-body";
@@ -10,6 +10,11 @@ import { cn } from "@/lib/utils";
 
 function favoriteSheetSupportsTableCodeToggle(s: FavoriteSheetSnapshotRow): boolean {
   return Boolean(s.csv_text && s.json_text);
+}
+
+function defaultViewModeForFavoriteSheet(sheet: FavoriteSheetSnapshotRow | undefined): "table" | "code" {
+  if (sheet?.json_text && !sheet.csv_text) return "code";
+  return "table";
 }
 
 function FavoriteSheetPane({
@@ -22,7 +27,7 @@ function FavoriteSheetPane({
   title?: string;
 }) {
   if (!sheet) {
-    return <p className="text-[13px] leading-6 text-[#64748b]">暂无可展示内容。</p>;
+    return <p className="text-[14px] leading-6 text-[#64748b]">暂无可展示内容。</p>;
   }
 
   if (sheet.primary_pdf_placeholder && sheet.primary_kind === "pdf") {
@@ -70,7 +75,7 @@ function FavoriteSheetPane({
     );
   }
 
-  return <p className="text-[13px] leading-6 text-[#64748b]">暂无可展示内容。</p>;
+  return <p className="text-[14px] leading-6 text-[#64748b]">暂无可展示内容。</p>;
 }
 
 export function FavoriteSheetsResultView({
@@ -90,26 +95,12 @@ export function FavoriteSheetsResultView({
   const [activeSheetId, setActiveSheetId] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "code">("table");
 
-  useEffect(() => {
-    if (!sheets?.length) return;
-    setActiveSheetId((cur) => {
-      if (cur && sheets.some((s) => s.id === cur)) return cur;
-      return sheets[0]!.id;
-    });
-  }, [sheets]);
-
   const activeSheet = useMemo(() => {
     if (!sheets?.length) return undefined;
     return sheets.find((s) => s.id === activeSheetId) ?? sheets[0];
   }, [sheets, activeSheetId]);
-
-  useEffect(() => {
-    const sh = activeSheet;
-    if (!sh) return;
-    if (sh.csv_text && sh.json_text) setViewMode("table");
-    else if (sh.json_text && !sh.csv_text) setViewMode("code");
-    else setViewMode("table");
-  }, [activeSheet]);
+  const showTableCodeToggle = Boolean(activeSheet && favoriteSheetSupportsTableCodeToggle(activeSheet));
+  const effectiveViewMode = showTableCodeToggle ? viewMode : defaultViewModeForFavoriteSheet(activeSheet);
 
   if (!sheets) {
     return (
@@ -118,8 +109,6 @@ export function FavoriteSheetsResultView({
       </div>
     );
   }
-
-  const showTableCodeToggle = Boolean(activeSheet && favoriteSheetSupportsTableCodeToggle(activeSheet));
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -162,7 +151,7 @@ export function FavoriteSheetsResultView({
           showTableCodeToggle ? "pt-2" : "pt-3",
         )}
       >
-        <FavoriteSheetPane sheet={activeSheet} viewMode={viewMode} title={title} />
+        <FavoriteSheetPane sheet={activeSheet} viewMode={effectiveViewMode} title={title} />
       </div>
 
       {sheets.length > 1 ? (
@@ -171,12 +160,15 @@ export function FavoriteSheetsResultView({
             <button
               key={s.id}
               type="button"
-              onClick={() => setActiveSheetId(s.id)}
+              onClick={() => {
+                setActiveSheetId(s.id);
+                setViewMode(defaultViewModeForFavoriteSheet(s));
+              }}
               className={cn(
                 "shrink-0 rounded-lg px-3 py-2 text-left text-xs transition",
                 activeSheet?.id === s.id
                   ? "border-b-2 border-[#16a34a] font-medium text-[#15803d]"
-                  : "border-b-2 border-transparent text-[#64748b] hover:bg-[#f4f4f5]",
+                  : "border-b-2 border-transparent text-[#64748b] hover:bg-[rgba(55,53,47,0.06)]",
               )}
             >
               <span className="line-clamp-2 max-w-[200px]">{s.label}</span>

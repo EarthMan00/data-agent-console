@@ -17,7 +17,7 @@ export function AssistantLoadingRow({
   label?: string;
 }) {
   const resolvedLabel =
-    label ?? (variant === "task" ? "任务执行中，正在同步结果…" : "助手正在思考，请稍候…");
+    label ?? (variant === "task" ? "任务执行中，正在同步结果…" : "我正在思考，请等我一下～");
   const shell =
     variant === "task"
       ? "max-w-[min(100%,780px)] items-center gap-3 rounded-[16px] border border-dashed border-[#e2e2df] bg-white px-4 py-3 text-[14px] text-[#747571] shadow-[0_1px_2px_rgba(17,17,17,0.03)]"

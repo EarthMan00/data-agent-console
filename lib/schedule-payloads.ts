@@ -1,6 +1,6 @@
 import type { UserScheduledTaskCreateBody } from "./agent-api/types";
 
-export const SCHEDULE_KINDS = ["每天", "每周", "每月", "不重复"] as const;
+export const SCHEDULE_KINDS = ["非定时", "每天", "每周", "每月", "单次"] as const;
 export type ScheduleKind = (typeof SCHEDULE_KINDS)[number];
 
 export function toHhmm(s: string) {
@@ -30,6 +30,9 @@ export function buildCreatePayloads(
     enabled: taskEnabled,
     time_hhmm,
   };
+  if (kind === "非定时") {
+    return [{ ...base, enabled: false, recurrence: "once", run_once_date: null }];
+  }
   if (kind === "每天") {
     return [{ ...base, recurrence: "daily" }];
   }

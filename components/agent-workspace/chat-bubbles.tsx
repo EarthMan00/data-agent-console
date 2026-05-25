@@ -34,7 +34,7 @@ export function SimpleUserBubble({ text, datetime }: { text: string; datetime: s
   return (
     <div className="flex w-full justify-end" data-testid="agent-user-input-card">
       <div className={cn("group flex flex-col items-end", SIMPLE_CHAT_BUBBLE_MAX)}>
-        <div className="mb-1 text-[11px] text-[#78716c] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        <div className="mb-1 text-[12px] text-[#78716c] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
           {formatTimeForBubble(datetime)}
         </div>
         <div className="shrink-0 rounded-[16px] bg-[#f0f0ef] px-4 py-3 text-[14px] leading-7 text-[#34322d] shadow-none">
@@ -62,8 +62,10 @@ export function SimpleAssistantBubble({
     return t === "（无回复）" ? "" : t;
   })();
   const latchedStreamRef = useRef(false);
+  // eslint-disable-next-line react-hooks/refs
   if (streaming) latchedStreamRef.current = true;
 
+  // eslint-disable-next-line react-hooks/refs
   const runTypewriter = typewriter && latchedStreamRef.current && charLen(targetNorm) > 0;
   const { text: shown, revealing } = useTypewriterReveal(targetNorm, runTypewriter, {
     charIntervalMs: 22,
@@ -80,11 +82,11 @@ export function SimpleAssistantBubble({
   return (
     <div className="flex w-full justify-start">
       <div className={cn("group flex flex-col items-start", SIMPLE_CHAT_BUBBLE_MAX)}>
-        <div className="mb-1 text-[11px] text-[#94a3b8] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        <div className="mb-1 text-[12px] text-[#858481] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
           {formatTimeForBubble(datetime)}
         </div>
         <div className="shrink-0 rounded-[16px] border border-[#e2e2df] bg-white px-4 py-3 text-[#34322d] shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
-          <div className="text-[11px] font-medium uppercase tracking-wide text-[#8b8c87] opacity-80">助手</div>
+          <div className="text-[12px] font-medium uppercase tracking-wide text-[#8b8c87] opacity-80">助手</div>
           <div className="mt-1 min-w-0">
             <ChatMarkdown>{shown}</ChatMarkdown>
             {showCursor ? (
@@ -108,7 +110,7 @@ export function SimpleSystemBubble({ message }: { message: string }) {
           SIMPLE_CHAT_BUBBLE_MAX,
         )}
       >
-        <div className="text-[11px] font-medium uppercase tracking-wide opacity-70">系统</div>
+        <div className="text-[12px] font-medium uppercase tracking-wide opacity-70">系统</div>
         <p className="mt-1 whitespace-pre-wrap break-words">{message}</p>
       </div>
     </div>
@@ -151,13 +153,13 @@ export function ConversationBubble({
             ))}
           </div>
           {role === "user" ? (
-            <div className="mt-3 text-right text-[11px] text-[#b0b4b8]">
+            <div className="mt-3 text-right text-[12px] text-[#b0b4b8]">
               {datetime}
             </div>
           ) : null}
         </div>
         {role === "assistant" ? (
-          <div className="mb-2 mt-2 flex items-center gap-2 text-[11px] justify-start text-[#7a8380]">
+          <div className="mb-2 mt-2 flex items-center gap-2 text-[12px] justify-start text-[#7a8380]">
             <span className="font-medium text-[#1f2421]">{title}</span>
             <span>{datetime}</span>
           </div>
@@ -229,13 +231,13 @@ export function ToolCard({
           <button
             type="button"
             onClick={onAction}
-            className="rounded-[8px] border border-[#e2e2df] bg-[#f7f7f7] px-2 py-0.5 text-[11px] font-medium text-[#34322d]"
+            className="rounded-[8px] border border-[#e2e2df] bg-[#f7f7f7] px-2 py-0.5 text-[12px] font-medium text-[#34322d]"
           >
             {actionLabel}
           </button>
         ) : null}
       </div>
-      <div className={cn("mt-2 text-[11px] leading-5", tone === "error" ? "text-[#b91c1c]" : "text-[#747571]")}>
+      <div className={cn("mt-2 text-[12px] leading-5", tone === "error" ? "text-[#b91c1c]" : "text-[#747571]")}>
         {detail}
       </div>
     </div>

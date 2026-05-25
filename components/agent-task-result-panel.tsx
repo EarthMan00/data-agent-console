@@ -101,7 +101,7 @@ function ExcelStyleSheetTabBar({
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="flex h-9 w-9 shrink-0 items-center justify-center border-r border-[#dadce0] text-[#5f6368] transition hover:bg-black/[0.06]"
+            className="flex h-9 w-9 shrink-0 items-center justify-center border-r border-[#dadce0] text-[#5f6368] transition hover:bg-[rgba(55,53,47,0.06)]"
             aria-label="全部工作表"
           >
             <Menu className="h-4 w-4" strokeWidth={2} />
@@ -114,10 +114,10 @@ function ExcelStyleSheetTabBar({
                 key={t.id}
                 type="button"
                 className={cn(
-                  "flex w-full rounded-md px-2 py-2 text-left text-[13px] transition",
+                  "flex w-full rounded-md px-2 py-2 text-left text-[14px] transition",
                   activeId === t.id
                     ? "bg-[#e6f4ea] font-medium text-[#15803d]"
-                    : "text-[#3c4043] hover:bg-[#e8eaed]",
+                    : "text-[#3c4043] hover:bg-[rgba(55,53,47,0.06)]",
                 )}
                 onClick={() => {
                   onSelect(t.id);
@@ -146,8 +146,8 @@ function ExcelStyleSheetTabBar({
               onClick={() => onSelect(t.id)}
               className={cn(
                 "relative shrink-0 px-3 pb-2 pt-1.5 text-left leading-tight transition",
-                dense ? "text-[12px]" : "text-[13px]",
-                active ? "font-medium text-[#15803d]" : "text-[#5f6368] hover:bg-black/[0.04]",
+                dense ? "text-[12px]" : "text-[14px]",
+                active ? "font-medium text-[#15803d]" : "text-[#5f6368] hover:bg-[rgba(55,53,47,0.06)]",
               )}
             >
               <span className="line-clamp-1 max-w-[min(220px,40vw)]">{t.label}</span>
@@ -333,9 +333,9 @@ export function AgentTaskResultPanel({
       <div className="flex shrink-0 flex-col gap-1 border-b border-[#e2e2df] bg-white px-3 py-2">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-medium text-[#1f2421]">任务执行结果</div>
+            <div className="text-[14px] font-medium text-[#1f2421]">任务执行结果</div>
             {dateLine ? (
-              <div className="mt-0.5 text-[11px] text-[#8b8c87]">最后生成时间：{dateLine}</div>
+              <div className="mt-0.5 text-[12px] text-[#8b8c87]">最后生成时间：{dateLine}</div>
             ) : null}
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
@@ -395,7 +395,7 @@ export function AgentTaskResultPanel({
                 <button
                   type="button"
                   disabled={favoriteBusy || !tid}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[#f4f4f5] disabled:opacity-50"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[rgba(55,53,47,0.06)] disabled:opacity-50"
                   onClick={() => void toggleFavorite()}
                 >
                   <Star className={`h-4 w-4 shrink-0 ${favorited ? "fill-amber-400 text-amber-500" : ""}`} />
@@ -428,7 +428,7 @@ export function AgentTaskResultPanel({
           ) : withFreshToken && !useSheetUi && fallbackPrimary ? (
             <TaskSingleDataArtifactPreview artifact={fallbackPrimary} withFreshToken={withFreshToken} />
           ) : (
-            <p className="text-[13px] leading-6 text-[#64748b]">
+            <p className="text-[14px] leading-6 text-[#64748b]">
               暂无数据或报告类结果文件（CSV/JSON/Markdown/HTML/PDF/ChatExcel）可展示。
             </p>
           )}

@@ -54,14 +54,10 @@ export function TaskSplitSection({
   /** 流式/打字机展示全部结束（或无打字机时立即触发） */
   onRevealComplete?: () => void;
 }) {
-  if (items.length === 0) return null;
-
   const body = buildSplitBody(items);
   const itemsFingerprint = items.join("\u0001");
-  const latchedRef = useRef(false);
-  if (reveal) latchedRef.current = true;
 
-  const runTypewriter = reveal && latchedRef.current && body.length > 0;
+  const runTypewriter = reveal && body.length > 0;
   const { text: shown, revealing } = useTypewriterReveal(body, runTypewriter, { charIntervalMs: 18 });
   const displayRows = runTypewriter
     ? visibleSplitRows(items, shown)
@@ -103,10 +99,12 @@ export function TaskSplitSection({
     return () => timers.forEach((id) => window.clearTimeout(id));
   }, [streamEnded, tryComplete]);
 
+  if (items.length === 0) return null;
+
   return (
     <div className="space-y-2 px-1" data-testid={testId}>
       <div className="text-[14px] font-semibold text-[#202124]">任务拆分</div>
-      <div className="space-y-2 text-[13px] leading-6.5 text-[#4f5753]">
+      <div className="space-y-2 text-[14px] leading-6.5 text-[#4f5753]">
         {displayRows.map((row) => (
           <div key={`${row.num}-${row.text.slice(0, 24)}`} className="flex gap-2">
             <span className="pt-[1px] text-[#9aa39e]">{row.num}.</span>

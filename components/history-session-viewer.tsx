@@ -60,7 +60,7 @@ function SimpleUserBubble({ text, datetime }: { text: string; datetime: string }
             </span>
             你
           </div>
-          <div className="text-[11px] text-[#94a3b8]">{formatTime(datetime)}</div>
+          <div className="text-[12px] text-[#858481]">{formatTime(datetime)}</div>
         </div>
         <div className="mt-2 whitespace-pre-wrap break-words text-sm text-[#0f172a]">{text}</div>
       </div>
@@ -528,7 +528,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
             <TaskComposer
               value={draft}
               onValueChange={setDraft}
-              placeholder="基于历史对话继续追问…"
+              placeholder="您可以继续追问或者让我做其他工作哦～"
               mode="普通模式"
               onModeChange={() => {}}
               selectedSourceIds={[]}
@@ -539,6 +539,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
               visualStyle="default"
               containerClassName="overflow-visible rounded-[18px] border border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]"
               textareaClassName="min-h-[84px] max-h-[12em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-[14px] leading-6 text-[#34322d] caret-[#34322d] outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-visible:[box-shadow:none!important]"
+              placeholderClassName="top-[8px] text-[14px] text-[#858481]"
             />
           </div>
         </div>

@@ -38,7 +38,7 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
 
   if (!share) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f7f7f8] text-[13px] text-[#6f7773]">
+      <div className="flex min-h-screen items-center justify-center bg-[#f7f7f8] text-[14px] text-[#6f7773]">
         加载分享内容…
       </div>
     );
@@ -58,10 +58,10 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
           <div className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-[#171717] text-white">
             <FileText className="h-3.5 w-3.5" />
           </div>
-          <div className="text-[13px] font-semibold tracking-[-0.01em] text-[#171717]">Alice</div>
+          <div className="text-[14px] font-semibold tracking-[-0.01em] text-[#171717]">Alice</div>
           <div className="h-4 w-px bg-[#e5e7eb]" />
           <div className="truncate text-[12px] font-medium text-[#27272a]">{topTitle}</div>
-          {generatedAt ? <div className="text-[11px] text-[#8b949e]">{generatedAt}</div> : null}
+          {generatedAt ? <div className="text-[12px] text-[#8b949e]">{generatedAt}</div> : null}
         </div>
         <Link href="/" className="text-[#6f7773]" aria-label="关闭">
           <X className="h-4 w-4" />
@@ -78,7 +78,7 @@ export function ShareReplayPage({ shareId }: ShareReplayPageProps) {
         <p className="mt-6 text-[12px] leading-6 text-[#5e6763]">{summary}</p>
         {linkedRun ? (
           <div className="mt-6 space-y-3">
-            <div className="text-[13px] font-semibold text-[#303734]">已加载工作区回放</div>
+            <div className="text-[14px] font-semibold text-[#303734]">已加载工作区回放</div>
             {linkedRun.sections.map((section) => (
               <div key={section.id} className="rounded-[12px] border border-[#eceef1] bg-[#fafafa] px-4 py-3">
                 <div className="text-[12px] font-medium text-[#303734]">{section.title}</div>

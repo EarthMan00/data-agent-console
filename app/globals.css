@@ -219,13 +219,7 @@ input#history-task-search:focus-visible {
 
 .mdata-auth-panel,
 .mdata-auth-panel * {
-  font-family:
-    "SF Pro Text",
-    "Segoe UI",
-    "PingFang SC",
-    "Hiragino Sans GB",
-    "Microsoft YaHei",
-    sans-serif;
+  font-family: var(--font-app);
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
@@ -235,6 +229,10 @@ input#history-task-search:focus-visible {
 .mdata-auth-label,
 .mdata-auth-input {
   letter-spacing: 0;
+}
+
+.mdata-auth-title-muted {
+  color: rgba(255, 255, 255, 0.42) !important;
 }
 
 .mdata-auth-panel[data-state="open"] {

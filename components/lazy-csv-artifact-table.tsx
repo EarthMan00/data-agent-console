@@ -352,7 +352,7 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Te
                 <TableCell
                   ref={sentinelRef}
                   colSpan={colCount}
-                  className="h-10 border-0 py-2 text-center text-[11px] text-[#94a3b8]"
+                  className="h-10 border-0 py-2 text-center text-[12px] text-[#94a3b8]"
                 >
                   {loadingMore ? (
                     <span className="inline-flex items-center justify-center gap-2">
@@ -371,7 +371,7 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Te
       {!sidePanel && (hitCap || streamDone) && dataRows.length > 0 ? (
         <div
           className={cn(
-            "shrink-0 border-t border-[#e5e7eb] px-3 py-2 text-[11px] text-[#64748b]",
+            "shrink-0 border-t border-[#e5e7eb] px-3 py-2 text-[12px] text-[#64748b]",
             hitCap && "bg-amber-50 text-amber-950",
           )}
         >
