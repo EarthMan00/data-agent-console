@@ -190,6 +190,8 @@ export function SchedulesWorkspace() {
   const skipNewGroupBlurRef = useRef(false);
 
   const [search, setSearch] = useState("");
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const searchDialogInputRef = useRef<HTMLInputElement | null>(null);
   const [groups, setGroups] = useState<UserScheduledTaskGroupDto[]>([]);
   const [tasks, setTasks] = useState<UserScheduledTaskItemApi[]>([]);
   const [runs, setRuns] = useState<ScheduledTaskRunItemApi[]>([]);
@@ -266,6 +268,12 @@ export function SchedulesWorkspace() {
     () => readSearchParam("restore") === "1",
     () => false,
   );
+
+  useEffect(() => {
+    if (!searchDialogOpen) return;
+    const timer = window.setTimeout(() => searchDialogInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [searchDialogOpen]);
 
   /** 从试跑「上一步」回配置：带 restore=1 时从 sessionStorage 还原表单。其它进入创建页时若仅保留内存/草稿（例如上次未保存就离开），则恢复为干净默认态。 */
   useEffect(() => {
@@ -1180,7 +1188,7 @@ export function SchedulesWorkspace() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h1 className="shrink-0 text-[24px] font-semibold leading-8 text-[#111111]">定时任务</h1>
               <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:justify-end">
-                <div className="relative w-full min-w-0 sm:w-[220px]">
+                <div className="relative w-full min-w-0 max-[960px]:hidden sm:w-[220px]">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
                   <Input
                     value={search}
@@ -1189,6 +1197,16 @@ export function SchedulesWorkspace() {
                     className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
                   />
                 </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label={searchPlaceholder}
+                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[#f7f7f5] max-[960px]:inline-flex"
+                  onClick={() => setSearchDialogOpen(true)}
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
                 <Button
                   type="button"
                   className="h-9 shrink-0 rounded-[10px] bg-[#111111] px-3 text-white hover:bg-[#2a2a2a] sm:px-4"
@@ -1406,6 +1424,44 @@ export function SchedulesWorkspace() {
           ) : null}
         </div>
       </div>
+
+      <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
+        <DialogContent className="max-w-[420px] rounded-[16px] p-5">
+          <DialogTitle className="text-[18px] font-semibold text-[#111111]">{searchPlaceholder}</DialogTitle>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+            <Input
+              ref={searchDialogInputRef}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") setSearchDialogOpen(false);
+              }}
+              placeholder={searchPlaceholder}
+              className="h-10 w-full rounded-[12px] border-[#e2e2df] pl-9"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            {search ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 rounded-[10px] border-[#e2e2df] px-3 text-[14px]"
+                onClick={() => setSearch("")}
+              >
+                清空
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              className="h-9 rounded-[10px] bg-[#111111] px-4 text-[14px] text-white hover:bg-[#2a2a2a]"
+              onClick={() => setSearchDialogOpen(false)}
+            >
+              完成
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(moveTask)} onOpenChange={(o) => !o && setMoveTask(null)}>
         <DialogContent className="max-w-[400px] rounded-[16px]">
