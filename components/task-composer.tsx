@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUp, ChevronDown, CornerDownLeft, Paperclip, Square } from "@/components/ui/tabler-icons";
+import { ArrowUp, ChevronDown, CornerDownLeft, Paperclip } from "@/components/ui/tabler-icons";
 
 import { homeCapabilityItems } from "@/lib/home-capability-items";
 import { getPlatformLogoSvgMarkup, PlatformLogo } from "@/components/platform-logo";
@@ -1022,7 +1022,7 @@ export function TaskComposer({
                   showStop
                     ? cn(
                         sendButtonClassName,
-                        "h-[38px] w-[38px] shrink-0 rounded-[14px] border border-transparent !bg-[#dc2626] text-white shadow-[0_12px_24px_rgba(220,38,38,0.28)] transition hover:-translate-y-0.5 hover:!bg-[#b91c1c] hover:shadow-[0_16px_30px_rgba(220,38,38,0.26)]",
+                        "h-12 w-12 shrink-0 rounded-full border border-transparent !bg-[#171a1f] p-0 text-white shadow-none transition hover:!bg-[#111318] focus-visible:ring-2 focus-visible:ring-[#171a1f]/20",
                       )
                     : sendButtonClassName ??
                       (isHeroMinimal
@@ -1035,7 +1035,7 @@ export function TaskComposer({
                 }
               >
                 {showStop ? (
-                  <Square className="h-[14px] w-[14px]" />
+                  <span className="block h-4 w-4 rounded-[3px] bg-white" aria-hidden />
                 ) : (
                   <ArrowUp className="h-[15px] w-[15px]" strokeWidth={2.4} />
                 )}
