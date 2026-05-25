@@ -11,8 +11,6 @@ import {
   Clock,
   Download,
   Eye,
-  LayoutGrid,
-  List,
   MoreVertical,
   Pencil,
   Play,
@@ -23,6 +21,7 @@ import {
 
 import { AutoToast } from "@/components/auto-toast";
 import { MoreDataShell } from "@/components/more-data-shell";
+import { PageLostState } from "@/components/page-lost-state";
 import { ScheduleResultPushSection, validateResultPushBlocks, type ResultPushBlock } from "@/components/schedule-result-push";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { RequiredAsterisk } from "@/components/required-mark";
@@ -43,7 +42,6 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { downloadAuthorizedFile, formatAgentApiErrorForUser, parseFastApiDetail } from "@/lib/agent-api/client";
 import {
   createUserScheduledTaskGroup,
@@ -161,17 +159,15 @@ function filterRunsBySearch(runs: ScheduledTaskRunItemApi[], q: string) {
 
 function ScheduleEmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="mt-8 flex min-h-[min(420px,calc(100vh-320px))] flex-col items-center justify-center rounded-[18px] border border-white/70 bg-white/72 px-4 py-12 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
-      <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-[18px] border border-[#e2e2df] bg-[#f7f7f7]" aria-hidden>
-        <Box className="h-8 w-8 text-[#b1b2ae]" strokeWidth={1.35} />
-      </div>
-      <p className="text-center text-[15px] text-[#71717a]">
+    <div className="mt-8 flex min-h-[calc(100vh-300px)] flex-col items-center justify-center px-4 text-center">
+      <Box className="mb-4 text-[#b1b2ae]" strokeWidth={1.35} aria-hidden />
+      <p className="text-center text-[14px] text-[#71717a]">
         暂无定时任务{" "}
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="h-auto rounded-none px-0 py-0 align-baseline font-medium text-[#111111] underline decoration-[#b1b2ae] underline-offset-4 hover:bg-transparent hover:text-[#2a2a2a]"
+          className="h-auto px-1 py-0 align-baseline text-[14px] font-medium text-[#111111] hover:bg-transparent hover:text-[#2a2a2a]"
           onClick={onCreate}
         >
           立即创建
@@ -199,6 +195,7 @@ export function SchedulesWorkspace() {
   const [runs, setRuns] = useState<ScheduledTaskRunItemApi[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   const [workflowStatusFilter, setWorkflowStatusFilter] = useState<(typeof WORKFLOW_STATUS_OPTIONS)[number]>("全部状态");
   const [runStatusFilter, setRunStatusFilter] = useState<(typeof RUN_STATUS_OPTIONS)[number]>("全部状态");
@@ -207,11 +204,6 @@ export function SchedulesWorkspace() {
   const [toastVariant, setToastVariant] = useState<"default" | "error">("default");
   /** 编辑态：提示词已改时点「保存」的拦截说明层 */
   const [editPromptChangedSaveGateOpen, setEditPromptChangedSaveGateOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
-
-  const [bulkSelectRuns, setBulkSelectRuns] = useState(false);
-  const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(() => new Set());
-
   const [moveTask, setMoveTask] = useState<UserScheduledTaskItemApi | null>(null);
   const [moveGroupId, setMoveGroupId] = useState<string | "">("");
 
@@ -446,6 +438,7 @@ export function SchedulesWorkspace() {
     if (!platformAgent?.auth) return;
     setBusy(true);
     setError("");
+    setLoadError("");
     try {
       await platformAgent.withFreshToken(async (token) => {
         const [g, t] = await Promise.all([fetchAllUserScheduledTaskGroups(token), fetchAllUserScheduledTasks(token)]);
@@ -453,7 +446,9 @@ export function SchedulesWorkspace() {
         setTasks(t);
       });
     } catch (e) {
-      setError(formatAgentApiErrorForUser(e));
+      const msg = formatAgentApiErrorForUser(e);
+      setError(msg);
+      setLoadError(msg);
     } finally {
       setBusy(false);
     }
@@ -463,6 +458,7 @@ export function SchedulesWorkspace() {
     if (!platformAgent?.auth) return;
     setBusy(true);
     setError("");
+    setLoadError("");
     try {
       const rs = runStatusToApi(runStatusFilter);
       await platformAgent.withFreshToken(async (token) => {
@@ -470,7 +466,9 @@ export function SchedulesWorkspace() {
         setRuns(r);
       });
     } catch (e) {
-      setError(formatAgentApiErrorForUser(e));
+      const msg = formatAgentApiErrorForUser(e);
+      setError(msg);
+      setLoadError(msg);
     } finally {
       setBusy(false);
     }
@@ -554,6 +552,8 @@ export function SchedulesWorkspace() {
     () => (primaryTab === "运行记录" ? filterRunsBySearch(runs, search) : []),
     [primaryTab, runs, search],
   );
+  const showScheduledLoadError = Boolean(loadError && !busy && primaryTab === "已定时" && tasks.length === 0);
+  const showRunsLoadError = Boolean(loadError && !busy && primaryTab === "运行记录" && runs.length === 0);
 
   const startScheduleTrial = useCallback(async () => {
     if (!title.trim() || !prompt.trim()) {
@@ -1170,7 +1170,7 @@ export function SchedulesWorkspace() {
       />
       <div className="px-8 pb-14 pt-5">
         <div className="mx-auto max-w-[1040px]">
-          {error ? (
+          {error && !showScheduledLoadError && !showRunsLoadError ? (
             <div className="mb-4 text-sm text-red-600" role="alert">
               {error}
             </div>
@@ -1210,7 +1210,7 @@ export function SchedulesWorkspace() {
                 setPrimaryTab(value as (typeof PRIMARY_TABS)[number]);
                 setSearch("");
               }}
-              className="mt-5 inline-flex"
+              className="mt-5"
             >
               <TabsList>
                 {PRIMARY_TABS.map((tab) => (
@@ -1226,7 +1226,7 @@ export function SchedulesWorkspace() {
               <div className="mt-5 flex min-h-[40px] flex-wrap items-center justify-between gap-x-4 gap-y-3">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                   <Tabs value={activeChip} onValueChange={setActiveChip}>
-                    <TabsList className="h-9 flex-wrap justify-start">
+                    <TabsList className="flex-wrap justify-start">
                       {chipOptions.map((chip) => (
                         <TabsTrigger key={chip} value={chip}>
                           <span className="max-w-[160px] truncate">{chip}</span>
@@ -1269,12 +1269,12 @@ export function SchedulesWorkspace() {
                     <Button
                       type="button"
                       variant="outline"
-                      size="icon"
+                      size="iconSm"
                       aria-label="新建分组"
                       onClick={() => setAddGroupOpen(true)}
-                      className="h-8 w-8 shrink-0 rounded-[10px] border-[#e2e2df] text-[#747571]"
+                      className="shrink-0"
                     >
-                      <Plus className="h-4 w-4" />
+                      <Plus />
                     </Button>
                   )}
                 </div>
@@ -1296,27 +1296,6 @@ export function SchedulesWorkspace() {
                       </SelectGroup>
                     </SelectContent>
                   </Select>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-9 px-2 text-sm"
-                    onClick={() => setNotice("请在「运行记录」中使用批量操作。")}
-                  >
-                    批量操作
-                  </Button>
-                  <ToggleGroup
-                    type="single"
-                    value={viewMode}
-                    onValueChange={(value) => value && setViewMode(value as "list" | "grid")}
-                    aria-label="视图模式"
-                  >
-                    <ToggleGroupItem value="list" aria-label="列表视图">
-                      <List className="h-4 w-4" />
-                    </ToggleGroupItem>
-                    <ToggleGroupItem value="grid" aria-label="卡片视图">
-                      <LayoutGrid className="h-4 w-4" />
-                    </ToggleGroupItem>
-                  </ToggleGroup>
                 </div>
               </div>
             ) : (
@@ -1356,14 +1335,6 @@ export function SchedulesWorkspace() {
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-9 px-2 text-sm"
-                  onClick={() => setBulkSelectRuns(true)}
-                >
-                  批量操作
-                </Button>
               </div>
             )}
           </div>
@@ -1372,29 +1343,9 @@ export function SchedulesWorkspace() {
           {busy && primaryTab === "已定时" && tasks.length === 0 ? <p className="mt-6 text-sm text-[#71717a]">加载中…</p> : null}
           {busy && primaryTab === "运行记录" && runs.length === 0 ? <p className="mt-6 text-sm text-[#71717a]">加载中…</p> : null}
 
-          {primaryTab === "运行记录" && bulkSelectRuns ? (
-            <div className="mt-5 flex flex-wrap items-center gap-3 rounded-[12px] border border-[#e2e2df] bg-white/72 px-4 py-3 text-sm">
-              <span className="text-[#747571]">已选 {selectedRunIds.size} 个</span>
-              <Button type="button" size="sm" variant="secondary" disabled onClick={() => {}}>
-                删除
-              </Button>
-              <span className="text-xs text-[#8b8c87]">删除单条请使用记录卡片上的「⋯」菜单。批量删除待支持。</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 px-2 text-[#747571] underline underline-offset-2 hover:text-[#111111]"
-                onClick={() => {
-                  setBulkSelectRuns(false);
-                  setSelectedRunIds(new Set());
-                }}
-              >
-                取消多选
-              </Button>
-            </div>
-          ) : null}
-
-          {primaryTab === "已定时" && !busy && displayTasks.length === 0 ? (
+          {showScheduledLoadError ? (
+            <PageLostState onRetry={() => void refreshGroupsAndTasks()} />
+          ) : primaryTab === "已定时" && !busy && displayTasks.length === 0 ? (
             <ScheduleEmptyState
               onCreate={() =>
                 router.push(
@@ -1429,15 +1380,12 @@ export function SchedulesWorkspace() {
             </div>
           ) : null}
 
-          {primaryTab === "运行记录" && !busy && displayRuns.length === 0 ? (
-            <div className="mt-8 flex min-h-[min(360px,calc(100vh-360px))] flex-col items-center justify-center rounded-[18px] border border-white/70 bg-white/72 px-4 py-12 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
-              <div
-                className="mb-6 flex h-16 w-16 items-center justify-center rounded-[18px] border border-[#e2e2df] bg-[#f7f7f7]"
-                aria-hidden
-              >
-                <Box className="h-8 w-8 text-[#b1b2ae]" strokeWidth={1.35} />
-              </div>
-              <p className="text-[15px] text-[#71717a]">暂无运行记录</p>
+          {showRunsLoadError ? (
+            <PageLostState onRetry={() => void refreshRuns()} />
+          ) : primaryTab === "运行记录" && !busy && displayRuns.length === 0 ? (
+            <div className="mt-8 flex min-h-[calc(100vh-300px)] flex-col items-center justify-center px-4 text-center">
+              <Box className="mb-4 text-[#b1b2ae]" strokeWidth={1.35} aria-hidden />
+              <p className="text-[14px] text-[#71717a]">暂无运行记录</p>
             </div>
           ) : null}
           {primaryTab === "运行记录" && displayRuns.length > 0 ? (
@@ -1446,16 +1394,6 @@ export function SchedulesWorkspace() {
                 <ApiRunRecordRow
                   key={r.id}
                   run={r}
-                  bulkSelect={bulkSelectRuns}
-                  selected={selectedRunIds.has(r.id)}
-                  onToggleSelect={() => {
-                    setSelectedRunIds((prev) => {
-                      const n = new Set(prev);
-                      if (n.has(r.id)) n.delete(r.id);
-                      else n.add(r.id);
-                      return n;
-                    });
-                  }}
                   onRunRecordsChanged={() => void refreshRuns()}
                   onNotify={(m, v) => {
                     setToastMessage(m);
@@ -1580,7 +1518,7 @@ function ApiScheduledTaskCard({
           statusHeader.bar,
         )}
       >
-        <div className={cn("min-w-0 flex items-center gap-1.5 text-[11px] font-medium", statusHeader.text)}>
+        <div className={cn("min-w-0 flex items-center gap-1.5 text-[12px] font-medium", statusHeader.text)}>
           <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", statusHeader.dot)} />
           {ui}
         </div>
@@ -1596,7 +1534,7 @@ function ApiScheduledTaskCard({
         <div className="line-clamp-2 break-words text-[16px] font-semibold leading-6 text-[#111111]">
           {t.title}
         </div>
-        <p className="mt-2 line-clamp-2 break-all text-[13px] leading-5 text-[#8b8c87]">
+        <p className="mt-2 line-clamp-2 break-all text-[14px] leading-5 text-[#8b8c87]">
           执行时间：{nextRunLabel(t)}
         </p>
       </div>
@@ -1650,17 +1588,11 @@ function ApiScheduledTaskCard({
 
 function ApiRunRecordRow({
   run: r,
-  bulkSelect,
-  selected,
-  onToggleSelect,
   onRunRecordsChanged,
   onNotify,
   onApiError,
 }: {
   run: ScheduledTaskRunItemApi;
-  bulkSelect: boolean;
-  selected: boolean;
-  onToggleSelect: () => void;
   onRunRecordsChanged: () => void | Promise<void>;
   onNotify: (message: string, variant?: "default" | "error") => void;
   onApiError: (message: string) => void;
@@ -1744,19 +1676,8 @@ function ApiRunRecordRow({
 
   return (
     <div
-      className={cn(
-        "flex gap-3 rounded-[18px] border border-[#e2e2df] bg-white p-4 shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition-colors hover:border-[#d4d4d0] hover:bg-white sm:gap-4 sm:p-5",
-        selected && "border-[#111111] ring-1 ring-[#111111] hover:bg-white",
-      )}
+      className="flex gap-3 rounded-[18px] border border-[#e2e2df] bg-white p-4 shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition-colors hover:border-[#d4d4d0] hover:bg-white sm:gap-4 sm:p-5"
     >
-      {bulkSelect ? (
-        <Checkbox
-          className="mt-1.5 h-4 w-4 shrink-0 rounded border-[#cbd5e1]"
-          checked={selected}
-          onCheckedChange={onToggleSelect}
-          aria-label="选择"
-        />
-      ) : null}
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5 pr-1">
@@ -1768,7 +1689,7 @@ function ApiRunRecordRow({
             >
               {st.text}
             </span>
-            <div className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-snug text-[#111111]">
+            <div className="min-w-0 flex-1 break-words text-[14px] font-semibold leading-snug text-[#111111]">
               {r.task_title_snapshot || "定时任务执行"}
             </div>
           </div>

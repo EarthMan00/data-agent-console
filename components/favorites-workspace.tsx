@@ -15,6 +15,7 @@ import {
   StarOff,
 } from "@/components/ui/tabler-icons";
 import { MoreDataShell } from "@/components/more-data-shell";
+import { PageLostState } from "@/components/page-lost-state";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -61,11 +62,9 @@ const TYPE_FILTER_OPTIONS: { value: string; label: string }[] = [
 
 function FavoritesEmptyIllustration() {
   return (
-    <div className="flex min-h-[min(420px,calc(100vh-320px))] flex-col items-center justify-center rounded-[18px] border border-white/70 bg-white/72 px-4 py-12 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
-      <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-[18px] border border-[#e2e2df] bg-[#f7f7f7]" aria-hidden>
-        <PackageOpen className="h-8 w-8 text-[#b1b2ae]" strokeWidth={1.35} />
-      </div>
-      <p className="text-[15px] text-[#71717a]">暂无数据</p>
+    <div className="mt-8 flex min-h-[calc(100vh-300px)] flex-col items-center justify-center px-4 text-center">
+      <PackageOpen className="mb-4 text-[#b1b2ae]" strokeWidth={1.35} aria-hidden />
+      <p className="text-[14px] text-[#71717a]">暂无数据</p>
     </div>
   );
 }
@@ -78,6 +77,7 @@ export function FavoritesWorkspace() {
   const [items, setItems] = useState<UserFavoriteListItemDto[]>([]);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState(TYPE_FILTER_ALL);
   const [activeChip, setActiveChip] = useState<ChipFilter>("全部");
@@ -104,6 +104,7 @@ export function FavoritesWorkspace() {
     if (!platformAgent?.withFreshToken) return;
     setBusy(true);
     setError("");
+    setLoadError("");
     try {
       await platformAgent.withFreshToken(async (token) => {
         const fr = await listFavoriteFolders(token);
@@ -116,7 +117,10 @@ export function FavoritesWorkspace() {
         setItems(list.items ?? []);
       });
     } catch (e) {
-      setError(formatAgentApiErrorForUser(e));
+      const msg = formatAgentApiErrorForUser(e);
+      setError(msg);
+      setLoadError(msg);
+      setFolders([]);
       setItems([]);
     } finally {
       setBusy(false);
@@ -148,6 +152,7 @@ export function FavoritesWorkspace() {
         (it.card_preview ?? "").toLowerCase().includes(q),
     );
   }, [typeFilteredItems, search]);
+  const showLoadError = Boolean(loadError && !busy && folders.length === 0 && items.length === 0);
 
   const formatCardTime = (iso: string) => {
     const d = new Date(iso);
@@ -261,12 +266,26 @@ export function FavoritesWorkspace() {
     <MoreDataShell currentPath="/artifacts" showTopHeader={false}>
       <div className="px-8 pb-14 pt-5">
         <div className="mx-auto max-w-[1040px]">
-          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-5">
-            <div className="min-w-0 flex-1">
+          <div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h1 className="text-[24px] font-semibold leading-8 text-[#111111]">我的收藏夹</h1>
-              <div className="mt-5 flex flex-wrap items-center gap-2">
+              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:justify-end">
+                <div className="relative w-full min-w-0 sm:w-[220px]">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="搜索收藏"
+                    className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 flex min-h-[40px] flex-wrap items-center justify-between gap-x-4 gap-y-3">
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                 <Tabs value={activeChip} onValueChange={setActiveChip}>
-                  <TabsList className="h-9 flex-wrap justify-start">
+                  <TabsList className="flex-wrap justify-start">
                     <TabsTrigger value="全部">全部</TabsTrigger>
                     <TabsTrigger value="默认">默认</TabsTrigger>
                     {chipFolders.map((name) => (
@@ -278,30 +297,19 @@ export function FavoritesWorkspace() {
                 </Tabs>
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-[10px]"
+                  variant="outline"
+                  size="iconSm"
+                  className="shrink-0"
                   title="新建文件夹"
+                  aria-label="新建文件夹"
                   onClick={() => setNewFolderOpen(true)}
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus />
                 </Button>
               </div>
-            </div>
-
-            <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-              <div className="relative w-full min-w-[220px] sm:w-[220px]">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="搜索收藏"
-                  className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
-                />
-              </div>
-              <div className="relative w-full min-w-[220px] sm:w-[220px]">
+              <div className="flex w-full min-w-0 items-center justify-end sm:w-auto sm:shrink-0">
                 <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger className="h-9 rounded-[10px] border-[#e2e2df]">
+                  <SelectTrigger className="h-9 w-[128px] rounded-[10px] border-[#e2e2df]">
                     <SelectValue placeholder="全部类型" />
                   </SelectTrigger>
                   <SelectContent>
@@ -318,16 +326,18 @@ export function FavoritesWorkspace() {
             </div>
           </div>
 
-          {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
+          {error && !showLoadError ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
           {busy ? <p className="mt-8 text-sm text-[#71717a]">加载中…</p> : null}
 
           <div
             className={cn(
-              "mt-8",
+              !busy && filteredItems.length > 0 ? "mt-8" : "",
               !busy && filteredItems.length > 0 ? "grid gap-5 md:grid-cols-2" : "",
             )}
           >
-            {!busy && filteredItems.length > 0 ? (
+            {showLoadError ? (
+              <PageLostState onRetry={() => void reload()} />
+            ) : !busy && filteredItems.length > 0 ? (
               filteredItems.map((item) => (
                 <Card
                   key={item.id}
@@ -365,11 +375,11 @@ export function FavoritesWorkspace() {
                         <Button
                           type="button"
                           variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 shrink-0 rounded-[8px] text-[#71717a]"
+                          size="iconSm"
+                          className="shrink-0"
                           aria-label="更多操作"
                         >
-                          <EllipsisVertical className="h-4 w-4" />
+                          <EllipsisVertical />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-48">

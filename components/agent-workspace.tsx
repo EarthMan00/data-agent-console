@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
   useSearchParamFlagSnapshot,
   useSearchParamSnapshot,
 } from "@/lib/use-search-param-snapshot";
-import { Bot, ChevronDown, ListRestart, MessageCircleMore, ThumbsDown, ThumbsUp } from "@/components/ui/tabler-icons";
+import { ChevronDown, ListRestart, MessageCircleMore, ThumbsDown, ThumbsUp } from "@/components/ui/tabler-icons";
 import type {
   AgentAttachment,
   PlatformSubtaskSnapshot,
@@ -714,11 +715,18 @@ function AgentRunWorkspaceView({
                   <div className="w-full max-w-[780px]">
                     <div className="space-y-3.5">
                       <div className="flex items-center gap-3 text-[14px] font-medium text-[#303734]">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-[#111111] text-white shadow-none">
-                          <Bot className="h-4 w-4" />
+                        <div className="flex h-9 w-9 items-center justify-center">
+                          <Image
+                            src="/mdata-logo.png"
+                            alt="Alice"
+                            width={36}
+                            height={36}
+                            className="h-9 w-9 shrink-0 object-contain"
+                            draggable={false}
+                          />
                         </div>
                         <div>
-                          <div className="text-[15px] font-semibold text-[#1f2421]">Alice</div>
+                          <div className="text-[14px] font-semibold text-[#1f2421]">Alice</div>
                         </div>
                       </div>
 
@@ -812,7 +820,7 @@ function AgentRunWorkspaceView({
                                   </div>
                                 ))}
                                 {round.executionGroups.length === 0 && !round.assistantPending ? (
-                                  <div className="rounded-[18px] border border-dashed border-[#e5e7eb] bg-[#fcfcfd] px-4 py-5 text-[13px] leading-7 text-[#6c7571]">
+                                  <div className="rounded-[18px] border border-dashed border-[#e5e7eb] bg-[#fcfcfd] px-4 py-5 text-[14px] leading-7 text-[#6c7571]">
                                     正在为这轮任务准备执行节点，稍后会把关键过程同步到这里。
                                   </div>
                                 ) : null}

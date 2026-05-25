@@ -37,6 +37,10 @@ import {
 import { invalidateSessionAndRequestLogin } from "@/lib/agent-runtime/auth";
 import { ArrowLeft, ArrowRight, Power } from "@/components/ui/tabler-icons";
 
+const LOGIN_INTRO_TEXT =
+  "我是 Alice，跨境电商运营助手，掌握数据，洞察数据的神。请先登录";
+const LOGIN_INTRO_CHAR_INTERVAL_MS = 34;
+
 export type PlatformAgentContextValue = {
   auth: AgentSessionSnapshot | null;
   /** 已在浏览器读取 sessionStorage；首帧为 false，与 SSR 一致，避免 hydration 与 Require* 分支不一致 */
@@ -106,6 +110,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const [loginStep, setLoginStep] = useState<"account" | "password">("account");
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [loginIntroText, setLoginIntroText] = useState("");
+  const [loginIntroDone, setLoginIntroDone] = useState(false);
   const accountInputRef = useRef<HTMLInputElement | null>(null);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
   const suppressLoginOpenUntilRef = useRef(0);
@@ -146,6 +152,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setPassword("");
     setLoginError("");
     setLoginStep("account");
+    setLoginIntroText("");
+    setLoginIntroDone(false);
     setLoginOpen(true);
   }, []);
 
@@ -155,11 +163,30 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setPassword("");
     setLoginError("");
     setLoginStep("account");
+    setLoginIntroText("");
+    setLoginIntroDone(false);
     setLoginOpen(false);
   }, []);
 
   useEffect(() => {
     if (!loginOpen) return;
+    setLoginIntroText("");
+    setLoginIntroDone(false);
+    let index = 0;
+    const chars = [...LOGIN_INTRO_TEXT];
+    const t = window.setInterval(() => {
+      index += 1;
+      setLoginIntroText(chars.slice(0, index).join(""));
+      if (index >= chars.length) {
+        window.clearInterval(t);
+        setLoginIntroDone(true);
+      }
+    }, LOGIN_INTRO_CHAR_INTERVAL_MS);
+    return () => window.clearInterval(t);
+  }, [loginOpen]);
+
+  useEffect(() => {
+    if (!loginOpen || !loginIntroDone) return;
     const t = window.setTimeout(() => {
       if (loginStep === "account") {
         accountInputRef.current?.focus();
@@ -168,7 +195,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       }
     }, 120);
     return () => window.clearTimeout(t);
-  }, [loginOpen, loginStep]);
+  }, [loginIntroDone, loginOpen, loginStep]);
 
   useEffect(() => {
     if (!loginOpen) return;
@@ -483,16 +510,28 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                 <div className="h-[250px] w-[min(730px,calc(100vw-120px))]">
                   <h2
                     id="mdata-login-title"
+                    aria-label={LOGIN_INTRO_TEXT}
                     className="mdata-auth-title h-[90px] max-w-[730px] text-left text-[30px] font-medium leading-[45px] tracking-normal text-white transition-colors duration-300"
                   >
-                    我是
-                    Alice，跨境电商运营助手，掌握数据，洞察数据的神。请先登录
+                    {loginIntroText}
+                    {!loginIntroDone ? (
+                      <span
+                        className="ml-1 inline-block h-[1em] w-[2px] translate-y-[4px] animate-pulse bg-white/80"
+                        aria-hidden
+                      />
+                    ) : null}
                   </h2>
 
                   <form
-                    className="mt-5 h-[121px] w-full"
+                    className={`mt-5 h-[121px] w-full transition-[opacity,transform] duration-500 ${
+                      loginIntroDone
+                        ? "translate-y-0 opacity-100"
+                        : "pointer-events-none translate-y-2 opacity-0"
+                    }`}
+                    aria-hidden={!loginIntroDone}
                     onSubmit={(e) => {
                       e.preventDefault();
+                      if (!loginIntroDone) return;
                       advanceLogin();
                     }}
                   >
@@ -527,6 +566,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                           if (loginError) setLoginError("");
                         }}
                         onKeyDown={handleLoginInputKeyDown}
+                        disabled={!loginIntroDone}
                         className={
                           loginStep === "account"
                             ? "mdata-auth-input h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-medium leading-none text-white caret-white outline-none placeholder:font-normal placeholder:text-[#4d4d4d]"
@@ -557,6 +597,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                           if (loginError) setLoginError("");
                         }}
                         onKeyDown={handleLoginInputKeyDown}
+                        disabled={!loginIntroDone}
                         className={
                           loginStep === "password"
                             ? "mdata-auth-input h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-medium leading-none text-white caret-white outline-none placeholder:font-normal placeholder:text-[#4d4d4d]"
@@ -582,7 +623,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                         <button
                           type="button"
                           aria-label="返回账号"
-                          disabled={loginBusy}
+                          disabled={loginBusy || !loginIntroDone}
                           className="inline-flex h-12 w-12 items-center justify-center rounded-full text-white transition-colors duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
                           onClick={returnToAccountStep}
                         >
@@ -592,7 +633,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                       <button
                         type="submit"
                         aria-label={loginStep === "account" ? "继续" : "登录"}
-                        disabled={loginBusy}
+                        disabled={loginBusy || !loginIntroDone}
                         className="inline-flex h-12 w-12 items-center justify-center rounded-full text-white transition-colors duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         <ArrowRight className="h-7 w-7" strokeWidth={1.85} />

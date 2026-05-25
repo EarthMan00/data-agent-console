@@ -17,6 +17,7 @@ import {
 
 import { AutoToast } from "@/components/auto-toast";
 import { MoreDataShell } from "@/components/more-data-shell";
+import { PageLostState } from "@/components/page-lost-state";
 import { RequiredAsterisk } from "@/components/required-mark";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
@@ -64,14 +65,6 @@ function formatDateTime(iso: string) {
   return d.toLocaleString();
 }
 
-function PromptLibraryEmptyIllustration() {
-  return (
-    <div className="mx-auto mb-6 flex h-16 w-16 shrink-0 items-center justify-center rounded-[18px] border border-[#e2e2df] bg-[#f7f7f7]" aria-hidden>
-      <Package className="h-8 w-8 text-[#b1b2ae]" strokeWidth={1.35} />
-    </div>
-  );
-}
-
 async function fetchAllGroups(token: string): Promise<UserPromptGroupDto[]> {
   const out: UserPromptGroupDto[] = [];
   let page = 1;
@@ -113,6 +106,7 @@ export function PromptLibraryWorkspace() {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastVariant, setToastVariant] = useState<"default" | "error">("default");
   const [groups, setGroups] = useState<UserPromptGroupDto[]>([]);
@@ -145,6 +139,7 @@ export function PromptLibraryWorkspace() {
     if (!platformAgent?.auth) return;
     setBusy(true);
     setError("");
+    setLoadError("");
     try {
       await platformAgent.withFreshToken(async (token) => {
         const [g, p] = await Promise.all([fetchAllGroups(token), fetchAllPromptsForFilter(token, tab)]);
@@ -159,6 +154,7 @@ export function PromptLibraryWorkspace() {
             ? e.message
             : String(e);
       setError(msg || "加载失败");
+      setLoadError(msg || "加载失败");
     } finally {
       setBusy(false);
     }
@@ -178,6 +174,7 @@ export function PromptLibraryWorkspace() {
         p.prompt_text.toLowerCase().includes(q),
     );
   }, [prompts, search]);
+  const showLoadError = Boolean(loadError && !busy && groups.length === 0 && prompts.length === 0);
 
   const openCreate = () => {
     setError("");
@@ -382,7 +379,7 @@ export function PromptLibraryWorkspace() {
 
               <div className="mt-5 flex flex-wrap items-center gap-2">
                 <Tabs value={tabToValue(tab)} onValueChange={(value) => setTab(valueToTab(value))}>
-                  <TabsList className="h-9 flex-wrap justify-start">
+                  <TabsList className="flex-wrap justify-start">
                     <TabsTrigger value="all">全部</TabsTrigger>
                     <TabsTrigger value="default">默认</TabsTrigger>
                     {groups.map((g) => (
@@ -393,12 +390,12 @@ export function PromptLibraryWorkspace() {
                         <Button
                           type="button"
                           variant="ghost"
-                          size="icon"
+                          size="iconSm"
                           aria-label={`删除分组 ${g.name || "未命名"}`}
-                          className="h-8 w-7 rounded-l-none rounded-r-[8px] px-0 text-[#8b8c87] hover:bg-[#e2e2df] hover:text-[#111111]"
+                          className="rounded-l-none rounded-r-[8px]"
                           onClick={() => setDeleteGroupId(g.id)}
                         >
-                          <X className="h-3 w-3" />
+                          <X />
                         </Button>
                       </div>
                     ))}
@@ -442,12 +439,11 @@ export function PromptLibraryWorkspace() {
                   <Button
                     type="button"
                     variant="outline"
-                    size="icon"
-                    className="h-9 w-9 rounded-[10px] border-[#e2e2df] bg-white"
+                    size="iconSm"
                     aria-label="新建分组"
                     onClick={() => setAddGroupOpen(true)}
                   >
-                    <Plus className="h-4 w-4" />
+                    <Plus />
                   </Button>
                 )}
               </div>
@@ -467,24 +463,26 @@ export function PromptLibraryWorkspace() {
                 className="h-9 rounded-[10px] bg-[#111111] px-4 text-white hover:bg-[#2a2a2a]"
                 onClick={openCreate}
               >
-                <Plus className="mr-1.5 h-4 w-4" />
+                <Plus />
                 创建提示词
               </Button>
             </div>
           </div>
 
-          {error ? (
+          {error && !showLoadError ? (
             <div className="mt-6 text-sm text-red-600">
               {error}
             </div>
           ) : null}
           {busy ? <div className="mt-8 text-sm text-[#71717a]">加载中…</div> : null}
 
-          {!busy && filteredPrompts.length === 0 ? (
+          {showLoadError ? (
+            <PageLostState onRetry={() => void refresh()} />
+          ) : !busy && filteredPrompts.length === 0 ? (
             prompts.length === 0 ? (
-              <div className="mt-8 flex min-h-[min(420px,calc(100vh-320px))] flex-col items-center justify-center rounded-[18px] border border-white/70 bg-white/72 px-4 py-12 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
-                <PromptLibraryEmptyIllustration />
-                <p className="max-w-md text-center text-[15px] leading-relaxed text-[#71717a]">
+              <div className="mt-8 flex min-h-[calc(100vh-260px)] flex-col items-center justify-center px-4 text-center">
+                <Package className="mb-4 text-[#b1b2ae]" strokeWidth={1.35} aria-hidden />
+                <p className="max-w-md text-center text-[14px] leading-relaxed text-[#71717a]">
                   {tab.kind === "all"
                     ? "暂无提示词"
                     : tab.kind === "default"
@@ -494,7 +492,7 @@ export function PromptLibraryWorkspace() {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-auto rounded-none px-0 py-0 align-baseline text-[#18181b] underline decoration-[#a1a1aa] underline-offset-[5px] hover:bg-transparent hover:text-[#27272a] hover:decoration-[#71717a]"
+                    className="h-auto px-1 py-0 align-baseline text-[14px] font-medium text-[#18181b] hover:bg-transparent hover:text-[#27272a]"
                     onClick={openCreate}
                   >
                     马上创建提示词
@@ -503,7 +501,7 @@ export function PromptLibraryWorkspace() {
               </div>
             ) : (
               <div className="mt-16 flex flex-col items-center justify-center px-4 text-center">
-                <p className="text-[15px] text-[#71717a]">未找到匹配的提示词</p>
+                <p className="text-[14px] text-[#71717a]">未找到匹配的提示词</p>
                 <Button
                   type="button"
                   variant="ghost"
@@ -812,7 +810,7 @@ export function PromptLibraryWorkspace() {
       >
         <DialogContent className="max-w-[420px] rounded-[16px] border-[#e8e8ea] p-0 pt-8 [&>button]:hidden">
           <div className="px-8 pb-8">
-            <DialogTitle className="text-[17px] font-semibold leading-snug text-[#18181b]">
+            <DialogTitle className="text-[16px] font-semibold leading-snug text-[#18181b]">
               是否确认删除分组？
             </DialogTitle>
             <DialogDescription className="mt-3 text-sm leading-relaxed text-[#71717a]">

@@ -49,15 +49,15 @@ function PlatformSubtaskResultCard({
           : "cursor-default opacity-95",
       )}
     >
-      <div className="text-[11px] font-medium uppercase tracking-wide text-[#9aa39e]">{header}</div>
+      <div className="text-[12px] font-medium uppercase tracking-wide text-[#9aa39e]">{header}</div>
       <div className="mt-2 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-semibold text-[#1f2421]">步骤 {stepNo}</div>
+          <div className="text-[14px] font-semibold text-[#1f2421]">步骤 {stepNo}</div>
           <p className="mt-1 text-[12px] leading-5.5 text-[#4f5753]">{compactText(snap.label, 200)}</p>
         </div>
         <span
           className={cn(
-            "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
+            "shrink-0 rounded-full px-2 py-0.5 text-[12px] font-medium",
             ok ? "bg-[#dcfce7] text-[#166534]" : "bg-[#fee2e2] text-[#991b1b]",
           )}
         >
@@ -65,7 +65,7 @@ function PlatformSubtaskResultCard({
         </span>
       </div>
       {snap.errorMessage ? (
-        <p className="mt-2 text-[11px] leading-5 text-[#b91c1c]">
+        <p className="mt-2 text-[12px] leading-5 text-[#b91c1c]">
           {compactText(humanizeTaskErrorMessage(snap.errorMessage), 220)}
         </p>
       ) : null}

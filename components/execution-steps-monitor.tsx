@@ -74,13 +74,13 @@ export function ExecutionStepCard({
   return (
     <div
       className={cn(
-        "rounded-[16px] border px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.04)]",
-        step.status === "error" ? "border-red-200 bg-red-50/50" : "border-[#eceef1] bg-white",
+        "px-0 py-1.5",
+        step.status === "error" ? "text-red-600" : "text-[#374151]",
       )}
       data-testid="execution-step-card"
       data-step-index={stepIndex}
     >
-      <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[#9aa39e]">
+      <div className="mb-2 text-[12px] font-medium uppercase tracking-wide text-[#9aa39e]">
         步骤 {stepNo} / {total} · {executionSubtitle(step.status)}
       </div>
       <div className="flex gap-3">
@@ -95,7 +95,7 @@ export function ExecutionStepCard({
             <XCircle className="h-5 w-5 text-red-500" />
           )}
         </div>
-        <p className="min-w-0 flex-1 text-[13px] leading-6.5 text-[#374151]">
+        <p className="min-w-0 flex-1 text-[14px] leading-6.5">
           <span className="text-[#9ca3af]">{stepNo}. </span>
           {step.label}
         </p>
@@ -121,21 +121,21 @@ export function StepResultPendingCard({
   return (
     <div
       className={cn(
-        "rounded-[16px] border px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.04)]",
-        ok ? "border-[#eceef1] bg-white" : "border-red-200 bg-red-50/50",
+        "px-0 py-1.5",
+        ok ? "text-[#374151]" : "text-red-600",
       )}
       data-testid="step-result-pending-card"
       data-step-index={stepIndex}
     >
-      <div className="text-[11px] font-medium uppercase tracking-wide text-[#9aa39e]">步骤 {stepNo} / {total} · 执行结果</div>
+      <div className="text-[12px] font-medium uppercase tracking-wide text-[#9aa39e]">步骤 {stepNo} / {total} · 执行结果</div>
       <div className="mt-1 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold text-[#1f2421]">步骤 {stepNo}</p>
+          <p className="text-[14px] font-semibold text-[#1f2421]">步骤 {stepNo}</p>
           <p className="mt-1 text-[12px] leading-5.5 text-[#4f5753]">{label}</p>
         </div>
         <span
           className={cn(
-            "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
+            "shrink-0 rounded-full px-2 py-0.5 text-[12px] font-medium",
             ok ? "bg-[#dcfce7] text-[#166534]" : "bg-[#fee2e2] text-[#991b1b]",
           )}
         >
