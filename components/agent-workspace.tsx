@@ -841,24 +841,6 @@ function AgentRunWorkspaceView({
                             }
                             testId="agent-execution-summary-bar"
                           />
-                          {round.executionSteps?.length ? (
-                            <div className="mt-3 px-1">
-                              <PlatformRoundStepTimeline
-                                executionSteps={round.executionSteps}
-                                platformSubtasks={round.platformSubtasks}
-                                activeHighlightTaskId={activeHighlightForRound(
-                                  round.roundId,
-                                  latestRoundIdForPanel,
-                                  round.platformSubtasks,
-                                  stepTimelineHighlightTaskId,
-                                  panelSubtaskFocus,
-                                )}
-                                runId={run.id}
-                                setPanelSubtaskFocus={setPanelSubtaskFocus}
-                                setPanelVisibility={setPanelVisibility}
-                              />
-                            </div>
-                          ) : null}
                         </>
                       )
                       ) : null}
