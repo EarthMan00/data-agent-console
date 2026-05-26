@@ -13,6 +13,7 @@ import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { useMoreDataShellState } from "@/components/more-data-shell";
 import { compactText } from "@/components/agent-workspace-view-models";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
   deleteTaskSession,
   formatAgentApiErrorForUser,
@@ -56,20 +57,15 @@ import {
   type OrchestrationAnchor,
   type TaskOrchestrationBundleRow,
 } from "@/lib/merge-orchestration-task-artifacts";
+import {
+  isTaskInFlight,
+  SCHEDULE_TRIAL_SESSION_RELOAD_INTERVAL_MS,
+  SCHEDULE_TRIAL_TASK_POLL_INTERVAL_MS,
+} from "@/lib/task-status-poll";
 import { cn } from "@/lib/utils";
 
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import { SIMPLE_CHAT_COLUMN_MAX, SimpleAssistantBubble, SimpleSystemBubble, SimpleUserBubble } from "./chat-bubbles";
-
-function taskInFlight(t: TaskResponse) {
-  if (t.finished_at) return false;
-  const s = (t.status || "").toUpperCase();
-  if (s === "RUNNING" || s === "PENDING" || s === "QUEUED") return true;
-  if (s === "SUCCESS" || s === "SUCCEEDED" || s === "FAILED" || s === "CANCELLED" || s === "CANCEL" || s === "TIMEOUT") {
-    return false;
-  }
-  return s.includes("RUNN");
-}
 
 export function PlatformSessionAgentWorkspace({
   sessionId,
@@ -115,7 +111,10 @@ export function PlatformSessionAgentWorkspace({
   } | null>(null);
   const trialAutoOpenedPanelRef = useRef(false);
   const scheduledRunAutoOpenedPanelRef = useRef(false);
+  const trialPrefetchAnchorRef = useRef<string | null>(null);
+  const trialDoneReloadedRef = useRef(false);
   const [saveBusy, setSaveBusy] = useState(false);
+  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
   const [trialRunInFlight, setTrialRunInFlight] = useState(() => {
     if (!scheduleTrial) return false;
     const m = loadScheduleTrialMeta();
@@ -244,7 +243,7 @@ export function PlatformSessionAgentWorkspace({
     if (m?.sessionId !== sessionId || m.sendKind !== "in_flight" || messages.length > 0 || sending) return;
     const t = setInterval(() => {
       void reload();
-    }, 2000);
+    }, SCHEDULE_TRIAL_SESSION_RELOAD_INTERVAL_MS);
     return () => clearInterval(t);
   }, [scheduleTrial, platformAgent, sessionId, reload, messages.length, sending]);
 
@@ -259,12 +258,22 @@ export function PlatformSessionAgentWorkspace({
     const orchId = trialOrchestrationId;
     const multi = trialIsMultiStep && Boolean(orchId);
     let stop = false;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    const clearPoll = () => {
+      stop = true;
+      if (intervalId !== undefined) {
+        clearInterval(intervalId);
+        intervalId = undefined;
+      }
+    };
+
     const run = async () => {
+      if (stop) return;
       try {
         let t: TaskResponse | null = null;
         let orchFinished = false;
         await platformAgent.withFreshToken(async (token) => {
-          t = await getTask(token, tid);
           if (multi && orchId) {
             try {
               const orch = await getToolOrchestration(token, orchId);
@@ -272,38 +281,53 @@ export function PlatformSessionAgentWorkspace({
               if (!stop && isMounted.current) {
                 setTrialOrchestrationDone({ finished: orch.finished, success: orch.success });
               }
-              if (orch.finished && isMounted.current) {
-                await reload();
+              if (orch.finished) {
+                const lastWithId = [...orch.steps].reverse().find((s) => s.task_id);
+                const pollTaskId = (lastWithId?.task_id ?? tid).trim();
+                if (pollTaskId) {
+                  t = await getTask(token, pollTaskId);
+                }
+                if (!stop && isMounted.current && !trialDoneReloadedRef.current) {
+                  trialDoneReloadedRef.current = true;
+                  await reload();
+                }
               }
             } catch {
               /* 编排可能已落库到消息 meta，忽略 404 */
             }
+          } else {
+            t = await getTask(token, tid);
           }
         });
         if (stop) return;
         setLastTaskSnapshot(t);
-        const firstTaskDone = !t || !taskInFlight(t);
+        const firstTaskDone = !t || !isTaskInFlight(t);
+        const done = multi && orchId ? orchFinished : firstTaskDone;
         if (multi && orchId) {
           setTrialRunInFlight(!orchFinished);
         } else if (firstTaskDone) {
           setTrialRunInFlight(false);
-          if (isMounted.current) void reload();
+          if (isMounted.current && !trialDoneReloadedRef.current) {
+            trialDoneReloadedRef.current = true;
+            void reload();
+          }
         } else {
           setTrialRunInFlight(true);
+        }
+        if (done) {
+          clearPoll();
         }
       } catch {
         if (!stop) {
           setTrialRunInFlight(false);
           setLastTaskSnapshot(null);
+          clearPoll();
         }
       }
     };
     void run();
-    const h = setInterval(() => void run(), 2000);
-    return () => {
-      stop = true;
-      clearInterval(h);
-    };
+    intervalId = setInterval(() => void run(), SCHEDULE_TRIAL_TASK_POLL_INTERVAL_MS);
+    return clearPoll;
   }, [scheduleTrial, trialTaskId, platformAgent, trialOrchestrationId, trialIsMultiStep, reload]);
 
   useEffect(() => {
@@ -332,6 +356,14 @@ export function PlatformSessionAgentWorkspace({
       ? (runLabel?.trim() || "定时任务记录")
       : firstUserMessageTitle || "历史对话";
   const scheduleControlsLocked = scheduleTrial && (busy || trialRunInFlight || saveBusy);
+  /** 试跑须执行结束且会话已有内容后，才允许人工确认保存（不会试跑结束自动落库） */
+  const trialSaveReady =
+    scheduleTrial &&
+    !busy &&
+    !sending &&
+    !trialRunInFlight &&
+    !saveBusy &&
+    messages.length > 0;
   /** 试跑页：除保存提交中外都允许点「终止」并回到配置，避免 404/轮询异常时无法离开 */
   const terminateEnabled = scheduleTrial && !saveBusy;
 
@@ -340,7 +372,10 @@ export function PlatformSessionAgentWorkspace({
     const gq = d?.createGroupIdFromUrl?.trim()
       ? `&groupId=${encodeURIComponent(d.createGroupIdFromUrl.trim())}`
       : "";
-    router.push(`/schedules?create=1&restore=1${gq}`);
+    const editQ = d?.editingTaskId?.trim()
+      ? `&edit=${encodeURIComponent(d.editingTaskId.trim())}`
+      : "";
+    router.push(`/schedules?create=1&restore=1${editQ}${gq}`);
   }, [router]);
 
   const onSaveSchedules = useCallback(async () => {
@@ -387,6 +422,8 @@ export function PlatformSessionAgentWorkspace({
     setTrialOrchestrationDone(null);
     trialAutoOpenedPanelRef.current = false;
     scheduledRunAutoOpenedPanelRef.current = false;
+    trialPrefetchAnchorRef.current = null;
+    trialDoneReloadedRef.current = false;
   }, [sessionId]);
 
   const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
@@ -418,6 +455,15 @@ export function PlatformSessionAgentWorkspace({
 
   useEffect(() => {
     if (!effectiveOrchestrationAnchor || !platformAgent?.auth || showResultPanel) return;
+    /** 试跑执行中由消息 meta + 编排轮询展示进度，避免反复 GET /api/tasks/{id} */
+    if (scheduleTrial && trialRunInFlight) return;
+    const anchorKey = [
+      effectiveOrchestrationAnchor.primaryTaskId,
+      effectiveOrchestrationAnchor.orchestrationId ?? "",
+      (effectiveOrchestrationAnchor.bundleTaskIds ?? []).join(","),
+    ].join("|");
+    if (trialPrefetchAnchorRef.current === anchorKey) return;
+    trialPrefetchAnchorRef.current = anchorKey;
     let cancelled = false;
     void platformAgent.withFreshToken(async (token) => {
       const data = await fetchTaskOrchestrationForResultPanel(
@@ -431,7 +477,7 @@ export function PlatformSessionAgentWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [effectiveOrchestrationAnchor, platformAgent, showResultPanel]);
+  }, [effectiveOrchestrationAnchor, platformAgent, showResultPanel, scheduleTrial, trialRunInFlight]);
 
   const firstAssistantIndex = useMemo(
     () => messages.findIndex((m) => m.role === "assistant"),
@@ -700,6 +746,39 @@ export function PlatformSessionAgentWorkspace({
   }, [draft, platformAgent, reload, refreshHistory, sending, sessionId]);
 
   return (
+    <>
+    {scheduleTrial ? (
+      <Dialog open={saveConfirmOpen} onOpenChange={setSaveConfirmOpen}>
+        <DialogContent className="max-w-[400px] rounded-[16px]">
+          <DialogTitle>保存定时任务？</DialogTitle>
+          <DialogDescription className="text-sm leading-relaxed text-[#71717a]">
+            试跑结束后不会自动写入定时任务列表。请确认试跑结果符合预期后再保存。
+          </DialogDescription>
+          <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-[10px]"
+              disabled={saveBusy}
+              onClick={() => setSaveConfirmOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              className="rounded-[10px] bg-[#111111] text-white hover:bg-[#2a2a2a]"
+              disabled={saveBusy}
+              onClick={() => {
+                setSaveConfirmOpen(false);
+                void onSaveSchedules();
+              }}
+            >
+              确认保存
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    ) : null}
     <MoreDataShell
       currentPath="/agent/history"
       contentScrollMode="child"
@@ -890,7 +969,13 @@ export function PlatformSessionAgentWorkspace({
             {scheduledRunRecord ? (
               <p className="py-1 text-center text-xs text-[#a1a1aa]">此为定时任务执行记录，不支持继续追问。</p>
             ) : scheduleTrial ? (
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3">
+                {trialRunInFlight ? (
+                  <p className="text-center text-xs text-[#a1a1aa]">试跑进行中，完成后可手动保存（不会自动写入定时任务）</p>
+                ) : trialSaveReady ? (
+                  <p className="text-center text-xs text-[#71717a]">试跑已结束，请确认结果后点击「保存」</p>
+                ) : null}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Button
                   type="button"
                   variant="outline"
@@ -913,11 +998,12 @@ export function PlatformSessionAgentWorkspace({
                   <Button
                     type="button"
                     className="h-11 min-w-[88px] flex-1 rounded-[10px] bg-[#111111] text-white hover:bg-[#2a2a2a] sm:flex-initial"
-                    disabled={scheduleControlsLocked}
-                    onClick={() => void onSaveSchedules()}
+                    disabled={!trialSaveReady}
+                    onClick={() => setSaveConfirmOpen(true)}
                   >
                     保存
                   </Button>
+                </div>
                 </div>
               </div>
             ) : (
@@ -942,5 +1028,6 @@ export function PlatformSessionAgentWorkspace({
         </div>
       </div>
     </MoreDataShell>
+    </>
   );
 }

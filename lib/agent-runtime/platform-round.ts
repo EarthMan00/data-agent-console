@@ -25,6 +25,10 @@ import {
   waitForSplitRevealComplete,
   yieldToUi,
 } from "@/lib/split-reveal-gate";
+import {
+  ORCHESTRATION_STATUS_POLL_INTERVAL_MS,
+  TASK_STATUS_POLL_INTERVAL_MS,
+} from "@/lib/task-status-poll";
 import { sleep } from "./util";
 import type { AgentRoundInput, StreamAgentRoundPlatformOptions } from "./types";
 
@@ -311,7 +315,7 @@ export async function runPlatformRound(
       if (orchestrationId) {
         let userStopped = false;
         for (let polls = 0; polls < 4500; polls += 1) {
-          await sleep(800);
+          await sleep(ORCHESTRATION_STATUS_POLL_INTERVAL_MS);
           if (shouldAbortPoll?.()) {
             userStopped = true;
             break;
@@ -363,7 +367,7 @@ export async function runPlatformRound(
         let polls = 0;
         let userStoppedSingle = false;
         while (!sharedTask.finished_at && polls < 600) {
-          await sleep(1000);
+          await sleep(TASK_STATUS_POLL_INTERVAL_MS);
           if (shouldAbortPoll?.()) {
             userStoppedSingle = true;
             break;

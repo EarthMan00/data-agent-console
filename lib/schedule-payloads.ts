@@ -1,7 +1,15 @@
 import type { UserScheduledTaskCreateBody } from "./agent-api/types";
 
-export const SCHEDULE_KINDS = ["非定时", "每天", "每周", "每月", "单次"] as const;
+export const SCHEDULE_KINDS = ["每天", "每周", "每月", "单次"] as const;
 export type ScheduleKind = (typeof SCHEDULE_KINDS)[number];
+
+/** 草稿/旧数据中的「非定时」等值映射为表单可选类型 */
+export function normalizeScheduleKind(kind: string): ScheduleKind {
+  if (kind === "不重复") return "单次";
+  if (kind === "非定时") return "每天";
+  if ((SCHEDULE_KINDS as readonly string[]).includes(kind)) return kind as ScheduleKind;
+  return "每天";
+}
 
 export function toHhmm(s: string) {
   const p = s.trim().split(":");
@@ -30,9 +38,6 @@ export function buildCreatePayloads(
     enabled: taskEnabled,
     time_hhmm,
   };
-  if (kind === "非定时") {
-    return [{ ...base, enabled: false, recurrence: "once", run_once_date: null }];
-  }
   if (kind === "每天") {
     return [{ ...base, recurrence: "daily" }];
   }

@@ -191,7 +191,9 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
 
   const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
   const historyHasMore = historySessions.length < historyTotal;
-  const historyInitialLoading = isLoggedIn && historyBusy && !historyWasLoaded;
+  /** 须等客户端读完 sessionStorage 后再展示侧栏骨架，避免与 SSR 子树（如 Suspense）不一致 */
+  const authReadyForHistory = !platformAgent || platformAgent.authHydrated;
+  const historyInitialLoading = authReadyForHistory && isLoggedIn && historyBusy && !historyWasLoaded;
 
   const refreshHistory = useCallback(async () => {
     if (!platformAgent?.auth?.accessToken) return;

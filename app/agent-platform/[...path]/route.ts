@@ -40,20 +40,35 @@ function buildResponseHeaders(upstream: Response): Headers {
 async function proxy(request: NextRequest, pathSegments: string[]) {
   const url = buildUpstreamUrl(request, pathSegments);
   const method = request.method.toUpperCase();
-  const hasBody = method !== "GET" && method !== "HEAD";
+  const mayHaveBody = method !== "GET" && method !== "HEAD";
 
-  const init: RequestInit & { duplex?: "half" } = {
+  const init: RequestInit = {
     method,
     headers: forwardRequestHeaders(request),
     cache: "no-store",
+    redirect: "manual",
   };
 
-  if (hasBody) {
-    init.body = request.body;
-    init.duplex = "half";
+  // 无 body 的 POST（如 createSession）不能把 request.body=null 交给 fetch，否则会触发
+  // undici「expected non-null body source」；有 body 时缓冲为 ArrayBuffer 再转发。
+  if (mayHaveBody) {
+    const buf = await request.arrayBuffer();
+    if (buf.byteLength > 0) {
+      init.body = buf;
+    }
   }
 
-  const upstream = await fetch(url, init);
+  let upstream: Response;
+  try {
+    upstream = await fetch(url, init);
+  } catch (err) {
+    console.error("[agent-platform proxy] upstream fetch failed:", method, url, err);
+    return Response.json(
+      { detail: `无法连接后端 ${BACKEND_BASE}，请确认服务已启动或配置 AGENT_WEB_PLATFORM_INTERNAL_URL` },
+      { status: 502 },
+    );
+  }
+
   return new Response(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,

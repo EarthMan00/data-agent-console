@@ -32,7 +32,7 @@ import { RequiredAsterisk } from "@/components/required-mark";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -78,7 +78,13 @@ import {
   defaultNearestHalfHourHhmm,
   runOnceDateYmdImpliedToday,
 } from "@/lib/schedule-next-run";
-import { buildCreatePayloads, toHhmm, SCHEDULE_KINDS, type ScheduleKind } from "@/lib/schedule-payloads";
+import {
+  buildCreatePayloads,
+  normalizeScheduleKind,
+  toHhmm,
+  SCHEDULE_KINDS,
+  type ScheduleKind,
+} from "@/lib/schedule-payloads";
 import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
 import { parseComposerPrefillStorageValue } from "@/lib/composer-prefill";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
@@ -261,7 +267,7 @@ export function SchedulesWorkspace() {
   const [scheduleComposerMode, setScheduleComposerMode] = useState<"普通模式" | "深度模式">("深度模式");
   /** 定时任务所在分组，null 为「默认」；与 `UserScheduledTaskItemApi.group_id` 一致 */
   const [formGroupId, setFormGroupId] = useState<string | null>(null);
-  const [scheduleKind, setScheduleKind] = useState<ScheduleKind>("非定时");
+  const [scheduleKind, setScheduleKind] = useState<ScheduleKind>("每天");
   const [timeHhmm, setTimeHhmm] = useState(() => defaultNearestHalfHourHhmm(HALF_HOUR_TIME_OPTIONS));
   const [selectedWeekdays, setSelectedWeekdays] = useState<Set<number>>(() => new Set());
   const [selectedMonthDays, setSelectedMonthDays] = useState<Set<number>>(() => new Set());
@@ -315,7 +321,7 @@ export function SchedulesWorkspace() {
         setPrompt(restoredPrompt.text);
         setScheduleSourceIds(restoredPrompt.selectedSourceIds);
         setTaskEnabled(d.taskEnabled);
-        setScheduleKind(String(d.scheduleKind) === "不重复" ? "单次" : d.scheduleKind);
+        setScheduleKind(normalizeScheduleKind(String(d.scheduleKind)));
         setTimeHhmm(d.timeHhmm);
         setSelectedWeekdays(new Set(d.selectedWeekdayValues));
         setSelectedMonthDays(new Set(d.selectedMonthDayValues));
@@ -355,7 +361,7 @@ export function SchedulesWorkspace() {
     setScheduleComposerMode("深度模式");
     setFormGroupId(null);
     setTaskEnabled(true);
-    setScheduleKind("非定时");
+    setScheduleKind("每天");
     setTimeHhmm(defaultNearestHalfHourHhmm(HALF_HOUR_TIME_OPTIONS));
     setSelectedWeekdays(new Set());
     setSelectedMonthDays(new Set());
@@ -415,13 +421,15 @@ export function SchedulesWorkspace() {
       setSelectedMonthDays(t.day_of_month != null ? new Set([t.day_of_month]) : new Set());
       setRunOnceDate("");
     } else if (r === "once") {
-      setScheduleKind(!t.enabled && !String(t.run_once_date ?? "").trim() ? "非定时" : "单次");
+      setScheduleKind("单次");
       setSelectedWeekdays(new Set());
       setSelectedMonthDays(new Set());
       const ro = t.run_once_date;
-      setRunOnceDate(typeof ro === "string" && ro.trim() ? ro.trim().slice(0, 10) : "");
+      setRunOnceDate(
+        typeof ro === "string" && ro.trim() ? ro.trim().slice(0, 10) : runOnceDateYmdImpliedToday(),
+      );
     } else {
-      setScheduleKind("非定时");
+      setScheduleKind("每天");
       setSelectedWeekdays(new Set());
       setSelectedMonthDays(new Set());
       setRunOnceDate("");
@@ -484,11 +492,11 @@ export function SchedulesWorkspace() {
   );
   const hasValidNextExecution = useMemo(
     () =>
-      scheduleKind === "非定时" ||
-      (scheduleBodiesForNext.length > 0 && scheduleBodiesForNext.every((b) => computeNextRunForCreateBody(b) != null)),
-    [scheduleBodiesForNext, scheduleKind],
+      scheduleBodiesForNext.length > 0 &&
+      scheduleBodiesForNext.every((b) => computeNextRunForCreateBody(b) != null),
+    [scheduleBodiesForNext],
   );
-  const tryRunSubmitBlocked = scheduleKind !== "非定时" && taskEnabled && !hasValidNextExecution;
+  const tryRunSubmitBlocked = taskEnabled && !hasValidNextExecution;
   const serializedPrompt = useMemo(
     () => serializeScheduleComposerPrompt(prompt, scheduleSourceIds),
     [prompt, scheduleSourceIds],
@@ -659,7 +667,7 @@ export function SchedulesWorkspace() {
       setNotice("请选择执行日期。");
       return;
     }
-    const enabledForSubmit = scheduleKind === "非定时" ? false : editId ? taskEnabled : true;
+    const enabledForSubmit = editId ? taskEnabled : true;
     if (enabledForSubmit && !hasValidNextExecution) {
       setNotice("无法排程，请检查周期、星期/日期或时间。");
       return;
@@ -741,7 +749,7 @@ export function SchedulesWorkspace() {
       setNotice("请选择执行日期。");
       return;
     }
-    if (scheduleKind !== "非定时" && taskEnabled && !hasValidNextExecution) {
+    if (taskEnabled && !hasValidNextExecution) {
       setNotice("无法排程，请检查周期、星期/日期或时间。");
       return;
     }
@@ -760,7 +768,7 @@ export function SchedulesWorkspace() {
       saveScheduleCreateDraft({
         title: title.trim(),
         prompt: serializedPrompt,
-        taskEnabled: scheduleKind === "非定时" ? false : taskEnabled,
+        taskEnabled,
         scheduleKind,
         timeHhmm,
         selectedWeekdayValues: Array.from(selectedWeekdays).sort((a, b) => a - b),
@@ -878,6 +886,9 @@ export function SchedulesWorkspace() {
           <DialogTitle className="text-lg font-medium leading-7 text-[#18181b]">
             {editId ? "编辑定时任务" : "创建定时任务"}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            {editId ? "编辑定时任务配置" : "创建新的定时任务"}
+          </DialogDescription>
         </div>
         <div className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto px-6 pb-3">
             {notice ? <p className="mt-3 text-sm text-[#52525b]">{notice}</p> : null}
@@ -1041,25 +1052,20 @@ export function SchedulesWorkspace() {
                       </Select>
                     ) : null}
 
-                    {scheduleKind === "非定时" ? null : (
-                      <Select
-                        value={timeHhmm}
-                        onValueChange={setTimeHhmm}
-                      >
-                        <SelectTrigger className="h-10 w-full rounded-[10px] border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] focus-visible:ring-0">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            {HALF_HOUR_TIME_OPTIONS.map((t) => (
-                              <SelectItem key={t} value={t}>
-                                {t}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    )}
+                    <Select value={timeHhmm} onValueChange={setTimeHhmm}>
+                      <SelectTrigger className="h-10 w-full rounded-[10px] border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] focus-visible:ring-0">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {HALF_HOUR_TIME_OPTIONS.map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {t}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   {scheduleKind === "单次" && runOnceDate.trim() ? (
@@ -1202,7 +1208,7 @@ export function SchedulesWorkspace() {
                   }}
                   disabled={formSubmitDisabled}
                 >
-                  确认
+                  试运行
                 </Button>
               )}
             </div>
@@ -1823,7 +1829,7 @@ function ApiScheduledTaskCard({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
+                className="h-9 rounded-[10px]"
                 disabled={deleteBusy}
                 onClick={() => setDeleteOpen(false)}
               >
@@ -1833,7 +1839,7 @@ function ApiScheduledTaskCard({
                 type="button"
                 variant="destructive"
                 size="sm"
-                className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
+                className="h-9 rounded-[10px] bg-red-600 px-4 text-white hover:bg-red-700"
                 disabled={deleteBusy}
                 onClick={async () => {
                   setDeleteBusy(true);
@@ -2030,7 +2036,7 @@ function ApiRunRecordRow({
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
+                    className="h-9 rounded-[10px]"
                     disabled={deleteBusy}
                     onClick={() => setDeleteOpen(false)}
                   >
@@ -2040,7 +2046,7 @@ function ApiRunRecordRow({
                     type="button"
                     variant="destructive"
                     size="sm"
-                    className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
+                    className="h-9 rounded-[10px] bg-red-600 px-4 text-white hover:bg-red-700"
                     disabled={deleteBusy}
                     onClick={() => void onDeleteRun()}
                   >
