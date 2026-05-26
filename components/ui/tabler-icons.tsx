@@ -1,6 +1,7 @@
 import type { SVGProps } from "react";
 
 export {
+  IconAlarmFilled as AlarmFilled,
   IconAlertCircle as AlertCircle,
   IconArrowDown as ArrowDown,
   IconArrowLeft as ArrowLeft,

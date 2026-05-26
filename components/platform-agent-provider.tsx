@@ -16,11 +16,15 @@ import { useRouter } from "next/navigation";
 
 import {
   AgentApiError,
+  checkUsernameAvailable,
   checkAccessToken,
   createSession,
+  formatAgentApiErrorForUser,
   login,
+  registerByEmail,
   refreshAccessToken,
   releaseSession,
+  sendRegisterEmailOtp,
 } from "@/lib/agent-api/client";
 import { isAgentRealApiEnabled } from "@/lib/agent-api/config";
 import {
@@ -39,11 +43,44 @@ import { ArrowLeft, ArrowRight, Power } from "@/components/ui/tabler-icons";
 
 const LOGIN_INTRO_TEXT =
   "我是 Alice，跨境电商运营助手，掌握数据，洞察数据的神。请先登录";
-const LOGIN_RETURNING_TEXT = "我是 Alice，欢迎回来";
+const LOGIN_RETURNING_TEXT = "我是 Alice，欢迎回来！";
 const LOGIN_INTRO_CHAR_INTERVAL_MS = 34;
 const LOGIN_RETURNING_STORAGE_KEY = "mdata:alice-has-logged-in";
 const PENDING_HOME_TASK_STORAGE_KEY = "mdata:pending-home-task-after-login";
+type AuthMode = "login" | "register";
+type RegisterStep = "email" | "code" | "password";
 type LoginContinuation = () => void | Promise<void>;
+
+const REGISTER_STEP_META: Record<
+  RegisterStep,
+  {
+    label: string;
+    placeholder: string;
+    autoComplete: string;
+    inputMode?: "email" | "text" | "numeric";
+    type?: string;
+  }
+> = {
+  email: {
+    label: "邮箱",
+    placeholder: "请在此处输入邮箱",
+    autoComplete: "email",
+    inputMode: "email",
+    type: "email",
+  },
+  code: {
+    label: "验证码",
+    placeholder: "请输入 6 位验证码",
+    autoComplete: "one-time-code",
+    inputMode: "numeric",
+  },
+  password: {
+    label: "密码",
+    placeholder: "请在此处设置密码",
+    autoComplete: "new-password",
+    type: "password",
+  },
+};
 
 export type PlatformAgentContextValue = {
   auth: AgentSessionSnapshot | null;
@@ -96,6 +133,55 @@ function formatLoginError(e: unknown): string {
   return "登录失败，请稍后重试。";
 }
 
+function formatRegisterError(e: unknown): string {
+  const msg = formatAgentApiErrorForUser(e)
+    .replace(/\s*\(HTTP\s+\d+[^)]*\)\s*$/i, "")
+    .trim();
+  if (/failed to fetch|load failed|networkerror/i.test(msg)) {
+    return "当前无法连接注册服务，请检查网络后重试。";
+  }
+  if (
+    e instanceof AgentApiError &&
+    e.status === 403 &&
+    /public register disabled/i.test(msg)
+  ) {
+    return "注册暂未开放，请联系管理员。";
+  }
+  if (
+    e instanceof AgentApiError &&
+    e.status >= 500 &&
+    /email register not available|identity not available/i.test(msg)
+  ) {
+    return "邮箱注册暂时不可用，请稍后重试。";
+  }
+  if (/[\u4e00-\u9fa5]/.test(msg)) {
+    return msg;
+  }
+  return "注册失败，请稍后重试。";
+}
+
+function isLikelyEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function defaultUsernameFromEmail(email: string): string {
+  const localPart = email.trim().split("@")[0]?.trim() ?? "";
+  return localPart.slice(0, 64);
+}
+
+function registerUsernameCandidates(email: string): string[] {
+  const base = defaultUsernameFromEmail(email);
+  let hash = 0;
+  for (const ch of email.trim().toLowerCase()) {
+    hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  }
+  const suffix = hash.toString(36).slice(0, 6).padStart(4, "0");
+  const primary = base.length >= 2 ? base : `user-${suffix}`;
+  const prefix = primary.slice(0, Math.max(2, 63 - suffix.length));
+  const fallback = `${prefix}-${suffix}`;
+  return Array.from(new Set([primary.slice(0, 64), fallback.slice(0, 64)]));
+}
+
 function hasLoggedInOnThisDevice(): boolean {
   try {
     return window.localStorage.getItem(LOGIN_RETURNING_STORAGE_KEY) === "1";
@@ -127,16 +213,33 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
 
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [loginStep, setLoginStep] = useState<"account" | "password">("account");
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [loginIntroFullText, setLoginIntroFullText] = useState(LOGIN_INTRO_TEXT);
   const [loginIntroText, setLoginIntroText] = useState("");
   const [loginIntroDone, setLoginIntroDone] = useState(false);
+  const [registerStep, setRegisterStep] = useState<RegisterStep>("email");
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [registerUsername, setRegisterUsername] = useState("");
+  const [registerCode, setRegisterCode] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
+  const [registerRetrySeconds, setRegisterRetrySeconds] = useState(0);
   const accountInputRef = useRef<HTMLInputElement | null>(null);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
+  const registerInputRef = useRef<HTMLInputElement | null>(null);
   const suppressLoginOpenUntilRef = useRef(0);
   const loginContinuationRef = useRef<LoginContinuation | null>(null);
+
+  const resetRegisterForm = useCallback(() => {
+    setRegisterStep("email");
+    setRegisterEmail("");
+    setRegisterUsername("");
+    setRegisterCode("");
+    setRegisterPassword("");
+    setRegisterRetrySeconds(0);
+  }, []);
 
   useEffect(() => {
     const snap = loadAgentSession();
@@ -175,6 +278,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     loginContinuationRef.current = afterLogin ?? null;
     setAccount("");
     setPassword("");
+    setAuthMode("login");
+    resetRegisterForm();
     setLoginError("");
     setLoginStep("account");
     setLoginIntroFullText(
@@ -183,7 +288,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setLoginIntroText("");
     setLoginIntroDone(false);
     setLoginOpen(true);
-  }, []);
+  }, [resetRegisterForm]);
 
   const closeLogin = useCallback(() => {
     suppressLoginOpenUntilRef.current = Date.now() + 650;
@@ -194,13 +299,15 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     }
     setAccount("");
     setPassword("");
+    setAuthMode("login");
+    resetRegisterForm();
     setLoginError("");
     loginContinuationRef.current = null;
     setLoginStep("account");
     setLoginIntroText("");
     setLoginIntroDone(false);
     setLoginOpen(false);
-  }, []);
+  }, [resetRegisterForm]);
 
   useEffect(() => {
     if (!loginOpen) return;
@@ -222,14 +329,24 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!loginOpen || !loginIntroDone) return;
     const t = window.setTimeout(() => {
-      if (loginStep === "account") {
+      if (authMode === "register") {
+        registerInputRef.current?.focus();
+      } else if (loginStep === "account") {
         accountInputRef.current?.focus();
       } else {
         passwordInputRef.current?.focus();
       }
     }, 120);
     return () => window.clearTimeout(t);
-  }, [loginIntroDone, loginOpen, loginStep]);
+  }, [authMode, loginIntroDone, loginOpen, loginStep, registerStep]);
+
+  useEffect(() => {
+    if (!loginOpen || registerRetrySeconds <= 0) return;
+    const t = window.setTimeout(() => {
+      setRegisterRetrySeconds((next) => Math.max(0, next - 1));
+    }, 1000);
+    return () => window.clearTimeout(t);
+  }, [loginOpen, registerRetrySeconds]);
 
   useEffect(() => {
     if (!loginOpen) return;
@@ -353,6 +470,103 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     [applyLoginResponse],
   );
 
+  const sendRegisterCode = useCallback(
+    async (emailValue = registerEmail.trim()) => {
+      const email = emailValue.trim();
+      if (!isLikelyEmail(email)) {
+        setLoginError("请输入有效邮箱");
+        setRegisterStep("email");
+        return false;
+      }
+      setLoginBusy(true);
+      setLoginError("");
+      try {
+        let username = "";
+        for (const candidate of registerUsernameCandidates(email)) {
+          if (await checkUsernameAvailable(candidate)) {
+            username = candidate;
+            break;
+          }
+        }
+        if (!username) {
+          setLoginError("该邮箱暂时无法注册，请换一个邮箱或去登录");
+          return false;
+        }
+        setRegisterUsername(username);
+        const res = await sendRegisterEmailOtp(username, email);
+        if (res.retryAfterSeconds) {
+          setRegisterRetrySeconds(res.retryAfterSeconds);
+          setLoginError(`${res.retryAfterSeconds} 秒后可重新获取验证码`);
+        } else {
+          setRegisterRetrySeconds(60);
+        }
+        setRegisterStep("code");
+        return true;
+      } catch (e) {
+        setLoginError(formatRegisterError(e));
+        return false;
+      } finally {
+        setLoginBusy(false);
+      }
+    },
+    [registerEmail],
+  );
+
+  const advanceRegister = useCallback(async () => {
+    if (registerStep === "email") {
+      const email = registerEmail.trim();
+      if (!isLikelyEmail(email)) {
+        setLoginError("请输入有效邮箱");
+        registerInputRef.current?.focus();
+        return;
+      }
+      await sendRegisterCode(email);
+      return;
+    }
+
+    if (registerStep === "code") {
+      if (registerCode.trim().length < 4) {
+        setLoginError("请输入验证码");
+        registerInputRef.current?.focus();
+        return;
+      }
+      setLoginError("");
+      setRegisterStep("password");
+      return;
+    }
+
+    const passwordValue = registerPassword;
+    if (passwordValue.length < 4) {
+      setLoginError("密码至少 4 位");
+      registerInputRef.current?.focus();
+      return;
+    }
+
+    setLoginBusy(true);
+    setLoginError("");
+    try {
+      const res = await registerByEmail({
+        email: registerEmail.trim(),
+        username: registerUsername.trim(),
+        code: registerCode.trim(),
+        password: passwordValue,
+      });
+      await applyLoginResponse(res, registerUsername.trim());
+    } catch (e) {
+      setLoginError(formatRegisterError(e));
+    } finally {
+      setLoginBusy(false);
+    }
+  }, [
+    applyLoginResponse,
+    registerCode,
+    registerEmail,
+    registerPassword,
+    registerStep,
+    registerUsername,
+    sendRegisterCode,
+  ]);
+
   const advanceLogin = useCallback(() => {
     if (loginStep === "account") {
       if (!account.trim()) {
@@ -373,6 +587,41 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setLoginStep("account");
   }, []);
 
+  const returnRegisterStep = useCallback(() => {
+    setLoginError("");
+    if (registerStep === "password") {
+      setRegisterPassword("");
+      setRegisterStep("code");
+      return;
+    }
+    if (registerStep === "code") {
+      setRegisterCode("");
+      setRegisterStep("email");
+      return;
+    }
+    setRegisterStep("email");
+  }, [registerStep]);
+
+  const switchToRegister = useCallback(() => {
+    if (loginBusy) return;
+    setAuthMode("register");
+    setLoginStep("account");
+    setAccount("");
+    setPassword("");
+    resetRegisterForm();
+    setLoginError("");
+  }, [loginBusy, resetRegisterForm]);
+
+  const switchToLogin = useCallback(() => {
+    if (loginBusy) return;
+    setAuthMode("login");
+    setLoginStep("account");
+    setAccount("");
+    setPassword("");
+    resetRegisterForm();
+    setLoginError("");
+  }, [loginBusy, resetRegisterForm]);
+
   const handleLoginInputKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
       if (e.key !== "Enter") return;
@@ -380,6 +629,15 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       advanceLogin();
     },
     [advanceLogin],
+  );
+
+  const handleRegisterInputKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      void advanceRegister();
+    },
+    [advanceRegister],
   );
 
   const logout = useCallback(async () => {
@@ -476,6 +734,16 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setPlatformSessionId(null);
   }, []);
 
+  const registerStepMeta = REGISTER_STEP_META[registerStep];
+  const registerInputValue =
+    registerStep === "email"
+      ? registerEmail
+      : registerStep === "code"
+        ? registerCode
+        : registerPassword;
+  const canGoBack =
+    authMode === "register" ? registerStep !== "email" : loginStep === "password";
+
   const value = useMemo<PlatformAgentContextValue>(
     () => ({
       auth,
@@ -557,7 +825,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                   <h2
                     id="mdata-login-title"
                     aria-label={loginIntroFullText}
-                    className={`mdata-auth-title h-[90px] max-w-[730px] text-left text-[30px] font-medium leading-[45px] tracking-normal transition-colors duration-300 ${
+                    className={`mdata-auth-title h-[46px] max-w-[730px] text-left text-[30px] font-medium leading-[45px] tracking-normal transition-colors duration-300 ${
                       loginIntroDone ? "mdata-auth-title-muted" : "text-white"
                     }`}
                   >
@@ -579,7 +847,11 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     onSubmit={(e) => {
                       e.preventDefault();
                       if (!loginIntroDone) return;
-                      advanceLogin();
+                      if (authMode === "register") {
+                        void advanceRegister();
+                      } else {
+                        advanceLogin();
+                      }
                     }}
                   >
                     <label className="sr-only" htmlFor="mdata-login-account">
@@ -588,10 +860,10 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     <label className="sr-only" htmlFor="mdata-login-password">
                       密码
                     </label>
+                    <label className="sr-only" htmlFor="mdata-register-input">
+                      注册信息
+                    </label>
                     <div className="flex h-[45px] items-center">
-                      <span className="mdata-auth-label inline-flex h-[45px] w-[103px] shrink-0 items-center text-[30px] font-medium leading-[45px] text-white">
-                        {loginStep === "account" ? "账号" : "密码"}
-                      </span>
                       <input
                         id="mdata-login-account"
                         ref={accountInputRef}
@@ -615,8 +887,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                         onKeyDown={handleLoginInputKeyDown}
                         disabled={!loginIntroDone}
                         className={
-                          loginStep === "account"
-                            ? "mdata-auth-input h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-medium leading-none text-white caret-white outline-none placeholder:font-normal placeholder:text-[#4d4d4d]"
+                          authMode === "login" && loginStep === "account"
+                            ? "mdata-auth-input h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
                             : "hidden"
                         }
                         autoComplete="username"
@@ -646,13 +918,76 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                         onKeyDown={handleLoginInputKeyDown}
                         disabled={!loginIntroDone}
                         className={
-                          loginStep === "password"
-                            ? "mdata-auth-input h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-medium leading-none text-white caret-white outline-none placeholder:font-normal placeholder:text-[#4d4d4d]"
+                          authMode === "login" && loginStep === "password"
+                            ? "mdata-auth-input h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
                             : "hidden"
                         }
                         autoComplete="current-password"
                         placeholder="请在此处输入密码"
                       />
+                      <input
+                        id="mdata-register-input"
+                        ref={registerInputRef}
+                        name={registerStep}
+                        aria-label={registerStepMeta.label}
+                        aria-invalid={
+                          authMode === "register" && loginError
+                            ? true
+                            : undefined
+                        }
+                        aria-describedby={
+                          authMode === "register" && loginError
+                            ? "mdata-login-error"
+                            : undefined
+                        }
+                        type={registerStepMeta.type ?? "text"}
+                        inputMode={registerStepMeta.inputMode}
+                        value={registerInputValue}
+                        onChange={(e) => {
+                          const nextValue = e.target.value;
+                          if (registerStep === "email") {
+                            setRegisterEmail(nextValue);
+                          } else if (registerStep === "code") {
+                            setRegisterCode(nextValue);
+                          } else {
+                            setRegisterPassword(nextValue);
+                          }
+                          if (loginError) setLoginError("");
+                        }}
+                        onKeyDown={handleRegisterInputKeyDown}
+                        disabled={!loginIntroDone || loginBusy}
+                        maxLength={registerStep === "code" ? 6 : undefined}
+                        className={
+                          authMode === "register"
+                            ? registerStep === "code"
+                              ? "mdata-auth-input h-[42px] w-[260px] min-w-0 shrink-0 bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                              : "mdata-auth-input h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                            : "hidden"
+                        }
+                        autoComplete={registerStepMeta.autoComplete}
+                        placeholder={registerStepMeta.placeholder}
+                      />
+                      {authMode === "register" && registerStep === "code" ? (
+                        <>
+                          <span aria-hidden="true" className="ml-5 h-3 w-px shrink-0 bg-white/14" />
+                          <button
+                            type="button"
+                            disabled={
+                              loginBusy ||
+                              !loginIntroDone ||
+                              registerRetrySeconds > 0
+                            }
+                            className="ml-5 inline-flex h-[42px] shrink-0 items-center text-[30px] font-extrabold leading-none text-white/42 transition-colors duration-300 hover:text-white/70 disabled:cursor-not-allowed disabled:text-white/24"
+                            onClick={() => {
+                              void sendRegisterCode();
+                            }}
+                          >
+                            {registerRetrySeconds > 0
+                              ? `${registerRetrySeconds}s`
+                              : "重新发送"}
+                          </button>
+                        </>
+                      ) : null}
                     </div>
 
                     {loginError ? (
@@ -665,29 +1000,71 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                       </p>
                     ) : null}
 
-                    <div className="-ml-3 mt-7 flex h-12 items-center gap-3">
-                      {loginStep === "password" ? (
-                        <button
-                          type="button"
-                          aria-label="返回账号"
-                          disabled={loginBusy || !loginIntroDone}
-                          className="inline-flex h-12 w-12 items-center justify-center rounded-full text-white transition-colors duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
-                          onClick={returnToAccountStep}
-                        >
-                          <ArrowLeft className="h-7 w-7" strokeWidth={1.85} />
-                        </button>
-                      ) : null}
-                      <button
-                        type="submit"
-                        aria-label={loginStep === "account" ? "继续" : "登录"}
-                        disabled={loginBusy || !loginIntroDone}
-                        className="inline-flex h-12 w-12 items-center justify-center rounded-full text-white transition-colors duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        <ArrowRight className="h-7 w-7" strokeWidth={1.85} />
-                      </button>
-                    </div>
                   </form>
                 </div>
+              </div>
+              <div
+                className={`absolute bottom-3.5 left-9 z-20 flex h-16 items-center transition-opacity duration-300 ${
+                  loginIntroDone ? "opacity-100" : "pointer-events-none opacity-0"
+                }`}
+              >
+                <button
+                  type="button"
+                  disabled={loginBusy || !loginIntroDone}
+                  className="inline-flex h-16 items-center justify-start rounded-full px-0 text-[14px] font-medium leading-5 text-white/42 transition-[color,opacity] duration-300 hover:text-white/70 disabled:cursor-not-allowed disabled:text-white/24"
+                  onClick={
+                    authMode === "register" ? switchToLogin : switchToRegister
+                  }
+                >
+                  {authMode === "register" ? "前往登录" : "注册账号"}
+                </button>
+              </div>
+              <div
+                className={`absolute bottom-3.5 right-[18px] z-20 flex items-center gap-2 transition-opacity duration-300 ${
+                  loginIntroDone ? "opacity-100" : "pointer-events-none opacity-0"
+                }`}
+              >
+                {canGoBack ? (
+                  <button
+                    type="button"
+                    aria-label={
+                      authMode === "register" ? "返回上一步" : "返回账号"
+                    }
+                    disabled={loginBusy || !loginIntroDone}
+                    className="inline-flex h-16 w-16 items-center justify-center rounded-full text-white transition-[color,background-color,opacity] duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
+                    onClick={
+                      authMode === "register"
+                        ? returnRegisterStep
+                        : returnToAccountStep
+                    }
+                  >
+                    <ArrowLeft className="h-9 w-9" strokeWidth={1.85} />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  aria-label={
+                    authMode === "register"
+                      ? registerStep === "password"
+                        ? "注册"
+                        : "继续"
+                      : loginStep === "account"
+                        ? "继续"
+                        : "登录"
+                  }
+                  disabled={loginBusy || !loginIntroDone}
+                  className="inline-flex h-16 w-16 items-center justify-center rounded-full text-white transition-[color,background-color,opacity] duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
+                  onClick={() => {
+                    if (!loginIntroDone) return;
+                    if (authMode === "register") {
+                      void advanceRegister();
+                    } else {
+                      advanceLogin();
+                    }
+                  }}
+                >
+                  <ArrowRight className="h-9 w-9" strokeWidth={1.85} />
+                </button>
               </div>
             </div>
           </div>

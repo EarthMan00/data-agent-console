@@ -4,18 +4,18 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  AlarmFilled,
   ArrowRightLeft,
   ChevronDown,
-  Clock,
   Download,
   Eye,
   InfoCircle,
   Loader2,
   MoreVertical,
   Pencil,
-  Play,
   Plus,
   PlusThin,
+  Power,
   Search,
   Trash2,
   X,
@@ -44,7 +44,6 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
 import { downloadAuthorizedFile, formatAgentApiErrorForUser, parseFastApiDetail } from "@/lib/agent-api/client";
 import {
   createUserScheduledTaskGroup,
@@ -1484,10 +1483,6 @@ export function SchedulesWorkspace() {
                     setMoveGroupId(t.group_id ?? "");
                   }}
                   onDelete={() => onDeleteTask(t)}
-                  onOpenRuns={() => {
-                    setPrimaryTab("运行记录");
-                    setSearch(t.title.slice(0, 16));
-                  }}
                 />
               ))}
             </div>
@@ -1711,7 +1706,6 @@ function ApiScheduledTaskCard({
   onEdit,
   onMove,
   onDelete,
-  onOpenRuns,
 }: {
   item: UserScheduledTaskItemApi;
   onToggleEnabled: (enabled: boolean) => void;
@@ -1719,112 +1713,108 @@ function ApiScheduledTaskCard({
   onEdit: () => void;
   onMove: () => void;
   onDelete: () => Promise<void>;
-  onOpenRuns: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const ui = deriveTaskUiStatus(t);
   const ended = ui === "已完结";
   const canToggle = !ended;
-  const statusHeader =
-    ui === "已完结"
-      ? { bar: "bg-[#f7f7f7]", text: "text-[#747571]", dot: "bg-[#b1b2ae]" }
-      : ui === "已暂停"
-        ? { bar: "bg-[#f7f7f7]", text: "text-[#747571]", dot: "bg-[#d68a29]" }
-        : { bar: "bg-[#f7f7f7]", text: "text-[#34322d]", dot: "bg-[#111111]" };
+  const promptSummary = t.prompt_text.trim() || "暂无任务指引";
 
   return (
     <Card
       className={cn(
-        "box-border flex h-[200px] w-full max-w-[304px] shrink-0 flex-col overflow-hidden rounded-[18px] border border-white/70 bg-white/72 p-0",
-        "min-[300px]:w-[304px] shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition duration-200 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)]",
+        "box-border flex h-[184px] w-full max-w-[304px] shrink-0 flex-col overflow-hidden rounded-[18px] border border-white/80 bg-white/90 p-0",
+        "min-[300px]:w-[304px] shadow-none transition-colors duration-200 hover:bg-white",
       )}
     >
-      <div
-        className={cn(
-          "flex shrink-0 items-center justify-between gap-2 border-b border-transparent px-3 py-1.5",
-          statusHeader.bar,
-        )}
-      >
-        <div className={cn("min-w-0 flex items-center gap-1.5 text-[12px] font-medium", statusHeader.text)}>
-          <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", statusHeader.dot)} />
-          {ui}
+      <div className="min-h-0 flex-1 overflow-hidden px-4 pb-3 pt-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#0a8fff] text-white">
+              <AlarmFilled className="h-[18px] w-[18px]" />
+            </div>
+            <div className="min-w-0 flex-1 line-clamp-1 break-words text-[16px] font-semibold leading-6 text-[#111111]">
+              {t.title}
+            </div>
+          </div>
+          <span className="shrink-0 rounded-full bg-[#f4f4f3] px-2 py-0.5 text-[12px] font-medium leading-5 text-[#8b8c87]">
+            {ui}
+          </span>
         </div>
-        <Switch
-          checked={t.enabled}
-          disabled={!canToggle}
-          onCheckedChange={(checked) => onToggleEnabled(checked)}
-          aria-label="切换任务启用状态"
-          className="h-5 w-9 [&>span]:h-3.5 [&>span]:w-3.5 [&>span[data-state=checked]]:translate-x-4"
-        />
-      </div>
-      <div className="min-h-0 flex-1 overflow-hidden px-4 pt-3">
-        <div className="line-clamp-2 break-words text-[16px] font-semibold leading-6 text-[#111111]">
-          {t.title}
-        </div>
-        <p className="mt-2 line-clamp-2 break-all text-[14px] leading-5 text-[#8b8c87]">
-          执行时间：{nextRunLabel(t)}
+        <p className="mt-3 line-clamp-2 break-words text-[14px] leading-5 text-[#6f7378]">
+          {promptSummary}
         </p>
       </div>
-      <div className="mt-auto flex shrink-0 items-center justify-end gap-1.5 border-t border-[#e2e2df] px-3 py-2">
+      <div className="mx-4 h-px bg-[#ececea]" />
+      <div className="mt-auto flex shrink-0 items-center gap-2 px-4 py-3">
+        <div className="min-w-0 flex-1 truncate text-[14px] leading-5 text-[#8b8c87]">
+          {nextRunLabel(t)}
+        </div>
         <Button
           type="button"
-          variant="outline"
+          variant="subtle"
           size="sm"
-          className="h-8 max-w-full shrink rounded-[8px] border-[#e2e2df] px-2 text-[12px]"
-          onClick={onOpenRuns}
+          className="h-8 shrink-0 rounded-full bg-[#f2f2f2] px-4 text-[14px] font-semibold text-[#111111] hover:bg-[#e9e9e9]"
+          onClick={onRun}
         >
-          <Clock className="mr-0.5 h-3 w-3 shrink-0" />
-          <span className="truncate">运行记录</span>
+          运行
         </Button>
-        <Popover open={deleteOpen} onOpenChange={setDeleteOpen}>
-          <DropdownMenu>
-            <PopoverAnchor asChild>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8 shrink-0 rounded-[8px] border-[#e2e2df] text-[#747571]"
-                >
-                  <MoreVertical className="h-3.5 w-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-            </PopoverAnchor>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuGroup>
-                <DropdownMenuItem onSelect={onRun}>
-                  <Play className="h-4 w-4" />
-                  运行
+        <DropdownMenu
+          open={menuOpen}
+          onOpenChange={(open) => {
+            setMenuOpen(open);
+          }}
+        >
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 rounded-full text-[#a8a8a8] hover:bg-[#f2f2f2] hover:text-[#111111]"
+              aria-label="更多任务操作"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuGroup>
+              <DropdownMenuItem onSelect={onEdit}>
+                <Pencil className="h-4 w-4" />
+                编辑
+              </DropdownMenuItem>
+              {canToggle ? (
+                <DropdownMenuItem onSelect={() => onToggleEnabled(!t.enabled)}>
+                  <Power className="h-4 w-4" />
+                  {t.enabled ? "暂停" : "启用"}
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={onEdit}>
-                  <Pencil className="h-4 w-4" />
-                  编辑
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={onMove}>
-                  <ArrowRightLeft className="h-4 w-4" />
-                  移动到
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-red-600 focus:bg-red-50 focus:text-red-600"
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    setDeleteOpen(true);
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  删除
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <PopoverContent
-            side="bottom"
-            align="end"
-            sideOffset={8}
-            className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
-            onCloseAutoFocus={(e) => e.preventDefault()}
+              ) : null}
+              <DropdownMenuItem onSelect={onMove}>
+                <ArrowRightLeft className="h-4 w-4" />
+                移动到
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-red-600 focus:bg-red-50 focus:text-red-600"
+                onSelect={(event) => {
+                  event.preventDefault();
+                  setMenuOpen(false);
+                  window.setTimeout(() => setDeleteOpen(true), 0);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                删除
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <DialogContent
+            hideClose
+            className="max-w-[360px] rounded-[16px] p-5"
+            aria-describedby={undefined}
           >
+            <DialogTitle className="sr-only">删除定时任务</DialogTitle>
             <p className="text-[14px] leading-6 text-[#34322d]">
               确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
             </p>
@@ -1858,8 +1848,8 @@ function ApiScheduledTaskCard({
                 {deleteBusy ? "删除中…" : "确定删除"}
               </Button>
             </div>
-          </PopoverContent>
-        </Popover>
+          </DialogContent>
+        </Dialog>
       </div>
     </Card>
   );
@@ -1879,6 +1869,7 @@ function ApiRunRecordRow({
   const router = useRouter();
   const platformAgent = useOptionalPlatformAgent();
   const [downloading, setDownloading] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const st = runStatusDisplay(r.status);
@@ -1987,47 +1978,50 @@ function ApiRunRecordRow({
                 {downloading ? "准备中…" : "下载所有报告"}
               </Button>
             ) : null}
-            <Popover open={deleteOpen} onOpenChange={setDeleteOpen}>
-              <DropdownMenu>
-                <PopoverAnchor asChild>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 rounded-[10px] text-[#747571]"
-                      aria-label="更多操作"
-                    >
-                      <MoreVertical className="h-5 w-5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                </PopoverAnchor>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem onSelect={onViewProcess}>
-                      <Eye className="h-4 w-4 shrink-0" />
-                      查看执行过程
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-red-600 focus:bg-red-50 focus:text-red-600"
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        setDeleteOpen(true);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4 shrink-0" />
-                      删除
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <PopoverContent
-                side="bottom"
-                align="end"
-                sideOffset={8}
-                className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
-                onCloseAutoFocus={(e) => e.preventDefault()}
+            <DropdownMenu
+              open={menuOpen}
+              onOpenChange={(open) => {
+                setMenuOpen(open);
+              }}
+            >
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 rounded-[10px] text-[#747571]"
+                  aria-label="更多操作"
+                >
+                  <MoreVertical className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onSelect={onViewProcess}>
+                    <Eye className="h-4 w-4 shrink-0" />
+                    查看执行过程
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-red-600 focus:bg-red-50 focus:text-red-600"
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      setMenuOpen(false);
+                      window.setTimeout(() => setDeleteOpen(true), 0);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4 shrink-0" />
+                    删除
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+              <DialogContent
+                hideClose
+                className="max-w-[360px] rounded-[16px] p-5"
+                aria-describedby={undefined}
               >
+                <DialogTitle className="sr-only">删除运行记录</DialogTitle>
                 <p className="text-[14px] leading-6 text-[#34322d]">
                   确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
                 </p>
@@ -2053,8 +2047,8 @@ function ApiRunRecordRow({
                     {deleteBusy ? "删除中…" : "确定删除"}
                   </Button>
                 </div>
-              </PopoverContent>
-            </Popover>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
         <p className="mt-3 line-clamp-6 text-sm leading-relaxed text-[#747571] sm:line-clamp-4">{summaryText}</p>

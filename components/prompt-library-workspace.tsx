@@ -153,6 +153,7 @@ export function PromptLibraryWorkspace() {
   const [renamePromptId, setRenamePromptId] = useState<string | null>(null);
   const [deletePromptId, setDeletePromptId] = useState<string | null>(null);
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
+  const [deletingGroupId, setDeletingGroupId] = useState<string | null>(null);
   const newGroupNameTrimmed = newGroupName.trim();
   const newGroupNameReserved = newGroupNameTrimmed === "全部" || newGroupNameTrimmed === "默认";
   const newGroupNameDuplicate = groups.some((g) => (g.name || "").trim() === newGroupNameTrimmed);
@@ -303,6 +304,7 @@ export function PromptLibraryWorkspace() {
 
   const handleDeleteGroup = async (id: string) => {
     if (!platformAgent?.auth) return;
+    setDeletingGroupId(id);
     try {
       await platformAgent.withFreshToken(async (token) => {
         await deleteUserPromptGroup(token, id);
@@ -318,6 +320,8 @@ export function PromptLibraryWorkspace() {
             ? e.message
             : String(e);
       setError(msg || "删除分组失败");
+    } finally {
+      setDeletingGroupId(null);
     }
   };
 
@@ -456,6 +460,7 @@ export function PromptLibraryWorkspace() {
                               variant="ghost"
                               aria-label={`删除分组 ${g.name || "未命名"}`}
                               aria-expanded={deleteGroupId === g.id}
+                              disabled={deletingGroupId === g.id}
                               className="pointer-events-auto absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-[#71717a] opacity-0 transition hover:bg-transparent hover:text-red-600 focus-visible:opacity-100 group-hover/chip:opacity-100 data-[state=open]:opacity-100"
                               onMouseDown={(e) => {
                                 e.preventDefault();
@@ -486,6 +491,7 @@ export function PromptLibraryWorkspace() {
                                 variant="outline"
                                 size="sm"
                                 className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
+                                disabled={deletingGroupId === g.id}
                                 onClick={() => setDeleteGroupId(null)}
                               >
                                 取消
@@ -495,9 +501,10 @@ export function PromptLibraryWorkspace() {
                                 variant="destructive"
                                 size="sm"
                                 className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
+                                disabled={deletingGroupId === g.id}
                                 onClick={() => void handleDeleteGroup(g.id)}
                               >
-                                确定删除
+                                {deletingGroupId === g.id ? "删除中…" : "确定删除"}
                               </Button>
                             </div>
                           </PopoverContent>
