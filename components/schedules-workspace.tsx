@@ -98,6 +98,8 @@ const PRIMARY_TABS = ["已定时", "运行记录"] as const;
 const WORKFLOW_STATUS_OPTIONS = ["全部状态", "生效中", "已暂停", "已完结"] as const;
 const RUN_STATUS_OPTIONS = ["全部状态", "运行成功", "运行失败", "运行超时"] as const;
 const DEFAULT_GROUP_VALUE = "__default__";
+const SCHEDULE_ATTACHMENTS_UNSUPPORTED_NOTICE =
+  "当前定时任务接口还不支持保存附件。请先删除附件，避免创建成不含附件的假任务。";
 
 function serializeScheduleComposerPrompt(text: string, sourceIds: string[]) {
   const sourceText = sourceIds
@@ -164,6 +166,21 @@ function filterTasksByChip(tasks: UserScheduledTaskItemApi[], chip: string, grou
 function filterTasksByWorkflowStatus(tasks: UserScheduledTaskItemApi[], f: (typeof WORKFLOW_STATUS_OPTIONS)[number]) {
   if (f === "全部状态") return tasks;
   return tasks.filter((t) => deriveTaskUiStatus(t) === f);
+}
+
+function sortTasksByCreatedDesc(tasks: UserScheduledTaskItemApi[]) {
+  return tasks
+    .map((task, index) => ({ task, index }))
+    .sort((a, b) => {
+      const at = Date.parse(a.task.created_at);
+      const bt = Date.parse(b.task.created_at);
+      const aValid = Number.isFinite(at);
+      const bValid = Number.isFinite(bt);
+      if (aValid && bValid && at !== bt) return bt - at;
+      if (aValid !== bValid) return aValid ? -1 : 1;
+      return a.index - b.index;
+    })
+    .map(({ task }) => task);
 }
 
 function filterRunsBySearch(runs: ScheduledTaskRunItemApi[], q: string) {
@@ -267,6 +284,7 @@ export function SchedulesWorkspace() {
   const [selectedMonthDays, setSelectedMonthDays] = useState<Set<number>>(() => new Set());
   const [runOnceDate, setRunOnceDate] = useState("");
   const [taskEnabled, setTaskEnabled] = useState(true);
+  const [scheduleAttachments, setScheduleAttachments] = useState<File[]>([]);
   const [resultPushFormKey, setResultPushFormKey] = useState(0);
   const fromRestore = useRef(false);
   const editFormHydratedForId = useRef<string | null>(null);
@@ -321,6 +339,7 @@ export function SchedulesWorkspace() {
         setSelectedMonthDays(new Set(d.selectedMonthDayValues));
         setRunOnceDate(d.runOnceDate);
         setFormGroupId(d.groupId ?? null);
+        setScheduleAttachments([]);
         applyResultPushBlocks(Array.isArray(d.resultPushBlocks) ? d.resultPushBlocks : []);
         fromRestore.current = true;
       }
@@ -360,6 +379,7 @@ export function SchedulesWorkspace() {
     setSelectedWeekdays(new Set());
     setSelectedMonthDays(new Set());
     setRunOnceDate("");
+    setScheduleAttachments([]);
     applyResultPushBlocks([]);
     setNotice("");
     editPromptBaselineRef.current = null;
@@ -428,6 +448,7 @@ export function SchedulesWorkspace() {
     }
     setTimeHhmm(toHhmm(t.time_hhmm));
     setFormGroupId(t.group_id ?? null);
+    setScheduleAttachments([]);
     editPromptBaselineRef.current = serializeScheduleComposerPrompt(taskPrompt.text, taskPrompt.selectedSourceIds);
   }, []);
 
@@ -500,6 +521,17 @@ export function SchedulesWorkspace() {
   }, []);
   const removeScheduleComposerSource = useCallback((capabilityId: string) => {
     setScheduleSourceIds((current) => current.filter((id) => id !== capabilityId));
+  }, []);
+  const blockUnsupportedScheduleAttachments = useCallback(() => {
+    if (scheduleAttachments.length === 0) return false;
+    setNotice(SCHEDULE_ATTACHMENTS_UNSUPPORTED_NOTICE);
+    return true;
+  }, [scheduleAttachments.length]);
+  const handleScheduleAttachmentsChange = useCallback((files: File[]) => {
+    setScheduleAttachments(files);
+    if (files.length === 0) {
+      setNotice((current) => (current === SCHEDULE_ATTACHMENTS_UNSUPPORTED_NOTICE ? "" : current));
+    }
   }, []);
   const requiredFieldsMissing = !title.trim() || !serializedPrompt.trim();
   const formSubmitDisabled = busy || requiredFieldsMissing || tryRunSubmitBlocked;
@@ -631,8 +663,10 @@ export function SchedulesWorkspace() {
   );
   const displayTasks = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return filteredTasks;
-    return filteredTasks.filter((t) => t.title.toLowerCase().includes(q) || t.prompt_text.toLowerCase().includes(q));
+    const matchedTasks = q
+      ? filteredTasks.filter((t) => t.title.toLowerCase().includes(q) || t.prompt_text.toLowerCase().includes(q))
+      : filteredTasks;
+    return sortTasksByCreatedDesc(matchedTasks);
   }, [filteredTasks, search]);
 
   const displayRuns = useMemo(
@@ -657,6 +691,9 @@ export function SchedulesWorkspace() {
     }
     if (scheduleKind === "单次" && !runOnceDate.trim()) {
       setNotice("请选择执行日期。");
+      return;
+    }
+    if (blockUnsupportedScheduleAttachments()) {
       return;
     }
     const enabledForSubmit = scheduleKind === "非定时" ? false : editId ? taskEnabled : true;
@@ -719,6 +756,7 @@ export function SchedulesWorkspace() {
     hasValidNextExecution,
     router,
     editId,
+    blockUnsupportedScheduleAttachments,
   ]);
 
   const saveEditedSchedule = useCallback(async () => {
@@ -739,6 +777,9 @@ export function SchedulesWorkspace() {
     }
     if (scheduleKind === "单次" && !runOnceDate.trim()) {
       setNotice("请选择执行日期。");
+      return;
+    }
+    if (blockUnsupportedScheduleAttachments()) {
       return;
     }
     if (scheduleKind !== "非定时" && taskEnabled && !hasValidNextExecution) {
@@ -802,6 +843,7 @@ export function SchedulesWorkspace() {
     router,
     resetCreateFormToDefaults,
     refreshGroupsAndTasks,
+    blockUnsupportedScheduleAttachments,
   ]);
 
   const onEditSaveButtonClick = useCallback(() => {
@@ -900,6 +942,7 @@ export function SchedulesWorkspace() {
                 <Field label="提示词" required>
                   <div className="relative">
                     <TaskComposer
+                      key={editId ?? "create"}
                       value={prompt}
                       onValueChange={(value) => setPrompt(value.slice(0, SCHEDULE_PROMPT_MAX_LENGTH))}
                       placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
@@ -908,10 +951,8 @@ export function SchedulesWorkspace() {
                       selectedSourceIds={scheduleSourceIds}
                       onToolSelect={addScheduleComposerSource}
                       onSourceRemove={removeScheduleComposerSource}
-                      onFilesSelected={(files) => {
-                        const names = Array.from(files).map((file) => file.name).join("、");
-                        if (names) setNotice(`已添加附件：${names}。`);
-                      }}
+                      onFilesSelected={() => {}}
+                      onAttachmentsChange={handleScheduleAttachmentsChange}
                       onSubmit={() => undefined}
                       showSubmitButton={false}
                       submitOnEnter={false}
@@ -1721,6 +1762,7 @@ function ApiScheduledTaskCard({
   const ended = ui === "已完结";
   const canToggle = !ended;
   const promptSummary = t.prompt_text.trim() || "暂无任务指引";
+  const scheduleLabel = ui === "已暂停" ? "暂停" : nextRunLabel(t);
 
   return (
     <Card
@@ -1739,9 +1781,11 @@ function ApiScheduledTaskCard({
               {t.title}
             </div>
           </div>
-          <span className="shrink-0 rounded-full bg-[#f4f4f3] px-2 py-0.5 text-[12px] font-medium leading-5 text-[#8b8c87]">
-            {ui}
-          </span>
+          {ended ? (
+            <span className="shrink-0 rounded-full bg-[#f4f4f3] px-2 py-0.5 text-[12px] font-medium leading-5 text-[#8b8c87]">
+              {ui}
+            </span>
+          ) : null}
         </div>
         <p className="mt-3 line-clamp-2 break-words text-[14px] leading-5 text-[#6f7378]">
           {promptSummary}
@@ -1750,7 +1794,7 @@ function ApiScheduledTaskCard({
       <div className="mx-4 h-px bg-[#ececea]" />
       <div className="mt-auto flex shrink-0 items-center gap-2 px-4 py-3">
         <div className="min-w-0 flex-1 truncate text-[14px] leading-5 text-[#8b8c87]">
-          {nextRunLabel(t)}
+          {scheduleLabel}
         </div>
         <Button
           type="button"

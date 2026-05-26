@@ -282,7 +282,7 @@ export function MoreDataHomePage() {
 
   const handleFilesSelected = (files: FileList) => {
     const names = Array.from(files).map((file) => file.name).join("、");
-    setNotice(`已添加附件：${names}。`);
+    setNotice(`已选择附件：${names}。`);
   };
 
   const selectedPrompt = cards.find((card) => card.id === selectedPromptId) ?? null;
@@ -340,7 +340,7 @@ export function MoreDataHomePage() {
   return (
     <MoreDataShell currentPath="/" showTopHeader={false} mainClassName="bg-transparent">
       <div className="flex min-h-screen flex-col bg-[#f7f7f7] pb-10 sm:pb-14">
-        <section className="mx-auto w-full max-w-[1040px] px-4 pt-4 sm:px-6 sm:pt-8 lg:px-8 lg:pt-[56px]">
+        <section className="mx-auto w-full max-w-[1040px] px-4 pt-[180px] sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 sm:gap-5">
             <Image
               src="/mdata-logo.png"
@@ -406,7 +406,7 @@ export function MoreDataHomePage() {
                   type="button"
                   onClick={() => applyBrowseCapability(item.id)}
                   className={cn(
-                    "inline-flex items-center gap-2 font-medium transition",
+                    "inline-flex items-center gap-2 p-1 font-medium transition",
                     active ? "text-[#111111]" : "text-[#8b8c87] hover:text-[#34322d]",
                   )}
                 >
