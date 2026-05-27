@@ -91,6 +91,12 @@ export type ToolOrchestrationStatusApi = {
   finished: boolean;
   success: boolean;
   steps: ToolOrchestrationStepApi[];
+  awaiting_clarification?: boolean;
+  clarification_message?: string | null;
+  clarification_share_url?: string | null;
+  clarification_step_index?: number | null;
+  /** 编排线程异常或启动前校验失败时的用户可读说明 */
+  failure_message?: string | null;
 };
 
 export type TaskResponse = {

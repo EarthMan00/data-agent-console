@@ -20,6 +20,15 @@ function normalizeKeyErrorName(err: string): string {
 export function humanizeTaskErrorMessage(raw: string): string {
   const t = (raw || "").trim();
   if (!t) return t;
+  if (/未找到可分析的表格数据|未找到可用的表格文件/.test(t)) {
+    return t;
+  }
+  if (/未找到前几步产出的表格类数据文件/.test(t)) {
+    return (
+      "无法基于当前会话已有结果生成分析报告：未找到可分析的表格数据。" +
+      "请先完成数据采集，或将「查看结果并生成报告」与其它搜索需求分开发送。"
+    );
+  }
   if (/no available key/i.test(t) && /in use|cooldown|invalid/i.test(t)) {
     return "当前系统忙，请稍后重试。";
   }

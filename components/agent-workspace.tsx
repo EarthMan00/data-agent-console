@@ -32,7 +32,13 @@ import {
 } from "@/components/agent-workspace/chat-bubbles";
 import { TaskOrchestrationBlock } from "@/components/agent-workspace/task-orchestration-block";
 import { PlatformRoundStepTimeline } from "@/components/agent-workspace/platform-step-views";
+import { PostTaskGuidanceBubble } from "@/components/agent-workspace/post-task-guidance-bubble";
 import { PlatformSessionAgentWorkspace } from "@/components/agent-workspace/platform-session-agent-workspace";
+import {
+  appendToComposerDraft,
+  composerDraftContainsSuggestion,
+  removeFromComposerDraft,
+} from "@/lib/composer-prefill";
 import { ReportPreviewPanel } from "@/components/report-preview-panel";
 import { TaskComposer } from "@/components/task-composer";
 import { Button } from "@/components/ui/button";
@@ -187,6 +193,13 @@ function AgentRunWorkspaceView({
   const [composerVersion, setComposerVersion] = useState<Record<string, number>>({});
   const [executionCardExpandedByRound, setExecutionCardExpandedByRound] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState("");
+  const toggleGuidanceSuggestion = useCallback((item: string) => {
+    setDraft((current) =>
+      composerDraftContainsSuggestion(current, item)
+        ? removeFromComposerDraft(current, item)
+        : appendToComposerDraft(current, item),
+    );
+  }, []);
   const [notice, setNotice] = useState("");
   const executingRoundsRef = useRef<Set<string>>(new Set());
   const abortPollRef = useRef(false);
@@ -229,6 +242,7 @@ function AgentRunWorkspaceView({
         platformTaskArtifacts: run.platformTaskArtifacts,
         splitStreamEndedByRound: run.splitStreamEndedByRound,
         splitRevealCompleteByRound: run.splitRevealCompleteByRound,
+        postTaskGuidanceByRound: run.postTaskGuidanceByRound,
       }),
     [
       run.chains,
@@ -244,6 +258,7 @@ function AgentRunWorkspaceView({
       run.timeline,
       run.splitStreamEndedByRound,
       run.splitRevealCompleteByRound,
+      run.postTaskGuidanceByRound,
     ],
   );
 
@@ -828,6 +843,15 @@ function AgentRunWorkspaceView({
                     </TaskOrchestrationBlock>
                   </div>
                   )}
+
+                  {round.postTaskGuidance ? (
+                    <PostTaskGuidanceBubble
+                      content={round.postTaskGuidance}
+                      datetime={round.createdAt}
+                      composerDraft={draft}
+                      onSuggestionToggle={toggleGuidanceSuggestion}
+                    />
+                  ) : null}
 
                   {index < roundModels.length - 1 ? <div className="border-b border-dashed border-[#e5e7eb]" /> : null}
                 </div>

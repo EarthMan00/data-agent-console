@@ -136,39 +136,41 @@ function getAccountAvatarMeta(name: string) {
   };
 }
 
+const HISTORY_ENRICH_CONCURRENCY = 2;
+
 async function enrichHistoryEntries(
   token: string,
   sessions: SessionListItem[],
 ): Promise<HistoryEntry[]> {
-  return Promise.all(
-    sessions.map(async (s) => {
-      try {
-        const mr = await listSessionMessages(token, s.session_id, 30);
-        const msgs = (mr.messages ?? []) as SessionMessageItem[];
-        const sorted = [...msgs].sort(
-          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-        );
-        const firstUser = sorted.find((m) => m.role === "user") ?? sorted[0];
-        return {
-          ...s,
-          firstMessage: firstUser?.content ?? null,
-          firstAt: firstUser?.created_at ?? s.created_at,
-        };
-      } catch {
-        return { ...s, firstMessage: null, firstAt: s.created_at };
-      }
-    }),
-  );
+  const { mapWithConcurrency } = await import("@/lib/map-with-concurrency");
+  return mapWithConcurrency(sessions, HISTORY_ENRICH_CONCURRENCY, async (s) => {
+    try {
+      const mr = await listSessionMessages(token, s.session_id, 30);
+      const msgs = (mr.messages ?? []) as SessionMessageItem[];
+      const sorted = [...msgs].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+      const firstUser = sorted.find((m) => m.role === "user") ?? sorted[0];
+      return {
+        ...s,
+        firstMessage: firstUser?.content ?? null,
+        firstAt: firstUser?.created_at ?? s.created_at,
+      };
+    } catch {
+      return { ...s, firstMessage: null, firstAt: s.created_at };
+    }
+  });
 }
 
 type MoreDataShellStateValue = {
   historySessions: HistoryEntry[];
   historyBusy: boolean;
-  historyInitialLoading: boolean;
   historyLoadingMore: boolean;
   historyHasMore: boolean;
   historyError: string;
-  refreshHistory: () => Promise<void>;
+  /** 防抖刷新侧栏历史；删除会话等需立即刷新时请用 refreshHistoryNow */
+  refreshHistory: () => void;
+  refreshHistoryNow: () => Promise<void>;
   loadMoreHistory: () => Promise<void>;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (next: boolean | ((current: boolean) => boolean)) => void;
@@ -188,15 +190,20 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
   const [historyWasLoaded, setHistoryWasLoaded] = useState(false);
   const historyPageRef = useRef(0);
   const historyLoadMoreLockRef = useRef(false);
+  const refreshHistoryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshHistoryInFlightRef = useRef(false);
+  const refreshHistoryPendingRef = useRef(false);
 
   const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
   const historyHasMore = historySessions.length < historyTotal;
-  /** 须等客户端读完 sessionStorage 后再展示侧栏骨架，避免与 SSR 子树（如 Suspense）不一致 */
-  const authReadyForHistory = !platformAgent || platformAgent.authHydrated;
-  const historyInitialLoading = authReadyForHistory && isLoggedIn && historyBusy && !historyWasLoaded;
 
-  const refreshHistory = useCallback(async () => {
+  const refreshHistoryNow = useCallback(async () => {
     if (!platformAgent?.auth?.accessToken) return;
+    if (refreshHistoryInFlightRef.current) {
+      refreshHistoryPendingRef.current = true;
+      return;
+    }
+    refreshHistoryInFlightRef.current = true;
     setHistoryBusy(true);
     setHistoryError("");
     try {
@@ -215,8 +222,29 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
     } finally {
       setHistoryWasLoaded(true);
       setHistoryBusy(false);
+      refreshHistoryInFlightRef.current = false;
+      if (refreshHistoryPendingRef.current) {
+        refreshHistoryPendingRef.current = false;
+        void refreshHistoryNow();
+      }
     }
   }, [platformAgent]);
+
+  const refreshHistory = useCallback(() => {
+    if (refreshHistoryTimerRef.current) {
+      clearTimeout(refreshHistoryTimerRef.current);
+    }
+    refreshHistoryTimerRef.current = setTimeout(() => {
+      refreshHistoryTimerRef.current = null;
+      void refreshHistoryNow();
+    }, 900);
+  }, [refreshHistoryNow]);
+
+  useEffect(() => {
+    return () => {
+      if (refreshHistoryTimerRef.current) clearTimeout(refreshHistoryTimerRef.current);
+    };
+  }, []);
 
   const loadMoreHistory = useCallback(async () => {
     if (!platformAgent?.auth?.accessToken) return;
@@ -276,11 +304,11 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
     () => ({
       historySessions,
       historyBusy,
-      historyInitialLoading,
       historyLoadingMore,
       historyHasMore,
       historyError,
       refreshHistory,
+      refreshHistoryNow,
       loadMoreHistory,
       sidebarCollapsed,
       setSidebarCollapsed,
@@ -289,11 +317,11 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
     [
       historySessions,
       historyBusy,
-      historyInitialLoading,
       historyLoadingMore,
       historyHasMore,
       historyError,
       refreshHistory,
+      refreshHistoryNow,
       loadMoreHistory,
       sidebarCollapsed,
       setHistoryError,
@@ -312,45 +340,6 @@ function SidebarHistorySkeleton() {
           <div className="mt-2 h-3 w-[46%] animate-pulse rounded-full bg-[#f1f1ef]" />
         </div>
       ))}
-    </div>
-  );
-}
-
-function SessionPageSkeleton() {
-  return (
-    <div className="mx-auto flex w-full max-w-[1040px] flex-col px-4 pt-4 sm:px-6 sm:pt-8 lg:px-8 lg:pt-[56px]" aria-hidden="true">
-      <div className="flex items-center gap-5">
-        <div className="h-[76px] w-[76px] animate-pulse rounded-[22px] bg-[#e9e9e6]" />
-        <div className="min-w-0 flex-1">
-          <div className="h-9 w-36 animate-pulse rounded-full bg-[#e9e9e6]" />
-          <div className="mt-3 h-5 w-[min(360px,70%)] animate-pulse rounded-full bg-[#ededeb]" />
-        </div>
-      </div>
-      <div className="mt-7 rounded-[24px] border border-[#e2e2df] bg-white p-5 shadow-[0_18px_44px_rgba(17,17,17,0.04)]">
-        <div className="h-5 w-[72%] animate-pulse rounded-full bg-[#ededeb]" />
-        <div className="mt-4 h-5 w-[48%] animate-pulse rounded-full bg-[#f1f1ef]" />
-        <div className="mt-10 flex items-center justify-between">
-          <div className="flex gap-2">
-            <div className="h-8 w-24 animate-pulse rounded-[10px] bg-[#ededeb]" />
-            <div className="h-8 w-20 animate-pulse rounded-[10px] bg-[#f1f1ef]" />
-          </div>
-          <div className="h-10 w-10 animate-pulse rounded-full bg-[#dededc]" />
-        </div>
-      </div>
-      <div className="mt-10 flex flex-wrap gap-4">
-        {Array.from({ length: 8 }).map((_, index) => (
-          <div key={index} className="h-5 w-24 animate-pulse rounded-full bg-[#ededeb]" />
-        ))}
-      </div>
-      <div className="mt-7 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, index) => (
-          <div key={index} className="min-h-[132px] rounded-[18px] border border-white/70 bg-white/72 px-5 py-[18px]">
-            <div className="h-5 w-[78%] animate-pulse rounded-full bg-[#e9e9e6]" />
-            <div className="mt-4 h-4 w-full animate-pulse rounded-full bg-[#f0f0ee]" />
-            <div className="mt-2 h-4 w-[66%] animate-pulse rounded-full bg-[#f0f0ee]" />
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -448,11 +437,11 @@ function MoreDataShellComponent({
   const {
     historySessions,
     historyBusy,
-    historyInitialLoading,
     historyLoadingMore,
     historyHasMore,
     historyError,
     refreshHistory,
+    refreshHistoryNow,
     loadMoreHistory,
     sidebarCollapsed,
     setSidebarCollapsed,
@@ -615,7 +604,7 @@ function MoreDataShellComponent({
           router.replace("/");
         }
 
-        await refreshHistory();
+        await refreshHistoryNow();
       } catch (e) {
         const msg =
           e instanceof AgentApiError
@@ -632,7 +621,7 @@ function MoreDataShellComponent({
       activeSessionId,
       currentRunId,
       platformAgent,
-      refreshHistory,
+      refreshHistoryNow,
       router,
       runs,
       searchParams,
@@ -1207,13 +1196,7 @@ function MoreDataShellComponent({
                   childManagedScroll ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "h-full",
                 )}
               >
-                {historyInitialLoading ? (
-                  <div aria-busy="true">
-                    <SessionPageSkeleton />
-                  </div>
-                ) : (
-                  children
-                )}
+                {children}
               </div>
             </div>
             {rightRail ? (

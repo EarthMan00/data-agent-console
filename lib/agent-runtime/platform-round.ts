@@ -1,6 +1,7 @@
 import {
   getTask,
   getToolOrchestration,
+  listSessionMessages,
   patchTaskExecutionSteps,
   postTaskExecutionSteps,
   sendChatMessageStream,
@@ -9,9 +10,41 @@ import { ChatStreamError } from "@/lib/agent-api/chat-stream";
 import type { TaskResponse, ToolOrchestrationStatusApi } from "@/lib/agent-api/types";
 import type { AgentRoundRuntimeEvent, TaskExecutionStepStatus } from "@/lib/agent-events";
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
+
+async function resolveOrchestrationFailureUserMessage(
+  accessToken: string,
+  lastOrch: ToolOrchestrationStatusApi | null,
+  parentTask: TaskResponse,
+): Promise<string> {
+  const orchMsg = lastOrch?.failure_message?.trim();
+  if (orchMsg) return humanizeTaskErrorMessage(orchMsg);
+
+  if (lastOrch) {
+    for (let i = lastOrch.steps.length - 1; i >= 0; i--) {
+      const st = lastOrch.steps[i];
+      if (st.status.toUpperCase() !== "FAILED" || !st.task_id) continue;
+      try {
+        const ft = await getTask(accessToken, st.task_id);
+        const em = ft.error_message?.trim();
+        if (em) return humanizeTaskErrorMessage(em);
+      } catch {
+        /* 单步任务详情拉取失败时继续兜底 */
+      }
+      break;
+    }
+  }
+
+  return humanizeTaskErrorMessage(
+    parentTask.error_message?.trim() || "多步任务中某一步执行失败",
+  );
+}
 import { safeRandomUUID } from "@/lib/random-uuid";
 import { streamSanitizeDeltaClient, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
-import { buildTaskCompletionSummary } from "@/lib/task-chat-summary";
+import { formatLinkfoxClarificationForStream } from "@/lib/linkfox-clarification";
+import {
+  buildTaskCompletionSummary,
+  extractPostTaskGuidance,
+} from "@/lib/task-chat-summary";
 
 import { PlatformAuthExpiredError } from "./auth";
 import { capabilityLabelMap } from "./constants";
@@ -51,6 +84,71 @@ function buildPlatformSnapshotZipDownloadApi(
     return `/api/tasks/${encodeURIComponent(selfId)}/download`;
   }
   return null;
+}
+
+async function resolvePostTaskGuidanceText(
+  token: string,
+  sessionId: string,
+  task: Pick<TaskResponse, "task_id" | "response_summary" | "finished_at">,
+): Promise<string | null> {
+  const fromTask = extractPostTaskGuidance(task as TaskResponse);
+  if (fromTask) return fromTask;
+
+  const taskId = (task.task_id || "").trim();
+  // 引导由后端异步写入；减少轮询次数，避免与侧栏历史刷新叠加压垮 dev 代理
+  for (let i = 0; i < 10; i += 1) {
+    await sleep(1000);
+    if (taskId) {
+      try {
+        const latest = await getTask(token, taskId);
+        const g = extractPostTaskGuidance(latest);
+        if (g) return g;
+      } catch {
+        /* 单任务拉取失败时继续尝试会话消息 */
+      }
+    }
+    if (i % 2 === 1) {
+      try {
+        const page = await listSessionMessages(token, sessionId, 50);
+        const row = [...(page.messages ?? [])]
+          .reverse()
+          .find((m) => {
+            const meta =
+              m.meta && typeof m.meta === "object" && !Array.isArray(m.meta)
+                ? (m.meta as Record<string, unknown>)
+                : undefined;
+            return m.role === "assistant" && meta?.kind === "post_task_guidance";
+          });
+        const content = row?.content?.trim();
+        if (content) return content;
+      } catch {
+        /* 引导为增强能力，拉取失败不阻断主流程 */
+      }
+    }
+  }
+  return null;
+}
+
+async function emitPlatformTaskRoundOutcome(
+  handlers: { onEvent: (event: AgentRoundRuntimeEvent) => void },
+  input: AgentRoundInput,
+  sourceLabels: string[],
+  token: string,
+  sessionId: string,
+  task: TaskResponse,
+) {
+  const summary = buildTaskCompletionSummary(task);
+  handlers.onEvent({ type: "final", roundId: input.roundId, text: summary });
+  const guidance = await resolvePostTaskGuidanceText(token, sessionId, task);
+  if (guidance) {
+    handlers.onEvent({ type: "post_task_guidance", roundId: input.roundId, text: guidance });
+  }
+  handlers.onEvent({
+    type: "report_updated",
+    roundId: input.roundId,
+    patch: buildReportPatch(input.prompt, sourceLabels, input.attachments),
+  });
+  handlers.onEvent({ type: "round_completed", roundId: input.roundId });
 }
 
 export async function runPlatformRound(
@@ -311,6 +409,8 @@ export async function runPlatformRound(
       let sharedTask: TaskResponse = await getTask(accessToken, result.task_id);
       let orchFinished = false;
       let lastOrch: Awaited<ReturnType<typeof getToolOrchestration>> | null = null;
+      let clarificationAnnounced = false;
+      let orchAwaitingClarification = false;
 
       if (orchestrationId) {
         let userStopped = false;
@@ -327,6 +427,22 @@ export async function runPlatformRound(
             emitStep(def.id, mapServerOrchestrationStepStatus(st.status));
           });
           await emitFinishedOrchestrationSubtasks(lastOrch);
+          if (lastOrch.awaiting_clarification && lastOrch.clarification_message && !clarificationAnnounced) {
+            clarificationAnnounced = true;
+            const clarifyText = formatLinkfoxClarificationForStream(
+              lastOrch.clarification_message,
+              lastOrch.clarification_share_url ?? null,
+            );
+            handlers.onEvent({
+              type: "delta",
+              roundId: input.roundId,
+              text: `\n\n${clarifyText}\n\n`,
+            });
+          }
+          if (lastOrch.awaiting_clarification) {
+            orchAwaitingClarification = true;
+            break;
+          }
           if (lastOrch.finished) {
             orchFinished = true;
             break;
@@ -414,6 +530,21 @@ export async function runPlatformRound(
       const task = sharedTask;
 
       if (orchestrationId) {
+        if (orchAwaitingClarification) {
+          const clarifyFinal =
+            lastOrch?.clarification_message?.trim() ||
+            "请在下方输入补充信息后发送，以继续执行当前步骤。";
+          handlers.onEvent({
+            type: "final",
+            roundId: input.roundId,
+            text: formatLinkfoxClarificationForStream(
+              clarifyFinal,
+              lastOrch?.clarification_share_url ?? null,
+            ),
+          });
+          handlers.onEvent({ type: "round_completed", roundId: input.roundId });
+          return;
+        }
         if (!orchFinished) {
           finalizeAllSteps("error");
           await persistTaskExecutionStepsUniform("error");
@@ -450,7 +581,11 @@ export async function runPlatformRound(
           handlers.onEvent({
             type: "error",
             roundId: input.roundId,
-            message: humanizeTaskErrorMessage(task.error_message ?? "多步任务中某一步执行失败"),
+            message: await resolveOrchestrationFailureUserMessage(
+              accessToken,
+              lastOrch,
+              task,
+            ),
           });
           return;
         }
@@ -460,14 +595,14 @@ export async function runPlatformRound(
           zip_download_api: buildPlatformSnapshotZipDownloadApi(task, lastOrch),
         });
 
-        const summary = buildTaskCompletionSummary(task);
-        handlers.onEvent({ type: "final", roundId: input.roundId, text: summary });
-        handlers.onEvent({
-          type: "report_updated",
-          roundId: input.roundId,
-          patch: buildReportPatch(input.prompt, sourceLabels, input.attachments),
-        });
-        handlers.onEvent({ type: "round_completed", roundId: input.roundId });
+        await emitPlatformTaskRoundOutcome(
+          handlers,
+          input,
+          sourceLabels,
+          token,
+          chatSessionId,
+          task,
+        );
         return;
       }
 
@@ -501,14 +636,14 @@ export async function runPlatformRound(
       if (task.status !== "SUCCESS") {
         finalizeAllSteps("error");
         await persistTaskExecutionStepsUniform("error", task.task_id);
-        const summary = buildTaskCompletionSummary(task);
-        handlers.onEvent({ type: "final", roundId: input.roundId, text: summary });
-        handlers.onEvent({
-          type: "report_updated",
-          roundId: input.roundId,
-          patch: buildReportPatch(input.prompt, sourceLabels, input.attachments),
-        });
-        handlers.onEvent({ type: "round_completed", roundId: input.roundId });
+        await emitPlatformTaskRoundOutcome(
+          handlers,
+          input,
+          sourceLabels,
+          token,
+          chatSessionId,
+          task,
+        );
         return;
       }
 
@@ -520,14 +655,14 @@ export async function runPlatformRound(
         zip_download_api: buildPlatformSnapshotZipDownloadApi(task, null),
       });
 
-      const summary = buildTaskCompletionSummary(task);
-      handlers.onEvent({ type: "final", roundId: input.roundId, text: summary });
-      handlers.onEvent({
-        type: "report_updated",
-        roundId: input.roundId,
-        patch: buildReportPatch(input.prompt, sourceLabels, input.attachments),
-      });
-      handlers.onEvent({ type: "round_completed", roundId: input.roundId });
+      await emitPlatformTaskRoundOutcome(
+        handlers,
+        input,
+        sourceLabels,
+        token,
+        chatSessionId,
+        task,
+      );
     } catch (e) {
       if (e instanceof PlatformAuthExpiredError) {
         handlers.onEvent({

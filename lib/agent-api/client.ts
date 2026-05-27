@@ -98,8 +98,25 @@ export function formatHttpErrorMessage(res: Response, data: unknown, fallbackPre
   return `${fallbackPrefix} (${httpPart})`;
 }
 
+function isBrowserNetworkError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  const m = e.message.trim().toLowerCase();
+  return (
+    m === "failed to fetch" ||
+    m.includes("networkerror") ||
+    m.includes("network request failed") ||
+    m.includes("load failed")
+  );
+}
+
 /** 展示用：已含 `HTTP 数字` 的不再重复拼接状态码 */
 export function formatAgentApiErrorForUser(e: unknown): string {
+  if (isBrowserNetworkError(e)) {
+    return (
+      "无法连接服务：请确认本机前端开发服务（npm run dev）与后端（data-agent-server）均已启动后再试。" +
+      "若刚执行完长任务，可先刷新页面。"
+    );
+  }
   if (e instanceof AgentApiError) {
     if (e.status > 0 && /\bHTTP\s+\d+\b/.test(e.message)) return e.message;
     if (e.status > 0) return `${e.message} (HTTP ${e.status})`;
@@ -934,11 +951,27 @@ export async function getToolOrchestration(
       reads_from_steps,
     };
   });
+  const awaiting_clarification =
+    typeof raw.awaiting_clarification === "boolean" ? raw.awaiting_clarification : undefined;
+  const clarification_message =
+    typeof raw.clarification_message === "string" ? raw.clarification_message : null;
+  const clarification_share_url =
+    typeof raw.clarification_share_url === "string" ? raw.clarification_share_url : null;
+  const clarification_step_index =
+    typeof raw.clarification_step_index === "number" ? raw.clarification_step_index : null;
+  const failure_message =
+    typeof raw.failure_message === "string" ? raw.failure_message : null;
+
   return {
     orchestration_id,
     finished,
     success,
     steps: parsedSteps,
+    ...(awaiting_clarification !== undefined ? { awaiting_clarification } : {}),
+    clarification_message,
+    clarification_share_url,
+    clarification_step_index,
+    failure_message,
   };
 }
 

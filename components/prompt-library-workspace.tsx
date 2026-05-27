@@ -34,7 +34,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -151,7 +150,6 @@ export function PromptLibraryWorkspace() {
   const [renameTitle, setRenameTitle] = useState("");
   const [renameOpen, setRenameOpen] = useState(false);
   const [renamePromptId, setRenamePromptId] = useState<string | null>(null);
-  const [deletePromptId, setDeletePromptId] = useState<string | null>(null);
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
   const [deletingGroupId, setDeletingGroupId] = useState<string | null>(null);
   const newGroupNameTrimmed = newGroupName.trim();
@@ -450,65 +448,25 @@ export function PromptLibraryWorkspace() {
                         <TabsTrigger value={`group:${g.id}`}>
                           <span className="max-w-[160px] truncate">{g.name || "未命名"}</span>
                         </TabsTrigger>
-                        <Popover
-                          open={deleteGroupId === g.id}
-                          onOpenChange={(open) => setDeleteGroupId(open ? g.id : null)}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          aria-label={`删除分组 ${g.name || "未命名"}`}
+                          aria-expanded={deleteGroupId === g.id}
+                          disabled={deletingGroupId === g.id}
+                          className="pointer-events-auto absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-[#71717a] opacity-0 transition hover:bg-transparent hover:text-red-600 focus-visible:opacity-100 group-hover/chip:opacity-100 data-[state=open]:opacity-100"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDeleteGroupId(g.id);
+                          }}
                         >
-                          <PopoverAnchor asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              aria-label={`删除分组 ${g.name || "未命名"}`}
-                              aria-expanded={deleteGroupId === g.id}
-                              disabled={deletingGroupId === g.id}
-                              className="pointer-events-auto absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-[#71717a] opacity-0 transition hover:bg-transparent hover:text-red-600 focus-visible:opacity-100 group-hover/chip:opacity-100 data-[state=open]:opacity-100"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                              }}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setDeleteGroupId(g.id);
-                              }}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </PopoverAnchor>
-                          <PopoverContent
-                            side="bottom"
-                            align="end"
-                            sideOffset={8}
-                            className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
-                            onCloseAutoFocus={(e) => e.preventDefault()}
-                          >
-                            <p className="text-[14px] leading-6 text-[#34322d]">
-                              确定删除吗？该分组下的提示词将移回默认分组
-                            </p>
-                            <div className="mt-4 flex justify-end gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
-                                disabled={deletingGroupId === g.id}
-                                onClick={() => setDeleteGroupId(null)}
-                              >
-                                取消
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
-                                className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
-                                disabled={deletingGroupId === g.id}
-                                onClick={() => void handleDeleteGroup(g.id)}
-                              >
-                                {deletingGroupId === g.id ? "删除中…" : "确定删除"}
-                              </Button>
-                            </div>
-                          </PopoverContent>
-                        </Popover>
+                          <X className="h-3 w-3" />
+                        </Button>
                       </div>
                     ))}
                   </TabsList>
@@ -575,148 +533,72 @@ export function PromptLibraryWorkspace() {
           ) : (
             <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {filteredPrompts.map((p) => (
-                <Card
+                <PromptLibraryCard
                   key={p.id}
-                  className="group relative overflow-hidden rounded-[18px] border border-white/70 bg-white/72 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition duration-200 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)]"
-                >
-                  <CardContent className="flex min-h-[198px] flex-col px-5 py-[18px]">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="line-clamp-1 text-[16px] font-semibold leading-6 text-[#111111]">{p.title}</div>
-                        <div className="mt-1 text-xs text-[#8b8c87]">{formatDateTime(p.updated_at)}</div>
-                      </div>
-                      <Popover
-                        open={deletePromptId === p.id}
-                        onOpenChange={(open) => setDeletePromptId(open ? p.id : null)}
-                      >
-                        <DropdownMenu>
-                          <PopoverAnchor asChild>
-                            <DropdownMenuTrigger asChild>
-                              <Button type="button" variant="ghost" size="iconSm">
-                                <MoreVertical className="h-4 w-4 text-[#71717a]" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                          </PopoverAnchor>
-                          <DropdownMenuContent className="w-48" align="end">
-                            <DropdownMenuGroup>
-                              <DropdownMenuItem onSelect={() => openEdit(p)}>
-                                <Pencil className="h-4 w-4" />
-                                编辑
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={() => {
-                                  setMoveTarget(p);
-                                  setMoveGroupId(p.group_id);
-                                }}
-                              >
-                                <ArrowRightLeft className="h-4 w-4" />
-                                移动到
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={() => {
-                                  setRenamePromptId(p.id);
-                                  setRenameTitle(p.title);
-                                  setRenameOpen(true);
-                                }}
-                              >
-                                <Pencil className="h-4 w-4" />
-                                重命名
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={() => void copyText(p.prompt_text)}>
-                                <Copy className="h-4 w-4" />
-                                复制提示词
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="text-red-600 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-600"
-                                onSelect={(event) => {
-                                  event.preventDefault();
-                                  setDeletePromptId(p.id);
-                                }}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                删除
-                              </DropdownMenuItem>
-                            </DropdownMenuGroup>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                        <PopoverContent
-                          side="bottom"
-                          align="end"
-                          sideOffset={8}
-                          className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
-                          onCloseAutoFocus={(e) => e.preventDefault()}
-                        >
-                          <p className="text-[14px] leading-6 text-[#34322d]">
-                            确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
-                          </p>
-                          <div className="mt-4 flex justify-end gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
-                              onClick={() => setDeletePromptId(null)}
-                            >
-                              取消
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="sm"
-                              className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
-                              onClick={async () => {
-                                if (!platformAgent?.auth) return;
-                                try {
-                                  await platformAgent.withFreshToken(async (token) => {
-                                    await deleteUserPrompt(token, p.id);
-                                  });
-                                  setDeletePromptId(null);
-                                  await refresh();
-                                } catch (e) {
-                                  const msg =
-                                    e instanceof AgentApiError
-                                      ? parseFastApiDetail(e.body) ?? e.message
-                                      : e instanceof Error
-                                        ? e.message
-                                        : String(e);
-                                  setError(msg || "删除失败");
-                                }
-                              }}
-                            >
-                              确定删除
-                            </Button>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-                    <p className="mt-3 line-clamp-4 whitespace-pre-wrap text-[14px] leading-6 text-[#747571]">{p.prompt_text}</p>
-                    <div className="mt-auto flex flex-wrap justify-end gap-2 pt-4">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="rounded-[8px]"
-                        onClick={() => setPreview(p)}
-                      >
-                        <Eye className="mr-1 h-3.5 w-3.5" />
-                        预览
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="rounded-[8px] bg-[#111111] text-white hover:bg-[#2a2a2a]"
-                        onClick={() => void handleUsePrompt(p.prompt_text)}
-                      >
-                        使用
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                  prompt={p}
+                  onEdit={openEdit}
+                  onMove={(prompt) => {
+                    setMoveTarget(prompt);
+                    setMoveGroupId(prompt.group_id);
+                  }}
+                  onRename={(prompt) => {
+                    setRenamePromptId(prompt.id);
+                    setRenameTitle(prompt.title);
+                    setRenameOpen(true);
+                  }}
+                  onCopy={copyText}
+                  onPreview={setPreview}
+                  onUse={handleUsePrompt}
+                  onDelete={async () => {
+                    if (!platformAgent?.auth) return;
+                    await platformAgent.withFreshToken(async (token) => {
+                      await deleteUserPrompt(token, p.id);
+                    });
+                    await refresh();
+                  }}
+                  onError={(msg) => setError(msg || "删除失败")}
+                />
               ))}
             </div>
           )}
         </div>
       </div>
+
+      <Dialog
+        open={deleteGroupId !== null}
+        onOpenChange={(open) => {
+          if (!open && !deletingGroupId) setDeleteGroupId(null);
+        }}
+      >
+        <DialogContent hideClose className="max-w-[360px] rounded-[16px] p-5" aria-describedby={undefined}>
+          <DialogTitle className="sr-only">删除提示词分组</DialogTitle>
+          <p className="text-[14px] leading-6 text-[#34322d]">确定删除吗？该分组下的提示词将移回默认分组</p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-[10px]"
+              disabled={deletingGroupId !== null}
+              onClick={() => setDeleteGroupId(null)}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="h-9 rounded-[10px] bg-red-600 px-4 text-white hover:bg-red-700"
+              disabled={deletingGroupId !== null || !deleteGroupId}
+              onClick={() => {
+                if (deleteGroupId) void handleDeleteGroup(deleteGroupId);
+              }}
+            >
+              {deletingGroupId ? "删除中…" : "确定删除"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
         <DialogContent className="max-w-[420px] rounded-[16px] p-5">
@@ -989,5 +871,141 @@ export function PromptLibraryWorkspace() {
       </Dialog>
 
     </MoreDataShell>
+  );
+}
+
+function PromptLibraryCard({
+  prompt: p,
+  onEdit,
+  onMove,
+  onRename,
+  onCopy,
+  onPreview,
+  onUse,
+  onDelete,
+  onError,
+}: {
+  prompt: UserPromptDto;
+  onEdit: (prompt: UserPromptDto) => void;
+  onMove: (prompt: UserPromptDto) => void;
+  onRename: (prompt: UserPromptDto) => void;
+  onCopy: (text: string) => void | Promise<void>;
+  onPreview: (prompt: UserPromptDto) => void;
+  onUse: (text: string) => void;
+  onDelete: () => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  return (
+    <Card className="group relative overflow-hidden rounded-[18px] border border-white/70 bg-white/72 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition duration-200 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)]">
+      <CardContent className="flex min-h-[198px] flex-col px-5 py-[18px]">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="line-clamp-1 text-[16px] font-semibold leading-6 text-[#111111]">{p.title}</div>
+            <div className="mt-1 text-xs text-[#8b8c87]">{formatDateTime(p.updated_at)}</div>
+          </div>
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="ghost" size="iconSm">
+                <MoreVertical className="h-4 w-4 text-[#71717a]" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-48" align="end">
+              <DropdownMenuGroup>
+                <DropdownMenuItem onSelect={() => onEdit(p)}>
+                  <Pencil className="h-4 w-4" />
+                  编辑
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onMove(p)}>
+                  <ArrowRightLeft className="h-4 w-4" />
+                  移动到
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onRename(p)}>
+                  <Pencil className="h-4 w-4" />
+                  重命名
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void onCopy(p.prompt_text)}>
+                  <Copy className="h-4 w-4" />
+                  复制提示词
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-red-600 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-600"
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    setMenuOpen(false);
+                    window.setTimeout(() => setDeleteOpen(true), 0);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  删除
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+            <DialogContent hideClose className="max-w-[360px] rounded-[16px] p-5" aria-describedby={undefined}>
+              <DialogTitle className="sr-only">删除提示词</DialogTitle>
+              <p className="text-[14px] leading-6 text-[#34322d]">确定删除该提示词吗？删除后不可恢复</p>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 rounded-[10px]"
+                  disabled={deleteBusy}
+                  onClick={() => setDeleteOpen(false)}
+                >
+                  取消
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="h-9 rounded-[10px] bg-red-600 px-4 text-white hover:bg-red-700"
+                  disabled={deleteBusy}
+                  onClick={async () => {
+                    setDeleteBusy(true);
+                    try {
+                      await onDelete();
+                      setDeleteOpen(false);
+                    } catch (e) {
+                      const msg =
+                        e instanceof AgentApiError
+                          ? parseFastApiDetail(e.body) ?? e.message
+                          : e instanceof Error
+                            ? e.message
+                            : String(e);
+                      onError(msg);
+                    } finally {
+                      setDeleteBusy(false);
+                    }
+                  }}
+                >
+                  {deleteBusy ? "删除中…" : "确定删除"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+        <p className="mt-3 line-clamp-4 whitespace-pre-wrap text-[14px] leading-6 text-[#747571]">{p.prompt_text}</p>
+        <div className="mt-auto flex flex-wrap justify-end gap-2 pt-4">
+          <Button type="button" variant="outline" size="sm" className="rounded-[8px]" onClick={() => onPreview(p)}>
+            <Eye className="mr-1 h-3.5 w-3.5" />
+            预览
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="rounded-[8px] bg-[#111111] text-white hover:bg-[#2a2a2a]"
+            onClick={() => void onUse(p.prompt_text)}
+          >
+            使用
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

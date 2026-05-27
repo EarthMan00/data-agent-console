@@ -1,5 +1,6 @@
 import { taskDisplayName } from "@/lib/agent-api/task-title";
 import type { TaskResponse } from "@/lib/agent-api/types";
+import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 
 function formatTaskFinishedAt(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -38,6 +39,16 @@ export function buildTaskOutcomeDisplay(task: TaskResponse): TaskOutcomeDisplay 
   };
 }
 
+export function extractPostTaskGuidance(task: TaskResponse): string | null {
+  const rs = task.response_summary;
+  if (!rs || typeof rs !== "object" || Array.isArray(rs)) return null;
+  const g = (rs as Record<string, unknown>).post_task_guidance;
+  if (typeof g !== "string" || !g.trim()) return null;
+  const cleaned = stripModelThinkingForUi(g.trim());
+  if (!cleaned || cleaned === "（无回复）") return null;
+  return cleaned;
+}
+
 export function buildTaskCompletionSummary(task: TaskResponse): string {
   const name = taskDisplayName(task);
   const lines: string[] = [`任务：${name}`];
@@ -49,4 +60,12 @@ export function buildTaskCompletionSummary(task: TaskResponse): string {
   lines.push(`状态：${statusLabelZh(task.status)}`);
   if (task.finished_at) lines.push(`完成时间：${formatTaskFinishedAt(task.finished_at)}`);
   return lines.join("\n");
+}
+
+/** 任务完成摘要 + 服务端生成的「接下来您可以」引导（若有） */
+export function buildTaskCompletionSummaryWithGuidance(task: TaskResponse): string {
+  const base = buildTaskCompletionSummary(task);
+  const guidance = extractPostTaskGuidance(task);
+  if (!guidance) return base;
+  return `${base}\n\n【接下来您可以】\n${guidance}`;
 }

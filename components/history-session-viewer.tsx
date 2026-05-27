@@ -13,7 +13,13 @@ import {
 } from "@/lib/session-chat-send";
 import type { ChatSendResult, SessionMessageItem } from "@/lib/agent-api/types";
 import { safeRandomUUID } from "@/lib/random-uuid";
+import { PostTaskGuidanceBubble } from "@/components/agent-workspace/post-task-guidance-bubble";
 import { SimpleAssistantBubble } from "@/components/agent-workspace/chat-bubbles";
+import {
+  appendToComposerDraft,
+  composerDraftContainsSuggestion,
+  removeFromComposerDraft,
+} from "@/lib/composer-prefill";
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { MoreDataShell, useMoreDataShellState } from "@/components/more-data-shell";
 import { compactText } from "@/components/agent-workspace-view-models";
@@ -29,6 +35,8 @@ import {
 } from "@/lib/session-task-result-card-visibility";
 import { extractDecompositionLabelsFromMessages } from "@/lib/parse-decomposition-labels";
 import { buildTaskStepsFromDecompositionLabels } from "@/lib/schedule-trial-execution-presentation";
+import { resolvePostTaskGuidancePresentation } from "@/lib/parse-post-task-guidance";
+import { sessionHasOrchestrationFailure } from "@/lib/orchestration-failure-message";
 import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
@@ -88,6 +96,13 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   const [error, setError] = useState("");
   const [messages, setMessages] = useState<SessionMessageItem[]>([]);
   const [draft, setDraft] = useState("");
+  const toggleGuidanceSuggestion = useCallback((item: string) => {
+    setDraft((current) =>
+      composerDraftContainsSuggestion(current, item)
+        ? removeFromComposerDraft(current, item)
+        : appendToComposerDraft(current, item),
+    );
+  }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesInnerRef = useRef<HTMLDivElement>(null);
   const [showResultPanel, setShowResultPanel] = useState(false);
@@ -199,7 +214,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     const labels = extractDecompositionLabelsFromMessages(messages);
     if (!labels.length) return null;
     const orchFailed = messages.some(
-      (m) => m.role === "assistant" && /多步任务在执行过程中失败/.test(m.content || ""),
+      sessionHasOrchestrationFailure(messages),
     );
     const orchCancelled = messages.some(
       (m) => m.role === "assistant" && /多步任务已由用户终止/.test(m.content || ""),
@@ -459,6 +474,10 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                   const taskId =
                     m.role === "assistant" && rawTaskId && taskResultCardMessageIds.has(m.id) ? rawTaskId : undefined;
                   const hideAssistantBubble = shouldHideAssistantMessageBubble(m);
+                  const guidancePresentation =
+                    m.role === "assistant" && !showTaskStepsBubble && !hideAssistantBubble
+                      ? resolvePostTaskGuidancePresentation(m, meta)
+                      : ({ kind: "none" } as const);
                   const key = m.id;
                   return (
                     <div key={key} className="space-y-2">
@@ -480,6 +499,27 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                             setPanelSubtaskFocus={setPanelSubtaskFocus}
                             setPanelVisibility={setPanelVisibilityRecord}
                           />
+                        ) : guidancePresentation.kind !== "none" ? (
+                          <div className="space-y-2">
+                            {guidancePresentation.kind === "embedded" &&
+                            guidancePresentation.leading ? (
+                              <SimpleAssistantBubble
+                                body={guidancePresentation.leading}
+                                datetime={m.created_at}
+                                streaming={isStreamingAssistantMessage(m)}
+                              />
+                            ) : null}
+                            <PostTaskGuidanceBubble
+                              content={
+                                guidancePresentation.kind === "dedicated"
+                                  ? guidancePresentation.content
+                                  : guidancePresentation.guidanceBlock
+                              }
+                              datetime={m.created_at}
+                              composerDraft={draft}
+                              onSuggestionToggle={toggleGuidanceSuggestion}
+                            />
+                          </div>
                         ) : hideAssistantBubble ? null : (
                           <SimpleAssistantBubble
                             body={m.content}

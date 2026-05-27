@@ -101,6 +101,62 @@ export function SimpleAssistantBubble({
   );
 }
 
+export function LinkfoxClarificationBubble({
+  body,
+  shareUrl,
+  datetime,
+  streaming = false,
+}: {
+  body: string;
+  shareUrl: string | null;
+  datetime: string;
+  streaming?: boolean;
+}) {
+  const url = (shareUrl || "").trim();
+  const displayBody = (() => {
+    const t = body.trim();
+    if (!url) return t;
+    return t
+      .split(url)
+      .join("")
+      .replace(/请在 LinkFox 对话中继续补充信息：\s*$/i, "")
+      .trim();
+  })();
+
+  return (
+    <div className="flex w-full justify-start">
+      <div className={cn("group flex flex-col items-start", SIMPLE_CHAT_BUBBLE_MAX)}>
+        <div className="mb-1 text-[12px] text-[#858481] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          {formatTimeForBubble(datetime)}
+        </div>
+        <div className="shrink-0 rounded-[16px] border border-[#f5e0c4] bg-[#fffbf5] px-4 py-3 text-[#34322d] shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
+          <div className="text-[12px] font-semibold text-[#b45309]">需要您补充信息</div>
+          {displayBody ? (
+            <div className="mt-2 min-w-0 text-[14px] leading-7">
+              <ChatMarkdown>{displayBody}</ChatMarkdown>
+            </div>
+          ) : null}
+          {url ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex items-center rounded-full bg-[#f97316] px-4 py-2 text-[13px] font-medium text-white no-underline hover:bg-[#ea580c]"
+            >
+              在 LinkFox 中继续补充
+            </a>
+          ) : null}
+          {streaming ? (
+            <span className="ml-1 inline-block animate-pulse text-[#747571]" aria-hidden>
+              ▌
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SimpleSystemBubble({ message }: { message: string }) {
   return (
     <div className="flex w-full justify-start">

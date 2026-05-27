@@ -66,6 +66,8 @@ export type TaskRun = {
   taskExecutionStepsByRound?: Record<string, TaskExecutionStep[]>;
   /** 多步编排：每步完成后的产物快照（用于聊天卡片与右侧切换） */
   platformSubtasksByRound?: Record<string, PlatformSubtaskSnapshot[]>;
+  /** 任务完成后引导文案（按 round，与历史会话 PostTaskGuidanceBubble 一致） */
+  postTaskGuidanceByRound?: Record<string, string>;
 };
 
 export type Report = ResultPreview & {
@@ -512,6 +514,17 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
           ? { ...node, text: `${node.text}${event.text}` }
           : node,
     );
+    return { run: nextRun, report: nextReport };
+  }
+
+  if (event.type === "post_task_guidance") {
+    const text = (event.text ?? "").trim();
+    if (text) {
+      nextRun.postTaskGuidanceByRound = {
+        ...(nextRun.postTaskGuidanceByRound ?? {}),
+        [event.roundId]: text,
+      };
+    }
     return { run: nextRun, report: nextReport };
   }
 

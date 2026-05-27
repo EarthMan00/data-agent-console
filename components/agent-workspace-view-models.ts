@@ -9,6 +9,7 @@ import type {
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
+import { splitEmbeddedPostTaskGuidance } from "@/lib/parse-post-task-guidance";
 
 export type RoundViewModel = {
   roundId: string;
@@ -44,6 +45,8 @@ export type RoundViewModel = {
   assistantStreaming?: boolean;
   /** 本轮是否已结束（success / error） */
   roundTerminal?: boolean;
+  /** 任务完成后的可点击引导（Alice 气泡区） */
+  postTaskGuidance?: string;
   /** 任务拆分区是否启用打字机（当前轮进行中） */
   splitReveal?: boolean;
   /** 任务拆分 SSE 是否已结束 */
@@ -66,6 +69,7 @@ export type TaskRunLike = {
   splitStreamEndedByRound?: Record<string, boolean>;
   splitRevealCompleteByRound?: Record<string, boolean>;
   platformTaskArtifacts?: PlatformTaskArtifactRef[];
+  postTaskGuidanceByRound?: Record<string, string>;
 };
 
 export function compactText(text: string, maxLength = 120) {
@@ -141,7 +145,15 @@ export function buildRoundViewModels(run: TaskRunLike) {
     const finalRaw = finalNode?.text ?? "";
     const finalNorm =
       (stripModelThinkingForUi(finalRaw) === "（无回复）" ? "" : stripModelThinkingForUi(finalRaw)).trim();
-    const assistantReplyText = (finalNorm || streamNorm).trim();
+    let assistantReplyText = (finalNorm || streamNorm).trim();
+    let postTaskGuidance = run.postTaskGuidanceByRound?.[node.roundId];
+    if (!postTaskGuidance && assistantReplyText) {
+      const split = splitEmbeddedPostTaskGuidance(assistantReplyText);
+      if (split.guidanceBlock) {
+        assistantReplyText = split.leading;
+        postTaskGuidance = split.guidanceBlock;
+      }
+    }
     const assistantStreaming = streamNode?.status === "streaming";
 
     const roundTerminal = run.status === "success" || run.status === "error";
@@ -269,6 +281,7 @@ export function buildRoundViewModels(run: TaskRunLike) {
         splitItems.length > 0,
       splitStreamEnded: Boolean(run.splitStreamEndedByRound?.[node.roundId]),
       splitRevealComplete: Boolean(run.splitRevealCompleteByRound?.[node.roundId]),
+      postTaskGuidance,
     });
   }
 

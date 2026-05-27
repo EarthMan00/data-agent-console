@@ -151,6 +151,12 @@ export type AgentRoundRuntimeEvent =
       text: string;
     }
   | {
+      /** 任务完成后的可点击引导（与 session post_task_guidance 消息一致） */
+      type: "post_task_guidance";
+      roundId: string;
+      text: string;
+    }
+  | {
       type: "report_updated";
       roundId: string;
       patch: AgentReportPatch;

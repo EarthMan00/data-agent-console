@@ -45,5 +45,19 @@ export async function sendSessionMessageStream(
         ),
       );
     },
+    onError: (message) => {
+      const cleaned = stripModelThinkingForUi(message);
+      setMessages((cur) =>
+        cur.map((m) =>
+          m.id === assistantStreamId
+            ? {
+                ...m,
+                content: cleaned || "任务启动失败，请稍后重试。",
+                meta: { streaming: false, kind: "model_error" },
+              }
+            : m,
+        ),
+      );
+    },
   });
 }

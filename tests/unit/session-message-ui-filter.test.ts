@@ -29,6 +29,34 @@ describe("shouldHideAssistantMessageBubble", () => {
         msg({ content: "多步任务已全部完成，可以在右侧查看最后一步任务结果与数据。" }),
       ),
     ).toBe(true);
+    expect(
+      shouldHideAssistantMessageBubble(
+        msg({
+          content: "任务已完成，可以在右侧查看本轮任务结果和 CSV 数据。",
+          meta: { task_id: "t1", tool_name: "run_linkfox_task", has_artifacts: true },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      shouldHideAssistantMessageBubble(
+        msg({
+          content: "任务执行失败，错误信息已记录在任务结果中，可在右侧查看详情。",
+          meta: { task_id: "t1", tool_name: "run_linkfox_task", has_artifacts: false },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("shows orchestration_failure with user-readable reason", () => {
+    expect(
+      shouldHideAssistantMessageBubble(
+        msg({
+          content:
+            "无法基于当前会话已有结果生成分析报告：未找到可分析的表格数据。请先完成数据采集，或将「查看结果并生成报告」与其它搜索需求分开发送。",
+          meta: { kind: "orchestration_failure" },
+        }),
+      ),
+    ).toBe(false);
   });
 
   it("keeps task_execution_steps messages", () => {

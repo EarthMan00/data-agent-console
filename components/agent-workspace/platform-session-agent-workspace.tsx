@@ -27,7 +27,12 @@ import {
   sendSessionMessageStream,
 } from "@/lib/session-chat-send";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
-import { parseComposerPrefillStorageValue } from "@/lib/composer-prefill";
+import {
+  appendToComposerDraft,
+  composerDraftContainsSuggestion,
+  parseComposerPrefillStorageValue,
+  removeFromComposerDraft,
+} from "@/lib/composer-prefill";
 import type { ChatSendResult, SessionMessageItem, TaskResponse } from "@/lib/agent-api/types";
 import type { ScheduleTrialSendState } from "@/lib/schedule-create-draft";
 import {
@@ -45,6 +50,7 @@ import {
   messageIdsEligibleForTaskResultCard,
 } from "@/lib/session-task-result-card-visibility";
 import { extractDecompositionLabelsFromMessages } from "@/lib/parse-decomposition-labels";
+import { resolvePostTaskGuidancePresentation } from "@/lib/parse-post-task-guidance";
 import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
 import { safeRandomUUID } from "@/lib/random-uuid";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
@@ -57,6 +63,7 @@ import {
   type OrchestrationAnchor,
   type TaskOrchestrationBundleRow,
 } from "@/lib/merge-orchestration-task-artifacts";
+import { pollPlatformTaskUntilSettled } from "@/lib/poll-task-until-settled";
 import {
   isTaskInFlight,
   SCHEDULE_TRIAL_SESSION_RELOAD_INTERVAL_MS,
@@ -65,7 +72,16 @@ import {
 import { cn } from "@/lib/utils";
 
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
-import { SIMPLE_CHAT_COLUMN_MAX, SimpleAssistantBubble, SimpleSystemBubble, SimpleUserBubble } from "./chat-bubbles";
+import { PostTaskGuidanceBubble } from "./post-task-guidance-bubble";
+import {
+  LinkfoxClarificationBubble,
+  SIMPLE_CHAT_COLUMN_MAX,
+  SimpleAssistantBubble,
+  SimpleSystemBubble,
+  SimpleUserBubble,
+} from "./chat-bubbles";
+import { resolveLinkfoxShareUrl } from "@/lib/linkfox-clarification";
+import { sessionHasOrchestrationFailure } from "@/lib/orchestration-failure-message";
 
 export function PlatformSessionAgentWorkspace({
   sessionId,
@@ -91,6 +107,13 @@ export function PlatformSessionAgentWorkspace({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState("");
+  const toggleGuidanceSuggestion = useCallback((item: string) => {
+    setDraft((current) =>
+      composerDraftContainsSuggestion(current, item)
+        ? removeFromComposerDraft(current, item)
+        : appendToComposerDraft(current, item),
+    );
+  }, []);
   const [messages, setMessages] = useState<SessionMessageItem[]>([]);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesInnerRef = useRef<HTMLDivElement>(null);
@@ -113,6 +136,7 @@ export function PlatformSessionAgentWorkspace({
   const scheduledRunAutoOpenedPanelRef = useRef(false);
   const trialPrefetchAnchorRef = useRef<string | null>(null);
   const trialDoneReloadedRef = useRef(false);
+  const trialClarificationReloadedRef = useRef(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
   const [trialRunInFlight, setTrialRunInFlight] = useState(() => {
@@ -281,6 +305,10 @@ export function PlatformSessionAgentWorkspace({
               if (!stop && isMounted.current) {
                 setTrialOrchestrationDone({ finished: orch.finished, success: orch.success });
               }
+              if (orch.awaiting_clarification && !trialClarificationReloadedRef.current && isMounted.current) {
+                trialClarificationReloadedRef.current = true;
+                await reload();
+              }
               if (orch.finished) {
                 const lastWithId = [...orch.steps].reverse().find((s) => s.task_id);
                 const pollTaskId = (lastWithId?.task_id ?? tid).trim();
@@ -424,6 +452,7 @@ export function PlatformSessionAgentWorkspace({
     scheduledRunAutoOpenedPanelRef.current = false;
     trialPrefetchAnchorRef.current = null;
     trialDoneReloadedRef.current = false;
+    trialClarificationReloadedRef.current = false;
   }, [sessionId]);
 
   const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
@@ -535,9 +564,7 @@ export function PlatformSessionAgentWorkspace({
     if (latestStepsMessageId) return null;
     const labels = extractDecompositionLabelsFromMessages(messages);
     if (!labels.length) return null;
-    const orchFailed = messages.some(
-      (m) => m.role === "assistant" && /多步任务在执行过程中失败/.test(m.content || ""),
-    );
+    const orchFailed = sessionHasOrchestrationFailure(messages);
     const orchCancelled = messages.some(
       (m) => m.role === "assistant" && /多步任务已由用户终止/.test(m.content || ""),
     );
@@ -552,9 +579,7 @@ export function PlatformSessionAgentWorkspace({
     if (!scheduledRunRecord) return null;
     const labels = extractDecompositionLabelsFromMessages(messages);
     if (!labels.length) return null;
-    const orchFailed = messages.some(
-      (m) => m.role === "assistant" && /多步任务在执行过程中失败/.test(m.content || ""),
-    );
+    const orchFailed = sessionHasOrchestrationFailure(messages);
     const orchCancelled = messages.some(
       (m) => m.role === "assistant" && /多步任务已由用户终止/.test(m.content || ""),
     );
@@ -732,7 +757,17 @@ export function PlatformSessionAgentWorkspace({
     setDraft("");
     try {
       await platformAgent.withFreshToken(async (token) => {
-        await sendSessionMessageStream(token, sessionId, text, mid, setMessages, assistantStreamId);
+        const sendResult: ChatSendResult = await sendSessionMessageStream(
+          token,
+          sessionId,
+          text,
+          mid,
+          setMessages,
+          assistantStreamId,
+        );
+        if (sendResult.kind === "accepted") {
+          await pollPlatformTaskUntilSettled((fn) => platformAgent.withFreshToken(fn), sendResult);
+        }
       });
       await reload();
       void refreshHistory();
@@ -898,6 +933,16 @@ export function PlatformSessionAgentWorkspace({
                     m.role === "assistant" && rawTaskId && taskResultCardMessageIds.has(m.id) ? rawTaskId : undefined;
                   const taskId = taskIdFromMeta ?? (trialResultOnFirstAssistant ? effectiveOrchestrationAnchor!.primaryTaskId : undefined);
                   const hideAssistantBubble = shouldHideAssistantMessageBubble(m);
+                  const msgKind =
+                    meta && typeof meta.kind === "string" ? (meta.kind as string).trim() : "";
+                  const isLinkfoxClarification = msgKind === "linkfox_clarification";
+                  const linkfoxShareUrl = isLinkfoxClarification
+                    ? resolveLinkfoxShareUrl(meta as Record<string, unknown> | undefined, m.content)
+                    : null;
+                  const guidancePresentation =
+                    m.role === "assistant" && !showTaskStepsBubble && !hideAssistantBubble
+                      ? resolvePostTaskGuidancePresentation(m, meta)
+                      : ({ kind: "none" } as const);
                   const key = m.id;
                   return (
                     <div key={key} className="space-y-2">
@@ -918,6 +963,36 @@ export function PlatformSessionAgentWorkspace({
                             setPanelSubtaskFocus={setPanelSubtaskFocus}
                             setPanelVisibility={setPanelVisibilityRecord}
                           />
+                        ) : isLinkfoxClarification ? (
+                          <LinkfoxClarificationBubble
+                            body={m.content}
+                            shareUrl={linkfoxShareUrl}
+                            datetime={m.created_at}
+                            streaming={isStreamingAssistantMessage(m)}
+                          />
+                        ) : guidancePresentation.kind !== "none" ? (
+                          <div className="space-y-2">
+                            {guidancePresentation.kind === "embedded" &&
+                            guidancePresentation.leading ? (
+                              <SimpleAssistantBubble
+                                body={guidancePresentation.leading}
+                                datetime={m.created_at}
+                                streaming={isStreamingAssistantMessage(m)}
+                              />
+                            ) : null}
+                            <PostTaskGuidanceBubble
+                              content={
+                                guidancePresentation.kind === "dedicated"
+                                  ? guidancePresentation.content
+                                  : guidancePresentation.guidanceBlock
+                              }
+                              datetime={m.created_at}
+                              composerDraft={draft}
+                              onSuggestionToggle={
+                                scheduledRunRecord ? undefined : toggleGuidanceSuggestion
+                              }
+                            />
+                          </div>
                         ) : hideAssistantBubble ? null : (
                           <SimpleAssistantBubble
                             body={m.content}

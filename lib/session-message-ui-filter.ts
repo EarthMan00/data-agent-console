@@ -16,6 +16,8 @@ function matchesOrchestrationStatusContent(content: string): boolean {
   if (/^多步任务已全部完成/.test(c)) return true;
   if (/^多步任务在执行过程中失败/.test(c)) return true;
   if (/^多步任务已由用户终止/.test(c)) return true;
+  if (/^任务已完成，可以在右侧查看/.test(c)) return true;
+  if (/^任务执行失败，错误信息已记录在任务结果中/.test(c)) return true;
   if (c === "（以下为该轮任务的执行步骤记录）") return true;
   return false;
 }
@@ -29,6 +31,13 @@ export function shouldHideAssistantMessageBubble(m: SessionMessageItem): boolean
   const meta = messageMeta(m);
   const kind = typeof meta?.kind === "string" ? meta.kind.trim() : "";
   if (kind === "task_execution_steps") return false;
+  if (
+    kind === "linkfox_clarification" ||
+    kind === "post_task_guidance" ||
+    kind === "orchestration_failure"
+  ) {
+    return false;
+  }
   if (kind === "model_error" || kind === "blocked_by_plan") return false;
 
   const content = (m.content || "").trim();

@@ -52,6 +52,51 @@ export function createComposerPrefillStorageValue(text: string) {
   return JSON.stringify(parsed);
 }
 
+/** 将引导项等内容追加到输入框草稿（已有内容时用换行分隔）。 */
+export function appendToComposerDraft(current: string, addition: string): string {
+  const next = addition.trim();
+  if (!next) return current;
+  if (composerDraftContainsSuggestion(current, next)) return current;
+  const cur = current.trimEnd();
+  if (!cur) return next;
+  return `${cur}\n${next}`;
+}
+
+function normalizeDraftLines(draft: string): string[] {
+  return draft.split("\n").map((line) => line.trimEnd());
+}
+
+/** 输入框草稿是否包含与引导项完全匹配的一行。 */
+export function composerDraftContainsSuggestion(draft: string, suggestion: string): boolean {
+  const target = suggestion.trim();
+  if (!target) return false;
+  return normalizeDraftLines(draft).some((line) => line.trim() === target);
+}
+
+/** 从输入框草稿中移除与引导项完全匹配的一行（保留用户其余编辑内容）。 */
+export function removeFromComposerDraft(current: string, removal: string): string {
+  const target = removal.trim();
+  if (!target) return current;
+  if (current.trim() === target) return "";
+
+  const lines = normalizeDraftLines(current);
+  const kept = lines.filter((line) => line.trim() !== target);
+  if (kept.length !== lines.length) {
+    return kept.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
+  }
+
+  const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const linePattern = new RegExp(`^${escaped}$`, "m");
+  if (linePattern.test(current)) {
+    return current
+      .replace(new RegExp(`\\n?${escaped}\\n?`, "m"), "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  return current;
+}
+
 export function parseComposerPrefillStorageValue(raw: string): ComposerPrefill {
   try {
     const parsed = JSON.parse(raw) as StoredComposerPrefill;
