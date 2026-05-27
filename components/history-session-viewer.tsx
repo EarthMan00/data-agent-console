@@ -213,9 +213,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     if (latestStepsMessageId) return null;
     const labels = extractDecompositionLabelsFromMessages(messages);
     if (!labels.length) return null;
-    const orchFailed = messages.some(
-      sessionHasOrchestrationFailure(messages),
-    );
+    const orchFailed = sessionHasOrchestrationFailure(messages);
     const orchCancelled = messages.some(
       (m) => m.role === "assistant" && /多步任务已由用户终止/.test(m.content || ""),
     );

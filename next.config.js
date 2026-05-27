@@ -11,6 +11,8 @@ const agentInternalBase = agentInternal.replace(/\/$/, "");
 
 const nextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost", ...extraDevOrigins],
+  // Next.js 16 默认生产构建用 Turbopack；保留 webpack 仅用于 dev:webpack 的 client fallback
+  turbopack: {},
   // SSE 须走 app/agent-platform/[...path]/route.ts 流式透传；rewrites 会缓冲整段响应导致无打字机效果。
   async rewrites() {
     return [];
