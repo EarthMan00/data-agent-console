@@ -172,6 +172,21 @@ function filterTasksByWorkflowStatus(tasks: UserScheduledTaskItemApi[], f: (type
   return tasks.filter((t) => deriveTaskUiStatus(t) === f);
 }
 
+function sortTasksByCreatedDesc(tasks: UserScheduledTaskItemApi[]) {
+  return tasks
+    .map((task, index) => ({ task, index }))
+    .sort((a, b) => {
+      const at = Date.parse(a.task.created_at);
+      const bt = Date.parse(b.task.created_at);
+      const aValid = Number.isFinite(at);
+      const bValid = Number.isFinite(bt);
+      if (aValid && bValid && at !== bt) return bt - at;
+      if (aValid !== bValid) return aValid ? -1 : 1;
+      return a.index - b.index;
+    })
+    .map(({ task }) => task);
+}
+
 function filterRunsBySearch(runs: ScheduledTaskRunItemApi[], q: string) {
   if (!q.trim()) return runs;
   const s = q.toLowerCase();
@@ -639,8 +654,10 @@ export function SchedulesWorkspace() {
   );
   const displayTasks = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return filteredTasks;
-    return filteredTasks.filter((t) => t.title.toLowerCase().includes(q) || t.prompt_text.toLowerCase().includes(q));
+    const matchedTasks = q
+      ? filteredTasks.filter((t) => t.title.toLowerCase().includes(q) || t.prompt_text.toLowerCase().includes(q))
+      : filteredTasks;
+    return sortTasksByCreatedDesc(matchedTasks);
   }, [filteredTasks, search]);
 
   const displayRuns = useMemo(
@@ -911,6 +928,7 @@ export function SchedulesWorkspace() {
                 <Field label="提示词" required>
                   <div className="relative">
                     <TaskComposer
+                      key={editId ?? "create"}
                       value={prompt}
                       onValueChange={(value) => setPrompt(value.slice(0, SCHEDULE_PROMPT_MAX_LENGTH))}
                       placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
@@ -919,10 +937,8 @@ export function SchedulesWorkspace() {
                       selectedSourceIds={scheduleSourceIds}
                       onToolSelect={addScheduleComposerSource}
                       onSourceRemove={removeScheduleComposerSource}
-                      onFilesSelected={(files) => {
-                        const names = Array.from(files).map((file) => file.name).join("、");
-                        if (names) setNotice(`已添加附件：${names}。`);
-                      }}
+                      onFilesSelected={() => {}}
+                      showAttachmentButton={false}
                       onSubmit={() => undefined}
                       showSubmitButton={false}
                       submitOnEnter={false}
@@ -1727,6 +1743,7 @@ function ApiScheduledTaskCard({
   const ended = ui === "已完结";
   const canToggle = !ended;
   const promptSummary = t.prompt_text.trim() || "暂无任务指引";
+  const scheduleLabel = ui === "已暂停" ? "暂停" : nextRunLabel(t);
 
   return (
     <Card
@@ -1745,9 +1762,11 @@ function ApiScheduledTaskCard({
               {t.title}
             </div>
           </div>
-          <span className="shrink-0 rounded-full bg-[#f4f4f3] px-2 py-0.5 text-[12px] font-medium leading-5 text-[#8b8c87]">
-            {ui}
-          </span>
+          {ended ? (
+            <span className="shrink-0 rounded-full bg-[#f4f4f3] px-2 py-0.5 text-[12px] font-medium leading-5 text-[#8b8c87]">
+              {ui}
+            </span>
+          ) : null}
         </div>
         <p className="mt-3 line-clamp-2 break-words text-[14px] leading-5 text-[#6f7378]">
           {promptSummary}
@@ -1756,7 +1775,7 @@ function ApiScheduledTaskCard({
       <div className="mx-4 h-px bg-[#ececea]" />
       <div className="mt-auto flex shrink-0 items-center gap-2 px-4 py-3">
         <div className="min-w-0 flex-1 truncate text-[14px] leading-5 text-[#8b8c87]">
-          {nextRunLabel(t)}
+          {scheduleLabel}
         </div>
         <Button
           type="button"

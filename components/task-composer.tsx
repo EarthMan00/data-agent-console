@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUp, ChevronDown, CornerDownLeft, Paperclip } from "@/components/ui/tabler-icons";
+import { ArrowUp, ChevronDown, CornerDownLeft, Paperclip, X } from "@/components/ui/tabler-icons";
 
 import { homeCapabilityItems } from "@/lib/home-capability-items";
 import { getPlatformLogoSvgMarkup, PlatformLogo } from "@/components/platform-logo";
@@ -22,18 +22,78 @@ type TaskComposerProps = {
   onToolSelect: (capabilityId: string) => void;
   onSourceRemove: (capabilityId: string) => void;
   onFilesSelected: (files: FileList) => void;
+  onAttachmentsChange?: (files: File[]) => void;
   onSubmit: () => void;
   /** 任务执行中显示为停止按钮 */
   submitVariant?: "send" | "stop";
   onStop?: () => void;
   showSubmitButton?: boolean;
   submitOnEnter?: boolean;
+  showAttachmentButton?: boolean;
   visualStyle?: "default" | "heroMinimal";
   containerClassName?: string;
   textareaClassName?: string;
   placeholderClassName?: string;
   sendButtonClassName?: string;
 };
+
+type ComposerAttachment = {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  extension: string;
+  isImage: boolean;
+  previewUrl?: string;
+};
+
+const IMAGE_ATTACHMENT_EXTENSIONS = new Set([
+  "avif",
+  "bmp",
+  "gif",
+  "heic",
+  "heif",
+  "ico",
+  "jpeg",
+  "jpg",
+  "png",
+  "svg",
+  "tif",
+  "tiff",
+  "webp",
+]);
+
+function getAttachmentExtension(name: string) {
+  const dotIndex = name.lastIndexOf(".");
+  if (dotIndex < 0 || dotIndex === name.length - 1) return "";
+  return name.slice(dotIndex + 1).toLowerCase();
+}
+
+function isImageAttachment(file: File, extension: string) {
+  return file.type.startsWith("image/") || IMAGE_ATTACHMENT_EXTENSIONS.has(extension);
+}
+
+function formatComposerAttachmentSize(size: number) {
+  if (!Number.isFinite(size) || size <= 0) return "0KB";
+  if (size < 1024) return `${size}B`;
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))}KB`;
+  const mb = size / 1024 / 1024;
+  return `${mb >= 10 ? Math.round(mb) : mb.toFixed(1)}MB`;
+}
+
+function createComposerAttachment(file: File, index: number): ComposerAttachment {
+  const extension = getAttachmentExtension(file.name);
+  const isImage = isImageAttachment(file, extension);
+  return {
+    id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
+    file,
+    name: file.name,
+    size: file.size,
+    extension,
+    isImage,
+    previewUrl: isImage ? URL.createObjectURL(file) : undefined,
+  };
+}
 
 function getSelectionOffsets(container: HTMLElement) {
   const selection = window.getSelection();
@@ -271,11 +331,13 @@ export function TaskComposer({
   onToolSelect,
   onSourceRemove,
   onFilesSelected,
+  onAttachmentsChange,
   onSubmit,
   submitVariant = "send",
   onStop,
   showSubmitButton = true,
   submitOnEnter = true,
+  showAttachmentButton = true,
   visualStyle = "default",
   containerClassName,
   textareaClassName,
@@ -289,12 +351,20 @@ export function TaskComposer({
   const textboxRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const sourceButtonTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const sourceButtonItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const sourceButtonListRef = useRef<HTMLDivElement | null>(null);
+  const sourceButtonHighlightedIndexRef = useRef(0);
   const toolItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const toolListRef = useRef<HTMLDivElement | null>(null);
   const highlightedToolIndexRef = useRef(-1);
+  const mentionRangeRef = useRef<{ start: number; end: number } | null>(null);
   const suppressExternalSyncRef = useRef(false);
+  const onAttachmentsChangeRef = useRef(onAttachmentsChange);
+  const attachmentsRef = useRef<ComposerAttachment[]>([]);
 
   const [sourceButtonOpen, setSourceButtonOpen] = useState(false);
+  const [sourceButtonHighlightedIndex, setSourceButtonHighlightedIndex] = useState(0);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionRange, setMentionRange] = useState<{ start: number; end: number } | null>(null);
   const [mentionAnchorTop, setMentionAnchorTop] = useState(36);
@@ -306,7 +376,7 @@ export function TaskComposer({
   });
   const [, setModeOpen] = useState(false);
   const [highlightedToolIndex, setHighlightedToolIndex] = useState(-1);
-  const [attachmentNames, setAttachmentNames] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [editorFocused, setEditorFocused] = useState(false);
   const blurTimeoutRef = useRef<number | null>(null);
 
@@ -336,7 +406,27 @@ export function TaskComposer({
       if (blurTimeoutRef.current) {
         window.clearTimeout(blurTimeoutRef.current);
       }
+      attachmentsRef.current.forEach((attachment) => {
+        if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+      });
     };
+  }, []);
+
+  useEffect(() => {
+    onAttachmentsChangeRef.current = onAttachmentsChange;
+  }, [onAttachmentsChange]);
+
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+    onAttachmentsChangeRef.current?.(attachments.map((attachment) => attachment.file));
+  }, [attachments]);
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((current) => {
+      const target = current.find((attachment) => attachment.id === id);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return current.filter((attachment) => attachment.id !== id);
+    });
   }, []);
 
   useEffect(() => {
@@ -359,6 +449,40 @@ export function TaskComposer({
     });
   }, [highlightedToolIndex, mentionOpen]);
 
+  useEffect(() => {
+    if (!sourceButtonOpen) return;
+    const safeIndex =
+      filteredTools.length === 0
+        ? -1
+        : ((sourceButtonHighlightedIndexRef.current % filteredTools.length) + filteredTools.length) % filteredTools.length;
+    if (safeIndex < 0) return;
+    sourceButtonHighlightedIndexRef.current = safeIndex;
+    const frame = requestAnimationFrame(() => {
+      sourceButtonItemRefs.current[safeIndex]?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [filteredTools.length, sourceButtonOpen]);
+
+  useEffect(() => {
+    if (!sourceButtonOpen) return;
+    const container = sourceButtonListRef.current;
+    const item = sourceButtonItemRefs.current[sourceButtonHighlightedIndex];
+    if (!container || !item || sourceButtonHighlightedIndex < 0) return;
+
+    requestAnimationFrame(() => {
+      const itemTop = item.offsetTop;
+      const itemBottom = itemTop + item.offsetHeight;
+      const viewportTop = container.scrollTop;
+      const viewportBottom = viewportTop + container.clientHeight;
+
+      if (itemTop < viewportTop) {
+        container.scrollTop = Math.max(0, itemTop - 8);
+      } else if (itemBottom > viewportBottom) {
+        container.scrollTop = Math.max(0, itemBottom - container.clientHeight + 8);
+      }
+    });
+  }, [sourceButtonHighlightedIndex, sourceButtonOpen]);
+
   const focusEditor = (collapseToEnd = true) => {
     if (blurTimeoutRef.current) {
       window.clearTimeout(blurTimeoutRef.current);
@@ -380,15 +504,84 @@ export function TaskComposer({
 
   const closeMentionMenu = () => {
     setMentionOpen(false);
+    mentionRangeRef.current = null;
     setMentionRange(null);
     setMentionAnchorTop(36);
     highlightedToolIndexRef.current = -1;
     setHighlightedToolIndex(-1);
   };
 
-  const updateHighlightedToolIndex = (nextIndex: number) => {
+  const updateHighlightedToolIndex = (nextIndex: number, focusItem = false) => {
     highlightedToolIndexRef.current = nextIndex;
     setHighlightedToolIndex(nextIndex);
+    if (!focusItem || nextIndex < 0) return;
+    requestAnimationFrame(() => {
+      toolItemRefs.current[nextIndex]?.focus({ preventScroll: true });
+    });
+  };
+
+  const getSafeSourceButtonIndex = (index: number) => {
+    if (filteredTools.length === 0) return -1;
+    return ((index % filteredTools.length) + filteredTools.length) % filteredTools.length;
+  };
+
+  const updateSourceButtonHighlightedIndex = (nextIndex: number, focusItem = false) => {
+    const safeIndex = getSafeSourceButtonIndex(nextIndex);
+    sourceButtonHighlightedIndexRef.current = safeIndex;
+    setSourceButtonHighlightedIndex(safeIndex);
+    if (!focusItem || safeIndex < 0) return;
+    requestAnimationFrame(() => {
+      sourceButtonItemRefs.current[safeIndex]?.focus({ preventScroll: true });
+    });
+  };
+
+  const handleMentionMenuKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (mentionTools.length === 0) return;
+    const currentIndex = highlightedToolIndexRef.current < 0 ? 0 : highlightedToolIndexRef.current;
+    const getSafeMentionIndex = (index: number) =>
+      ((index % mentionTools.length) + mentionTools.length) % mentionTools.length;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 1), true);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 1), true);
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      updateHighlightedToolIndex(0, true);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      updateHighlightedToolIndex(mentionTools.length - 1, true);
+      return;
+    }
+    if (event.key === "PageDown") {
+      event.preventDefault();
+      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 4), true);
+      return;
+    }
+    if (event.key === "PageUp") {
+      event.preventDefault();
+      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 4), true);
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      const selectedTool = mentionTools[getSafeMentionIndex(currentIndex)];
+      if (selectedTool) selectDataSource(selectedTool.id, "mention");
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMentionMenu();
+      focusEditor(false);
+    }
   };
 
   const updateMentionMenuPosition = useCallback((anchorTop: number) => {
@@ -432,7 +625,9 @@ export function TaskComposer({
     updateMentionMenuPosition(anchorTop);
     setSourceButtonOpen(false);
     setModeOpen(false);
-    setMentionRange({ start: prefix.lastIndexOf("@"), end: caret });
+    const nextMentionRange = { start: prefix.lastIndexOf("@"), end: caret };
+    mentionRangeRef.current = nextMentionRange;
+    setMentionRange(nextMentionRange);
     setMentionAnchorTop(anchorTop);
     setMentionOpen(true);
     updateHighlightedToolIndex(filteredTools.length > 0 ? 0 : -1);
@@ -545,8 +740,9 @@ export function TaskComposer({
     editor.focus();
     suppressExternalSyncRef.current = true;
 
-    if (origin === "mention" && mentionRange) {
-      setSelectionByOffsets(editor, mentionRange.start, mentionRange.end);
+    const activeMentionRange = mentionRangeRef.current ?? mentionRange;
+    if (origin === "mention" && activeMentionRange) {
+      setSelectionByOffsets(editor, activeMentionRange.start, activeMentionRange.end);
       const selection = window.getSelection();
       selection?.getRangeAt(0).deleteContents();
       closeMentionMenu();
@@ -590,10 +786,58 @@ export function TaskComposer({
     }
   };
 
-  const openSourceButtonMenu = () => {
+  const openSourceButtonMenu = (initialIndex = 0) => {
     closeMentionMenu();
     setModeOpen(false);
+    updateSourceButtonHighlightedIndex(initialIndex);
     setSourceButtonOpen(true);
+  };
+
+  const handleSourceButtonMenuKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (filteredTools.length === 0) return;
+    const currentIndex = sourceButtonHighlightedIndexRef.current < 0 ? 0 : sourceButtonHighlightedIndexRef.current;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      updateSourceButtonHighlightedIndex(currentIndex + 1, true);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      updateSourceButtonHighlightedIndex(currentIndex - 1, true);
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      updateSourceButtonHighlightedIndex(0, true);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      updateSourceButtonHighlightedIndex(filteredTools.length - 1, true);
+      return;
+    }
+    if (event.key === "PageDown") {
+      event.preventDefault();
+      updateSourceButtonHighlightedIndex(currentIndex + 4, true);
+      return;
+    }
+    if (event.key === "PageUp") {
+      event.preventDefault();
+      updateSourceButtonHighlightedIndex(currentIndex - 4, true);
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      const selectedTool = filteredTools[currentIndex];
+      if (selectedTool) selectDataSource(selectedTool.id, "button");
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setSourceButtonOpen(false);
+      requestAnimationFrame(() => sourceButtonTriggerRef.current?.focus());
+    }
   };
 
   const composerCard = (
@@ -766,7 +1010,10 @@ export function TaskComposer({
                           const insideComposer =
                             activeElement instanceof HTMLElement &&
                             Boolean(activeElement.closest("[data-task-composer-root]"));
-                          if (!insideComposer) {
+                          const insideMentionMenu =
+                            activeElement instanceof HTMLElement &&
+                            Boolean(activeElement.closest("[data-task-composer-mention-menu]"));
+                          if (!insideComposer && !insideMentionMenu) {
                             closeMentionMenu();
                           }
                         }, 0);
@@ -792,8 +1039,9 @@ export function TaskComposer({
                   {mentionOpen && typeof document !== "undefined"
                     ? createPortal(
                     <div
+                      data-task-composer-mention-menu
                       data-testid="task-composer-mention-menu"
-                      className="fixed z-[140] overflow-hidden rounded-[18px] border border-[#e4e5e9] bg-white shadow-[0_20px_48px_rgba(24,24,27,0.12)]"
+                      className="pointer-events-auto fixed z-[140] overflow-hidden rounded-[18px] border border-[#e4e5e9] bg-white shadow-[0_20px_48px_rgba(24,24,27,0.12)]"
                       style={{
                         top: mentionMenuStyle.top,
                         left: mentionMenuStyle.left,
@@ -803,7 +1051,14 @@ export function TaskComposer({
                       <div className="flex items-center border-b border-[rgba(0,0,0,0.06)] px-4 py-3">
                         <div className="text-[14px] font-medium text-[#34322d]">@数据源</div>
                       </div>
-                      <div ref={toolListRef} className="grid gap-1 overflow-y-auto p-2.5" style={{ maxHeight: mentionMenuStyle.maxHeight }}>
+                      <div
+                        ref={toolListRef}
+                        role="listbox"
+                        aria-label="数据源列表"
+                        className="grid gap-1 overflow-y-auto p-2.5"
+                        style={{ maxHeight: mentionMenuStyle.maxHeight }}
+                        onWheel={(event) => event.stopPropagation()}
+                      >
                         {mentionTools.map((item, index) => (
                           <button
                             key={item.id}
@@ -811,12 +1066,16 @@ export function TaskComposer({
                               toolItemRefs.current[index] = node;
                             }}
                             type="button"
+                            role="option"
+                            aria-selected={index === highlightedToolIndex}
                             onMouseEnter={() => updateHighlightedToolIndex(index)}
-                            onMouseDown={(event) => {
+                            onPointerDown={(event) => {
                               event.preventDefault();
                               selectDataSource(item.id, "mention");
                             }}
-                            className={`flex min-h-[58px] items-start gap-3 rounded-[14px] border px-3 py-2.5 text-left transition ${
+                            onClick={(event) => event.preventDefault()}
+                            onKeyDown={handleMentionMenuKeyDown}
+                            className={`flex min-h-[58px] cursor-pointer items-start gap-3 rounded-[14px] border px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1764ff]/35 ${
                               index === highlightedToolIndex
                                 ? "border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.06)]"
                                 : "border-transparent hover:border-[rgba(0,0,0,0.06)] hover:bg-[rgba(55,53,47,0.04)]"
@@ -842,21 +1101,45 @@ export function TaskComposer({
               </div>
             </div>
 
-            {attachmentNames.length > 0 ? (
-            <div className="mt-2.5 flex flex-wrap gap-1.5">
-                {attachmentNames.slice(0, 3).map((name) => (
-                  <span
-                    key={name}
-                    className="inline-flex h-7 items-center rounded-full border border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.04)] px-2.5 text-[14px] text-[#858481]"
-                  >
-                    {name}
-                  </span>
-                ))}
-                {attachmentNames.length > 3 ? (
-                  <span className="inline-flex h-7 items-center rounded-full border border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.04)] px-2.5 text-[14px] text-[#858481]">
-                    +{attachmentNames.length - 3}
-                  </span>
-                ) : null}
+            {attachments.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {attachments.map((attachment) => {
+                  const typeLabel = attachment.extension ? attachment.extension.toUpperCase() : "FILE";
+                  return (
+                    <div
+                      key={attachment.id}
+                      className="relative flex h-[58px] max-w-full items-center gap-3 rounded-[14px] bg-[#eeeeec] py-2 pl-2 pr-9 text-left"
+                    >
+                      {attachment.previewUrl ? (
+                        <span
+                          aria-label={`图片预览 ${attachment.name}`}
+                          className="flex h-[42px] w-[42px] shrink-0 rounded-[10px] border border-white bg-cover bg-center bg-no-repeat"
+                          style={{ backgroundImage: `url(${attachment.previewUrl})` }}
+                        />
+                      ) : (
+                        <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[10px] bg-white text-[10px] font-semibold text-[#8b8c87]">
+                          {typeLabel.slice(0, 4)}
+                        </span>
+                      )}
+                      <span className="min-w-0">
+                        <span className="block max-w-[260px] truncate text-[14px] font-medium leading-5 text-[#18181b]">
+                          {attachment.name}
+                        </span>
+                        <span className="mt-0.5 block text-[12px] leading-4 text-[#787a76]">
+                          {typeLabel} | {formatComposerAttachmentSize(attachment.size)}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`删除附件 ${attachment.name}`}
+                        className="absolute -right-1.5 -top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#c7c7c3] text-white transition hover:bg-[#a9a9a4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/20"
+                        onClick={() => removeAttachment(attachment.id)}
+                      >
+                        <X className="h-4 w-4" strokeWidth={2.4} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             ) : null}
           </div>
@@ -871,6 +1154,7 @@ export function TaskComposer({
               <Popover open={sourceButtonOpen} onOpenChange={setSourceButtonOpen}>
                 <PopoverTrigger asChild>
                   <Button
+                    ref={sourceButtonTriggerRef}
                     variant="outline"
                     size="sm"
                     className={cn(
@@ -887,6 +1171,11 @@ export function TaskComposer({
                         openSourceButtonMenu();
                       }
                     }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+                      event.preventDefault();
+                      openSourceButtonMenu(event.key === "ArrowUp" ? filteredTools.length - 1 : 0);
+                    }}
                   >
                     @数据源
                     <ChevronDown className={`h-3.5 w-3.5 transition ${sourceButtonOpen ? "rotate-180" : ""}`} />
@@ -897,18 +1186,40 @@ export function TaskComposer({
                   sideOffset={10}
                   onOpenAutoFocus={(event) => event.preventDefault()}
                   onCloseAutoFocus={(event) => event.preventDefault()}
-                  className="w-[520px] rounded-[18px] border-[rgba(0,0,0,0.08)] bg-white p-0 shadow-[0_20px_48px_rgba(24,24,27,0.12)]"
+                  className="pointer-events-auto w-[520px] rounded-[18px] border-[rgba(0,0,0,0.08)] bg-white p-0 shadow-[0_20px_48px_rgba(24,24,27,0.12)]"
                 >
                   <div className="flex items-center border-b border-[rgba(0,0,0,0.06)] px-4 py-3">
                     <div className="text-[14px] font-medium text-[#34322d]">@数据源</div>
                   </div>
-                  <div className="grid max-h-[320px] gap-1 overflow-y-auto p-2.5">
-                    {filteredTools.map((item) => (
+                  <div
+                    ref={sourceButtonListRef}
+                    role="listbox"
+                    aria-label="数据源列表"
+                    className="grid max-h-[320px] gap-1 overflow-y-auto p-2.5"
+                    onWheel={(event) => event.stopPropagation()}
+                  >
+                    {filteredTools.map((item, index) => (
                       <button
                         key={item.id}
+                        ref={(node) => {
+                          sourceButtonItemRefs.current[index] = node;
+                        }}
                         type="button"
-                        onClick={() => selectDataSource(item.id, "button")}
-                        className="flex min-h-[58px] items-start gap-3 rounded-[14px] border border-transparent px-3 py-2.5 text-left transition hover:border-[rgba(0,0,0,0.06)] hover:bg-[rgba(55,53,47,0.04)]"
+                        role="option"
+                        aria-selected={index === sourceButtonHighlightedIndex}
+                        onMouseEnter={() => updateSourceButtonHighlightedIndex(index)}
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          selectDataSource(item.id, "button");
+                        }}
+                        onClick={(event) => event.preventDefault()}
+                        onKeyDown={handleSourceButtonMenuKeyDown}
+                        className={cn(
+                          "flex min-h-[58px] cursor-pointer items-start gap-3 rounded-[14px] border px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1764ff]/35",
+                          index === sourceButtonHighlightedIndex
+                            ? "border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.06)]"
+                            : "border-transparent hover:border-[rgba(0,0,0,0.06)] hover:bg-[rgba(55,53,47,0.04)]",
+                        )}
                       >
                         <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[rgba(0,0,0,0.08)] bg-white">
                           <PlatformLogo name={item.icon} color={item.accent} className="h-4 w-4" />
@@ -926,48 +1237,56 @@ export function TaskComposer({
                 </PopoverContent>
               </Popover>
 
-              <input
-                ref={fileInputRef}
-                id={fileInputId}
-                type="file"
-                className="sr-only"
-                accept=".xlsx,.csv,.jpg,.jpeg,.png,.pdf,.zip,.json"
-                multiple
-                onChange={(event) => {
-                  if (event.target.files?.length) {
-                    setAttachmentNames(Array.from(event.target.files).map((file) => file.name));
-                    onFilesSelected(event.target.files);
-                  }
-                  event.target.value = "";
-                }}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  "h-8 rounded-[10px] border px-3 text-[14px] font-medium",
-                  isHeroMinimal
-                    ? "border-transparent text-[#34322d] hover:border-[rgba(0,0,0,0.08)] hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
-                    : "border-transparent text-[#6f7783] hover:border-[#e8e2d8] hover:bg-[#faf8f4] hover:text-[#27272a]",
-                )}
-                onClick={() => {
-                  setSourceButtonOpen(false);
-                  closeMentionMenu();
-                  setModeOpen(false);
-                  const input = fileInputRef.current;
-                  if (!input) return;
-                  if ("showPicker" in input && typeof input.showPicker === "function") {
-                    input.showPicker();
-                    return;
-                  }
-                  input.click();
-                }}
-                aria-label="添加附件"
-              >
-                <Paperclip className="h-4 w-4" />
-                附件
-              </Button>
+              {showAttachmentButton ? (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    id={fileInputId}
+                    type="file"
+                    className="sr-only"
+                    accept="image/*,.xlsx,.csv,.pdf,.zip,.json"
+                    multiple
+                    onChange={(event) => {
+                      if (event.target.files?.length) {
+                        const selectedFiles = Array.from(event.target.files);
+                        setAttachments((current) => [
+                          ...current,
+                          ...selectedFiles.map((file, index) => createComposerAttachment(file, current.length + index)),
+                        ]);
+                        onFilesSelected(event.target.files);
+                      }
+                      event.target.value = "";
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      "h-8 rounded-[10px] border px-3 text-[14px] font-medium",
+                      isHeroMinimal
+                        ? "border-transparent text-[#34322d] hover:border-[rgba(0,0,0,0.08)] hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
+                        : "border-transparent text-[#6f7783] hover:border-[#e8e2d8] hover:bg-[#faf8f4] hover:text-[#27272a]",
+                    )}
+                    onClick={() => {
+                      setSourceButtonOpen(false);
+                      closeMentionMenu();
+                      setModeOpen(false);
+                      const input = fileInputRef.current;
+                      if (!input) return;
+                      if ("showPicker" in input && typeof input.showPicker === "function") {
+                        input.showPicker();
+                        return;
+                      }
+                      input.click();
+                    }}
+                    aria-label="添加附件"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                    附件
+                  </Button>
+                </>
+              ) : null}
             </div>
 
             <div className="flex items-center gap-2.5">

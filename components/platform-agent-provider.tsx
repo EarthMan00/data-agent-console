@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
@@ -44,12 +45,19 @@ import { ArrowLeft, ArrowRight, Power } from "@/components/ui/tabler-icons";
 const LOGIN_INTRO_TEXT =
   "我是 Alice，跨境电商运营助手，掌握数据，洞察数据的神。请先登录";
 const LOGIN_RETURNING_TEXT = "我是 Alice，欢迎回来！";
+const REGISTER_CODE_TITLE = "请输入发送给您邮箱的验证码";
 const LOGIN_INTRO_CHAR_INTERVAL_MS = 34;
 const LOGIN_RETURNING_STORAGE_KEY = "mdata:alice-has-logged-in";
 const PENDING_HOME_TASK_STORAGE_KEY = "mdata:pending-home-task-after-login";
+const REGISTER_CODE_LENGTH = 6;
 type AuthMode = "login" | "register";
 type RegisterStep = "email" | "code" | "password";
 type LoginContinuation = () => void | Promise<void>;
+type AuthTitleAnimationState = {
+  done: boolean;
+  key: string;
+  text: string;
+};
 
 const REGISTER_STEP_META: Record<
   RegisterStep,
@@ -218,17 +226,21 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [loginIntroFullText, setLoginIntroFullText] = useState(LOGIN_INTRO_TEXT);
-  const [loginIntroText, setLoginIntroText] = useState("");
-  const [loginIntroDone, setLoginIntroDone] = useState(false);
+  const [loginTitleAnimation, setLoginTitleAnimation] =
+    useState<AuthTitleAnimationState>({ done: false, key: "", text: "" });
+  const [loginTitleOverride, setLoginTitleOverride] = useState("");
+  const [loginTitleReplayId, setLoginTitleReplayId] = useState(0);
   const [registerStep, setRegisterStep] = useState<RegisterStep>("email");
   const [registerEmail, setRegisterEmail] = useState("");
   const [registerUsername, setRegisterUsername] = useState("");
   const [registerCode, setRegisterCode] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
+  const [registerCodeEntryId, setRegisterCodeEntryId] = useState(0);
   const [registerRetrySeconds, setRegisterRetrySeconds] = useState(0);
   const accountInputRef = useRef<HTMLInputElement | null>(null);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
   const registerInputRef = useRef<HTMLInputElement | null>(null);
+  const registerCodeDigitRefs = useRef<Array<HTMLInputElement | null>>([]);
   const suppressLoginOpenUntilRef = useRef(0);
   const loginContinuationRef = useRef<LoginContinuation | null>(null);
 
@@ -240,6 +252,38 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setRegisterPassword("");
     setRegisterRetrySeconds(0);
   }, []);
+
+  const focusRegisterCodeDigit = useCallback((index = 0) => {
+    const safeIndex = Math.min(Math.max(index, 0), REGISTER_CODE_LENGTH - 1);
+    const focus = () => {
+      const input = registerCodeDigitRefs.current[safeIndex];
+      input?.focus({ preventScroll: true });
+      input?.select();
+    };
+    focus();
+    window.requestAnimationFrame(() => {
+      focus();
+      window.setTimeout(focus, 80);
+    });
+  }, []);
+  const isRegisterCodeStep = authMode === "register" && registerStep === "code";
+  const baseLoginTitleText = isRegisterCodeStep ? REGISTER_CODE_TITLE : loginIntroFullText;
+  const activeLoginTitleText = loginTitleOverride || baseLoginTitleText;
+  const activeLoginTitleKey = [
+    loginTitleReplayId,
+    authMode,
+    loginStep,
+    registerStep,
+    isRegisterCodeStep ? registerCodeEntryId : 0,
+    activeLoginTitleText,
+  ].join(":");
+  const isLoginTitleError = Boolean(loginTitleOverride);
+  const activeTitleTypingDone =
+    loginTitleAnimation.key === activeLoginTitleKey && loginTitleAnimation.done;
+  const visibleLoginIntroText =
+    loginTitleAnimation.key === activeLoginTitleKey
+      ? loginTitleAnimation.text
+      : "";
 
   useEffect(() => {
     const snap = loadAgentSession();
@@ -285,8 +329,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setLoginIntroFullText(
       hasLoggedInOnThisDevice() ? LOGIN_RETURNING_TEXT : LOGIN_INTRO_TEXT,
     );
-    setLoginIntroText("");
-    setLoginIntroDone(false);
+    setLoginTitleOverride("");
+    setLoginTitleAnimation({ done: false, key: "", text: "" });
     setLoginOpen(true);
   }, [resetRegisterForm]);
 
@@ -304,33 +348,66 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setLoginError("");
     loginContinuationRef.current = null;
     setLoginStep("account");
-    setLoginIntroText("");
-    setLoginIntroDone(false);
+    setLoginTitleOverride("");
+    setLoginTitleAnimation({ done: false, key: "", text: "" });
     setLoginOpen(false);
   }, [resetRegisterForm]);
 
-  useEffect(() => {
-    if (!loginOpen) return;
-    setLoginIntroText("");
-    setLoginIntroDone(false);
-    let index = 0;
-    const chars = [...loginIntroFullText];
-    const t = window.setInterval(() => {
-      index += 1;
-      setLoginIntroText(chars.slice(0, index).join(""));
-      if (index >= chars.length) {
-        window.clearInterval(t);
-        setLoginIntroDone(true);
-      }
-    }, LOGIN_INTRO_CHAR_INTERVAL_MS);
-    return () => window.clearInterval(t);
-  }, [loginIntroFullText, loginOpen]);
+  const replayAuthTitle = useCallback((titleOverride = "") => {
+    setLoginTitleOverride(titleOverride);
+    setLoginTitleReplayId((id) => id + 1);
+  }, []);
+
+  const showAuthErrorTitle = useCallback(
+    (message: string) => {
+      setLoginError(message);
+      replayAuthTitle(message);
+    },
+    [replayAuthTitle],
+  );
 
   useEffect(() => {
-    if (!loginOpen || !loginIntroDone) return;
+    if (!loginOpen) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    let index = 0;
+    const chars = [...activeLoginTitleText];
+    const key = activeLoginTitleKey;
+
+    setLoginTitleAnimation({ done: false, key, text: "" });
+
+    const tick = () => {
+      if (cancelled) return;
+      index += 1;
+      const done = index >= chars.length;
+      setLoginTitleAnimation({
+        done,
+        key,
+        text: chars.slice(0, index).join(""),
+      });
+      if (!done) {
+        timer = window.setTimeout(tick, LOGIN_INTRO_CHAR_INTERVAL_MS);
+      }
+    };
+
+    timer = window.setTimeout(tick, LOGIN_INTRO_CHAR_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [activeLoginTitleKey, activeLoginTitleText, loginOpen]);
+
+  useEffect(() => {
+    if (!loginOpen || !activeTitleTypingDone) return;
     const t = window.setTimeout(() => {
       if (authMode === "register") {
-        registerInputRef.current?.focus();
+        if (registerStep === "code") {
+          focusRegisterCodeDigit(Math.min(registerCode.length, REGISTER_CODE_LENGTH - 1));
+        } else {
+          registerInputRef.current?.focus();
+        }
       } else if (loginStep === "account") {
         accountInputRef.current?.focus();
       } else {
@@ -338,7 +415,18 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       }
     }, 120);
     return () => window.clearTimeout(t);
-  }, [authMode, loginIntroDone, loginOpen, loginStep, registerStep]);
+  }, [activeTitleTypingDone, authMode, focusRegisterCodeDigit, loginOpen, loginStep, registerCode.length, registerStep]);
+
+  useEffect(() => {
+    if (!loginOpen || authMode !== "register" || registerStep !== "code") return;
+    if (loginBusy || registerCode.length !== REGISTER_CODE_LENGTH) return;
+    const t = window.setTimeout(() => {
+      setLoginError("");
+      replayAuthTitle("");
+      setRegisterStep("password");
+    }, 220);
+    return () => window.clearTimeout(t);
+  }, [authMode, loginBusy, loginOpen, registerCode, registerStep, replayAuthTitle]);
 
   useEffect(() => {
     if (!loginOpen || registerRetrySeconds <= 0) return;
@@ -462,19 +550,19 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
         const res = await login(a, p);
         await applyLoginResponse(res, a.trim());
       } catch (e) {
-        setLoginError(formatLoginError(e));
+        showAuthErrorTitle(formatLoginError(e));
       } finally {
         setLoginBusy(false);
       }
     },
-    [applyLoginResponse],
+    [applyLoginResponse, showAuthErrorTitle],
   );
 
   const sendRegisterCode = useCallback(
     async (emailValue = registerEmail.trim()) => {
       const email = emailValue.trim();
       if (!isLikelyEmail(email)) {
-        setLoginError("请输入有效邮箱");
+        showAuthErrorTitle("请输入有效邮箱");
         setRegisterStep("email");
         return false;
       }
@@ -489,35 +577,39 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
           }
         }
         if (!username) {
-          setLoginError("该邮箱暂时无法注册，请换一个邮箱或去登录");
+          showAuthErrorTitle("该邮箱暂时无法注册，请换一个邮箱或去登录");
           return false;
         }
         setRegisterUsername(username);
         const res = await sendRegisterEmailOtp(username, email);
+        setRegisterCode("");
         if (res.retryAfterSeconds) {
           setRegisterRetrySeconds(res.retryAfterSeconds);
-          setLoginError(`${res.retryAfterSeconds} 秒后可重新获取验证码`);
+          showAuthErrorTitle(`${res.retryAfterSeconds} 秒后可重新获取验证码`);
         } else {
           setRegisterRetrySeconds(60);
+          replayAuthTitle("");
+        }
+        if (registerStep !== "code") {
+          setRegisterCodeEntryId((id) => id + 1);
         }
         setRegisterStep("code");
         return true;
       } catch (e) {
-        setLoginError(formatRegisterError(e));
+        showAuthErrorTitle(formatRegisterError(e));
         return false;
       } finally {
         setLoginBusy(false);
       }
     },
-    [registerEmail],
+    [registerEmail, registerStep, replayAuthTitle, showAuthErrorTitle],
   );
 
   const advanceRegister = useCallback(async () => {
     if (registerStep === "email") {
       const email = registerEmail.trim();
       if (!isLikelyEmail(email)) {
-        setLoginError("请输入有效邮箱");
-        registerInputRef.current?.focus();
+        showAuthErrorTitle("请输入有效邮箱");
         return;
       }
       await sendRegisterCode(email);
@@ -525,20 +617,19 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     }
 
     if (registerStep === "code") {
-      if (registerCode.trim().length < 4) {
-        setLoginError("请输入验证码");
-        registerInputRef.current?.focus();
+      if (registerCode.trim().length < REGISTER_CODE_LENGTH) {
+        showAuthErrorTitle("请输入 6 位验证码");
         return;
       }
       setLoginError("");
+      replayAuthTitle("");
       setRegisterStep("password");
       return;
     }
 
     const passwordValue = registerPassword;
     if (passwordValue.length < 4) {
-      setLoginError("密码至少 4 位");
-      registerInputRef.current?.focus();
+      showAuthErrorTitle("密码至少 4 位");
       return;
     }
 
@@ -553,7 +644,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       });
       await applyLoginResponse(res, registerUsername.trim());
     } catch (e) {
-      setLoginError(formatRegisterError(e));
+      showAuthErrorTitle(formatRegisterError(e));
     } finally {
       setLoginBusy(false);
     }
@@ -564,33 +655,42 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     registerPassword,
     registerStep,
     registerUsername,
+    replayAuthTitle,
     sendRegisterCode,
+    showAuthErrorTitle,
   ]);
 
   const advanceLogin = useCallback(() => {
     if (loginStep === "account") {
       if (!account.trim()) {
-        setLoginError("请输入账号");
-        accountInputRef.current?.focus();
+        showAuthErrorTitle("请输入账号");
         return;
       }
       setLoginError("");
+      replayAuthTitle("");
       setLoginStep("password");
       return;
     }
+    if (!password.trim()) {
+      showAuthErrorTitle("请输入密码");
+      return;
+    }
     void loginWithPassword(account, password);
-  }, [account, loginStep, loginWithPassword, password]);
+  }, [account, loginStep, loginWithPassword, password, replayAuthTitle, showAuthErrorTitle]);
 
   const returnToAccountStep = useCallback(() => {
     setLoginError("");
     setPassword("");
+    replayAuthTitle("");
     setLoginStep("account");
-  }, []);
+  }, [replayAuthTitle]);
 
   const returnRegisterStep = useCallback(() => {
     setLoginError("");
+    replayAuthTitle("");
     if (registerStep === "password") {
       setRegisterPassword("");
+      setRegisterCodeEntryId((id) => id + 1);
       setRegisterStep("code");
       return;
     }
@@ -600,7 +700,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       return;
     }
     setRegisterStep("email");
-  }, [registerStep]);
+  }, [registerStep, replayAuthTitle]);
 
   const switchToRegister = useCallback(() => {
     if (loginBusy) return;
@@ -610,7 +710,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setPassword("");
     resetRegisterForm();
     setLoginError("");
-  }, [loginBusy, resetRegisterForm]);
+    replayAuthTitle("");
+  }, [loginBusy, replayAuthTitle, resetRegisterForm]);
 
   const switchToLogin = useCallback(() => {
     if (loginBusy) return;
@@ -620,7 +721,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setPassword("");
     resetRegisterForm();
     setLoginError("");
-  }, [loginBusy, resetRegisterForm]);
+    replayAuthTitle("");
+  }, [loginBusy, replayAuthTitle, resetRegisterForm]);
 
   const handleLoginInputKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
@@ -638,6 +740,63 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       void advanceRegister();
     },
     [advanceRegister],
+  );
+
+  const updateRegisterCode = useCallback((value: string, focusIndex?: number) => {
+    const nextCode = value.replace(/\D/g, "").slice(0, REGISTER_CODE_LENGTH);
+    setRegisterCode(nextCode);
+    if (loginError) setLoginError("");
+    if (focusIndex != null) {
+      focusRegisterCodeDigit(focusIndex);
+    }
+  }, [focusRegisterCodeDigit, loginError]);
+
+  const handleRegisterCodeDigitChange = useCallback(
+    (index: number, rawValue: string) => {
+      const typed = rawValue.replace(/\D/g, "");
+      if (typed.length > 1) {
+        updateRegisterCode(typed, Math.min(typed.length, REGISTER_CODE_LENGTH - 1));
+        return;
+      }
+      const digits = Array.from({ length: REGISTER_CODE_LENGTH }, (_, digitIndex) => registerCode[digitIndex] ?? "");
+      digits[index] = typed;
+      const nextCode = digits.join("").slice(0, REGISTER_CODE_LENGTH);
+      updateRegisterCode(nextCode, typed ? index + 1 : index);
+    },
+    [registerCode, updateRegisterCode],
+  );
+
+  const handleRegisterCodeDigitKeyDown = useCallback(
+    (index: number, e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void advanceRegister();
+        return;
+      }
+      if (e.key !== "Backspace") return;
+      const digits = Array.from({ length: REGISTER_CODE_LENGTH }, (_, digitIndex) => registerCode[digitIndex] ?? "");
+      if (digits[index]) {
+        digits[index] = "";
+        updateRegisterCode(digits.join(""), index);
+        return;
+      }
+      if (index > 0) {
+        digits[index - 1] = "";
+        updateRegisterCode(digits.join(""), index - 1);
+      }
+    },
+    [advanceRegister, registerCode, updateRegisterCode],
+  );
+
+  const handleRegisterCodePaste = useCallback(
+    (e: ClipboardEvent<HTMLInputElement>) => {
+      const text = e.clipboardData.getData("text");
+      const digits = text.replace(/\D/g, "");
+      if (!digits) return;
+      e.preventDefault();
+      updateRegisterCode(digits, Math.min(digits.length, REGISTER_CODE_LENGTH - 1));
+    },
+    [updateRegisterCode],
   );
 
   const logout = useCallback(async () => {
@@ -743,6 +902,24 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
         : registerPassword;
   const canGoBack =
     authMode === "register" ? registerStep !== "email" : loginStep === "password";
+  const activeAuthInputHasValue =
+    authMode === "register"
+      ? registerInputValue.trim().length > 0
+      : loginStep === "account"
+        ? account.trim().length > 0
+        : password.trim().length > 0;
+  const submitAuthLabel =
+    authMode === "register"
+      ? registerStep === "password"
+        ? "注册"
+        : "继续"
+      : loginStep === "account"
+        ? "继续"
+        : "登录";
+  const registerCodeDigits = Array.from(
+    { length: REGISTER_CODE_LENGTH },
+    (_, index) => registerCode[index] ?? "",
+  );
 
   const value = useMemo<PlatformAgentContextValue>(
     () => ({
@@ -821,16 +998,30 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
               </button>
 
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="h-[250px] w-[min(730px,calc(100vw-120px))]">
+                <div
+                  className={
+                    isRegisterCodeStep
+                      ? "h-[250px] w-[min(650px,calc(100vw-120px))]"
+                      : "h-[250px] w-[min(730px,calc(100vw-120px))]"
+                  }
+                >
                   <h2
                     id="mdata-login-title"
-                    aria-label={loginIntroFullText}
-                    className={`mdata-auth-title h-[46px] max-w-[730px] text-left text-[30px] font-medium leading-[45px] tracking-normal transition-colors duration-300 ${
-                      loginIntroDone ? "mdata-auth-title-muted" : "text-white"
-                    }`}
+                    aria-label={activeLoginTitleText}
+                    className={
+                      isRegisterCodeStep
+                        ? "mdata-auth-title h-8 max-w-none text-left text-[24px] font-semibold leading-8 tracking-normal text-white transition-colors duration-300"
+                        : `mdata-auth-title h-[46px] max-w-[730px] text-left text-[30px] font-medium leading-[45px] tracking-normal transition-colors duration-300 ${
+                            isLoginTitleError
+                              ? "text-white"
+                              : activeTitleTypingDone
+                                ? "mdata-auth-title-muted"
+                                : "text-white"
+                          }`
+                    }
                   >
-                    {loginIntroText}
-                    {!loginIntroDone ? (
+                    {visibleLoginIntroText}
+                    {!activeTitleTypingDone ? (
                       <span
                         className="ml-1 inline-block h-[1em] w-[2px] translate-y-[4px] animate-pulse bg-white/80"
                         aria-hidden
@@ -838,15 +1029,16 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     ) : null}
                   </h2>
                   <form
-                    className={`mt-4 h-[121px] w-full transition-[opacity,transform] duration-500 ${
-                      loginIntroDone
-                        ? "translate-y-0 opacity-100"
-                        : "pointer-events-none translate-y-2 opacity-0"
+                    key={activeLoginTitleKey}
+                    className={`${isRegisterCodeStep ? "mt-2 h-auto" : "mt-4 h-[121px]"} w-full transition-[opacity,transform] ${
+                      activeTitleTypingDone
+                        ? "translate-y-0 opacity-100 duration-500"
+                        : "pointer-events-none translate-y-2 opacity-0 duration-0"
                     }`}
-                    aria-hidden={!loginIntroDone}
+                    aria-hidden={!activeTitleTypingDone}
                     onSubmit={(e) => {
                       e.preventDefault();
-                      if (!loginIntroDone) return;
+                      if (!activeTitleTypingDone) return;
                       if (authMode === "register") {
                         void advanceRegister();
                       } else {
@@ -863,138 +1055,176 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     <label className="sr-only" htmlFor="mdata-register-input">
                       注册信息
                     </label>
-                    <div className="flex h-[45px] items-center">
-                      <input
-                        id="mdata-login-account"
-                        ref={accountInputRef}
-                        name="username"
-                        aria-label="账号"
-                        aria-invalid={
-                          loginStep === "account" && loginError
-                            ? true
-                            : undefined
-                        }
-                        aria-describedby={
-                          loginStep === "account" && loginError
-                            ? "mdata-login-error"
-                            : undefined
-                        }
-                        value={account}
-                        onChange={(e) => {
-                          setAccount(e.target.value);
-                          if (loginError) setLoginError("");
-                        }}
-                        onKeyDown={handleLoginInputKeyDown}
-                        disabled={!loginIntroDone}
-                        className={
-                          authMode === "login" && loginStep === "account"
-                            ? "mdata-auth-input h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
-                            : "hidden"
-                        }
-                        autoComplete="username"
-                        placeholder="请在此处输入用户名或邮箱"
-                      />
-                      <input
-                        id="mdata-login-password"
-                        ref={passwordInputRef}
-                        name="password"
-                        aria-label="密码"
-                        aria-invalid={
-                          loginStep === "password" && loginError
-                            ? true
-                            : undefined
-                        }
-                        aria-describedby={
-                          loginStep === "password" && loginError
-                            ? "mdata-login-error"
-                            : undefined
-                        }
-                        type="password"
-                        value={password}
-                        onChange={(e) => {
-                          setPassword(e.target.value);
-                          if (loginError) setLoginError("");
-                        }}
-                        onKeyDown={handleLoginInputKeyDown}
-                        disabled={!loginIntroDone}
-                        className={
-                          authMode === "login" && loginStep === "password"
-                            ? "mdata-auth-input h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
-                            : "hidden"
-                        }
-                        autoComplete="current-password"
-                        placeholder="请在此处输入密码"
-                      />
-                      <input
-                        id="mdata-register-input"
-                        ref={registerInputRef}
-                        name={registerStep}
-                        aria-label={registerStepMeta.label}
-                        aria-invalid={
-                          authMode === "register" && loginError
-                            ? true
-                            : undefined
-                        }
-                        aria-describedby={
-                          authMode === "register" && loginError
-                            ? "mdata-login-error"
-                            : undefined
-                        }
-                        type={registerStepMeta.type ?? "text"}
-                        inputMode={registerStepMeta.inputMode}
-                        value={registerInputValue}
-                        onChange={(e) => {
-                          const nextValue = e.target.value;
-                          if (registerStep === "email") {
-                            setRegisterEmail(nextValue);
-                          } else if (registerStep === "code") {
-                            setRegisterCode(nextValue);
-                          } else {
-                            setRegisterPassword(nextValue);
+                    {isRegisterCodeStep ? (
+                      <div className="flex w-full flex-col">
+                        <p className="max-w-full text-left text-[14px] font-medium leading-5 text-white/24">
+                          验证码已经发送至您的邮箱{registerEmail.trim()}，如果没有收到，请检查垃圾邮件。
+                        </p>
+                        <div className="mt-[18px] flex items-center justify-center gap-3" role="group" aria-label="验证码">
+                          {registerCodeDigits.map((digit, index) => (
+                            <input
+                              key={index}
+                              ref={(node) => {
+                                registerCodeDigitRefs.current[index] = node;
+                              }}
+                              aria-label={`验证码第 ${index + 1} 位`}
+                              inputMode="numeric"
+                              autoComplete={index === 0 ? "one-time-code" : "off"}
+                              pattern="[0-9]*"
+                              value={digit}
+                              maxLength={1}
+                              disabled={!activeTitleTypingDone || loginBusy}
+                              onChange={(e) => handleRegisterCodeDigitChange(index, e.target.value)}
+                              onKeyDown={(e) => handleRegisterCodeDigitKeyDown(index, e)}
+                              onPaste={handleRegisterCodePaste}
+                              onFocus={(e) => e.currentTarget.select()}
+                              className="h-[46px] w-[46px] rounded-[8px] border border-white/18 bg-transparent text-center text-[24px] font-semibold leading-none text-white caret-white outline-none transition-[border-color,background-color] duration-200 focus:border-white/64 focus:bg-white/[0.03] disabled:cursor-not-allowed disabled:opacity-45"
+                            />
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={loginBusy || !activeTitleTypingDone || registerRetrySeconds > 0}
+                          className="mt-7 inline-flex h-6 items-center justify-center text-[13px] font-semibold leading-5 text-white/26 transition-colors duration-300 hover:text-white/54 disabled:cursor-not-allowed disabled:text-white/20"
+                          onClick={() => {
+                            void sendRegisterCode();
+                          }}
+                        >
+                          {registerRetrySeconds > 0
+                            ? `${registerRetrySeconds}s后重新发送`
+                            : "重新发送"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex h-[45px] w-[min(400px,100%)] items-center">
+                        <input
+                          id="mdata-login-account"
+                          ref={accountInputRef}
+                          name="username"
+                          aria-label="账号"
+                          aria-invalid={
+                            loginStep === "account" && loginError
+                              ? true
+                              : undefined
                           }
-                          if (loginError) setLoginError("");
-                        }}
-                        onKeyDown={handleRegisterInputKeyDown}
-                        disabled={!loginIntroDone || loginBusy}
-                        maxLength={registerStep === "code" ? 6 : undefined}
-                        className={
-                          authMode === "register"
-                            ? registerStep === "code"
-                              ? "mdata-auth-input h-[42px] w-[260px] min-w-0 shrink-0 bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
-                              : "mdata-auth-input h-[42px] min-w-0 flex-1 bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
-                            : "hidden"
-                        }
-                        autoComplete={registerStepMeta.autoComplete}
-                        placeholder={registerStepMeta.placeholder}
-                      />
-                      {authMode === "register" && registerStep === "code" ? (
-                        <>
-                          <span aria-hidden="true" className="ml-5 h-3 w-px shrink-0 bg-white/14" />
+                          aria-describedby={
+                            loginStep === "account" && loginError
+                              ? "mdata-login-error"
+                              : undefined
+                          }
+                          value={account}
+                          onChange={(e) => {
+                            setAccount(e.target.value);
+                            if (loginError) setLoginError("");
+                          }}
+                          onKeyDown={handleLoginInputKeyDown}
+                          disabled={!activeTitleTypingDone}
+                          className={
+                            authMode === "login" && loginStep === "account"
+                              ? "mdata-auth-input h-[42px] min-w-0 flex-1 !rounded-none [border-radius:0!important] appearance-none bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                              : "hidden"
+                          }
+                          autoComplete="username"
+                          placeholder="请在此处输入用户名或邮箱"
+                        />
+                        <input
+                          id="mdata-login-password"
+                          ref={passwordInputRef}
+                          name="password"
+                          aria-label="密码"
+                          aria-invalid={
+                            loginStep === "password" && loginError
+                              ? true
+                              : undefined
+                          }
+                          aria-describedby={
+                            loginStep === "password" && loginError
+                              ? "mdata-login-error"
+                              : undefined
+                          }
+                          type="password"
+                          value={password}
+                          onChange={(e) => {
+                            setPassword(e.target.value);
+                            if (loginError) setLoginError("");
+                          }}
+                          onKeyDown={handleLoginInputKeyDown}
+                          disabled={!activeTitleTypingDone}
+                          className={
+                            authMode === "login" && loginStep === "password"
+                              ? "mdata-auth-input h-[42px] min-w-0 flex-1 !rounded-none [border-radius:0!important] appearance-none bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                              : "hidden"
+                          }
+                          autoComplete="current-password"
+                          placeholder="请在此处输入密码"
+                        />
+                        <input
+                          id="mdata-register-input"
+                          ref={registerInputRef}
+                          name={registerStep}
+                          aria-label={registerStepMeta.label}
+                          aria-invalid={
+                            authMode === "register" && loginError
+                              ? true
+                              : undefined
+                          }
+                          aria-describedby={
+                            authMode === "register" && loginError
+                              ? "mdata-login-error"
+                              : undefined
+                          }
+                          type={registerStepMeta.type ?? "text"}
+                          inputMode={registerStepMeta.inputMode}
+                          value={registerInputValue}
+                          onChange={(e) => {
+                            const nextValue = e.target.value;
+                            if (registerStep === "email") {
+                              setRegisterEmail(nextValue);
+                            } else {
+                              setRegisterPassword(nextValue);
+                            }
+                            if (loginError) setLoginError("");
+                          }}
+                          onKeyDown={handleRegisterInputKeyDown}
+                          disabled={!activeTitleTypingDone || loginBusy}
+                          className={
+                            authMode === "register"
+                              ? "mdata-auth-input h-[42px] min-w-0 flex-1 !rounded-none [border-radius:0!important] appearance-none bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                              : "hidden"
+                          }
+                          autoComplete={registerStepMeta.autoComplete}
+                          placeholder={registerStepMeta.placeholder}
+                        />
+                        {activeAuthInputHasValue ? (
                           <button
                             type="button"
-                            disabled={
-                              loginBusy ||
-                              !loginIntroDone ||
-                              registerRetrySeconds > 0
-                            }
-                            className="ml-5 inline-flex h-[42px] shrink-0 items-center text-[30px] font-extrabold leading-none text-white/42 transition-colors duration-300 hover:text-white/70 disabled:cursor-not-allowed disabled:text-white/24"
+                            aria-label={submitAuthLabel}
+                            disabled={loginBusy || !activeTitleTypingDone}
+                            className="ml-2 inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-white transition-[color,background-color,opacity] duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
                             onClick={() => {
-                              void sendRegisterCode();
+                              if (!activeTitleTypingDone) return;
+                              if (authMode === "register") {
+                                void advanceRegister();
+                              } else {
+                                advanceLogin();
+                              }
                             }}
                           >
-                            {registerRetrySeconds > 0
-                              ? `${registerRetrySeconds}s`
-                              : "重新发送"}
+                            <ArrowRight className="h-8 w-8" strokeWidth={1.85} />
                           </button>
-                        </>
-                      ) : null}
-                    </div>
+                        ) : null}
+                      </div>
+                    )}
 
                     {loginError ? (
                       <p
                         id="mdata-login-error"
                         role="alert"
-                        className="mt-4 max-w-[640px] text-[14px] font-medium leading-6 text-[#ff7a7a]"
+                        className={
+                          isLoginTitleError
+                            ? "sr-only"
+                            : "mt-4 max-w-[640px] text-[14px] font-medium leading-6 text-[#ff7a7a]"
+                        }
                       >
                         {loginError}
                       </p>
@@ -1003,25 +1233,31 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                   </form>
                 </div>
               </div>
-              <div
-                className={`absolute bottom-3.5 left-9 z-20 flex h-16 items-center transition-opacity duration-300 ${
-                  loginIntroDone ? "opacity-100" : "pointer-events-none opacity-0"
-                }`}
-              >
-                <button
-                  type="button"
-                  disabled={loginBusy || !loginIntroDone}
-                  className="inline-flex h-16 items-center justify-start rounded-full px-0 text-[14px] font-medium leading-5 text-white/42 transition-[color,opacity] duration-300 hover:text-white/70 disabled:cursor-not-allowed disabled:text-white/24"
-                  onClick={
-                    authMode === "register" ? switchToLogin : switchToRegister
-                  }
+              {!isRegisterCodeStep ? (
+                <div
+                  className={`absolute bottom-3.5 left-9 z-20 flex h-16 items-center transition-opacity ${
+                    activeTitleTypingDone
+                      ? "opacity-100 duration-300"
+                      : "pointer-events-none opacity-0 duration-0"
+                  }`}
                 >
-                  {authMode === "register" ? "前往登录" : "注册账号"}
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    disabled={loginBusy || !activeTitleTypingDone}
+                    className="inline-flex h-16 items-center justify-start rounded-full px-0 text-[14px] font-medium leading-5 text-white/42 transition-[color,opacity] duration-300 hover:text-white/70 disabled:cursor-not-allowed disabled:text-white/24"
+                    onClick={
+                      authMode === "register" ? switchToLogin : switchToRegister
+                    }
+                  >
+                    {authMode === "register" ? "前往登录" : "注册账号"}
+                  </button>
+                </div>
+              ) : null}
               <div
-                className={`absolute bottom-3.5 right-[18px] z-20 flex items-center gap-2 transition-opacity duration-300 ${
-                  loginIntroDone ? "opacity-100" : "pointer-events-none opacity-0"
+                className={`absolute bottom-3.5 right-[18px] z-20 flex items-center gap-2 transition-opacity ${
+                  activeTitleTypingDone
+                    ? "opacity-100 duration-300"
+                    : "pointer-events-none opacity-0 duration-0"
                 }`}
               >
                 {canGoBack ? (
@@ -1030,7 +1266,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     aria-label={
                       authMode === "register" ? "返回上一步" : "返回账号"
                     }
-                    disabled={loginBusy || !loginIntroDone}
+                    disabled={loginBusy || !activeTitleTypingDone}
                     className="inline-flex h-16 w-16 items-center justify-center rounded-full text-white transition-[color,background-color,opacity] duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
                     onClick={
                       authMode === "register"
@@ -1041,30 +1277,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     <ArrowLeft className="h-9 w-9" strokeWidth={1.85} />
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  aria-label={
-                    authMode === "register"
-                      ? registerStep === "password"
-                        ? "注册"
-                        : "继续"
-                      : loginStep === "account"
-                        ? "继续"
-                        : "登录"
-                  }
-                  disabled={loginBusy || !loginIntroDone}
-                  className="inline-flex h-16 w-16 items-center justify-center rounded-full text-white transition-[color,background-color,opacity] duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
-                  onClick={() => {
-                    if (!loginIntroDone) return;
-                    if (authMode === "register") {
-                      void advanceRegister();
-                    } else {
-                      advanceLogin();
-                    }
-                  }}
-                >
-                  <ArrowRight className="h-9 w-9" strokeWidth={1.85} />
-                </button>
               </div>
             </div>
           </div>
