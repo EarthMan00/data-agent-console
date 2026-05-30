@@ -21,6 +21,7 @@ import {
   getToolOrchestration,
   listSessionMessages,
 } from "@/lib/agent-api/client";
+import type { ChatSendResult, SessionMessageItem, TaskResponse } from "@/lib/agent-api/types";
 import {
   createStreamingAssistantMessage,
   isStreamingAssistantMessage,

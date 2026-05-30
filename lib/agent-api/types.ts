@@ -51,6 +51,10 @@ export type SessionListResponse = {
   page_size: number;
 };
 
+export type CreateSessionResponse = {
+  session_id: string;
+};
+
 export type SessionMessageItem = {
   id: string;
   role: "user" | "assistant" | "system" | string;

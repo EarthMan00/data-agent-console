@@ -791,7 +791,7 @@ function AgentRunWorkspaceView({
                         <SimpleSystemBubble message={round.errorMessage} />
                       ) : round.assistantStreaming || round.assistantReplyText ? (
                         <SimpleAssistantBubble
-                          body={round.assistantReplyText}
+                          body={round.assistantReplyText ?? ""}
                           datetime={round.createdAt}
                           streaming={round.assistantStreaming}
                         />
@@ -934,7 +934,7 @@ function AgentRunWorkspaceView({
                           beforeSplit={
                             round.assistantReplyText ? (
                               <SimpleAssistantBubble
-                                body={round.assistantReplyText}
+                                body={round.assistantReplyText ?? ""}
                                 datetime={round.createdAt}
                                 streaming={round.assistantStreaming}
                               />

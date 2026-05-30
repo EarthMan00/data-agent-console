@@ -50,6 +50,7 @@ import {
 
 import { resolvePendingLinkfoxClarificationFromSession } from "@/lib/agent-runtime/session-linkfox-clarification";
 import type { SessionLinkfoxClarification } from "@/lib/agent-runtime/session-linkfox-clarification";
+import { PlatformAuthExpiredError } from "./auth";
 import { capabilityLabelMap } from "./constants";
 import { buildReportPatch } from "./report-helpers";
 import { mapServerOrchestrationStepStatus, mapTaskResponseToSubtaskEvent } from "./task-mapping";
