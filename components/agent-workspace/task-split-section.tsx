@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useRef } from "react";
 
 import { useTypewriterReveal } from "@/lib/use-typewriter-reveal";
+import { ORCHESTRATION_BLOCK_MAX } from "@/components/agent-workspace/chat-bubbles";
+import { humanizeStepLabelForUi } from "@/lib/humanize-step-label";
+import { cn } from "@/lib/utils";
 
 function charLen(text: string): number {
   return [...text].length;
 }
 
 function cleanSplitLabel(item: string): string {
-  return item.replace(/^\d+[）).、]\s*/, "");
+  return humanizeStepLabelForUi(item.replace(/^\d+[）).、]\s*/, ""));
 }
 
 function buildSplitBody(items: string[]): string {
@@ -102,13 +105,13 @@ export function TaskSplitSection({
   if (items.length === 0) return null;
 
   return (
-    <div className="space-y-2 px-1" data-testid={testId}>
+    <div className={cn("space-y-2 px-1", ORCHESTRATION_BLOCK_MAX)} data-testid={testId}>
       <div className="text-[14px] font-semibold text-[#202124]">任务拆分</div>
-      <div className="space-y-2 text-[14px] leading-6.5 text-[#4f5753]">
+      <div className="space-y-2.5 text-[14px] leading-6.5 text-[#4f5753]">
         {displayRows.map((row) => (
-          <div key={`${row.num}-${row.text.slice(0, 24)}`} className="flex gap-2">
-            <span className="pt-[1px] text-[#9aa39e]">{row.num}.</span>
-            <p className="min-w-0 flex-1 whitespace-pre-wrap">
+          <div key={`${row.num}-${row.text}`} className="flex items-start gap-2.5">
+            <span className="shrink-0 pt-[1px] text-[#9aa39e]">{row.num}.</span>
+            <p className="min-w-0 flex-1 break-words whitespace-pre-wrap [overflow-wrap:anywhere]">
               {row.text}
               {showCursor && row.num === displayRows[displayRows.length - 1]?.num ? (
                 <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-pulse bg-[#94a3b8]" />

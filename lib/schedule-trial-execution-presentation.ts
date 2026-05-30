@@ -1,5 +1,6 @@
 import type { TaskResponse } from "@/lib/agent-api/types";
 import type { TaskExecutionStep, TaskExecutionStepStatus } from "@/lib/agent-events";
+import { humanizeStepLabelForUi } from "@/lib/humanize-step-label";
 
 function isTaskDoneStatus(status: string): boolean {
   const s = (status || "").toUpperCase();
@@ -52,7 +53,7 @@ export function buildTaskStepsFromDecompositionLabels(
     }
     return {
       id: `decomp-label-${i}-${roundId.slice(0, 8)}`,
-      label: label.replace(/^\d+[）.、]\s*/, "").trim() || label,
+      label: humanizeStepLabelForUi(label.replace(/^\d+[）).、]\s*/, "").trim() || label),
       order: i + 1,
       status,
       roundId,

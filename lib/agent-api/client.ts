@@ -10,6 +10,7 @@ import type {
   LoginResponse,
   SessionMessagesPageResponse,
   SessionListResponse,
+  SessionAttachmentUploadItem,
   TaskListResult,
   TaskResponse,
   TokenCheckResponse,
@@ -582,14 +583,58 @@ export async function deleteTaskSession(accessToken: string, taskId: string): Pr
   }
 }
 
+export async function uploadSessionAttachments(
+  accessToken: string,
+  sessionId: string,
+  files: File[],
+): Promise<SessionAttachmentUploadItem[]> {
+  if (files.length === 0) return [];
+  const form = new FormData();
+  for (const file of files) {
+    form.append("files", file, file.name);
+  }
+  const res = await fetch(apiUrl(`/api/chat/${sessionId}/attachments`), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  });
+  const data = await parseJson(res);
+  if (!res.ok) {
+    throw new AgentApiError(
+      apiErrorDetailFromBody(data, formatHttpErrorMessage(res, data, "上传附件失败")),
+      res.status,
+      data,
+    );
+  }
+  assertJsonObject(data);
+  const attachments = data.attachments;
+  if (!Array.isArray(attachments)) {
+    throw new AgentApiError("invalid attachment upload response", res.status, data);
+  }
+  return attachments
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+      const row = item as Record<string, unknown>;
+      const attachment_id = row.attachment_id;
+      const name = row.name;
+      const size = row.size;
+      if (typeof attachment_id !== "string" || typeof name !== "string" || typeof size !== "number") {
+        return null;
+      }
+      return { attachment_id, name, size };
+    })
+    .filter((item): item is SessionAttachmentUploadItem => item !== null);
+}
+
 export async function sendChatMessageStream(
   accessToken: string,
   sessionId: string,
   message: string,
   messageId: string,
   handlers: ChatStreamHandlers = {},
-  init?: { signal?: AbortSignal },
+  init?: { signal?: AbortSignal; attachmentIds?: string[] },
 ): Promise<ChatSendResult> {
+  const attachmentIds = init?.attachmentIds?.filter((id) => id.trim().length > 0) ?? [];
   const res = await fetch(apiUrl(`/api/chat/${sessionId}/send/stream`), {
     method: "POST",
     headers: {
@@ -599,7 +644,11 @@ export async function sendChatMessageStream(
       "Idempotency-Key": `ui:${messageId}`,
       "X-Request-ID": messageId,
     },
-    body: JSON.stringify({ message, message_id: messageId }),
+    body: JSON.stringify({
+      message,
+      message_id: messageId,
+      attachment_ids: attachmentIds,
+    }),
     signal: init?.signal,
   });
   return consumeChatSendStream(res, handlers);
@@ -610,6 +659,7 @@ export async function sendChatMessage(
   sessionId: string,
   message: string,
   messageId: string,
+  attachmentIds: string[] = [],
 ): Promise<ChatSendResult> {
   const res = await fetch(apiUrl(`/api/chat/${sessionId}/send`), {
     method: "POST",
@@ -619,7 +669,11 @@ export async function sendChatMessage(
       "Idempotency-Key": `ui:${messageId}`,
       "X-Request-ID": messageId,
     },
-    body: JSON.stringify({ message, message_id: messageId }),
+    body: JSON.stringify({
+      message,
+      message_id: messageId,
+      attachment_ids: attachmentIds.filter((id) => id.trim().length > 0),
+    }),
   });
   const raw = await parseJson(res);
   const invalidBody =
@@ -949,6 +1003,11 @@ export async function getToolOrchestration(
       chatexcel_kind: typeof o.chatexcel_kind === "string" ? o.chatexcel_kind : null,
       prior_context_mode: typeof o.prior_context_mode === "string" ? o.prior_context_mode : null,
       reads_from_steps,
+      runtime_phase: typeof o.runtime_phase === "string" ? o.runtime_phase : null,
+      runtime_hint: typeof o.runtime_hint === "string" ? o.runtime_hint : null,
+      task_elapsed_seconds:
+        typeof o.task_elapsed_seconds === "number" ? o.task_elapsed_seconds : null,
+      task_started_at: typeof o.task_started_at === "string" ? o.task_started_at : null,
     };
   });
   const awaiting_clarification =

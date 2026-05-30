@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef } from "react";
 import { ChevronDown, FileText } from "@/components/ui/tabler-icons";
 
@@ -7,6 +8,8 @@ import { ChatMarkdown } from "@/components/chat-markdown";
 import { useTypewriterReveal } from "@/lib/use-typewriter-reveal";
 import { cn } from "@/lib/utils";
 import { stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
+import { sanitizeClarificationForUserDisplay, splitClarificationForDisplay } from "@/lib/linkfox-clarification";
+import { composerDraftContainsSuggestion } from "@/lib/composer-prefill";
 
 function charLen(text: string): number {
   return [...text].length;
@@ -20,8 +23,10 @@ function splitMessageLines(text: string) {
 }
 
 /** 普通对话：与消息列表同列宽，用户气泡贴右、助手气泡贴左，最大宽度一致 */
-export const SIMPLE_CHAT_COLUMN_MAX = "max-w-[min(100%,800px)]";
+export const SIMPLE_CHAT_COLUMN_MAX = "max-w-[min(100%,920px)]";
 export const SIMPLE_CHAT_BUBBLE_MAX = "max-w-[min(100%,720px)]";
+/** 任务拆分 / 任务执行卡片：占满会话列宽，长附件名可换行 */
+export const ORCHESTRATION_BLOCK_MAX = "w-full min-w-0";
 
 function formatTimeForBubble(iso: string) {
   const d = new Date(iso);
@@ -101,60 +106,138 @@ export function SimpleAssistantBubble({
   );
 }
 
+export function AliceMessageBubble({
+  body,
+  datetime,
+  streaming = false,
+  typewriter = false,
+  composerDraft = "",
+  onSuggestionToggle,
+  hideSuggestions = false,
+}: {
+  body: string;
+  datetime: string;
+  streaming?: boolean;
+  typewriter?: boolean;
+  /** 澄清关键词气泡：与输入框草稿同步选中态 */
+  composerDraft?: string;
+  onSuggestionToggle?: (item: string) => void;
+  /** 为 false 时不展示关键词气泡（默认展示；已回答时可传 composerDraft 高亮用户所选） */
+  hideSuggestions?: boolean;
+}) {
+  const { leading, suggestions } = splitClarificationForDisplay(body);
+  const visibleSuggestions = hideSuggestions ? [] : suggestions;
+  const displayBody = leading || (suggestions.length > 0 ? "" : sanitizeClarificationForUserDisplay(body));
+  const targetNorm = (() => {
+    const t = streaming ? stripModelThinkingForStreamPartial(displayBody) : stripModelThinkingForUi(displayBody);
+    return t === "（无回复）" ? "" : t;
+  })();
+  const latchedStreamRef = useRef(false);
+  // eslint-disable-next-line react-hooks/refs
+  if (streaming) latchedStreamRef.current = true;
+
+  // eslint-disable-next-line react-hooks/refs
+  const runTypewriter = typewriter && latchedStreamRef.current && charLen(targetNorm) > 0;
+  const { text: shown, revealing } = useTypewriterReveal(targetNorm, runTypewriter, {
+    charIntervalMs: 22,
+  });
+  const showCursor = Boolean(streaming && runTypewriter && revealing);
+
+  useEffect(() => {
+    if (!revealing && !streaming) {
+      latchedStreamRef.current = false;
+    }
+  }, [revealing, streaming]);
+
+  if (!targetNorm && visibleSuggestions.length === 0) return null;
+
+  const interactive = typeof onSuggestionToggle === "function" && visibleSuggestions.length > 0;
+
+  return (
+    <div className="flex w-full justify-start">
+      <div className={cn("group w-full space-y-3", SIMPLE_CHAT_BUBBLE_MAX)}>
+        <div className="flex w-full min-w-0 items-center justify-between gap-3 text-[14px] font-medium text-[#303734]">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center">
+              <Image
+                src="/mdata-logo.png"
+                alt="Alice"
+                width={36}
+                height={36}
+                className="h-9 w-9 shrink-0 object-contain"
+                draggable={false}
+              />
+            </div>
+            <div className="text-[14px] font-semibold text-[#1f2421]">Alice</div>
+          </div>
+          <div className="shrink-0 text-[12px] text-[#858481] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            {formatTimeForBubble(datetime)}
+          </div>
+        </div>
+        {targetNorm ? (
+          <div className="shrink-0 rounded-[16px] border border-[#e2e2df] bg-white px-4 py-3 text-[#34322d] shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
+            <div className="min-w-0 text-[14px] leading-7">
+              <ChatMarkdown>{shown}</ChatMarkdown>
+              {showCursor ? (
+                <span className="ml-0.5 inline-block animate-pulse text-[#747571]" aria-hidden>
+                  ▌
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        {visibleSuggestions.length > 0 ? (
+          <div className="space-y-2.5 pl-0 sm:pl-12">
+            <div className="flex flex-row flex-wrap items-start gap-2" role={interactive ? "list" : undefined}>
+              {visibleSuggestions.map((item, index) => {
+                const selected = composerDraftContainsSuggestion(composerDraft, item);
+                const chipClass = cn(
+                  "inline-flex max-w-full rounded-[999px] border px-3.5 py-2 text-left text-[13px] leading-5 transition",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15",
+                  selected
+                    ? "border-[#111111] bg-[#111111] text-white shadow-[0_1px_2px_rgba(17,17,17,0.08)]"
+                    : "border-[#e2e2df] bg-white text-[#34322d] shadow-[0_1px_2px_rgba(17,17,17,0.03)] hover:border-[#c9c9c4] hover:bg-[#fafaf9]",
+                );
+                if (interactive) {
+                  return (
+                    <button
+                      key={`${index}-${item.slice(0, 24)}`}
+                      type="button"
+                      role="listitem"
+                      aria-pressed={selected}
+                      className={cn(chipClass, "active:scale-[0.98]")}
+                      onClick={() => onSuggestionToggle(item)}
+                    >
+                      <span className="whitespace-pre-wrap break-words">{item}</span>
+                    </button>
+                  );
+                }
+                return (
+                  <div key={`${index}-${item.slice(0, 24)}`} role="listitem" className={chipClass}>
+                    <span className="whitespace-pre-wrap break-words">{item}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** @deprecated 请使用 AliceMessageBubble */
 export function LinkfoxClarificationBubble({
   body,
-  shareUrl,
   datetime,
   streaming = false,
 }: {
   body: string;
-  shareUrl: string | null;
+  shareUrl?: string | null;
   datetime: string;
   streaming?: boolean;
 }) {
-  const url = (shareUrl || "").trim();
-  const displayBody = (() => {
-    const t = body.trim();
-    if (!url) return t;
-    return t
-      .split(url)
-      .join("")
-      .replace(/请在 LinkFox 对话中继续补充信息：\s*$/i, "")
-      .trim();
-  })();
-
-  return (
-    <div className="flex w-full justify-start">
-      <div className={cn("group flex flex-col items-start", SIMPLE_CHAT_BUBBLE_MAX)}>
-        <div className="mb-1 text-[12px] text-[#858481] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-          {formatTimeForBubble(datetime)}
-        </div>
-        <div className="shrink-0 rounded-[16px] border border-[#f5e0c4] bg-[#fffbf5] px-4 py-3 text-[#34322d] shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
-          <div className="text-[12px] font-semibold text-[#b45309]">需要您补充信息</div>
-          {displayBody ? (
-            <div className="mt-2 min-w-0 text-[14px] leading-7">
-              <ChatMarkdown>{displayBody}</ChatMarkdown>
-            </div>
-          ) : null}
-          {url ? (
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3 inline-flex items-center rounded-full bg-[#f97316] px-4 py-2 text-[13px] font-medium text-white no-underline hover:bg-[#ea580c]"
-            >
-              在 LinkFox 中继续补充
-            </a>
-          ) : null}
-          {streaming ? (
-            <span className="ml-1 inline-block animate-pulse text-[#747571]" aria-hidden>
-              ▌
-            </span>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
+  return <AliceMessageBubble body={body} datetime={datetime} streaming={streaming} typewriter={false} />;
 }
 
 export function SimpleSystemBubble({ message }: { message: string }) {

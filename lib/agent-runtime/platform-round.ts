@@ -5,11 +5,13 @@ import {
   patchTaskExecutionSteps,
   postTaskExecutionSteps,
   sendChatMessageStream,
+  uploadSessionAttachments,
 } from "@/lib/agent-api/client";
 import { ChatStreamError } from "@/lib/agent-api/chat-stream";
 import type { TaskResponse, ToolOrchestrationStatusApi } from "@/lib/agent-api/types";
 import type { AgentRoundRuntimeEvent, TaskExecutionStepStatus } from "@/lib/agent-events";
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
+import { humanizeStepLabelForUi } from "@/lib/humanize-step-label";
 
 async function resolveOrchestrationFailureUserMessage(
   accessToken: string,
@@ -40,13 +42,14 @@ async function resolveOrchestrationFailureUserMessage(
 }
 import { safeRandomUUID } from "@/lib/random-uuid";
 import { streamSanitizeDeltaClient, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
-import { formatLinkfoxClarificationForStream } from "@/lib/linkfox-clarification";
+import { sanitizeClarificationForUserDisplay, formatLinkfoxClarificationForStream } from "@/lib/linkfox-clarification";
 import {
   buildTaskCompletionSummary,
   extractPostTaskGuidance,
 } from "@/lib/task-chat-summary";
 
-import { PlatformAuthExpiredError } from "./auth";
+import { resolvePendingLinkfoxClarificationFromSession } from "@/lib/agent-runtime/session-linkfox-clarification";
+import type { SessionLinkfoxClarification } from "@/lib/agent-runtime/session-linkfox-clarification";
 import { capabilityLabelMap } from "./constants";
 import { buildReportPatch } from "./report-helpers";
 import { mapServerOrchestrationStepStatus, mapTaskResponseToSubtaskEvent } from "./task-mapping";
@@ -151,6 +154,59 @@ async function emitPlatformTaskRoundOutcome(
   handlers.onEvent({ type: "round_completed", roundId: input.roundId });
 }
 
+async function finishRoundAwaitingLinkfoxClarification(input: {
+  handlers: { onEvent: (event: AgentRoundRuntimeEvent) => void };
+  roundInput: AgentRoundInput;
+  clarify: SessionLinkfoxClarification;
+  stepDefs: Array<{ id: string; label: string }>;
+  orchestrationId: string | null;
+  rowStatuses: TaskExecutionStepStatus[];
+  persistRows: (statuses: TaskExecutionStepStatus[], taskId?: string) => Promise<void>;
+  parentTaskId: string;
+  emitStep: (stepId: string, status: TaskExecutionStepStatus, runtimeHint?: string) => void;
+}) {
+  const { handlers, roundInput, clarify, stepDefs, orchestrationId, rowStatuses, persistRows, parentTaskId, emitStep } =
+    input;
+  const clarifyMessage =
+    clarify.message.trim() ||
+    sanitizeClarificationForUserDisplay("为了继续完成当前任务，请直接在对话中补充所需信息。");
+  handlers.onEvent({
+    type: "linkfox_clarification_pending",
+    roundId: roundInput.roundId,
+    message: clarifyMessage,
+    shareUrl: null,
+    stepIndex: clarify.stepIndex,
+    orchestrationId: (orchestrationId ?? clarify.orchestrationId ?? undefined) || undefined,
+  });
+  rowStatuses.forEach((st, idx) => {
+    const def = stepDefs[idx];
+    if (def) emitStep(def.id, st);
+  });
+  await persistRows(rowStatuses, parentTaskId);
+  handlers.onEvent({
+    type: "final",
+    roundId: roundInput.roundId,
+    text: clarifyMessage,
+  });
+  handlers.onEvent({ type: "round_completed", roundId: roundInput.roundId });
+}
+
+function buildClarificationStepStatuses(
+  stepCount: number,
+  stepIndex: number | null,
+  priorStatuses?: TaskExecutionStepStatus[],
+): TaskExecutionStepStatus[] {
+  const idx = stepIndex ?? 0;
+  if (priorStatuses && priorStatuses.length === stepCount) {
+    return priorStatuses.map((st, i) => (i === idx ? "awaiting_input" : st));
+  }
+  return Array.from({ length: stepCount }, (_, i) => {
+    if (i < idx) return "done" as const;
+    if (i === idx) return "awaiting_input" as const;
+    return "pending" as const;
+  });
+}
+
 export async function runPlatformRound(
   input: AgentRoundInput,
   handlers: { onEvent: (event: AgentRoundRuntimeEvent) => void },
@@ -163,8 +219,14 @@ export async function runPlatformRound(
       ? input.selectedCapabilities.map((id) => capabilityLabelMap.get(id) ?? id)
       : [];
 
-  handlers.onEvent({ type: "round_started", roundId: input.roundId });
-  registerSplitRevealWait(input.roundId);
+  const isClarificationResume = Boolean(platformOptions.clarificationResume?.orchestrationId);
+
+  if (isClarificationResume) {
+    handlers.onEvent({ type: "orchestration_resume", roundId: input.roundId });
+  } else {
+    handlers.onEvent({ type: "round_started", roundId: input.roundId });
+    registerSplitRevealWait(input.roundId);
+  }
 
   if (input.attachments.length > 0) {
     handlers.onEvent({
@@ -182,6 +244,12 @@ export async function runPlatformRound(
     let hadSplitStreamSteps = false;
     let rawStreamAccum = "";
     let prevSanitizedStream = "";
+    const attachmentFiles = input.attachmentFiles ?? [];
+    let attachmentIds: string[] = [];
+    if (attachmentFiles.length > 0) {
+      const uploaded = await uploadSessionAttachments(accessToken, chatSessionId, attachmentFiles);
+      attachmentIds = uploaded.map((item) => item.attachment_id);
+    }
     const result = await sendChatMessageStream(
       accessToken,
       chatSessionId,
@@ -222,6 +290,7 @@ export async function runPlatformRound(
           }
         },
       },
+      { attachmentIds },
     );
 
     if (result.kind === "accepted") {
@@ -229,34 +298,45 @@ export async function runPlatformRound(
         taskId: result.task_id,
         orchestrationId: result.orchestration_id,
       });
+      if (result.orchestration_id) {
+        handlers.onEvent({
+          type: "platform_orchestration_bound",
+          roundId: input.roundId,
+          orchestrationId: result.orchestration_id,
+        });
+      }
     }
 
     if (result.kind === "completed") {
-      handlers.onEvent({
-        type: "round_ui_layout",
-        roundId: input.roundId,
-        layout: "simple_chat",
-      });
-      const text = stripModelThinkingForUi(result.message || rawStreamAccum);
-      const finalText = text === "（无回复）" ? "" : text;
-      if (hadStreamDelta && finalText && finalText.length > prevSanitizedStream.length) {
-        const tail = finalText.startsWith(prevSanitizedStream)
-          ? finalText.slice(prevSanitizedStream.length)
-          : "";
-        if (tail) {
-          handlers.onEvent({ type: "delta", roundId: input.roundId, text: tail });
+      const clarificationResume = platformOptions.clarificationResume;
+      const isClarificationResume = Boolean(clarificationResume?.orchestrationId);
+      if (!isClarificationResume) {
+        handlers.onEvent({
+          type: "round_ui_layout",
+          roundId: input.roundId,
+          layout: "simple_chat",
+        });
+        const text = stripModelThinkingForUi(result.message || rawStreamAccum);
+        const finalText = text === "（无回复）" ? "" : text;
+        if (hadStreamDelta && finalText && finalText.length > prevSanitizedStream.length) {
+          const tail = finalText.startsWith(prevSanitizedStream)
+            ? finalText.slice(prevSanitizedStream.length)
+            : "";
+          if (tail) {
+            handlers.onEvent({ type: "delta", roundId: input.roundId, text: tail });
+          }
+        } else if (!hadStreamDelta && finalText) {
+          handlers.onEvent({ type: "delta", roundId: input.roundId, text: finalText });
         }
-      } else if (!hadStreamDelta && finalText) {
-        handlers.onEvent({ type: "delta", roundId: input.roundId, text: finalText });
+        prevSanitizedStream = finalText;
+        handlers.onEvent({
+          type: "final",
+          roundId: input.roundId,
+          text: finalText,
+        });
+        handlers.onEvent({ type: "round_completed", roundId: input.roundId });
+        return;
       }
-      prevSanitizedStream = finalText;
-      handlers.onEvent({
-        type: "final",
-        roundId: input.roundId,
-        text: finalText,
-      });
-      handlers.onEvent({ type: "round_completed", roundId: input.roundId });
-      return;
     }
 
     if (result.kind === "blocked") {
@@ -274,69 +354,125 @@ export async function runPlatformRound(
     }
 
     try {
-      const executionSteps = result.execution_steps ?? [];
-      if (executionSteps.length === 0) {
-        throw new Error("平台未返回 execution_steps，无法展示任务步骤");
-      }
-      const stepLabels = executionSteps;
+      const clarificationResume = platformOptions.clarificationResume;
+      const isClarificationResume =
+        result.kind === "completed" && Boolean(clarificationResume?.orchestrationId);
 
-      const stepDefs = stepLabels.map((label, i) => ({
-        id: `${input.roundId}-step-${i + 1}`,
-        label,
-      }));
+      let stepDefs: Array<{ id: string; label: string }>;
+      let orchestrationId: string | null;
+      let acceptedTaskId: string;
 
-      handlers.onEvent({
-        type: "round_ui_layout",
-        roundId: input.roundId,
-        layout: "tool_orchestration",
-      });
-
-      const finishSplitRevealUi = async () => {
-        if (!isSplitStreamEndedInStore(input.roundId)) {
-          handlers.onEvent({ type: "task_split_stream_end", roundId: input.roundId });
+      if (isClarificationResume && clarificationResume) {
+        orchestrationId = clarificationResume.orchestrationId;
+        stepDefs = clarificationResume.stepDefs;
+        acceptedTaskId = "";
+        handlers.onEvent({ type: "linkfox_clarification_cleared", roundId: input.roundId });
+        handlers.onEvent({
+          type: "round_ui_layout",
+          roundId: input.roundId,
+          layout: "tool_orchestration",
+        });
+        let resumeOk = false;
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          const resumeCheck = await getToolOrchestration(accessToken, orchestrationId!);
+          if (!resumeCheck.awaiting_clarification) {
+            resumeOk = true;
+            break;
+          }
+          await sleep(500);
         }
-        await waitForSplitRevealComplete(input.roundId, stepLabels);
-        handlers.onEvent({ type: "split_reveal_complete", roundId: input.roundId });
-        notifySplitRevealComplete(input.roundId);
-      };
-
-      registerSplitRevealWait(input.roundId);
-
-      if (hadSplitStreamSteps) {
-        handlers.onEvent({
-          type: "task_execution_steps_init",
-          roundId: input.roundId,
-          steps: stepDefs.map((s) => ({ id: s.id, label: s.label })),
-        });
-        await finishSplitRevealUi();
+        if (!resumeOk) {
+          handlers.onEvent({
+            type: "error",
+            roundId: input.roundId,
+            message: humanizeTaskErrorMessage(
+              "未能恢复任务执行，请重新发送补充信息；若仍失败请刷新页面。",
+            ),
+          });
+          return;
+        }
+        const resumeIdx = clarificationResume.clarificationStepIndex ?? 0;
+        const resumeStep = stepDefs[resumeIdx];
+        if (resumeStep) {
+          handlers.onEvent({
+            type: "task_execution_step_update",
+            roundId: input.roundId,
+            stepId: resumeStep.id,
+            status: "running",
+          });
+        }
       } else {
+        if (result.kind !== "accepted") {
+          throw new Error("平台未接受工具任务");
+        }
+        const executionSteps = result.execution_steps ?? [];
+        if (executionSteps.length === 0) {
+          throw new Error("平台未返回 execution_steps，无法展示任务步骤");
+        }
+        const stepLabels = executionSteps.map((label) => humanizeStepLabelForUi(label));
+        stepDefs = stepLabels.map((label, i) => ({
+          id: `${input.roundId}-step-${i + 1}`,
+          label,
+        }));
+        orchestrationId = result.orchestration_id;
+        acceptedTaskId = result.task_id;
+
         handlers.onEvent({
-          type: "task_execution_steps_init",
+          type: "round_ui_layout",
           roundId: input.roundId,
-          steps: stepDefs.map((s) => ({ id: s.id, label: s.label })),
+          layout: "tool_orchestration",
         });
-        await yieldToUi();
-        await finishSplitRevealUi();
+
+        const finishSplitRevealUi = async () => {
+          if (!isSplitStreamEndedInStore(input.roundId)) {
+            handlers.onEvent({ type: "task_split_stream_end", roundId: input.roundId });
+          }
+          await waitForSplitRevealComplete(input.roundId, stepLabels);
+          handlers.onEvent({ type: "split_reveal_complete", roundId: input.roundId });
+          notifySplitRevealComplete(input.roundId);
+        };
+
+        registerSplitRevealWait(input.roundId);
+
+        if (hadSplitStreamSteps) {
+          handlers.onEvent({
+            type: "task_execution_steps_init",
+            roundId: input.roundId,
+            steps: stepDefs.map((s) => ({ id: s.id, label: s.label })),
+          });
+          await finishSplitRevealUi();
+        } else {
+          handlers.onEvent({
+            type: "task_execution_steps_init",
+            roundId: input.roundId,
+            steps: stepDefs.map((s) => ({ id: s.id, label: s.label })),
+          });
+          await yieldToUi();
+          await finishSplitRevealUi();
+        }
+
+        if (stepDefs.length > 0) {
+          handlers.onEvent({
+            type: "task_execution_step_update",
+            roundId: input.roundId,
+            stepId: stepDefs[0]!.id,
+            status: "running",
+          });
+        }
       }
 
-      if (stepDefs.length > 0) {
-        handlers.onEvent({
-          type: "task_execution_step_update",
-          roundId: input.roundId,
-          stepId: stepDefs[0]!.id,
-          status: "running",
+      let taskExecutionStepsMessageId: string | null = null;
+      if (!isClarificationResume && result.kind === "accepted") {
+        taskExecutionStepsMessageId = await postTaskExecutionSteps(accessToken, chatSessionId, {
+          round_id: input.roundId,
+          task_id: result.task_id,
+          steps: stepDefs.map((s) => ({
+            id: s.id,
+            label: s.label,
+            status: "pending" as const,
+          })),
         });
       }
-
-      const taskExecutionStepsMessageId = await postTaskExecutionSteps(accessToken, chatSessionId, {
-        round_id: input.roundId,
-        task_id: result.task_id,
-        steps: stepDefs.map((s) => ({
-          id: s.id,
-          label: s.label,
-          status: "pending" as const,
-        })),
-      });
 
       const persistTaskExecutionStepsRows = async (statuses: TaskExecutionStepStatus[], taskIdForMeta?: string) => {
         if (!taskExecutionStepsMessageId) return;
@@ -347,7 +483,7 @@ export async function runPlatformRound(
         }));
         const body = {
           round_id: input.roundId,
-          task_id: taskIdForMeta ?? result.task_id,
+          task_id: taskIdForMeta ?? acceptedTaskId,
           steps,
         };
         await patchTaskExecutionSteps(accessToken, chatSessionId, taskExecutionStepsMessageId, body);
@@ -390,12 +526,13 @@ export async function runPlatformRound(
         }
       };
 
-      const emitStep = (stepId: string, status: TaskExecutionStepStatus) => {
+      const emitStep = (stepId: string, status: TaskExecutionStepStatus, runtimeHint?: string) => {
         handlers.onEvent({
           type: "task_execution_step_update",
           roundId: input.roundId,
           stepId,
           status,
+          ...(runtimeHint ? { runtimeHint } : {}),
         });
       };
 
@@ -405,8 +542,20 @@ export async function runPlatformRound(
         }
       };
 
-      const orchestrationId = result.orchestration_id;
-      let sharedTask: TaskResponse = await getTask(accessToken, result.task_id);
+      let sharedTask: TaskResponse;
+      if (acceptedTaskId) {
+        sharedTask = await getTask(accessToken, acceptedTaskId);
+      } else if (orchestrationId) {
+        const orchSnap = await getToolOrchestration(accessToken, orchestrationId);
+        const firstTaskId = orchSnap.steps.map((s) => s.task_id).find((id) => id);
+        if (!firstTaskId) {
+          throw new Error("编排任务缺少 task_id");
+        }
+        sharedTask = await getTask(accessToken, firstTaskId);
+      } else {
+        throw new Error("平台未返回 task_id，无法继续执行");
+      }
+      const parentTaskId = acceptedTaskId || sharedTask.task_id;
       let orchFinished = false;
       let lastOrch: Awaited<ReturnType<typeof getToolOrchestration>> | null = null;
       let clarificationAnnounced = false;
@@ -424,22 +573,34 @@ export async function runPlatformRound(
           lastOrch.steps.forEach((st, idx) => {
             const def = stepDefs[idx];
             if (!def) return;
-            emitStep(def.id, mapServerOrchestrationStepStatus(st.status));
+            emitStep(def.id, mapServerOrchestrationStepStatus(st.status), st.runtime_hint ?? undefined);
           });
           await emitFinishedOrchestrationSubtasks(lastOrch);
-          if (lastOrch.awaiting_clarification && lastOrch.clarification_message && !clarificationAnnounced) {
+          const orchNeedsClarifyUi =
+            Boolean(lastOrch.awaiting_clarification) ||
+            lastOrch.steps.some((s) => s.status.toUpperCase() === "AWAITING_INPUT");
+          if (orchNeedsClarifyUi && !clarificationAnnounced) {
             clarificationAnnounced = true;
-            const clarifyText = formatLinkfoxClarificationForStream(
-              lastOrch.clarification_message,
-              lastOrch.clarification_share_url ?? null,
+            const clarifyMessage = sanitizeClarificationForUserDisplay(
+              lastOrch.clarification_message?.trim() ||
+                "为了继续完成当前任务，请直接在对话中补充所需信息。",
             );
+            const clarifyText = formatLinkfoxClarificationForStream(clarifyMessage, null);
+            handlers.onEvent({
+              type: "linkfox_clarification_pending",
+              roundId: input.roundId,
+              message: clarifyMessage,
+              shareUrl: null,
+              stepIndex: lastOrch.clarification_step_index ?? null,
+              orchestrationId,
+            });
             handlers.onEvent({
               type: "delta",
               roundId: input.roundId,
               text: `\n\n${clarifyText}\n\n`,
             });
           }
-          if (lastOrch.awaiting_clarification) {
+          if (orchNeedsClarifyUi) {
             orchAwaitingClarification = true;
             break;
           }
@@ -453,7 +614,7 @@ export async function runPlatformRound(
           finalizeAllSteps("error");
           await persistTaskExecutionStepsUniform("error");
           pushPlatformSnapshot({
-            task_id: result.task_id,
+            task_id: parentTaskId,
             artifacts: [],
             zip_download_api: null,
           });
@@ -465,14 +626,14 @@ export async function runPlatformRound(
           return;
         }
 
-        let summaryTaskId = result.task_id;
+        let summaryTaskId = parentTaskId;
         if (lastOrch) {
           if (lastOrch.success) {
             const lastWithId = [...lastOrch.steps].reverse().find((s) => s.task_id);
             if (lastWithId?.task_id) summaryTaskId = lastWithId.task_id;
           } else {
             const failed = lastOrch.steps.find((s) => s.status.toUpperCase() === "FAILED");
-            summaryTaskId = failed?.task_id ?? result.task_id;
+            summaryTaskId = failed?.task_id ?? parentTaskId;
           }
         }
         sharedTask = await getTask(accessToken, summaryTaskId);
@@ -488,7 +649,7 @@ export async function runPlatformRound(
             userStoppedSingle = true;
             break;
           }
-          sharedTask = await getTask(accessToken, result.task_id);
+          sharedTask = await getTask(accessToken, parentTaskId);
           polls += 1;
         }
         if (userStoppedSingle) {
@@ -496,7 +657,7 @@ export async function runPlatformRound(
             emitStep(stepDefs[0]!.id, "error");
           }
           finalizeAllSteps("error");
-          await persistTaskExecutionStepsUniform("error", result.task_id);
+          await persistTaskExecutionStepsUniform("error", parentTaskId);
           handlers.onEvent({
             type: "error",
             roundId: input.roundId,
@@ -507,9 +668,7 @@ export async function runPlatformRound(
         if (stepDefs.length > 0) {
           if (!sharedTask.finished_at) {
             emitStep(stepDefs[0]!.id, "error");
-          } else if (sharedTask.status === "SUCCESS") {
-            emitStep(stepDefs[0]!.id, "done");
-          } else {
+          } else if (sharedTask.status !== "SUCCESS") {
             emitStep(stepDefs[0]!.id, "error");
           }
         }
@@ -529,18 +688,71 @@ export async function runPlatformRound(
 
       const task = sharedTask;
 
+      let pendingClarifyFromSession: SessionLinkfoxClarification | null = null;
+      if (!orchAwaitingClarification && task.finished_at && task.status === "SUCCESS") {
+        pendingClarifyFromSession = await resolvePendingLinkfoxClarificationFromSession(
+          accessToken,
+          chatSessionId,
+          {
+            taskId: parentTaskId,
+            orchestrationId: orchestrationId ?? undefined,
+            maxAttempts: orchestrationId ? 24 : 20,
+          },
+        );
+        if (pendingClarifyFromSession && orchestrationId && !lastOrch) {
+          try {
+            lastOrch = await getToolOrchestration(accessToken, orchestrationId);
+          } catch {
+            /* 编排快照拉取失败时仍可用 session 澄清文案 */
+          }
+        }
+        if (pendingClarifyFromSession) {
+          orchAwaitingClarification = true;
+        }
+      }
+
       if (orchestrationId) {
         if (orchAwaitingClarification) {
-          const clarifyFinal =
-            lastOrch?.clarification_message?.trim() ||
-            "请在下方输入补充信息后发送，以继续执行当前步骤。";
+          const clarifyMessage = sanitizeClarificationForUserDisplay(
+            pendingClarifyFromSession?.message ||
+              lastOrch?.clarification_message?.trim() ||
+              "为了继续完成当前任务，请直接在对话中补充所需信息。",
+          );
+          if (!clarificationAnnounced) {
+            handlers.onEvent({
+              type: "linkfox_clarification_pending",
+              roundId: input.roundId,
+              message: clarifyMessage,
+              shareUrl: null,
+              stepIndex:
+                pendingClarifyFromSession?.stepIndex ??
+                lastOrch?.clarification_step_index ??
+                null,
+              orchestrationId: orchestrationId ?? undefined,
+            });
+          }
+          const rowStatuses: TaskExecutionStepStatus[] =
+            lastOrch?.steps.map((s) => mapServerOrchestrationStepStatus(s.status)) ??
+            buildClarificationStepStatuses(
+              stepDefs.length,
+              pendingClarifyFromSession?.stepIndex ?? lastOrch?.clarification_step_index ?? 0,
+            );
+          if (pendingClarifyFromSession) {
+            const clarifyIdx =
+              pendingClarifyFromSession.stepIndex ?? lastOrch?.clarification_step_index ?? 0;
+            if (rowStatuses[clarifyIdx] !== "awaiting_input") {
+              rowStatuses[clarifyIdx] = "awaiting_input";
+            }
+          }
+          rowStatuses.forEach((st, idx) => {
+            const def = stepDefs[idx];
+            if (def) emitStep(def.id, st);
+          });
+          await persistTaskExecutionStepsRows(rowStatuses, parentTaskId);
           handlers.onEvent({
             type: "final",
             roundId: input.roundId,
-            text: formatLinkfoxClarificationForStream(
-              clarifyFinal,
-              lastOrch?.clarification_share_url ?? null,
-            ),
+            text: clarifyMessage,
           });
           handlers.onEvent({ type: "round_completed", roundId: input.roundId });
           return;
@@ -549,7 +761,7 @@ export async function runPlatformRound(
           finalizeAllSteps("error");
           await persistTaskExecutionStepsUniform("error");
           pushPlatformSnapshot({
-            task_id: result.task_id,
+            task_id: parentTaskId,
             artifacts: [],
             zip_download_api: null,
           });
@@ -610,7 +822,7 @@ export async function runPlatformRound(
         finalizeAllSteps("error");
         await persistTaskExecutionStepsUniform("error", task.task_id);
         pushPlatformSnapshot({
-          task_id: result.task_id,
+          task_id: parentTaskId,
           artifacts: [],
           zip_download_api: null,
         });
@@ -644,6 +856,25 @@ export async function runPlatformRound(
           chatSessionId,
           task,
         );
+        return;
+      }
+
+      if (pendingClarifyFromSession) {
+        const rowStatuses = buildClarificationStepStatuses(
+          stepDefs.length,
+          pendingClarifyFromSession.stepIndex ?? 0,
+        );
+        await finishRoundAwaitingLinkfoxClarification({
+          handlers,
+          roundInput: input,
+          clarify: pendingClarifyFromSession,
+          stepDefs,
+          orchestrationId: null,
+          rowStatuses,
+          persistRows: persistTaskExecutionStepsRows,
+          parentTaskId: task.task_id,
+          emitStep,
+        });
         return;
       }
 

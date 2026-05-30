@@ -7,12 +7,14 @@ import ReactMarkdown from "react-markdown";
 import { HtmlArtifactIframe } from "@/components/html-artifact-iframe";
 import { ChatexcelArtifactPreview } from "@/components/chatexcel-artifact-preview";
 import { LazyCsvArtifactTable } from "@/components/lazy-csv-artifact-table";
+import { TableDataCellContent } from "@/components/table-data-cell-content";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchAuthorizedText } from "@/lib/agent-api/client";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { parseChatexcelArtifactText } from "@/lib/chatexcel-artifact";
 import { parseJsonToTableData } from "@/lib/json-to-table";
 import { CHATEXCEL_RESULT_RE, LINKFOX_RESULT_RE } from "@/lib/platform-task-artifacts";
+import { shouldRenderTableCellAsImage } from "@/lib/table-image-url-cell";
 
 function extOf(name: string) {
   const i = name.lastIndexOf(".");
@@ -54,9 +56,19 @@ function JsonArtifactDataTable({ columns, rows }: { columns: string[]; rows: str
                 <TableRow key={`jr-${ri}`} className="hover:bg-[#fafafa]">
                   {Array.from({ length: colCount }, (_, ci) => {
                     const v = row[ci] ?? "";
+                    const columnHeader = columns[ci];
                     return (
-                      <TableCell key={`jc-${ri}-${ci}`} className={jsonBodyCellTd} title={v}>
-                        <span className={jsonBodyCellInner}>{v}</span>
+                      <TableCell
+                        key={`jc-${ri}-${ci}`}
+                        className={jsonBodyCellTd}
+                        title={shouldRenderTableCellAsImage(columnHeader, v) ? undefined : v}
+                      >
+                        <TableDataCellContent
+                          value={v}
+                          columnHeader={columnHeader}
+                          sidePanel
+                          textClassName={jsonBodyCellInner}
+                        />
                       </TableCell>
                     );
                   })}

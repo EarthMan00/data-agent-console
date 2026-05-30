@@ -3,7 +3,9 @@
 import Image from "next/image";
 import type { ReactNode } from "react";
 
+import { ORCHESTRATION_BLOCK_MAX } from "@/components/agent-workspace/chat-bubbles";
 import { TaskExecutionPanel } from "@/components/agent-workspace/task-execution-panel";
+import { cn } from "@/lib/utils";
 import { TaskSplitSection } from "@/components/agent-workspace/task-split-section";
 
 type TaskOrchestrationBlockProps = {
@@ -42,7 +44,7 @@ export function TaskOrchestrationBlock({
   executionTestId,
 }: TaskOrchestrationBlockProps) {
   return (
-    <div className="w-full space-y-3.5">
+    <div className={cn("w-full space-y-3.5", ORCHESTRATION_BLOCK_MAX)}>
       <div className="flex w-full min-w-0 items-center justify-between gap-3 text-[14px] font-medium text-[#303734]">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center">

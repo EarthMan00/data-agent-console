@@ -139,6 +139,7 @@ export async function consumeChatSendStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let outcome: ChatSendResult | null = null;
+  let lastAssistantComplete: { session_id: string; text: string } | null = null;
 
   const handleParsed = (parsed: ChatStreamParseResult) => {
     if (!parsed) return;
@@ -149,6 +150,10 @@ export async function consumeChatSendStream(
       handlers.onSplitDelta?.(parsed.steps);
     }
     if (parsed.type === "assistant_complete") {
+      lastAssistantComplete = {
+        session_id: parsed.session_id,
+        text: parsed.text,
+      };
       handlers.onAssistantComplete?.(parsed.text, parsed.session_id);
     }
     if (parsed.type === "completed") {
@@ -199,6 +204,14 @@ export async function consumeChatSendStream(
   const { completed: tailBlocks } = readSSEChunk(`${buffer}\n\n`);
   for (const block of tailBlocks) {
     handleParsed(parseChatStreamBlock(block));
+  }
+
+  if (!outcome && lastAssistantComplete) {
+    outcome = {
+      kind: "completed",
+      session_id: lastAssistantComplete.session_id,
+      message: lastAssistantComplete.text,
+    };
   }
 
   if (!outcome) {

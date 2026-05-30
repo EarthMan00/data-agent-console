@@ -23,6 +23,8 @@ import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
 import { buildAttachmentItems } from "@/components/agent-workspace/attachment-utils";
 import {
   ConversationBubble,
+  AliceMessageBubble,
+  ORCHESTRATION_BLOCK_MAX,
   SIMPLE_CHAT_BUBBLE_MAX,
   SIMPLE_CHAT_COLUMN_MAX,
   SimpleAssistantBubble,
@@ -31,6 +33,7 @@ import {
   ToolCard,
 } from "@/components/agent-workspace/chat-bubbles";
 import { TaskOrchestrationBlock } from "@/components/agent-workspace/task-orchestration-block";
+import { TaskExecutionPanel } from "@/components/agent-workspace/task-execution-panel";
 import { PlatformRoundStepTimeline } from "@/components/agent-workspace/platform-step-views";
 import { PostTaskGuidanceBubble } from "@/components/agent-workspace/post-task-guidance-bubble";
 import { PlatformSessionAgentWorkspace } from "@/components/agent-workspace/platform-session-agent-workspace";
@@ -46,6 +49,7 @@ import { sanitizeObjective } from "@/lib/agent-attachments";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { isPlatformBackendEnabled, streamAgentRound } from "@/lib/agent-runtime";
 import { homeCapabilityItems } from "@/lib/home-capability-items";
+import { takeRoundAttachmentFiles } from "@/lib/round-attachment-files";
 import { workspaceActions, useWorkspaceState, type Report, type TaskRun } from "@/lib/workspace-store";
 import { displayLabelForIndexedSubtask } from "@/lib/merge-orchestration-task-artifacts";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
@@ -58,7 +62,11 @@ import {
   buildRoundViewModels,
   compactText,
   isExecutionStepActivelyBusy,
+  isRoundAwaitingUserInput,
   isRoundExecutionTerminated,
+  resolveClarificationOrchestrationId,
+  clarificationDialogBodyForDisplay,
+  shouldDeferExecutionPanelAfterClarification,
   type RoundViewModel,
   type TaskRunLike,
   toCapabilitySafeTitle,
@@ -68,6 +76,7 @@ export {
   buildAcknowledgement,
   buildRoundViewModels,
   isExecutionStepActivelyBusy,
+  isRoundAwaitingUserInput,
   isRoundExecutionTerminated,
   toCapabilitySafeTitle,
 };
@@ -190,6 +199,7 @@ function AgentRunWorkspaceView({
   const [composerModes, setComposerModes] = useState<Record<string, "普通模式" | "深度模式">>({});
   const [selectedSourceOverrides, setSelectedSourceOverrides] = useState<Record<string, string[]>>({});
   const [queuedAttachments, setQueuedAttachments] = useState<Record<string, AgentAttachment[]>>({});
+  const [queuedAttachmentFiles, setQueuedAttachmentFiles] = useState<Record<string, File[]>>({});
   const [composerVersion, setComposerVersion] = useState<Record<string, number>>({});
   const [executionCardExpandedByRound, setExecutionCardExpandedByRound] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState("");
@@ -243,10 +253,14 @@ function AgentRunWorkspaceView({
         splitStreamEndedByRound: run.splitStreamEndedByRound,
         splitRevealCompleteByRound: run.splitRevealCompleteByRound,
         postTaskGuidanceByRound: run.postTaskGuidanceByRound,
+        linkfoxClarificationByRound: run.linkfoxClarificationByRound,
+        clarificationDialogByRound: run.clarificationDialogByRound,
       }),
     [
       run.chains,
+      run.clarificationDialogByRound,
       run.latestRoundId,
+      run.linkfoxClarificationByRound,
       run.objective,
       run.platformSubtasksByRound,
       run.platformTaskArtifacts,
@@ -301,8 +315,14 @@ function AgentRunWorkspaceView({
           (r.executionSteps?.length ?? 0) > 0 &&
           !r.collapseExecution &&
           !r.errorMessage &&
+          !isRoundAwaitingUserInput(r) &&
           !r.executionSteps?.some((s) => s.status === "error"),
       ),
+    [roundModels],
+  );
+
+  const anyRoundAwaitingUserInput = useMemo(
+    () => roundModels.some((r) => isRoundAwaitingUserInput(r)),
     [roundModels],
   );
 
@@ -323,6 +343,7 @@ function AgentRunWorkspaceView({
 
   /** 与「任务执行」一致：刷新后 agentRoundInFlight 会丢；queued 且任意轮已有拆解步骤也算执行态 */
   const composerShowsStop = useMemo(() => {
+    if (anyRoundAwaitingUserInput) return false;
     if (run.status === "error") {
       return agentRoundInFlight;
     }
@@ -339,6 +360,7 @@ function AgentRunWorkspaceView({
   }, [
     agentRoundInFlight,
     anyOrchestrationStepBusy,
+    anyRoundAwaitingUserInput,
     anyRoundOrchestrationPanelActive,
     anyRoundStepsBusy,
     anyRoundWaitingFinal,
@@ -466,13 +488,21 @@ function AgentRunWorkspaceView({
     prompt: string;
     selectedCapabilities: string[];
     attachments: AgentAttachment[];
+    attachmentFiles?: File[];
     isInitialRound?: boolean;
+    clarificationResume?: {
+      orchestrationId: string;
+      stepDefs: Array<{ id: string; label: string }>;
+      clarificationStepIndex?: number;
+    };
   }) => {
     if (executingRoundsRef.current.has(input.roundId)) return;
     executingRoundsRef.current.add(input.roundId);
     setAgentRoundInFlight(true);
     abortPollRef.current = false;
-    acceptedToolRef.current = { taskId: null, orchestrationId: null };
+    const preservedOrchId =
+      input.clarificationResume?.orchestrationId ?? acceptedToolRef.current.orchestrationId;
+    acceptedToolRef.current = { taskId: null, orchestrationId: preservedOrchId };
     try {
       await streamAgentRound(
         {
@@ -482,9 +512,11 @@ function AgentRunWorkspaceView({
           mode: composerMode,
           selectedCapabilities: input.selectedCapabilities,
           attachments: input.attachments,
+          attachmentFiles: input.attachmentFiles,
           objective: run.objective,
           isInitialRound: input.isInitialRound,
           platformChatSessionId: run.platformSessionId,
+          clarificationResume: input.clarificationResume,
         },
         {
           onEvent: (event) => {
@@ -496,6 +528,7 @@ function AgentRunWorkspaceView({
               platform: {
                 withFreshToken: platformAgent.withFreshToken,
                 shouldAbortPoll: () => abortPollRef.current,
+                clarificationResume: input.clarificationResume,
                 onToolTaskAccepted: (p) => {
                   acceptedToolRef.current = {
                     taskId: p.taskId,
@@ -507,6 +540,7 @@ function AgentRunWorkspaceView({
           : undefined,
       );
       setQueuedAttachments((current) => ({ ...current, [run.id]: [] }));
+      setQueuedAttachmentFiles((current) => ({ ...current, [run.id]: [] }));
       setComposerVersion((current) => ({ ...current, [run.id]: (current[run.id] ?? 0) + 1 }));
     } catch (e) {
       const message = e instanceof Error ? e.message : "本轮执行失败，请稍后重试。";
@@ -515,10 +549,12 @@ function AgentRunWorkspaceView({
         roundId: input.roundId,
         message,
       });
-      workspaceActions.applyRuntimeEvent(run.id, {
-        type: "round_completed",
-        roundId: input.roundId,
-      });
+      if (!input.clarificationResume) {
+        workspaceActions.applyRuntimeEvent(run.id, {
+          type: "round_completed",
+          roundId: input.roundId,
+        });
+      }
     } finally {
       executingRoundsRef.current.delete(input.roundId);
       setAgentRoundInFlight(false);
@@ -527,23 +563,56 @@ function AgentRunWorkspaceView({
 
   useEffect(() => {
   if (run.status !== "queued" || !run.latestRoundId) return;
+    const files = takeRoundAttachmentFiles(run.latestRoundId);
     void executeRound({
       roundId: run.latestRoundId,
       prompt: run.objective,
       selectedCapabilities: run.selectedCapabilities,
-      attachments: [],
+      attachments: files.length > 0 ? buildAttachmentItems(files) : [],
+      attachmentFiles: files,
       isInitialRound: true,
     });
   }, [executeRound, run.id, run.latestRoundId, run.objective, run.selectedCapabilities, run.status]);
 
   const appendNote = async () => {
     const value = sanitizeObjective(draft);
-    if (!value || composerShowsStop) return;
-    const attachments = queuedAttachments[run.id] ?? [];
+    if (!value) return;
+
+    const awaitingRound = roundModels.find((r) => isRoundAwaitingUserInput(r));
+    if (awaitingRound && run.platformSessionId) {
+      const orchId = resolveClarificationOrchestrationId(run, awaitingRound, acceptedToolRef.current.orchestrationId);
+      workspaceActions.appendUserMessageOnRound(run.id, awaitingRound.roundId, value);
+      setDraft("");
+      setNotice("");
+      await executeRound({
+        roundId: awaitingRound.roundId,
+        prompt: value,
+        selectedCapabilities: selectedSourceIds,
+        attachments: queuedAttachments[run.id] ?? [],
+        attachmentFiles: queuedAttachmentFiles[run.id] ?? [],
+        ...(orchId
+          ? {
+              clarificationResume: {
+                orchestrationId: orchId,
+                stepDefs: (awaitingRound.executionSteps ?? []).map((s) => ({ id: s.id, label: s.label })),
+                clarificationStepIndex:
+                  awaitingRound.clarificationDialog?.stepIndex ??
+                  awaitingRound.linkfoxClarification?.stepIndex ??
+                  awaitingRound.executionSteps?.findIndex((s) => s.status === "awaiting_input") ??
+                  0,
+              },
+            }
+          : {}),
+      });
+      return;
+    }
+
+    if (composerShowsStop) return;
+
     const roundId = workspaceActions.queueFollowupRound(run.id, {
       prompt: value,
       selectedCapabilities: selectedSourceIds,
-      attachments,
+      attachments: queuedAttachments[run.id] ?? [],
     });
     setDraft("");
     setPanelVisibility((current) => {
@@ -556,7 +625,8 @@ function AgentRunWorkspaceView({
       roundId,
       prompt: value,
       selectedCapabilities: selectedSourceIds,
-      attachments,
+      attachments: queuedAttachments[run.id] ?? [],
+      attachmentFiles: queuedAttachmentFiles[run.id] ?? [],
     });
   };
 
@@ -581,10 +651,15 @@ function AgentRunWorkspaceView({
   };
 
   const handleFilesSelected = (files: FileList) => {
-    const attachmentItems = buildAttachmentItems(files);
+    const fileArr = Array.from(files);
+    const attachmentItems = buildAttachmentItems(fileArr);
     setQueuedAttachments((current) => ({
       ...current,
       [run.id]: attachmentItems,
+    }));
+    setQueuedAttachmentFiles((current) => ({
+      ...current,
+      [run.id]: fileArr,
     }));
     setNotice(`已添加附件：${attachmentItems.map((item) => item.name).join("、")}。`);
   };
@@ -668,7 +743,10 @@ function AgentRunWorkspaceView({
             <div className="space-y-7">
               {roundModels.map((round, index) => {
                 const executionExpanded =
-                  executionCardExpandedByRound[round.roundId] ?? !round.collapseExecution;
+                  executionCardExpandedByRound[round.roundId] ??
+                  (!round.collapseExecution ||
+                    Boolean(round.linkfoxClarification) ||
+                    Boolean(round.clarificationDialog && !round.clarificationDialog.answered));
                 const splitRevealDone =
                   round.splitItems.length === 0 ||
                   !round.splitReveal ||
@@ -711,14 +789,14 @@ function AgentRunWorkspaceView({
                     <div className="w-full space-y-3">
                       {round.errorMessage ? (
                         <SimpleSystemBubble message={round.errorMessage} />
-                      ) : round.assistantPending ? (
-                        <AssistantLoadingRow variant="thinking" />
-                      ) : round.assistantReplyText ? (
+                      ) : round.assistantStreaming || round.assistantReplyText ? (
                         <SimpleAssistantBubble
                           body={round.assistantReplyText}
                           datetime={round.createdAt}
                           streaming={round.assistantStreaming}
                         />
+                      ) : round.assistantPending ? (
+                        <AssistantLoadingRow variant="thinking" />
                       ) : round.roundTerminal && round.resultSummary ? (
                         <SimpleAssistantBubble
                           body={round.resultSummary}
@@ -729,61 +807,10 @@ function AgentRunWorkspaceView({
                       ) : null}
                     </div>
                   ) : (
-                  <div className="w-full max-w-[780px]">
-                    <TaskOrchestrationBlock
-                      splitItems={round.splitItems}
-                      splitReveal={Boolean(round.splitReveal)}
-                      splitStreamEnded={Boolean(round.splitStreamEnded)}
-                      onSplitRevealComplete={() => {
-                        workspaceActions.applyRuntimeEvent(run.id, {
-                          type: "split_reveal_complete",
-                          roundId: round.roundId,
-                        });
-                        notifySplitRevealComplete(round.roundId);
-                      }}
-                      beforeSplit={
-                        round.assistantPending &&
-                        round.executionGroups.length === 0 &&
-                        !round.executionSteps?.length ? (
-                          <AssistantLoadingRow variant="task" />
-                        ) : null
-                      }
-                      showExecutionPanel={splitRevealDone}
-                      executionExpanded={executionExpanded}
-                      onExecutionExpandedChange={(next) =>
-                        setExecutionCardExpandedByRound((current) => ({
-                          ...current,
-                          [round.roundId]: next,
-                        }))
-                      }
-                      executionCollapsible={round.collapseExecution}
-                      executionTestId="agent-execution-panel"
-                      afterExecution={
-                        <>
-                          {round.errorMessage ? <p className="text-sm text-red-600">{round.errorMessage}</p> : null}
-
-                          {round.showTaskResultInChat && (run.activePreviewId || latestRoundWantsTaskPanel) ? (
-                            <TaskResultSummaryCard
-                              title={compactText(round.resultTitle, 48)}
-                              summary={compactText(round.resultSummary, 220)}
-                              hasResult={round.hasResult}
-                              expanded={taskPanelOpen}
-                              onToggle={() => {
-                                if (!latestRoundWantsTaskPanel && !run.activePreviewId) return;
-                                const currentOpen = panelVisibility[run.id] ?? false;
-                                const next = !currentOpen;
-                                if (next && run.activePreviewId) {
-                                  workspaceActions.setActivePreview(run.id, run.activePreviewId);
-                                  setPreviewOverrides((current) => ({ ...current, [run.id]: run.activePreviewId! }));
-                                }
-                                setPanelVisibility((current) => ({ ...current, [run.id]: next }));
-                              }}
-                            />
-                          ) : null}
-                        </>
-                      }
-                    >
-                      {splitRevealDone ? (
+                  <div className={ORCHESTRATION_BLOCK_MAX}>
+                    {(() => {
+                      const deferExecution = shouldDeferExecutionPanelAfterClarification(round);
+                      const executionBody = splitRevealDone ? (
                         <>
                           {round.executionSteps?.length ? (
                             <PlatformRoundStepTimeline
@@ -838,9 +865,137 @@ function AgentRunWorkspaceView({
                             </>
                           )}
                         </>
-                      ) : null}
+                      ) : null;
 
-                    </TaskOrchestrationBlock>
+                      const afterExecution = (
+                        <>
+                          {round.errorMessage ? <p className="text-sm text-red-600">{round.errorMessage}</p> : null}
+                          {round.showTaskResultInChat && (run.activePreviewId || latestRoundWantsTaskPanel) ? (
+                            <TaskResultSummaryCard
+                              title={compactText(round.resultTitle, 48)}
+                              summary={compactText(round.resultSummary, 220)}
+                              hasResult={round.hasResult}
+                              expanded={taskPanelOpen}
+                              onToggle={() => {
+                                if (!latestRoundWantsTaskPanel && !run.activePreviewId) return;
+                                const currentOpen = panelVisibility[run.id] ?? false;
+                                const next = !currentOpen;
+                                if (next && run.activePreviewId) {
+                                  workspaceActions.setActivePreview(run.id, run.activePreviewId);
+                                  setPreviewOverrides((current) => ({ ...current, [run.id]: run.activePreviewId! }));
+                                }
+                                setPanelVisibility((current) => ({ ...current, [run.id]: next }));
+                              }}
+                            />
+                          ) : null}
+                        </>
+                      );
+
+                      const clarificationBubble = round.clarificationDialog ? (
+                        <AliceMessageBubble
+                          body={clarificationDialogBodyForDisplay(
+                            round.clarificationDialog.message,
+                            round.clarificationDialog.answered,
+                          )}
+                          datetime={round.clarificationDialog.datetime}
+                          streaming={round.assistantStreaming && !round.clarificationDialog.answered}
+                          typewriter={Boolean(round.assistantStreaming && !round.clarificationDialog.answered)}
+                          composerDraft={
+                            round.clarificationDialog.answered
+                              ? (round.supplementalUserMessages?.at(-1)?.text ?? "")
+                              : draft
+                          }
+                          onSuggestionToggle={
+                            round.clarificationDialog.answered ? undefined : toggleGuidanceSuggestion
+                          }
+                        />
+                      ) : null;
+
+                      const supplementBubbles = round.supplementalUserMessages?.map((m, idx) => (
+                        <SimpleUserBubble
+                          key={`${round.roundId}-supplement-${idx}`}
+                          text={m.text}
+                          datetime={m.createdAt}
+                        />
+                      ));
+
+                      const orchestrationBlock = (
+                        <TaskOrchestrationBlock
+                          splitItems={round.splitItems}
+                          splitReveal={Boolean(round.splitReveal)}
+                          splitStreamEnded={Boolean(round.splitStreamEnded)}
+                          onSplitRevealComplete={() => {
+                            workspaceActions.applyRuntimeEvent(run.id, {
+                              type: "split_reveal_complete",
+                              roundId: round.roundId,
+                            });
+                            notifySplitRevealComplete(round.roundId);
+                          }}
+                          beforeSplit={
+                            round.assistantReplyText ? (
+                              <SimpleAssistantBubble
+                                body={round.assistantReplyText}
+                                datetime={round.createdAt}
+                                streaming={round.assistantStreaming}
+                              />
+                            ) : round.assistantPending &&
+                              round.executionGroups.length === 0 &&
+                              !round.executionSteps?.length ? (
+                              <AssistantLoadingRow variant="task" />
+                            ) : null
+                          }
+                          showExecutionPanel={deferExecution ? false : splitRevealDone}
+                          executionExpanded={executionExpanded}
+                          onExecutionExpandedChange={(next) =>
+                            setExecutionCardExpandedByRound((current) => ({
+                              ...current,
+                              [round.roundId]: next,
+                            }))
+                          }
+                          executionCollapsible={round.collapseExecution}
+                          executionTestId="agent-execution-panel"
+                          afterExecution={deferExecution ? undefined : afterExecution}
+                        >
+                          {deferExecution ? null : executionBody}
+                        </TaskOrchestrationBlock>
+                      );
+
+                      if (deferExecution) {
+                        return (
+                          <>
+                            {orchestrationBlock}
+                            {clarificationBubble}
+                            {supplementBubbles}
+                            {splitRevealDone ? (
+                              <>
+                                <TaskExecutionPanel
+                                  expanded={executionExpanded}
+                                  onExpandedChange={(next) =>
+                                    setExecutionCardExpandedByRound((current) => ({
+                                      ...current,
+                                      [round.roundId]: next,
+                                    }))
+                                  }
+                                  collapsible={round.collapseExecution}
+                                  testId="agent-execution-panel"
+                                >
+                                  {executionBody}
+                                </TaskExecutionPanel>
+                                {afterExecution}
+                              </>
+                            ) : null}
+                          </>
+                        );
+                      }
+
+                      return (
+                        <>
+                          {orchestrationBlock}
+                          {clarificationBubble}
+                          {supplementBubbles}
+                        </>
+                      );
+                    })()}
                   </div>
                   )}
 

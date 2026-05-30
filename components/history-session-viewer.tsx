@@ -10,11 +10,13 @@ import {
   createStreamingAssistantMessage,
   isStreamingAssistantMessage,
   sendSessionMessageStream,
+  sessionHasVisibleInFlightAssistant,
+  finalizeStreamingAssistantMessage,
 } from "@/lib/session-chat-send";
 import type { ChatSendResult, SessionMessageItem } from "@/lib/agent-api/types";
 import { safeRandomUUID } from "@/lib/random-uuid";
 import { PostTaskGuidanceBubble } from "@/components/agent-workspace/post-task-guidance-bubble";
-import { SimpleAssistantBubble } from "@/components/agent-workspace/chat-bubbles";
+import { AliceMessageBubble, SimpleAssistantBubble } from "@/components/agent-workspace/chat-bubbles";
 import {
   appendToComposerDraft,
   composerDraftContainsSuggestion,
@@ -38,6 +40,7 @@ import { buildTaskStepsFromDecompositionLabels } from "@/lib/schedule-trial-exec
 import { resolvePostTaskGuidancePresentation } from "@/lib/parse-post-task-guidance";
 import { sessionHasOrchestrationFailure } from "@/lib/orchestration-failure-message";
 import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
+import { sanitizeClarificationForUserDisplay } from "@/lib/linkfox-clarification";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import {
@@ -48,7 +51,7 @@ import {
   type TaskOrchestrationBundleRow,
 } from "@/lib/merge-orchestration-task-artifacts";
 
-const SIMPLE_CHAT_COLUMN_MAX = "max-w-[min(100%,800px)]";
+const SIMPLE_CHAT_COLUMN_MAX = "max-w-[min(100%,920px)]";
 const SIMPLE_CHAT_BUBBLE_MAX = "max-w-[min(100%,720px)]";
 
 function formatTime(iso: string) {
@@ -96,6 +99,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   const [error, setError] = useState("");
   const [messages, setMessages] = useState<SessionMessageItem[]>([]);
   const [draft, setDraft] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const toggleGuidanceSuggestion = useCallback((item: string) => {
     setDraft((current) =>
       composerDraftContainsSuggestion(current, item)
@@ -208,6 +212,22 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     () => messages.findIndex((m) => m.role === "assistant"),
     [messages],
   );
+
+  const linkfoxClarificationForSteps = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]!;
+      if (m.role !== "assistant") continue;
+      const meta =
+        m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
+      if (meta?.kind === "linkfox_clarification") {
+        return {
+          message: sanitizeClarificationForUserDisplay(m.content),
+          shareUrl: null,
+        };
+      }
+    }
+    return null;
+  }, [messages]);
 
   const decompositionFallbackSteps = useMemo(() => {
     if (latestStepsMessageId) return null;
@@ -350,6 +370,8 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
       createStreamingAssistantMessage(assistantStreamId, nowIso),
     ]);
     setDraft("");
+    const filesToSend = pendingFiles;
+    setPendingFiles([]);
     try {
       await platformAgent.withFreshToken(async (token) => {
         const res: ChatSendResult = await sendSessionMessageStream(
@@ -359,6 +381,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
           mid,
           setMessages,
           assistantStreamId,
+          filesToSend,
         );
         if (res.kind === "completed") {
           await reload();
@@ -384,6 +407,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
           await reload();
         }
       });
+      finalizeStreamingAssistantMessage(setMessages, assistantStreamId);
     } catch (e) {
       setError(formatAgentApiErrorForUser(e));
       // 即使 500，后端也会把“用户消息 + 错误提示”写入 session_messages，所以这里刷新即可看到真实落库结果
@@ -392,7 +416,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
       setSending(false);
       void refreshHistory();
     }
-  }, [draft, platformAgent, reload, refreshHistory, sending, sessionId]);
+  }, [draft, pendingFiles, platformAgent, reload, refreshHistory, sending, sessionId]);
 
   return (
     <MoreDataShell
@@ -472,6 +496,9 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                   const taskId =
                     m.role === "assistant" && rawTaskId && taskResultCardMessageIds.has(m.id) ? rawTaskId : undefined;
                   const hideAssistantBubble = shouldHideAssistantMessageBubble(m);
+                  const msgKind =
+                    meta && typeof meta.kind === "string" ? (meta.kind as string).trim() : "";
+                  const isLinkfoxClarification = msgKind === "linkfox_clarification";
                   const guidancePresentation =
                     m.role === "assistant" && !showTaskStepsBubble && !hideAssistantBubble
                       ? resolvePostTaskGuidancePresentation(m, meta)
@@ -483,19 +510,44 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                         <SimpleUserBubble text={m.content} datetime={m.created_at} />
                       ) : m.role === "assistant" ? (
                         showTaskStepsBubble ? (
-                          <TaskExecutionStepsAssistantBubble
-                            steps={taskSteps!}
+                          <>
+                            <TaskExecutionStepsAssistantBubble
+                              steps={taskSteps!}
+                              datetime={m.created_at}
+                              platformSubtasks={
+                                (m.id === latestStepsMessageId || isThisOrchestrationTurn) &&
+                                orchestrationBundlesForUi.length > 0
+                                  ? mergeBundlesIntoPlatformSnapshots(taskSteps!, orchestrationBundlesForUi)
+                                  : undefined
+                              }
+                              timelineRunId={sessionId}
+                              activeHighlightTaskId={stepTimelineHighlightTaskId}
+                              setPanelSubtaskFocus={setPanelSubtaskFocus}
+                              setPanelVisibility={setPanelVisibilityRecord}
+                            />
+                            {m.id === latestStepsMessageId &&
+                            linkfoxClarificationForSteps &&
+                            !messages.some(
+                              (item) =>
+                                item.role === "assistant" &&
+                                item.meta &&
+                                typeof item.meta === "object" &&
+                                (item.meta as Record<string, unknown>).kind === "linkfox_clarification",
+                            ) ? (
+                              <AliceMessageBubble
+                                body={linkfoxClarificationForSteps.message}
+                                datetime={m.created_at}
+                                composerDraft={draft}
+                                onSuggestionToggle={toggleGuidanceSuggestion}
+                              />
+                            ) : null}
+                          </>
+                        ) : isLinkfoxClarification ? (
+                          <AliceMessageBubble
+                            body={m.content}
                             datetime={m.created_at}
-                            platformSubtasks={
-                              (m.id === latestStepsMessageId || isThisOrchestrationTurn) &&
-                              orchestrationBundlesForUi.length > 0
-                                ? mergeBundlesIntoPlatformSnapshots(taskSteps!, orchestrationBundlesForUi)
-                                : undefined
-                            }
-                            timelineRunId={sessionId}
-                            activeHighlightTaskId={stepTimelineHighlightTaskId}
-                            setPanelSubtaskFocus={setPanelSubtaskFocus}
-                            setPanelVisibility={setPanelVisibilityRecord}
+                            composerDraft={draft}
+                            onSuggestionToggle={toggleGuidanceSuggestion}
                           />
                         ) : guidancePresentation.kind !== "none" ? (
                           <div className="space-y-2">
@@ -553,7 +605,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                     </div>
                   );
                 })}
-                {sending && !messages.some(isStreamingAssistantMessage) ? (
+                {sending && !sessionHasVisibleInFlightAssistant(messages) ? (
                   <AssistantLoadingRow variant="thinking" />
                 ) : null}
               </div>
@@ -572,7 +624,9 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
               selectedSourceIds={[]}
               onToolSelect={() => {}}
               onSourceRemove={() => {}}
-              onFilesSelected={() => {}}
+              onFilesSelected={(files) => {
+                setPendingFiles(Array.from(files));
+              }}
               onSubmit={() => void send()}
               visualStyle="default"
               containerClassName="overflow-visible rounded-[18px] border border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]"

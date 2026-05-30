@@ -4,10 +4,13 @@ import {
   buildAcknowledgement,
   buildRoundViewModels,
   isExecutionStepActivelyBusy,
+  isRoundAwaitingUserInput,
   isRoundExecutionTerminated,
+  resolveClarificationOrchestrationId,
+  shouldDeferExecutionPanelAfterClarification,
   toCapabilitySafeTitle,
   type TaskRunLike,
-} from "@/components/agent-workspace";
+} from "@/components/agent-workspace-view-models";
 
 const sampleRun: TaskRunLike = {
   startedAt: "2026-03-28 12:00:00",
@@ -96,8 +99,9 @@ describe("agent view model helpers", () => {
       ],
     };
     const [round] = buildRoundViewModels(run);
-    expect(round.assistantPending).toBe(true);
-    expect(round.assistantReplyText).toBeUndefined();
+    expect(round.assistantPending).toBe(false);
+    expect(round.assistantStreaming).toBe(true);
+    expect(round.assistantReplyText).toBe("用户");
   });
 
   it("shows assistantPending when stream shell exists but text is still empty", () => {
@@ -125,7 +129,7 @@ describe("agent view model helpers", () => {
       ],
     };
     const [round] = buildRoundViewModels(run);
-    expect(round.assistantPending).toBe(true);
+    expect(round.assistantPending).toBe(false);
     expect(round.resultSummary).toBe("");
     expect(round.assistantStreaming).toBe(true);
   });
@@ -257,6 +261,202 @@ describe("agent view model helpers", () => {
     expect(round.splitRevealComplete).toBe(true);
     expect(round.splitReveal).toBe(true);
     expect(round.executionSteps).toHaveLength(1);
+  });
+
+  it("exposes supplemental user messages on the same round", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      timeline: [
+        ...sampleRun.timeline.slice(0, 1),
+        {
+          id: "node-user-2",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:30",
+          kind: "user_message",
+          text: "vacuum flask",
+        },
+        ...sampleRun.timeline.slice(1),
+      ],
+    };
+    const [round] = buildRoundViewModels(run);
+    expect(round.supplementalUserMessages).toEqual([
+      { text: "vacuum flask", createdAt: "2026-03-28 12:00:30" },
+    ]);
+  });
+
+  it("resolves orchestration id for clarification resume from persisted round state", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      platformOrchestrationIdByRound: { "round-1": "orch-from-run" },
+    };
+    const round = {
+      roundId: "round-1",
+      linkfoxClarification: {
+        message: "请确认关键词",
+        shareUrl: null,
+        stepIndex: 0,
+        orchestrationId: "orch-from-clarify",
+      },
+    };
+    expect(resolveClarificationOrchestrationId(run, round, "orch-from-ref")).toBe("orch-from-ref");
+    expect(resolveClarificationOrchestrationId(run, round, null)).toBe("orch-from-clarify");
+    expect(
+      resolveClarificationOrchestrationId(
+        { platformOrchestrationIdByRound: { "round-1": "orch-from-run" } },
+        { roundId: "round-1", linkfoxClarification: undefined },
+        null,
+      ),
+    ).toBe("orch-from-run");
+  });
+
+  it("builds clarification dialog from assistant final when step awaits input", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      status: "running",
+      chains: [],
+      roundUiLayouts: { "round-1": "tool_orchestration" },
+      taskExecutionStepsByRound: {
+        "round-1": [
+          { id: "s1", roundId: "round-1", order: 0, label: "采集市场数据", status: "awaiting_input" },
+          { id: "s2", roundId: "round-1", order: 1, label: "生成报告", status: "pending" },
+        ],
+      },
+      timeline: [
+        {
+          id: "node-user",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:00",
+          kind: "user_message",
+          text: "保温杯选品",
+        },
+        {
+          id: "node-final",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:01:00",
+          kind: "assistant_final",
+          text: '您好，"保温杯"有如下几个英文关键词，请确认您需要使用哪个关键词来查询：\n- insulated tumbler\n- vacuum flask',
+        },
+      ],
+    };
+    const [round] = buildRoundViewModels(run);
+    expect(round.clarificationDialog?.answered).toBe(false);
+    expect(round.clarificationDialog?.message).toContain("保温杯");
+    expect(round.clarificationDialog?.message).toContain("insulated tumbler");
+  });
+
+  it("treats linkfox clarification as awaiting user input", () => {
+    expect(
+      isRoundAwaitingUserInput({
+        executionSteps: [{ id: "s1", roundId: "r1", order: 0, label: "步骤1", status: "running" }],
+        clarificationDialog: {
+          message: "请确认",
+          answered: false,
+          stepIndex: 0,
+          datetime: "2026-03-28 12:00:00",
+        },
+      }),
+    ).toBe(true);
+    expect(
+      isRoundAwaitingUserInput({
+        executionSteps: [{ id: "s1", roundId: "r1", order: 0, label: "步骤1", status: "running" }],
+        clarificationDialog: {
+          message: "请确认",
+          answered: true,
+          stepIndex: 0,
+          datetime: "2026-03-28 12:00:00",
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps answered clarification dialog visible from timeline after user supplement", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      status: "success",
+      chains: [],
+      roundUiLayouts: { "round-1": "tool_orchestration" },
+      taskExecutionStepsByRound: {
+        "round-1": [
+          { id: "s1", roundId: "round-1", order: 0, label: "采集市场数据", status: "done" },
+          { id: "s2", roundId: "round-1", order: 1, label: "生成报告", status: "done" },
+        ],
+      },
+      clarificationDialogByRound: {
+        "round-1": {
+          message:
+            '您好，"保温杯"有如下几个英文关键词，请确认您需要使用哪个关键词来查询：\n- insulated tumbler\n- thermos\n- vacuum flask',
+          stepIndex: 0,
+          answered: true,
+          createdAt: "2026-03-28 12:01:00",
+          answeredAt: "2026-03-28 12:02:00",
+        },
+      },
+      timeline: [
+        {
+          id: "node-user",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:00",
+          kind: "user_message",
+          text: "保温杯选品",
+        },
+        {
+          id: "node-final",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:05:00",
+          kind: "assistant_final",
+          text: "任务已完成，可以在右侧查看结果。",
+        },
+        {
+          id: "node-supplement",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:02:00",
+          kind: "user_message",
+          text: "thermos cup",
+        },
+      ],
+    };
+    const [round] = buildRoundViewModels(run);
+    expect(round.clarificationDialog?.answered).toBe(true);
+    expect(round.clarificationDialog?.message).toContain("thermos");
+    expect(round.clarificationDialog?.message).toContain("vacuum flask");
+    expect(round.supplementalUserMessages).toHaveLength(1);
+    expect(round.supplementalUserMessages?.[0]?.text).toBe("thermos cup");
+  });
+
+  it("defers execution panel after user answered clarification", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      status: "running",
+      chains: [],
+      roundUiLayouts: { "round-1": "tool_orchestration" },
+      clarificationDialogByRound: {
+        "round-1": {
+          message: "请确认关键词",
+          stepIndex: 0,
+          answered: true,
+          createdAt: "2026-03-28 12:01:00",
+          answeredAt: "2026-03-28 12:02:00",
+        },
+      },
+      timeline: [
+        {
+          id: "node-user",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:00",
+          kind: "user_message",
+          text: "保温杯选品",
+        },
+        {
+          id: "node-supplement",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:02:00",
+          kind: "user_message",
+          text: "thermos cup",
+        },
+      ],
+    };
+    const [round] = buildRoundViewModels(run);
+    expect(shouldDeferExecutionPanelAfterClarification(round)).toBe(true);
   });
 
   it("creates a plain-language acknowledgement from execution groups", () => {

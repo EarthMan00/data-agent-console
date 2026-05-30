@@ -20,6 +20,11 @@ import { upsertReportCollection, upsertRunCollection } from "@/lib/workspace-ups
 import { DEFAULT_RESULT_PREVIEW_KEY } from "@/lib/report-defaults";
 import { homeCapabilityItems } from "@/lib/home-capability-items";
 import { DEFAULT_RESULT_SUMMARY_TITLE, WORKSPACE_DISPLAY_NAME } from "@/lib/workspace-constants";
+import { stashRoundAttachmentFiles } from "@/lib/round-attachment-files";
+import {
+  looksLikeClarificationPrompt,
+  sanitizeClarificationForUserDisplay,
+} from "@/lib/linkfox-clarification";
 import type { FavoriteItem, PromptCard, ResultPreview, RunRecord, ScheduleItem } from "@/lib/workspace-domain-types";
 
 export type TaskDraft = {
@@ -68,6 +73,24 @@ export type TaskRun = {
   platformSubtasksByRound?: Record<string, PlatformSubtaskSnapshot[]>;
   /** 任务完成后引导文案（按 round，与历史会话 PostTaskGuidanceBubble 一致） */
   postTaskGuidanceByRound?: Record<string, string>;
+  linkfoxClarificationByRound?: Record<
+    string,
+    { message: string; shareUrl: string | null; stepIndex: number | null; orchestrationId?: string | null }
+  >;
+  /** 二次确认对话：补充后仍保留 Alice 追问文案 */
+  clarificationDialogByRound?: Record<
+    string,
+    {
+      message: string;
+      stepIndex: number | null;
+      orchestrationId?: string | null;
+      answered: boolean;
+      createdAt: string;
+      answeredAt?: string;
+    }
+  >;
+  /** 多步编排 ID（按 round），澄清恢复时 ref 可能丢失 */
+  platformOrchestrationIdByRound?: Record<string, string>;
 };
 
 export type Report = ResultPreview & {
@@ -370,7 +393,15 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
     if (list) {
       nextRun.taskExecutionStepsByRound = {
         ...(nextRun.taskExecutionStepsByRound ?? {}),
-        [event.roundId]: list.map((s) => (s.id === event.stepId ? { ...s, status: event.status } : s)),
+        [event.roundId]: list.map((s) =>
+          s.id === event.stepId
+            ? {
+                ...s,
+                status: event.status,
+                runtimeHint: event.runtimeHint ?? (event.status === "running" ? s.runtimeHint : undefined),
+              }
+            : s,
+        ),
       };
     }
     return { run: nextRun, report: nextReport };
@@ -528,6 +559,72 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
     return { run: nextRun, report: nextReport };
   }
 
+  if (event.type === "linkfox_clarification_pending") {
+    const message = sanitizeClarificationForUserDisplay(event.message ?? "").trim();
+    const orchId = (event.orchestrationId ?? "").trim();
+    const now = formatDate();
+    if (message) {
+      nextRun.linkfoxClarificationByRound = {
+        ...(nextRun.linkfoxClarificationByRound ?? {}),
+        [event.roundId]: {
+          message,
+          shareUrl: null,
+          stepIndex: event.stepIndex,
+          orchestrationId: orchId || null,
+        },
+      };
+      nextRun.clarificationDialogByRound = {
+        ...(nextRun.clarificationDialogByRound ?? {}),
+        [event.roundId]: {
+          message,
+          stepIndex: event.stepIndex,
+          orchestrationId: orchId || null,
+          answered: false,
+          createdAt: now,
+        },
+      };
+    }
+    if (orchId) {
+      nextRun.platformOrchestrationIdByRound = {
+        ...(nextRun.platformOrchestrationIdByRound ?? {}),
+        [event.roundId]: orchId,
+      };
+    }
+    return { run: nextRun, report: nextReport };
+  }
+
+  if (event.type === "platform_orchestration_bound") {
+    const orchId = (event.orchestrationId ?? "").trim();
+    if (orchId) {
+      nextRun.platformOrchestrationIdByRound = {
+        ...(nextRun.platformOrchestrationIdByRound ?? {}),
+        [event.roundId]: orchId,
+      };
+    }
+    return { run: nextRun, report: nextReport };
+  }
+
+  if (event.type === "linkfox_clarification_cleared") {
+    if (nextRun.linkfoxClarificationByRound?.[event.roundId]) {
+      const nextMap = { ...nextRun.linkfoxClarificationByRound };
+      delete nextMap[event.roundId];
+      nextRun.linkfoxClarificationByRound = nextMap;
+    }
+    const dialog = nextRun.clarificationDialogByRound?.[event.roundId];
+    if (dialog && !dialog.answered) {
+      nextRun.clarificationDialogByRound = {
+        ...(nextRun.clarificationDialogByRound ?? {}),
+        [event.roundId]: { ...dialog, answered: true, answeredAt: formatDate() },
+      };
+    }
+    return { run: nextRun, report: nextReport };
+  }
+
+  if (event.type === "orchestration_resume") {
+    nextRun.status = "running";
+    return { run: nextRun, report: nextReport };
+  }
+
   if (event.type === "final") {
     const hadStream = timeline.some(
       (node) => node.kind === "assistant_stream" && node.roundId === event.roundId,
@@ -558,6 +655,33 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
           text: event.text,
         }),
       ];
+    }
+    const clarifyCandidate = (() => {
+      const fromFinal = sanitizeClarificationForUserDisplay(finalText || "").trim();
+      if (fromFinal && looksLikeClarificationPrompt(fromFinal)) return fromFinal;
+      for (const node of [...nextRun.timeline].reverse()) {
+        if (node.roundId !== event.roundId) continue;
+        if (node.kind !== "assistant_final" && node.kind !== "assistant_stream") continue;
+        if (!("text" in node)) continue;
+        const cleaned = sanitizeClarificationForUserDisplay(String(node.text ?? "")).trim();
+        if (cleaned && looksLikeClarificationPrompt(cleaned)) return cleaned;
+      }
+      return "";
+    })();
+    if (clarifyCandidate) {
+      const existing = nextRun.clarificationDialogByRound?.[event.roundId];
+      const linkfox = nextRun.linkfoxClarificationByRound?.[event.roundId];
+      nextRun.clarificationDialogByRound = {
+        ...(nextRun.clarificationDialogByRound ?? {}),
+        [event.roundId]: {
+          message: clarifyCandidate,
+          stepIndex: existing?.stepIndex ?? linkfox?.stepIndex ?? null,
+          orchestrationId: existing?.orchestrationId ?? linkfox?.orchestrationId ?? null,
+          answered: existing?.answered ?? false,
+          createdAt: existing?.createdAt ?? formatDate(),
+          answeredAt: existing?.answeredAt,
+        },
+      };
     }
     return { run: nextRun, report: nextReport };
   }
@@ -590,7 +714,14 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
   }
 
   if (event.type === "round_completed") {
-    nextRun.status = "success";
+    const steps = Object.values(nextRun.taskExecutionStepsByRound ?? {}).flat();
+    const awaitingInput = steps.some((s) => s.status === "awaiting_input");
+    const pendingClarify = Object.values(nextRun.clarificationDialogByRound ?? {}).some(
+      (d) => !d.answered,
+    );
+    if (!awaitingInput && !pendingClarify) {
+      nextRun.status = "success";
+    }
     nextRun.timeline = timeline.map((node) =>
       node.kind === "assistant_stream" && node.roundId === event.roundId
         ? { ...node, status: "complete" as const }
@@ -722,6 +853,7 @@ export const workspaceActions = {
     objective: string;
     mode: TaskDraft["mode"];
     selectedCapabilities: string[];
+    pendingFiles?: File[];
   }) {
     const objective = input.objective.trim();
     const selectedCapabilities = input.selectedCapabilities?.length
@@ -731,6 +863,9 @@ export const workspaceActions = {
     const taskDraftId = createId("task");
     const runId = createId("run");
     const roundId = createId("round");
+    if (input.pendingFiles?.length) {
+      stashRoundAttachmentFiles(roundId, input.pendingFiles);
+    }
     const title = toRunTitle(objective);
     const report = buildReport(runId, objective);
     const run: TaskRun = {
@@ -797,6 +932,56 @@ export const workspaceActions = {
       ),
     }));
     return roundId;
+  },
+
+  appendUserMessageOnRound(runId: string, roundId: string, text: string) {
+    const createdAt = formatDate();
+    updateState((current) => ({
+      ...current,
+      runs: current.runs.map((run) => {
+        if (run.id !== runId) return run;
+        const linkfoxClarify = run.linkfoxClarificationByRound?.[roundId];
+        const existingDialog = run.clarificationDialogByRound?.[roundId];
+        const clarifyMessage = (
+          existingDialog?.message ??
+          linkfoxClarify?.message ??
+          ""
+        ).trim();
+        const nextLinkfox = { ...(run.linkfoxClarificationByRound ?? {}) };
+        delete nextLinkfox[roundId];
+        const nextDialog =
+          clarifyMessage || existingDialog
+            ? {
+                ...(run.clarificationDialogByRound ?? {}),
+                [roundId]: {
+                  message: clarifyMessage || existingDialog!.message,
+                  stepIndex: existingDialog?.stepIndex ?? linkfoxClarify?.stepIndex ?? null,
+                  orchestrationId:
+                    existingDialog?.orchestrationId ?? linkfoxClarify?.orchestrationId ?? null,
+                  answered: true,
+                  createdAt: existingDialog?.createdAt ?? createdAt,
+                  answeredAt: createdAt,
+                },
+              }
+            : run.clarificationDialogByRound;
+        const steps = run.taskExecutionStepsByRound?.[roundId];
+        const nextSteps = steps
+          ? steps.map((s) =>
+              s.status === "awaiting_input" ? { ...s, status: "running" as const } : s,
+            )
+          : undefined;
+        return {
+          ...run,
+          status: "running",
+          linkfoxClarificationByRound: Object.keys(nextLinkfox).length ? nextLinkfox : undefined,
+          clarificationDialogByRound: nextDialog,
+          taskExecutionStepsByRound: nextSteps
+            ? { ...(run.taskExecutionStepsByRound ?? {}), [roundId]: nextSteps }
+            : run.taskExecutionStepsByRound,
+          timeline: [...run.timeline, createUserNode(roundId, text, createdAt)],
+        };
+      }),
+    }));
   },
 
   applyRuntimeEvent(runId: string, event: AgentRoundRuntimeEvent) {

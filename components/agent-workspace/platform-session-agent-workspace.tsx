@@ -25,6 +25,8 @@ import {
   createStreamingAssistantMessage,
   isStreamingAssistantMessage,
   sendSessionMessageStream,
+  sessionHasVisibleInFlightAssistant,
+  finalizeStreamingAssistantMessage,
 } from "@/lib/session-chat-send";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import {
@@ -33,7 +35,8 @@ import {
   parseComposerPrefillStorageValue,
   removeFromComposerDraft,
 } from "@/lib/composer-prefill";
-import type { ChatSendResult, SessionMessageItem, TaskResponse } from "@/lib/agent-api/types";
+import type { TaskExecutionStep, TaskExecutionStepStatus } from "@/lib/agent-events";
+import { mapServerOrchestrationStepStatus } from "@/lib/agent-runtime/task-mapping";
 import type { ScheduleTrialSendState } from "@/lib/schedule-create-draft";
 import {
   isScheduleTrialAwaitingFirstMessage,
@@ -52,6 +55,10 @@ import {
 import { extractDecompositionLabelsFromMessages } from "@/lib/parse-decomposition-labels";
 import { resolvePostTaskGuidancePresentation } from "@/lib/parse-post-task-guidance";
 import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
+import {
+  analyzeSessionClarificationFlow,
+  shouldSuppressSessionClarificationAt,
+} from "@/lib/session-clarification-flow";
 import { safeRandomUUID } from "@/lib/random-uuid";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
@@ -74,14 +81,22 @@ import { cn } from "@/lib/utils";
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import { PostTaskGuidanceBubble } from "./post-task-guidance-bubble";
 import {
-  LinkfoxClarificationBubble,
+  AliceMessageBubble,
   SIMPLE_CHAT_COLUMN_MAX,
   SimpleAssistantBubble,
   SimpleSystemBubble,
   SimpleUserBubble,
 } from "./chat-bubbles";
-import { resolveLinkfoxShareUrl } from "@/lib/linkfox-clarification";
+import { sanitizeClarificationForUserDisplay } from "@/lib/linkfox-clarification";
 import { sessionHasOrchestrationFailure } from "@/lib/orchestration-failure-message";
+
+function mergeTaskStepStatuses(
+  steps: TaskExecutionStep[],
+  overlay: TaskExecutionStepStatus[] | null,
+): TaskExecutionStep[] {
+  if (!overlay?.length) return steps;
+  return steps.map((s, i) => (overlay[i] ? { ...s, status: overlay[i]! } : s));
+}
 
 export function PlatformSessionAgentWorkspace({
   sessionId,
@@ -107,6 +122,7 @@ export function PlatformSessionAgentWorkspace({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const toggleGuidanceSuggestion = useCallback((item: string) => {
     setDraft((current) =>
       composerDraftContainsSuggestion(current, item)
@@ -145,6 +161,11 @@ export function PlatformSessionAgentWorkspace({
     if (m && m.sendKind === "accepted" && m.taskId) return true;
     return false;
   });
+  const [liveOrchClarification, setLiveOrchClarification] = useState<{
+    message: string;
+    shareUrl: string | null;
+  } | null>(null);
+  const [liveOrchStepStatuses, setLiveOrchStepStatuses] = useState<TaskExecutionStepStatus[] | null>(null);
   const trialTaskId = scheduleTrial ? loadScheduleTrialMeta()?.taskId : null;
 
   const reload = useCallback(async () => {
@@ -246,6 +267,7 @@ export function PlatformSessionAgentWorkspace({
             orchestrationId,
           });
         });
+        finalizeStreamingAssistantMessage(setMessages, assistantStreamId);
         if (isMounted.current) await reload();
       } catch (e) {
         saveScheduleTrialMeta({ v: 1, sessionId, taskId: null, sendKind: "unknown" });
@@ -307,6 +329,16 @@ export function PlatformSessionAgentWorkspace({
               }
               if (orch.awaiting_clarification && !trialClarificationReloadedRef.current && isMounted.current) {
                 trialClarificationReloadedRef.current = true;
+                setLiveOrchStepStatuses(
+                  orch.steps.map((s) => mapServerOrchestrationStepStatus(s.status)),
+                );
+                if (orch.clarification_message?.trim()) {
+                  setLiveOrchClarification({
+                    message: sanitizeClarificationForUserDisplay(orch.clarification_message.trim()),
+                    shareUrl: null,
+                  });
+                }
+                setTrialRunInFlight(false);
                 await reload();
               }
               if (orch.finished) {
@@ -357,6 +389,27 @@ export function PlatformSessionAgentWorkspace({
     intervalId = setInterval(() => void run(), SCHEDULE_TRIAL_TASK_POLL_INTERVAL_MS);
     return clearPoll;
   }, [scheduleTrial, trialTaskId, platformAgent, trialOrchestrationId, trialIsMultiStep, reload]);
+
+  const linkfoxClarificationForSteps = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]!;
+      if (m.role !== "assistant") continue;
+      const meta =
+        m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
+      if (meta?.kind === "linkfox_clarification") {
+        return {
+          message: sanitizeClarificationForUserDisplay(m.content),
+          shareUrl: null,
+        };
+      }
+    }
+    return liveOrchClarification;
+  }, [messages, liveOrchClarification]);
+
+  const sessionClarificationFlow = useMemo(
+    () => analyzeSessionClarificationFlow(messages),
+    [messages],
+  );
 
   useEffect(() => {
     if (scheduleTrial || scheduledRunRecord) return;
@@ -453,6 +506,7 @@ export function PlatformSessionAgentWorkspace({
     trialPrefetchAnchorRef.current = null;
     trialDoneReloadedRef.current = false;
     trialClarificationReloadedRef.current = false;
+    setLiveOrchClarification(null);
   }, [sessionId]);
 
   const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
@@ -481,6 +535,43 @@ export function PlatformSessionAgentWorkspace({
       orchestrationId: trialOrchId || null,
     };
   }, [orchestrationAnchor, scheduleTrial, trialMeta, sessionId, scheduledRunRecord, fallbackTaskId]);
+
+  useEffect(() => {
+    const orchId = effectiveOrchestrationAnchor?.orchestrationId?.trim();
+    if (!orchId || !platformAgent?.auth) {
+      setLiveOrchClarification(null);
+      setLiveOrchStepStatuses(null);
+      return;
+    }
+    let stop = false;
+    const tick = async () => {
+      if (stop) return;
+      try {
+        await platformAgent.withFreshToken(async (token) => {
+          const orch = await getToolOrchestration(token, orchId);
+          setLiveOrchStepStatuses(orch.steps.map((s) => mapServerOrchestrationStepStatus(s.status)));
+          if (orch.awaiting_clarification && orch.clarification_message?.trim()) {
+            setLiveOrchClarification({
+              message: sanitizeClarificationForUserDisplay(orch.clarification_message.trim()),
+              shareUrl: null,
+            });
+            if (scheduleTrial) setTrialRunInFlight(false);
+          } else if (!orch.awaiting_clarification) {
+            setLiveOrchClarification(null);
+            if (orch.finished) setLiveOrchStepStatuses(null);
+          }
+        });
+      } catch {
+        /* 编排可能已结束 */
+      }
+    };
+    void tick();
+    const id = setInterval(() => void tick(), SCHEDULE_TRIAL_TASK_POLL_INTERVAL_MS);
+    return () => {
+      stop = true;
+      clearInterval(id);
+    };
+  }, [effectiveOrchestrationAnchor?.orchestrationId, platformAgent, scheduleTrial]);
 
   useEffect(() => {
     if (!effectiveOrchestrationAnchor || !platformAgent?.auth || showResultPanel) return;
@@ -755,6 +846,8 @@ export function PlatformSessionAgentWorkspace({
     const nowIso = new Date().toISOString();
     setMessages((cur) => [...cur, optimistic, createStreamingAssistantMessage(assistantStreamId, nowIso)]);
     setDraft("");
+    const filesToSend = pendingFiles;
+    setPendingFiles([]);
     try {
       await platformAgent.withFreshToken(async (token) => {
         const sendResult: ChatSendResult = await sendSessionMessageStream(
@@ -764,11 +857,13 @@ export function PlatformSessionAgentWorkspace({
           mid,
           setMessages,
           assistantStreamId,
+          filesToSend,
         );
         if (sendResult.kind === "accepted") {
           await pollPlatformTaskUntilSettled((fn) => platformAgent.withFreshToken(fn), sendResult);
         }
       });
+      finalizeStreamingAssistantMessage(setMessages, assistantStreamId);
       await reload();
       void refreshHistory();
     } catch (e) {
@@ -778,7 +873,7 @@ export function PlatformSessionAgentWorkspace({
     } finally {
       setSending(false);
     }
-  }, [draft, platformAgent, reload, refreshHistory, sending, sessionId]);
+  }, [draft, pendingFiles, platformAgent, reload, refreshHistory, sending, sessionId]);
 
   return (
     <>
@@ -912,6 +1007,15 @@ export function PlatformSessionAgentWorkspace({
                     syntheticForRunRecord ??
                     (isThisOrchestrationTurn ? decompositionFallbackSteps : null);
                   const showTaskStepsBubble = Boolean(taskStepsToShow && taskStepsToShow.length > 0);
+                  const deferStepsToUserId = sessionClarificationFlow.supplementUserMessageId;
+                  const showTaskStepsAtThisMessage = showTaskStepsBubble && !deferStepsToUserId;
+                  const showDeferredTaskSteps =
+                    Boolean(deferStepsToUserId && m.id === deferStepsToUserId && m.role === "user") &&
+                    Boolean(latestExecutionSteps?.length);
+                  const archivedClarifyText =
+                    sessionClarificationFlow.archivedClarification ??
+                    linkfoxClarificationForSteps?.message ??
+                    null;
                   const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
                   const rawBundle = Array.isArray(meta?.orchestration_step_task_ids)
                     ? (meta?.orchestration_step_task_ids as unknown[])
@@ -936,39 +1040,105 @@ export function PlatformSessionAgentWorkspace({
                   const msgKind =
                     meta && typeof meta.kind === "string" ? (meta.kind as string).trim() : "";
                   const isLinkfoxClarification = msgKind === "linkfox_clarification";
-                  const linkfoxShareUrl = isLinkfoxClarification
-                    ? resolveLinkfoxShareUrl(meta as Record<string, unknown> | undefined, m.content)
-                    : null;
                   const guidancePresentation =
-                    m.role === "assistant" && !showTaskStepsBubble && !hideAssistantBubble
+                    m.role === "assistant" && !showTaskStepsAtThisMessage && !hideAssistantBubble
                       ? resolvePostTaskGuidancePresentation(m, meta)
                       : ({ kind: "none" } as const);
                   const key = m.id;
                   return (
                     <div key={key} className="space-y-2">
                       {m.role === "user" ? (
-                        <SimpleUserBubble text={m.content} datetime={m.created_at} />
+                        <>
+                          {showDeferredTaskSteps && archivedClarifyText ? (
+                            <AliceMessageBubble
+                              body={archivedClarifyText}
+                              datetime={
+                                messages.find((item) => item.id === sessionClarificationFlow.clarificationMessageId)
+                                  ?.created_at ?? m.created_at
+                              }
+                              composerDraft={m.content}
+                            />
+                          ) : null}
+                          <SimpleUserBubble text={m.content} datetime={m.created_at} />
+                          {showDeferredTaskSteps ? (
+                            <TaskExecutionStepsAssistantBubble
+                              steps={mergeTaskStepStatuses(
+                                latestExecutionSteps!,
+                                liveOrchStepStatuses,
+                              )}
+                              datetime={m.created_at}
+                              platformSubtasks={
+                                stepsMessageIdForBundles && orchestrationBundlesForUi.length > 0
+                                  ? mergeBundlesIntoPlatformSnapshots(
+                                      latestExecutionSteps!,
+                                      orchestrationBundlesForUi,
+                                    )
+                                  : undefined
+                              }
+                              timelineRunId={sessionId}
+                              activeHighlightTaskId={stepTimelineHighlightTaskId}
+                              setPanelSubtaskFocus={setPanelSubtaskFocus}
+                              setPanelVisibility={setPanelVisibilityRecord}
+                            />
+                          ) : null}
+                        </>
                       ) : m.role === "assistant" ? (
-                        showTaskStepsBubble ? (
-                          <TaskExecutionStepsAssistantBubble
-                            steps={taskStepsToShow!}
-                            datetime={m.created_at}
-                            platformSubtasks={
-                              m.id === stepsMessageIdForBundles && orchestrationBundlesForUi.length > 0
-                                ? mergeBundlesIntoPlatformSnapshots(taskStepsToShow!, orchestrationBundlesForUi)
-                                : undefined
-                            }
-                            timelineRunId={sessionId}
-                            activeHighlightTaskId={stepTimelineHighlightTaskId}
-                            setPanelSubtaskFocus={setPanelSubtaskFocus}
-                            setPanelVisibility={setPanelVisibilityRecord}
-                          />
-                        ) : isLinkfoxClarification ? (
-                          <LinkfoxClarificationBubble
+                        showTaskStepsAtThisMessage ? (
+                          <>
+                            <TaskExecutionStepsAssistantBubble
+                              steps={mergeTaskStepStatuses(
+                                taskStepsToShow!,
+                                (m.id === latestStepsMessageId || isThisOrchestrationTurn) &&
+                                  liveOrchStepStatuses
+                                  ? liveOrchStepStatuses
+                                  : null,
+                              )}
+                              datetime={m.created_at}
+                              platformSubtasks={
+                                m.id === stepsMessageIdForBundles && orchestrationBundlesForUi.length > 0
+                                  ? mergeBundlesIntoPlatformSnapshots(taskStepsToShow!, orchestrationBundlesForUi)
+                                  : undefined
+                              }
+                              timelineRunId={sessionId}
+                              activeHighlightTaskId={stepTimelineHighlightTaskId}
+                              setPanelSubtaskFocus={setPanelSubtaskFocus}
+                              setPanelVisibility={setPanelVisibilityRecord}
+                            />
+                            {(m.id === latestStepsMessageId || isThisOrchestrationTurn) &&
+                            linkfoxClarificationForSteps &&
+                            !deferStepsToUserId &&
+                            !messages.some(
+                              (item) =>
+                                item.role === "assistant" &&
+                                item.meta &&
+                                typeof item.meta === "object" &&
+                                (item.meta as Record<string, unknown>).kind === "linkfox_clarification",
+                            ) ? (
+                              <AliceMessageBubble
+                                body={linkfoxClarificationForSteps.message}
+                                datetime={m.created_at}
+                                composerDraft={draft}
+                                onSuggestionToggle={scheduledRunRecord ? undefined : toggleGuidanceSuggestion}
+                              />
+                            ) : null}
+                          </>
+                        ) : isLinkfoxClarification &&
+                          !shouldSuppressSessionClarificationAt(sessionClarificationFlow, m.id) ? (
+                          <AliceMessageBubble
                             body={m.content}
-                            shareUrl={linkfoxShareUrl}
                             datetime={m.created_at}
                             streaming={isStreamingAssistantMessage(m)}
+                            composerDraft={
+                              shouldSuppressSessionClarificationAt(sessionClarificationFlow, m.id)
+                                ? ""
+                                : draft
+                            }
+                            onSuggestionToggle={
+                              shouldSuppressSessionClarificationAt(sessionClarificationFlow, m.id) ||
+                              scheduledRunRecord
+                                ? undefined
+                                : toggleGuidanceSuggestion
+                            }
                           />
                         ) : guidancePresentation.kind !== "none" ? (
                           <div className="space-y-2">
@@ -1030,7 +1200,7 @@ export function PlatformSessionAgentWorkspace({
                     </div>
                   );
                 })}
-                {sending && !messages.some(isStreamingAssistantMessage) ? (
+                {sending && !sessionHasVisibleInFlightAssistant(messages) ? (
                   <AssistantLoadingRow variant="thinking" />
                 ) : null}
                 {showTrialRunFooterLine ? <AssistantLoadingRow variant="task" /> : null}
@@ -1091,7 +1261,9 @@ export function PlatformSessionAgentWorkspace({
                 selectedSourceIds={[]}
                 onToolSelect={() => {}}
                 onSourceRemove={() => {}}
-                onFilesSelected={() => {}}
+                onFilesSelected={(files) => {
+                  setPendingFiles(Array.from(files));
+                }}
                 onSubmit={() => void send()}
                 visualStyle="default"
                 containerClassName="overflow-visible rounded-[18px] border border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]"

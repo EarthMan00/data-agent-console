@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 
-import { sendChatMessageStream } from "@/lib/agent-api/client";
+import { sendChatMessageStream, uploadSessionAttachments } from "@/lib/agent-api/client";
 import type { ChatSendResult, SessionMessageItem } from "@/lib/agent-api/types";
 import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 
@@ -20,6 +20,32 @@ export function isStreamingAssistantMessage(m: SessionMessageItem): boolean {
   return Boolean(meta?.streaming);
 }
 
+/** 发送/任务轮询进行中：是否已有可展示的助手回复（含流式占位）。 */
+export function sessionHasVisibleInFlightAssistant(messages: SessionMessageItem[]): boolean {
+  return messages.some((m) => {
+    if (m.role !== "assistant") return false;
+    if (isStreamingAssistantMessage(m)) return true;
+    return (m.content ?? "").trim().length > 0;
+  });
+}
+
+export function finalizeStreamingAssistantMessage(
+  setMessages: Dispatch<SetStateAction<SessionMessageItem[]>>,
+  assistantStreamId: string,
+) {
+  setMessages((cur) =>
+    cur.map((m) => {
+      if (m.id !== assistantStreamId || !isStreamingAssistantMessage(m)) return m;
+      const meta =
+        m.meta && typeof m.meta === "object" && !Array.isArray(m.meta)
+          ? { ...(m.meta as Record<string, unknown>) }
+          : {};
+      delete meta.streaming;
+      return { ...m, meta };
+    }),
+  );
+}
+
 export async function sendSessionMessageStream(
   accessToken: string,
   sessionId: string,
@@ -27,7 +53,13 @@ export async function sendSessionMessageStream(
   messageId: string,
   setMessages: Dispatch<SetStateAction<SessionMessageItem[]>>,
   assistantStreamId: string,
+  files: File[] = [],
 ): Promise<ChatSendResult> {
+  const attachmentIds =
+    files.length > 0
+      ? (await uploadSessionAttachments(accessToken, sessionId, files)).map((item) => item.attachment_id)
+      : [];
+
   return sendChatMessageStream(accessToken, sessionId, text, messageId, {
     onDelta: (chunk) => {
       if (!chunk) return;
@@ -38,11 +70,12 @@ export async function sendSessionMessageStream(
     onAssistantComplete: (full) => {
       const cleaned = stripModelThinkingForUi(full);
       setMessages((cur) =>
-        cur.map((m) =>
-          m.id === assistantStreamId
-            ? { ...m, content: cleaned, meta: { streaming: false } }
-            : m,
-        ),
+        cur.map((m) => {
+          if (m.id !== assistantStreamId) return m;
+          const merged =
+            cleaned && cleaned !== "（无回复）" ? cleaned : (m.content ?? "");
+          return { ...m, content: merged, meta: { streaming: true } };
+        }),
       );
     },
     onError: (message) => {
@@ -59,5 +92,5 @@ export async function sendSessionMessageStream(
         ),
       );
     },
-  });
+  }, { attachmentIds });
 }

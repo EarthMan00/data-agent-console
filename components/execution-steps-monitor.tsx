@@ -1,8 +1,9 @@
 "use client";
 
-import { CheckCircle2, Loader2, XCircle } from "@/components/ui/tabler-icons";
+import { AlertCircle, CheckCircle2, Loader2, XCircle } from "@/components/ui/tabler-icons";
 
 import { Button } from "@/components/ui/button";
+import { humanizeStepLabelForUi } from "@/lib/humanize-step-label";
 import { cn } from "@/lib/utils";
 import type { PlatformSubtaskSnapshot, TaskExecutionStep } from "@/lib/agent-events";
 
@@ -55,6 +56,7 @@ export function buildPlatformStepTimeline(
 
 function executionSubtitle(status: TaskExecutionStep["status"]): string {
   if (status === "running") return "执行中";
+  if (status === "awaiting_input") return "待您补充信息";
   if (status === "pending") return "等待执行";
   if (status === "done") return "已完成";
   return "执行失败";
@@ -75,7 +77,11 @@ export function ExecutionStepCard({
     <div
       className={cn(
         "px-0 py-1.5",
-        step.status === "error" ? "text-red-600" : "text-[#374151]",
+        step.status === "error"
+          ? "text-red-600"
+          : step.status === "awaiting_input"
+            ? "text-amber-700"
+            : "text-[#374151]",
       )}
       data-testid="execution-step-card"
       data-step-index={stepIndex}
@@ -89,17 +95,22 @@ export function ExecutionStepCard({
             <span className="mt-2 block h-2 w-2 rounded-full bg-[#d1d5db]" />
           ) : step.status === "running" ? (
             <Loader2 className="h-5 w-5 animate-spin text-[#2563eb]" />
+          ) : step.status === "awaiting_input" ? (
+            <AlertCircle className="h-5 w-5 text-amber-600" />
           ) : step.status === "done" ? (
             <CheckCircle2 className="h-5 w-5 text-emerald-600" />
           ) : (
             <XCircle className="h-5 w-5 text-red-500" />
           )}
         </div>
-        <p className="min-w-0 flex-1 text-[14px] leading-6.5">
+        <p className="min-w-0 flex-1 break-words text-[14px] leading-6.5 [overflow-wrap:anywhere]">
           <span className="text-[#9ca3af]">{stepNo}. </span>
-          {step.label}
+          {humanizeStepLabelForUi(step.label)}
         </p>
       </div>
+      {step.status === "running" && step.runtimeHint ? (
+        <p className="mt-2 pl-10 text-[12px] leading-5 text-[#6b7280]">{step.runtimeHint}</p>
+      ) : null}
     </div>
   );
 }
@@ -131,7 +142,7 @@ export function StepResultPendingCard({
       <div className="mt-1 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-semibold text-[#1f2421]">步骤 {stepNo}</p>
-          <p className="mt-1 text-[12px] leading-5.5 text-[#4f5753]">{label}</p>
+          <p className="mt-1 break-words text-[12px] leading-5.5 [overflow-wrap:anywhere] text-[#4f5753]">{humanizeStepLabelForUi(label)}</p>
         </div>
         <span
           className={cn(

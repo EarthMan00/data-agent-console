@@ -5,7 +5,8 @@ export function mapServerOrchestrationStepStatus(status: string): TaskExecutionS
   const s = (status || "").toUpperCase();
   if (s === "SUCCESS") return "done";
   if (s === "FAILED" || s === "CANCELLED") return "error";
-  if (s === "RUNNING" || s === "AWAITING_INPUT") return "running";
+  if (s === "AWAITING_INPUT") return "awaiting_input";
+  if (s === "RUNNING") return "running";
   return "pending";
 }
 

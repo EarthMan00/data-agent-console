@@ -30,7 +30,7 @@ export async function pollPlatformTaskUntilSettled(
     await withFreshToken(async (token) => {
       if (orchId) {
         const orch = await getToolOrchestration(token, orchId);
-        if (orch.finished) done = true;
+        if (orch.finished || orch.awaiting_clarification) done = true;
       } else if (taskId) {
         const t = await getTask(token, taskId);
         if (!isTaskInFlight(t)) done = true;

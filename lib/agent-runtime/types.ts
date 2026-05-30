@@ -19,10 +19,18 @@ export type AgentRoundInput = {
   mode: "普通模式" | "深度模式";
   selectedCapabilities: string[];
   attachments: AgentAttachment[];
+  /** 本轮待上传的原始文件（仅运行时传递，不入持久化状态） */
+  attachmentFiles?: File[];
   objective?: string;
   isInitialRound?: boolean;
   /** Data Agent Server 的会话 id，对应 TaskRun.platformSessionId */
   platformChatSessionId?: string;
+  /** 二次确认后在同轮继续多步编排 */
+  clarificationResume?: {
+    orchestrationId: string;
+    stepDefs: Array<{ id: string; label: string }>;
+    clarificationStepIndex?: number;
+  };
 };
 
 export type StreamAgentRoundPlatformOptions = {
@@ -31,4 +39,5 @@ export type StreamAgentRoundPlatformOptions = {
   shouldAbortPoll?: () => boolean;
   /** 202 已接受工具任务后回调，便于 UI 持有 task_id / orchestration_id 以取消 */
   onToolTaskAccepted?: (payload: { taskId: string; orchestrationId: string | null }) => void;
+  clarificationResume?: AgentRoundInput["clarificationResume"];
 };

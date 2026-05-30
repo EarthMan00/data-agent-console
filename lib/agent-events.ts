@@ -15,7 +15,7 @@ export type AgentAttachment = {
 export type DataSourceChainStatus = "queued" | "running" | "success" | "error";
 
 /** 平台任务在界面上的分步执行状态（与真实轮询并行 mock） */
-export type TaskExecutionStepStatus = "pending" | "running" | "done" | "error";
+export type TaskExecutionStepStatus = "pending" | "running" | "awaiting_input" | "done" | "error";
 
 export type TaskExecutionStep = {
   id: string;
@@ -23,6 +23,8 @@ export type TaskExecutionStep = {
   label: string;
   order: number;
   status: TaskExecutionStepStatus;
+  /** 运行中时的可读进度（如 LinkFox 已等待时长） */
+  runtimeHint?: string;
 };
 
 export type DataSourceChain = {
@@ -215,6 +217,29 @@ export type AgentRoundRuntimeEvent =
       roundId: string;
       stepId: string;
       status: TaskExecutionStepStatus;
+      runtimeHint?: string;
+    }
+  | {
+      type: "linkfox_clarification_pending";
+      roundId: string;
+      message: string;
+      shareUrl: string | null;
+      stepIndex: number | null;
+      orchestrationId?: string | null;
+    }
+  | {
+      type: "platform_orchestration_bound";
+      roundId: string;
+      orchestrationId: string;
+    }
+  | {
+      type: "linkfox_clarification_cleared";
+      roundId: string;
+    }
+  | {
+      /** 多步澄清后同轮继续编排：仅恢复 running，不清空步骤快照 */
+      type: "orchestration_resume";
+      roundId: string;
     };
 
 /** 与 Data Agent Server TaskResponse.artifacts 对齐，供右侧任务结果区拉取预览 */

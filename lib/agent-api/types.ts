@@ -26,8 +26,14 @@ export type AdminUserRow = {
   can_use_tools?: boolean;
 };
 
-export type CreateSessionResponse = {
-  session_id: string;
+export type SessionAttachmentUploadItem = {
+  attachment_id: string;
+  name: string;
+  size: number;
+};
+
+export type SessionAttachmentUploadResponse = {
+  attachments: SessionAttachmentUploadItem[];
 };
 
 export type SessionListItem = {
@@ -84,6 +90,10 @@ export type ToolOrchestrationStepApi = {
   chatexcel_kind?: string | null;
   prior_context_mode?: string | null;
   reads_from_steps?: number[] | null;
+  runtime_phase?: string | null;
+  runtime_hint?: string | null;
+  task_elapsed_seconds?: number | null;
+  task_started_at?: string | null;
 };
 
 export type ToolOrchestrationStatusApi = {

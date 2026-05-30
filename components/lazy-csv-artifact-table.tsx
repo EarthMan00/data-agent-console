@@ -5,7 +5,9 @@ import { Loader2 } from "@/components/ui/tabler-icons";
 
 import { openAuthorizedUtf8TextStream } from "@/lib/agent-api/client";
 import { CsvIncrementalParser, pickDelimiterFromFirstCsvLine } from "@/lib/csv-incremental-parser";
+import { TableDataCellContent } from "@/components/table-data-cell-content";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { shouldRenderTableCellAsImage } from "@/lib/table-image-url-cell";
 import { cn } from "@/lib/utils";
 
 const INITIAL_DATA_ROWS = 50;
@@ -331,17 +333,19 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Te
               <TableRow key={`r-${ri}`} className="hover:bg-[#fafafa]">
                 {Array.from({ length: colCount }, (_, ci) => {
                   const cell = row[ci] ?? "";
+                  const columnHeader = header?.[ci];
                   return (
                     <TableCell
                       key={`c-${ri}-${ci}`}
                       className={sidePanel ? bodyCellSidePanelTd : bodyCellDefault}
-                      title={cell}
+                      title={shouldRenderTableCellAsImage(columnHeader, cell) ? undefined : cell}
                     >
-                      {sidePanel ? (
-                        <span className={bodyCellSidePanelInner}>{cell}</span>
-                      ) : (
-                        cell
-                      )}
+                      <TableDataCellContent
+                        value={cell}
+                        columnHeader={columnHeader}
+                        sidePanel={sidePanel}
+                        textClassName={sidePanel ? bodyCellSidePanelInner : undefined}
+                      />
                     </TableCell>
                   );
                 })}

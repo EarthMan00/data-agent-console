@@ -36,6 +36,7 @@ type PendingHomeTask = {
   activeCapabilityId: string;
   composerMode: "普通模式" | "深度模式";
   createdAt: number;
+  pendingFiles?: File[];
 };
 
 type HomePromptCacheEntry = {
@@ -125,6 +126,7 @@ export function MoreDataHomePage() {
   const [activeCapabilityId, setActiveCapabilityId] = useState(homeCapabilityItems[0]?.id ?? "scenarios");
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [composerMode, setComposerMode] = useState<"普通模式" | "深度模式">("深度模式");
+  const [pendingHomeFiles, setPendingHomeFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
   const [launching, setLaunching] = useState(false);
   const [promptCopied, setPromptCopied] = useState(false);
@@ -211,6 +213,7 @@ export function MoreDataHomePage() {
           selectedSourceIds: effectiveSelectedSourceIds,
           activeCapabilityId: effectiveActiveCapabilityId,
           composerMode: effectiveComposerMode,
+          pendingFiles: pendingHomeFiles,
         });
         platformAgent.openLogin("登录后将继续发送当前任务。");
         return;
@@ -224,7 +227,9 @@ export function MoreDataHomePage() {
           objective: nextQuery,
           mode: effectiveComposerMode === "深度模式" ? "专业模式" : "轻量模式",
           selectedCapabilities,
+          pendingFiles: pending?.pendingFiles ?? pendingHomeFiles,
         });
+        setPendingHomeFiles([]);
         setNotice("已连接 Data Agent Server，正在执行任务。");
         router.replace(`/?runId=${runId}`);
       } finally {
@@ -249,7 +254,7 @@ export function MoreDataHomePage() {
     } finally {
       setLaunching(false);
     }
-  }, [activeCapabilityId, composerMode, platformAgent, query, router, selectedSourceIds]);
+  }, [activeCapabilityId, composerMode, pendingHomeFiles, platformAgent, query, router, selectedSourceIds]);
 
   useEffect(() => {
     if (!platformAgent?.auth || launching || activeRunId) return;
@@ -281,7 +286,9 @@ export function MoreDataHomePage() {
   };
 
   const handleFilesSelected = (files: FileList) => {
-    const names = Array.from(files).map((file) => file.name).join("、");
+    const fileArr = Array.from(files);
+    setPendingHomeFiles(fileArr);
+    const names = fileArr.map((file) => file.name).join("、");
     setNotice(`已添加附件：${names}。`);
   };
 

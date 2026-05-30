@@ -88,5 +88,9 @@ export function streamSanitizeDeltaClient(prev: string, rawAccum: string): { dis
   if (display.startsWith(prev)) {
     return { display, delta: display.slice(prev.length) };
   }
-  return { display, delta: display };
+  // 思考块闭合/展开导致可见文本缩短时，保留已展示内容，避免界面闪回「思考中」
+  if (prev.startsWith(display) || display.length < prev.length) {
+    return { display: prev, delta: "" };
+  }
+  return { display, delta: display.slice(prev.length) };
 }
