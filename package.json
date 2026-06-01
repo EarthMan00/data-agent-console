@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:webpack": "next dev --webpack",
+    "dev:stable": "next dev --webpack --port 3000",
     "build": "next build --turbopack",
     "build:webpack": "next build --webpack",
     "start": "next start",

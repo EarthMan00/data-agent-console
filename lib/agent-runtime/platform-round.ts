@@ -1,4 +1,5 @@
 import {
+  formatAgentApiErrorForUser,
   getTask,
   getToolOrchestration,
   listSessionMessages,
@@ -68,6 +69,32 @@ import {
 } from "@/lib/task-status-poll";
 import { sleep } from "./util";
 import type { AgentRoundInput, StreamAgentRoundPlatformOptions } from "./types";
+
+const TRANSIENT_FETCH_RETRIES = 3;
+const TRANSIENT_FETCH_RETRY_DELAY_MS = 1200;
+
+function isTransientFetchError(e: unknown): boolean {
+  if (!(e instanceof TypeError)) return false;
+  const m = e.message.trim().toLowerCase();
+  return m === "failed to fetch" || m.includes("networkerror") || m.includes("load failed");
+}
+
+async function withTransientFetchRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= TRANSIENT_FETCH_RETRIES; attempt += 1) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (attempt < TRANSIENT_FETCH_RETRIES && isTransientFetchError(e)) {
+        await sleep(TRANSIENT_FETCH_RETRY_DELAY_MS);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
 
 /** 右侧「下载全部文件」：多步聚合 zip API，否则单任务级下载 API */
 function buildPlatformSnapshotZipDownloadApi(
@@ -375,7 +402,7 @@ export async function runPlatformRound(
         });
         let resumeOk = false;
         for (let attempt = 0; attempt < 40; attempt += 1) {
-          const resumeCheck = await getToolOrchestration(accessToken, orchestrationId!);
+          const resumeCheck = await withTransientFetchRetry(() => getToolOrchestration(accessToken, orchestrationId!));
           if (!resumeCheck.awaiting_clarification) {
             resumeOk = true;
             break;
@@ -547,7 +574,9 @@ export async function runPlatformRound(
       if (acceptedTaskId) {
         sharedTask = await getTask(accessToken, acceptedTaskId);
       } else if (orchestrationId) {
-        const orchSnap = await getToolOrchestration(accessToken, orchestrationId);
+        const orchSnap = await withTransientFetchRetry(() =>
+          getToolOrchestration(accessToken, orchestrationId),
+        );
         const firstTaskId = orchSnap.steps.map((s) => s.task_id).find((id) => id);
         if (!firstTaskId) {
           throw new Error("编排任务缺少 task_id");
@@ -570,7 +599,9 @@ export async function runPlatformRound(
             userStopped = true;
             break;
           }
-          lastOrch = await getToolOrchestration(accessToken, orchestrationId);
+          lastOrch = await withTransientFetchRetry(() =>
+            getToolOrchestration(accessToken, orchestrationId),
+          );
           lastOrch.steps.forEach((st, idx) => {
             const def = stepDefs[idx];
             if (!def) return;
@@ -702,7 +733,9 @@ export async function runPlatformRound(
         );
         if (pendingClarifyFromSession && orchestrationId && !lastOrch) {
           try {
-            lastOrch = await getToolOrchestration(accessToken, orchestrationId);
+            lastOrch = await withTransientFetchRetry(() =>
+            getToolOrchestration(accessToken, orchestrationId),
+          );
           } catch {
             /* 编排快照拉取失败时仍可用 session 澄清文案 */
           }
@@ -911,9 +944,7 @@ export async function runPlatformRound(
     const message =
       e instanceof ChatStreamError
         ? e.message
-        : e instanceof Error
-          ? e.message
-          : "发送失败，请稍后重试。";
+        : formatAgentApiErrorForUser(e);
     handlers.onEvent({
       type: "error",
       roundId: input.roundId,
