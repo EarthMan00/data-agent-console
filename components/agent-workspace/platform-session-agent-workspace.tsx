@@ -21,13 +21,15 @@ import {
   getToolOrchestration,
   listSessionMessages,
 } from "@/lib/agent-api/client";
-import type { ChatSendResult, SessionMessageItem, TaskResponse } from "@/lib/agent-api/types";
+import { getChatMessageMaxChars } from "@/lib/agent-api/config";
 import {
   createStreamingAssistantMessage,
   isStreamingAssistantMessage,
   sendSessionMessageStream,
+  sessionHasAssistantThinkingPlaceholder,
   sessionHasVisibleInFlightAssistant,
   finalizeStreamingAssistantMessage,
+  shouldShowAssistantThinkingPlaceholder,
 } from "@/lib/session-chat-send";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import {
@@ -828,6 +830,11 @@ export function PlatformSessionAgentWorkspace({
   const send = useCallback(async () => {
     const text = draft.trim();
     if (!text || sending) return;
+    const maxChars = getChatMessageMaxChars();
+    if (text.length > maxChars) {
+      setError(`消息过长（${text.length} 字），请控制在 ${maxChars} 字以内。`);
+      return;
+    }
     if (!platformAgent?.auth) {
       platformAgent?.openLogin("请先登录后再发送消息。");
       return;
@@ -1164,7 +1171,14 @@ export function PlatformSessionAgentWorkspace({
                               }
                             />
                           </div>
-                        ) : hideAssistantBubble ? null : (
+                        ) : hideAssistantBubble ? null : shouldShowAssistantThinkingPlaceholder(
+                            m,
+                            messages,
+                            i,
+                            sending,
+                          ) ? (
+                          <AssistantLoadingRow variant="thinking" />
+                        ) : (
                           <SimpleAssistantBubble
                             body={m.content}
                             datetime={m.created_at}
@@ -1201,7 +1215,9 @@ export function PlatformSessionAgentWorkspace({
                     </div>
                   );
                 })}
-                {sending && !sessionHasVisibleInFlightAssistant(messages) ? (
+                {sending &&
+                !sessionHasVisibleInFlightAssistant(messages) &&
+                !sessionHasAssistantThinkingPlaceholder(messages, sending) ? (
                   <AssistantLoadingRow variant="thinking" />
                 ) : null}
                 {showTrialRunFooterLine ? <AssistantLoadingRow variant="task" /> : null}
@@ -1263,7 +1279,23 @@ export function PlatformSessionAgentWorkspace({
                 onToolSelect={() => {}}
                 onSourceRemove={() => {}}
                 onFilesSelected={(files) => {
-                  setPendingFiles(Array.from(files));
+                  setPendingFiles((prev) => {
+                    const picked = Array.from(files);
+                    if (picked.length === 0) return prev;
+                    const seen = new Set(prev.map((f) => `${f.name}:${f.size}:${f.lastModified}`));
+                    const merged = [...prev];
+                    for (const f of picked) {
+                      const key = `${f.name}:${f.size}:${f.lastModified}`;
+                      if (!seen.has(key)) {
+                        seen.add(key);
+                        merged.push(f);
+                      }
+                    }
+                    return merged;
+                  });
+                }}
+                onAttachmentsChange={(files) => {
+                  setPendingFiles(files);
                 }}
                 onSubmit={() => void send()}
                 visualStyle="default"

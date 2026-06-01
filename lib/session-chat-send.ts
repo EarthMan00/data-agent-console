@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from "react";
 
 import { sendChatMessageStream, uploadSessionAttachments } from "@/lib/agent-api/client";
 import type { ChatSendResult, SessionMessageItem } from "@/lib/agent-api/types";
-import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
+import { stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 
 export function createStreamingAssistantMessage(id: string, createdAt: string): SessionMessageItem {
   return {
@@ -20,13 +20,41 @@ export function isStreamingAssistantMessage(m: SessionMessageItem): boolean {
   return Boolean(meta?.streaming);
 }
 
-/** 发送/任务轮询进行中：是否已有可展示的助手回复（含流式占位）。 */
+/** 助手消息是否有可展示正文（过滤思考块后非空）。 */
+export function assistantMessageHasVisibleContent(m: SessionMessageItem): boolean {
+  if (m.role !== "assistant") return false;
+  const raw = (m.content ?? "").trim();
+  if (!raw) return false;
+  const visible = isStreamingAssistantMessage(m)
+    ? stripModelThinkingForStreamPartial(raw)
+    : stripModelThinkingForUi(raw);
+  const t = visible.trim();
+  return t.length > 0 && t !== "（无回复）";
+}
+
+/** 发送/任务轮询进行中：是否已有可展示的助手回复（不含仅 streaming 标记的空占位）。 */
 export function sessionHasVisibleInFlightAssistant(messages: SessionMessageItem[]): boolean {
-  return messages.some((m) => {
-    if (m.role !== "assistant") return false;
-    if (isStreamingAssistantMessage(m)) return true;
-    return (m.content ?? "").trim().length > 0;
-  });
+  return messages.some((m) => assistantMessageHasVisibleContent(m));
+}
+
+/** 是否在消息列表中展示「思考中」占位（避免与底部全局 loading 重复）。 */
+export function shouldShowAssistantThinkingPlaceholder(
+  m: SessionMessageItem,
+  messages: SessionMessageItem[],
+  messageIndex: number,
+  sending: boolean,
+): boolean {
+  if (m.role !== "assistant") return false;
+  if (assistantMessageHasVisibleContent(m)) return false;
+  if (isStreamingAssistantMessage(m)) return true;
+  return sending && messageIndex === messages.length - 1;
+}
+
+export function sessionHasAssistantThinkingPlaceholder(
+  messages: SessionMessageItem[],
+  sending: boolean,
+): boolean {
+  return messages.some((m, i) => shouldShowAssistantThinkingPlaceholder(m, messages, i, sending));
 }
 
 export function finalizeStreamingAssistantMessage(

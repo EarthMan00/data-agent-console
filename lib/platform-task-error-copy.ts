@@ -1,5 +1,7 @@
 /** 将后端/工具链技术性文案转为用户可理解的提示（仍保留未知错误的原文以便排查） */
 
+import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
+
 function stripChatexcelImportNoise(text: string): string {
   return text
     .replace(/\[OK\]\s*成功导入模块:\s*[^\s]+\s*/g, "")
@@ -69,7 +71,9 @@ export function humanizeTaskErrorMessage(raw: string): string {
   }
 
   if (withoutSpam.length > 0 && withoutSpam.length < t.length) {
-    return withoutSpam.length > 280 ? `${withoutSpam.slice(0, 280)}…` : withoutSpam;
+    const trimmed =
+      withoutSpam.length > 280 ? `${withoutSpam.slice(0, 280)}…` : withoutSpam;
+    return stripInternalToolNamesForUi(trimmed) || trimmed;
   }
-  return t;
+  return stripInternalToolNamesForUi(t) || t;
 }

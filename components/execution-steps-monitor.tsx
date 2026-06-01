@@ -4,6 +4,7 @@ import { AlertCircle, CheckCircle2, Loader2, XCircle } from "@/components/ui/tab
 
 import { Button } from "@/components/ui/button";
 import { humanizeStepLabelForUi } from "@/lib/humanize-step-label";
+import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
 import { cn } from "@/lib/utils";
 import type { PlatformSubtaskSnapshot, TaskExecutionStep } from "@/lib/agent-events";
 
@@ -109,7 +110,9 @@ export function ExecutionStepCard({
         </p>
       </div>
       {step.status === "running" && step.runtimeHint ? (
-        <p className="mt-2 pl-10 text-[12px] leading-5 text-[#6b7280]">{step.runtimeHint}</p>
+        <p className="mt-2 pl-10 text-[12px] leading-5 text-[#6b7280]">
+          {stripInternalToolNamesForUi(step.runtimeHint)}
+        </p>
       ) : null}
     </div>
   );

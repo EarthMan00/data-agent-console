@@ -1,4 +1,5 @@
 import type { SessionMessageItem } from "@/lib/agent-api/types";
+import { humanizeStepLabelForUi } from "@/lib/humanize-step-label";
 
 /** 从「已拆解为 N 个执行步骤…」类助手文案中解析步骤说明（定时/历史会话无 task_execution_steps 落库时兜底）。 */
 export function parseDecompositionLabelsFromContent(content: string): string[] {
@@ -11,7 +12,7 @@ export function parseDecompositionLabelsFromContent(content: string): string[] {
     const trimmed = line.trim();
     const m = trimmed.match(/^\d+\.\s*(?:\[[^\]]+\]\s*)?(.+)$/);
     if (m?.[1]) {
-      const label = m[1].trim();
+      const label = humanizeStepLabelForUi(m[1].trim());
       if (label) labels.push(label);
     }
   }

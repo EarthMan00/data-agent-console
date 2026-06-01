@@ -74,8 +74,8 @@ const TYPE_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: "html", label: "HTML" },
   { value: "pdf", label: "PDF" },
   { value: "file", label: "文件" },
-  { value: "chatexcel", label: "ChatExcel" },
-  { value: "linkfox", label: "LinkFox" },
+  { value: "chatexcel", label: "表格处理" },
+  { value: "linkfox", label: "数据采集" },
 ];
 
 function FavoritesEmptyIllustration() {

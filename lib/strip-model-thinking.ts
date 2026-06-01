@@ -38,18 +38,24 @@ function stripRedactedThinkingBlocksScan(text: string): string {
   return t;
 }
 
-export function stripModelThinkingForUi(text: string): string {
+function stripModelThinkingBase(text: string, truncateUnclosed: boolean): string {
   if (!text) return text;
   let t = text.replace(ZW_RE, "");
   t = t.replace(/＜/g, "<").replace(/＞/g, ">");
-  t = t.replace(/`[\s\S]*?`[\s\S]*?`[\s\S]*?`/g, "");
+  t = t.replace(/```[\s\S]*?```/g, "");
   t = t.replace(/``[\s\S]*?``/g, "");
   const tags = ["redacted_reasoning", "redacted_thinking", "thinking", "think"] as const;
   for (const tag of tags) {
-    const open = new RegExp(`<${tag}\\b[^>]*>[\\s\S]*?<\\/\\s*${tag}\\s*>`, "gi");
+    const open = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/\\s*${tag}\\s*>`, "gi");
     t = t.replace(open, "");
-    if (tag !== "redacted_thinking") {
-      const openToEnd = new RegExp(`<${tag}\\b[^>]*>[\\s\S]*$`, "gi");
+    if (truncateUnclosed && tag !== "redacted_thinking") {
+      const openToEnd = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*$`, "gi");
+      t = t.replace(openToEnd, "");
+    }
+  }
+  if (!truncateUnclosed) {
+    for (const tag of ["redacted_reasoning", "thinking", "think"] as const) {
+      const openToEnd = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*$`, "gi");
       t = t.replace(openToEnd, "");
     }
   }
@@ -59,28 +65,19 @@ export function stripModelThinkingForUi(text: string): string {
     "",
   );
   t = t.replace(/<minimax:tool_call\b[^>]*>[\s\S]*?<\/\s*minimax:tool_call\s*>/gi, "");
-  t = t.replace(/linkfox\s*agent/gi, "");
-  t = t.replace(/linkfox/gi, "");
-  const s = t.trim();
+  return t;
+}
+
+export function stripModelThinkingForUi(text: string): string {
+  if (!text) return text;
+  const s = stripModelThinkingBase(text, true).trim();
   return s || "（无回复）";
 }
 
 /** 流式进行中：仅去掉已闭合思考块，避免未闭合标签导致整段缓冲被清空。 */
 export function stripModelThinkingForStreamPartial(text: string): string {
   if (!text) return "";
-  let t = text.replace(ZW_RE, "");
-  t = t.replace(/＜/g, "<").replace(/＞/g, ">");
-  const tags = ["redacted_reasoning", "redacted_thinking", "thinking", "think"] as const;
-  for (const tag of tags) {
-    const open = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/\\s*${tag}\\s*>`, "gi");
-    t = t.replace(open, "");
-  }
-  for (const tag of ["redacted_reasoning", "thinking", "think"] as const) {
-    const openToEnd = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*$`, "gi");
-    t = t.replace(openToEnd, "");
-  }
-  t = stripRedactedThinkingBlocksScan(t);
-  return t.trim();
+  return stripModelThinkingBase(text, false).trim();
 }
 
 export function streamSanitizeDeltaClient(prev: string, rawAccum: string): { display: string; delta: string } {

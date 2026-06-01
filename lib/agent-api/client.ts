@@ -138,10 +138,46 @@ async function safeJson(res: Response): Promise<unknown> {
   return parseResponseJson(res);
 }
 
+function parseLoginResponse(data: unknown, status: number, errorLabel: string): LoginResponse {
+  assertJsonObject(data);
+  const access_token = data.access_token;
+  const refresh_token = data.refresh_token;
+  const user_id = data.user_id;
+  const plan_code = data.plan_code;
+  if (
+    typeof access_token !== "string" ||
+    typeof refresh_token !== "string" ||
+    typeof user_id !== "string" ||
+    typeof plan_code !== "string"
+  ) {
+    throw new AgentApiError(`invalid ${errorLabel} response shape`, status, data);
+  }
+  const user_role = data.user_role;
+  return {
+    access_token,
+    refresh_token,
+    user_id,
+    plan_code,
+    user_role: typeof user_role === "string" ? user_role : undefined,
+  };
+}
+
+const EMAIL_LOGIN_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_LOGIN_RE = /^1[3-9]\d{9}$/;
+
+function buildPasswordLoginBody(account: string, password: string): Record<string, string> {
+  const a = account.trim();
+  if (PHONE_LOGIN_RE.test(a)) {
+    return { phone: a, password };
+  }
+  if (EMAIL_LOGIN_RE.test(a)) {
+    return { email: a, password };
+  }
+  return { username: a, password };
+}
+
 export async function login(account: string, password: string): Promise<LoginResponse> {
-  const a = (account || "").trim();
-  const isEmail = a.includes("@");
-  const body = isEmail ? { email: a, password } : { username: a, password };
+  const body = buildPasswordLoginBody(account, password);
   const res = await fetch(apiUrl("/api/auth/login"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -162,27 +198,7 @@ export async function login(account: string, password: string): Promise<LoginRes
   if (!res.ok) {
     throw new AgentApiError("login failed", res.status, data);
   }
-  assertJsonObject(data);
-  const access_token = data.access_token;
-  const refresh_token = data.refresh_token;
-  const user_id = data.user_id;
-  const plan_code = data.plan_code;
-  if (
-    typeof access_token !== "string" ||
-    typeof refresh_token !== "string" ||
-    typeof user_id !== "string" ||
-    typeof plan_code !== "string"
-  ) {
-    throw new AgentApiError("invalid login response shape", res.status, data);
-  }
-  const user_role = data.user_role;
-  return {
-    access_token,
-    refresh_token,
-    user_id,
-    plan_code,
-    user_role: typeof user_role === "string" ? user_role : undefined,
-  };
+  return parseLoginResponse(data, res.status, "login");
 }
 
 export async function sendSmsLoginCode(phone: string): Promise<{ retryAfterSeconds: number | null }> {
@@ -213,27 +229,7 @@ export async function loginBySms(phone: string, code: string): Promise<LoginResp
   if (!res.ok) {
     throw new AgentApiError(formatHttpErrorMessage(res, data, "短信登录失败"), res.status, data);
   }
-  assertJsonObject(data);
-  const access_token = data.access_token;
-  const refresh_token = data.refresh_token;
-  const user_id = data.user_id;
-  const plan_code = data.plan_code;
-  if (
-    typeof access_token !== "string" ||
-    typeof refresh_token !== "string" ||
-    typeof user_id !== "string" ||
-    typeof plan_code !== "string"
-  ) {
-    throw new AgentApiError("invalid login response shape", res.status, data);
-  }
-  const user_role = data.user_role;
-  return {
-    access_token,
-    refresh_token,
-    user_id,
-    plan_code,
-    user_role: typeof user_role === "string" ? user_role : undefined,
-  };
+  return parseLoginResponse(data, res.status, "login");
 }
 
 export async function checkUsernameAvailable(username: string): Promise<boolean> {
@@ -277,27 +273,7 @@ export async function registerByEmail(args: { username: string; email: string; p
   if (!res.ok) {
     throw new AgentApiError(formatHttpErrorMessage(res, data, "注册失败"), res.status, data);
   }
-  assertJsonObject(data);
-  const access_token = data.access_token;
-  const refresh_token = data.refresh_token;
-  const user_id = data.user_id;
-  const plan_code = data.plan_code;
-  if (
-    typeof access_token !== "string" ||
-    typeof refresh_token !== "string" ||
-    typeof user_id !== "string" ||
-    typeof plan_code !== "string"
-  ) {
-    throw new AgentApiError("invalid register response shape", res.status, data);
-  }
-  const user_role = data.user_role;
-  return {
-    access_token,
-    refresh_token,
-    user_id,
-    plan_code,
-    user_role: typeof user_role === "string" ? user_role : undefined,
-  };
+  return parseLoginResponse(data, res.status, "register");
 }
 
 export type AdminUsersListResponse = { users: AdminUserRow[] };

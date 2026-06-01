@@ -15,6 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  AlarmFilled,
   Bell,
   Bookmark,
   BookOpen,
@@ -23,12 +24,15 @@ import {
   HelpCircle,
   InfoCircle,
   LogOut,
+  Menu,
   MessageCircleMore,
   PanelLeft,
+  PanelLeftExpand,
   Plus,
   Search,
   SparkleHighlight,
   Trash2,
+  UserCircle,
   UserRound,
   Users,
   X,
@@ -57,6 +61,16 @@ const navItems = [
   { href: "/prompt-library", label: "提示词库", icon: Bookmark },
   { href: "/schedules", label: "定时任务", icon: Clock3 },
   { href: "/artifacts", label: "收藏夹", icon: FolderHeart },
+];
+
+const mockNotificationItems = [
+  {
+    id: "mock-task-complete",
+    title: "任务「搜集Github热门ai项目」已完成",
+    description: "点击查看任务详情",
+    time: "5/31 20:01",
+    unread: true,
+  },
 ];
 
 type MoreDataShellProps = {
@@ -515,6 +529,13 @@ function MoreDataShellComponent({
   const showHeaderUserMenu = clientMounted && Boolean(headerAuth);
   const accountDisplayName = headerAuth?.displayName || headerAuth?.userId || "账号与设置";
   const accountAvatar = useMemo(() => getAccountAvatarMeta(accountDisplayName), [accountDisplayName]);
+  const openNotifications = useCallback(() => {
+    if (!headerAuth) {
+      platformAgent?.openLogin("请先登录后再查看通知。");
+      return;
+    }
+    setNotificationOpen(true);
+  }, [headerAuth, platformAgent]);
 
   useEffect(() => {
     if (!showHeaderUserMenu) {
@@ -564,6 +585,14 @@ function MoreDataShellComponent({
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "";
     return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+  };
+
+  const formatHistoryCreatedTime = (entry: HistoryEntry) => {
+    const iso = entry.firstAt || entry.created_at;
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleString();
   };
 
   const executePurgeHistorySession = useCallback(
@@ -667,7 +696,7 @@ function MoreDataShellComponent({
                     className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
                     onClick={() => setSidebarCollapsed(false)}
                   >
-                    <PanelLeft className="h-4 w-4" strokeWidth={1.8} />
+                    <PanelLeftExpand className="h-[18px] w-[18px]" strokeWidth={1.8} />
                   </button>
                 </div>
               ) : (
@@ -711,7 +740,7 @@ function MoreDataShellComponent({
                 </div>
               )}
 
-              <nav className={cn("space-y-px", effectiveSidebarCollapsed ? "mt-3 px-2" : "px-2 pt-2")}>
+              <nav className={cn("space-y-1", effectiveSidebarCollapsed ? "mt-3 px-2" : "px-2 pt-2")}>
               {sidebarNavItems.map(({ href, label, icon: Icon }) => {
                 const active = currentPath === href || (href === "/" && currentPath === "/agent" && !agentHasSpecificSelection);
                 return (
@@ -738,10 +767,10 @@ function MoreDataShellComponent({
                     active
                         ? "bg-[rgba(55,53,47,0.06)] text-[#34322d]"
                         : "text-[#34322d] hover:bg-[rgba(55,53,47,0.06)]"
-                  } ${effectiveSidebarCollapsed ? "justify-center px-0" : "gap-3 pl-[9px] pr-0.5"}`}
+                  } ${effectiveSidebarCollapsed ? "mx-auto w-9 justify-center px-0" : "gap-3 pl-[9px] pr-0.5"}`}
                     title={effectiveSidebarCollapsed ? label : undefined}
                   >
-                    <Icon className="h-[18px] w-[18px] shrink-0 text-[#34322d]" strokeWidth={1.8} />
+                    <Icon className="h-[18px] w-[18px] shrink-0 text-[#34322d]" strokeWidth={2} />
                     {!effectiveSidebarCollapsed ? (
                       <>
                         <span className="text-[14px] leading-[21px]">{label}</span>
@@ -759,7 +788,7 @@ function MoreDataShellComponent({
                   <span className="text-[14px] font-medium leading-[18px] text-[#858481]">所有任务</span>
                 </div>
                 <div ref={historyListScrollRef} className="mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                  <div className="space-y-0.5">
+                  <div className="space-y-1">
                   {historyBusy && historySessions.length === 0 ? (
                     <SidebarHistorySkeleton />
                   ) : historyError ? (
@@ -772,80 +801,93 @@ function MoreDataShellComponent({
                     filteredHistorySessions.map((s) => {
                       const historyItemActive =
                         currentPath.startsWith("/agent") && effectiveActiveSessionId === s.session_id;
+                      const createdTime = formatHistoryCreatedTime(s);
                       return (
-                      <div
-                        key={s.session_id}
-                        className={`group/history flex w-full items-stretch gap-0.5 rounded-[10px] text-[16px] font-normal leading-6 transition-colors ${
-                          historyItemActive
-                            ? "bg-[rgba(55,53,47,0.06)] text-[#34322d]"
-                            : "text-[#34322d] hover:bg-[rgba(55,53,47,0.06)]"
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            platformAgent?.setActivePlatformSession(s.session_id);
-                            router.push(`/agent?sessionId=${encodeURIComponent(s.session_id)}`);
-                            setMobileSidebarOpen(false);
-                          }}
-                          className="flex min-w-0 flex-1 items-center px-[9px] py-1.5 text-left"
+                        <div
+                          key={s.session_id}
+                          className={`group/history relative flex w-full items-stretch gap-0.5 rounded-[10px] text-[16px] font-normal leading-6 transition-colors ${
+                            historyItemActive
+                              ? "bg-[rgba(55,53,47,0.06)] text-[#34322d]"
+                              : "text-[#34322d] hover:bg-[rgba(55,53,47,0.06)]"
+                          }`}
                         >
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-[14px] leading-5">{s.firstMessage || s.session_id}</div>
-                          </div>
-                        </button>
-                        <Popover
-                          open={historyPurgeConfirmId === s.session_id}
-                          onOpenChange={(open) => {
-                            setHistoryPurgeConfirmId(open ? s.session_id : null);
-                          }}
-                        >
-                          <PopoverTrigger asChild>
-                            <button
-                              type="button"
-                              className="inline-flex w-8 shrink-0 items-center justify-center rounded-r-[9px] text-[#7f817d] opacity-0 transition hover:bg-transparent hover:text-red-600 group-hover/history:opacity-100 focus-visible:opacity-100 disabled:opacity-40 data-[state=open]:bg-transparent data-[state=open]:text-red-600 data-[state=open]:opacity-100"
-                              aria-label="删除该历史任务"
-                              aria-expanded={historyPurgeConfirmId === s.session_id}
-                              disabled={deletingId === s.session_id}
-                            >
-                              <Trash2 className="h-[15px] w-[15px]" aria-hidden />
-                            </button>
-                          </PopoverTrigger>
-                          <PopoverContent
-                            side="bottom"
-                            align="end"
-                            sideOffset={6}
-                            className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
-                            onClick={(e) => e.stopPropagation()}
-                            onCloseAutoFocus={(e) => e.preventDefault()}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              platformAgent?.setActivePlatformSession(s.session_id);
+                              router.push(`/agent?sessionId=${encodeURIComponent(s.session_id)}`);
+                              setMobileSidebarOpen(false);
+                            }}
+                            className="relative flex min-w-0 flex-1 items-center overflow-hidden px-[9px] py-1.5 text-left"
                           >
-                            <p className="text-[14px] leading-6 text-[#34322d]">
-                              确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
-                            </p>
-                            <div className="mt-4 flex justify-end gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
-                                disabled={deletingId === s.session_id}
-                                onClick={() => setHistoryPurgeConfirmId(null)}
-                              >
-                                取消
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
-                                className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
-                                disabled={deletingId === s.session_id}
-                                onClick={() => void executePurgeHistorySession(s.session_id)}
-                              >
-                                {deletingId === s.session_id ? "删除中…" : "确定删除"}
-                              </Button>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-[14px] leading-5 transition-[padding] group-hover/history:pr-[148px] group-focus-within/history:pr-[148px]">
+                                {s.firstMessage || s.session_id}
+                              </div>
                             </div>
-                          </PopoverContent>
-                        </Popover>
+                          </button>
+                          {createdTime ? (
+                            <span
+                              className={cn(
+                                "pointer-events-none absolute right-10 top-1/2 hidden max-w-[140px] -translate-y-1/2 items-center truncate bg-gradient-to-l from-[#f3f3f2] via-[#f3f3f2] to-transparent pl-8 pr-0 text-[12px] leading-4 text-[#858481] group-focus-within/history:flex group-hover/history:flex",
+                                historyPurgeConfirmId === s.session_id && "flex"
+                              )}
+                            >
+                              {createdTime}
+                            </span>
+                          ) : null}
+                          <Popover
+                            open={historyPurgeConfirmId === s.session_id}
+                            onOpenChange={(open) => {
+                              setHistoryPurgeConfirmId(open ? s.session_id : null);
+                            }}
+                          >
+                            <PopoverTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex w-8 shrink-0 items-center justify-center rounded-r-[9px] text-[#7f817d] opacity-0 transition hover:bg-transparent hover:text-red-600 group-hover/history:opacity-100 focus-visible:opacity-100 disabled:opacity-40 data-[state=open]:bg-transparent data-[state=open]:text-red-600 data-[state=open]:opacity-100"
+                                aria-label="删除该历史任务"
+                                aria-expanded={historyPurgeConfirmId === s.session_id}
+                                disabled={deletingId === s.session_id}
+                              >
+                                <Trash2 className="h-[15px] w-[15px]" aria-hidden />
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              side="bottom"
+                              align="end"
+                              sideOffset={6}
+                              className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
+                              onClick={(e) => e.stopPropagation()}
+                              onCloseAutoFocus={(e) => e.preventDefault()}
+                            >
+                              <p className="text-[14px] leading-6 text-[#34322d]">
+                                确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
+                              </p>
+                              <div className="mt-4 flex justify-end gap-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
+                                  disabled={deletingId === s.session_id}
+                                  onClick={() => setHistoryPurgeConfirmId(null)}
+                                >
+                                  取消
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="sm"
+                                  className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
+                                  disabled={deletingId === s.session_id}
+                                  onClick={() => void executePurgeHistorySession(s.session_id)}
+                                >
+                                  {deletingId === s.session_id ? "删除中…" : "确定删除"}
+                                </Button>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
                       </div>
                     );
                     })
@@ -915,12 +957,12 @@ function MoreDataShellComponent({
                               我的账号
                             </div>
                             <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                              <HelpCircle className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                              获取帮助
+                              <BookOpen className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                              帮助文档
                             </div>
                             <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                              <BookOpen className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
-                              文档
+                              <HelpCircle className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                              联系我们
                             </div>
                             <div className="my-1 h-px bg-[rgba(0,0,0,0.06)]" />
                             <button
@@ -941,7 +983,7 @@ function MoreDataShellComponent({
                       className="flex h-9 min-w-0 flex-1 items-center gap-3 rounded-[10px] pl-[9px] pr-1 text-left text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
                       onClick={() => platformAgent.openLogin()}
                     >
-                      <UserRound className="h-[18px] w-[18px] shrink-0 text-[#34322d]" strokeWidth={1.8} />
+                      <UserCircle className="h-[18px] w-[18px] shrink-0 text-[#34322d]" strokeWidth={2} />
                       <span className="min-w-0 flex-1 truncate text-[14px] font-normal leading-[21px] tracking-normal">
                         账号与设置
                       </span>
@@ -952,13 +994,7 @@ function MoreDataShellComponent({
                     aria-label="通知提醒"
                     title="通知提醒"
                     className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
-                    onClick={() => {
-                      if (!headerAuth) {
-                        platformAgent.openLogin("请先登录后再查看通知。");
-                        return;
-                      }
-                      setNotificationOpen(true);
-                    }}
+                    onClick={openNotifications}
                   >
                     <Bell className="h-[18px] w-[18px]" strokeWidth={1.8} />
                   </button>
@@ -1139,8 +1175,38 @@ function MoreDataShellComponent({
                     <X className="h-6 w-6" strokeWidth={1.6} />
                   </button>
                 </div>
-                <div className="flex min-h-0 flex-1 items-center justify-center pb-[34px]">
-                  <EmptyState className="m-0 min-h-0" message="暂无消息" />
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-2 sm:px-8">
+                  {mockNotificationItems.length > 0 ? (
+                    <div className="space-y-4">
+                      {mockNotificationItems.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className="relative flex min-h-[88px] w-full items-center gap-4 rounded-[22px] bg-white px-6 py-5 text-left transition hover:bg-[rgba(255,255,255,0.86)]"
+                        >
+                          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#f4f4f4] text-[#0084ff]">
+                            <AlarmFilled className="h-7 w-7" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[14px] font-semibold leading-[21px] text-[#111111]">
+                              {item.title}
+                            </span>
+                            <span className="mt-1 block truncate text-[12px] leading-[18px] text-[#858481]">
+                              {item.description}
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-[12px] leading-[18px] text-[#858481]">{item.time}</span>
+                          {item.unread ? (
+                            <span className="absolute right-4 top-4 h-1.5 w-1.5 rounded-full bg-[#ff3b3f]" aria-label="未读" />
+                          ) : null}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex h-full items-center justify-center pb-[34px]">
+                      <EmptyState className="m-0 min-h-0" message="暂无消息" />
+                    </div>
+                  )}
                 </div>
               </section>
             </div>
@@ -1155,6 +1221,29 @@ function MoreDataShellComponent({
             mainClassName,
           )}
         >
+          {!showTopHeader && !currentRunLabel ? (
+            <header className="fixed left-0 right-0 top-0 z-50 grid h-16 grid-cols-[64px_minmax(0,1fr)_64px] items-center border-b border-transparent bg-white px-2 md:hidden">
+              <button
+                type="button"
+                aria-label="打开侧边栏"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                onClick={() => setMobileSidebarOpen(true)}
+              >
+                <Menu className="h-5 w-5" strokeWidth={2} />
+              </button>
+              <div className="min-w-0 text-center text-[16px] font-semibold leading-6 text-[#111111]">Alice</div>
+              <button
+                type="button"
+                aria-label="通知提醒"
+                title="通知提醒"
+                className="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                onClick={openNotifications}
+              >
+                <Bell className="h-[18px] w-[18px]" strokeWidth={1.8} />
+              </button>
+            </header>
+          ) : null}
+
           {showTopHeader || currentRunLabel ? (
             <header className="sticky top-0 z-50 flex h-14.5 items-center bg-white px-3 sm:px-4 md:px-6">
               <div className="flex min-w-0 items-center gap-3">
@@ -1164,7 +1253,7 @@ function MoreDataShellComponent({
                   className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] md:hidden"
                   onClick={() => setMobileSidebarOpen(true)}
                 >
-                  <PanelLeft className="h-5 w-5" strokeWidth={1.8} />
+                  <Menu className="h-5 w-5" strokeWidth={2} />
                 </button>
                 {currentRunLabel ? (
                   <div className="min-w-0 truncate text-[14px] font-medium text-[#243248]">
@@ -1178,6 +1267,7 @@ function MoreDataShellComponent({
           <div
             className={cn(
               "min-h-0 flex-1",
+              !showTopHeader && !currentRunLabel && "pt-16 md:pt-0",
               rightRail && "grid min-h-0 grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(580px,61%)]",
             )}
           >

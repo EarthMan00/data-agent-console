@@ -1,5 +1,12 @@
 /** 任务拆分/执行步骤：将 raw JSON 或绝对路径转为用户可读文案。 */
 
+import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
+
+function finalizeStepUiLabel(text: string): string {
+  const out = stripInternalToolNamesForUi((text || "").trim());
+  return out || "执行当前步骤";
+}
+
 function tryParseJsonObject(text: string): Record<string, unknown> | null {
   const raw = text.trim();
   if (!raw.startsWith("{")) return null;
@@ -108,25 +115,25 @@ export function humanizeStepLabelForUi(instruction: string): string {
     const query = String(parsed.query ?? "").trim();
 
     if (action === "generate_report" || action === "generate_intelligence_report") {
-      if (query && query.length <= 100) return query;
-      if (name) return `分析附件「${name}」并生成报告`;
-      return "基于附件表格生成分析报告";
+      if (query && query.length <= 100) return finalizeStepUiLabel(query);
+      if (name) return finalizeStepUiLabel(`分析附件「${name}」并生成报告`);
+      return finalizeStepUiLabel("基于附件表格生成分析报告");
     }
     if (action === "read_excel_metadata" || action === "read_metadata" || action === "read_excel") {
-      if (name) return `读取附件「${name}」的表结构与字段信息`;
-      return "读取附件 Excel 的表结构与字段信息";
+      if (name) return finalizeStepUiLabel(`读取附件「${name}」的表结构与字段信息`);
+      return finalizeStepUiLabel("读取附件 Excel 的表结构与字段信息");
     }
-    if (action === "merge_keyword_table") return "合并关键词表并计算价值打分";
+    if (action === "merge_keyword_table") return finalizeStepUiLabel("合并关键词表并计算价值打分");
     if (action === "run_excel_code") {
-      if (name) return `对附件「${name}」执行数据处理`;
-      return "对表格数据执行清洗与分析";
+      if (name) return finalizeStepUiLabel(`对附件「${name}」执行数据处理`);
+      return finalizeStepUiLabel("对表格数据执行清洗与分析");
     }
-    if (name) return `处理附件「${name}」`;
-    if (action) return `执行数据处理（${action}）`;
+    if (name) return finalizeStepUiLabel(`处理附件「${name}」`);
+    if (action) return finalizeStepUiLabel(`执行数据处理（${action}）`);
   }
 
   const prose = humanizeProseWithPaths(text);
-  if (prose) return prose;
+  if (prose) return finalizeStepUiLabel(prose);
 
-  return collapseUuidishAttachmentLabel(text) || "执行当前步骤";
+  return finalizeStepUiLabel(collapseUuidishAttachmentLabel(text));
 }

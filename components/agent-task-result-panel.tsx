@@ -429,7 +429,7 @@ export function AgentTaskResultPanel({
             <TaskSingleDataArtifactPreview artifact={fallbackPrimary} withFreshToken={withFreshToken} />
           ) : (
             <p className="text-[14px] leading-6 text-[#64748b]">
-              暂无数据或报告类结果文件（CSV/JSON/Markdown/HTML/PDF/ChatExcel）可展示。
+              暂无数据或报告类结果文件（CSV/JSON/Markdown/HTML/PDF 等）可展示。
             </p>
           )}
         </div>

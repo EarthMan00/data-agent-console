@@ -144,7 +144,7 @@ export type QueueFollowupInput = {
 const capabilityLabelMap = new Map(homeCapabilityItems.map((item) => [item.id, item.label]));
 
 function createId(prefix: string) {
-  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+  return `${prefix}-${crypto.randomUUID()}`;
 }
 
 function formatDate(date = new Date()) {
@@ -767,11 +767,7 @@ function createInitialState(): DemoState {
   };
 }
 
-function readStoredState() {
-  return createInitialState();
-}
-
-let state = readStoredState();
+let state = createInitialState();
 const listeners = new Set<() => void>();
 
 function emit(nextState: DemoState) {

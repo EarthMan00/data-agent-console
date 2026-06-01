@@ -285,11 +285,27 @@ export function MoreDataHomePage() {
     setSelectedSourceIds((current) => current.filter((id) => id !== capabilityId));
   };
 
+  const mergePendingHomeFiles = useCallback((incoming: File[]) => {
+    if (incoming.length === 0) return;
+    setPendingHomeFiles((prev) => {
+      const seen = new Set(prev.map((f) => `${f.name}:${f.size}:${f.lastModified}`));
+      const merged = [...prev];
+      for (const f of incoming) {
+        const key = `${f.name}:${f.size}:${f.lastModified}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(f);
+        }
+      }
+      return merged;
+    });
+  }, []);
+
   const handleFilesSelected = (files: FileList) => {
-    const fileArr = Array.from(files);
-    setPendingHomeFiles(fileArr);
-    const names = fileArr.map((file) => file.name).join("、");
-    setNotice(`已添加附件：${names}。`);
+    const picked = Array.from(files);
+    if (picked.length === 0) return;
+    mergePendingHomeFiles(picked);
+    setNotice(`已选择附件：${picked.map((file) => file.name).join("、")}。`);
   };
 
   const selectedPrompt = cards.find((card) => card.id === selectedPromptId) ?? null;
@@ -347,7 +363,7 @@ export function MoreDataHomePage() {
   return (
     <MoreDataShell currentPath="/" showTopHeader={false} mainClassName="bg-transparent">
       <div className="flex min-h-screen flex-col bg-[#f7f7f7] pb-10 sm:pb-14">
-        <section className="mx-auto w-full max-w-[1040px] px-4 pt-4 sm:px-6 sm:pt-8 lg:px-8 lg:pt-[56px]">
+        <section className="mx-auto w-full max-w-[1040px] px-4 pt-[180px] sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 sm:gap-5">
             <Image
               src="/mdata-logo.png"
@@ -381,6 +397,7 @@ export function MoreDataHomePage() {
                   onToolSelect={applyComposerTool}
                   onSourceRemove={removeComposerTool}
                   onFilesSelected={handleFilesSelected}
+                  onAttachmentsChange={mergePendingHomeFiles}
                   onSubmit={() => {
                     if (!launching) {
                       void launchAgent();
@@ -413,7 +430,7 @@ export function MoreDataHomePage() {
                   type="button"
                   onClick={() => applyBrowseCapability(item.id)}
                   className={cn(
-                    "inline-flex items-center gap-2 font-medium transition",
+                    "inline-flex items-center gap-2 p-1 font-medium transition",
                     active ? "text-[#111111]" : "text-[#8b8c87] hover:text-[#34322d]",
                   )}
                 >

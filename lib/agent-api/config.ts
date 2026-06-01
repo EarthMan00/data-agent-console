@@ -18,9 +18,15 @@ export function isAgentApiProxyEnabled(): boolean {
 
 export function getAgentApiOrigin(): string {
   if (isAgentApiProxyEnabled()) {
-    throw new Error(
-      "已启用 NEXT_PUBLIC_AGENT_API_USE_PROXY，请使用 getAgentHttpApiBase() 拼接 API 地址，勿调用 getAgentApiOrigin()",
-    );
+    if (typeof console !== "undefined") {
+      console.warn(
+        "已启用 NEXT_PUBLIC_AGENT_API_USE_PROXY，请使用 getAgentHttpApiBase() 拼接 API 地址；getAgentApiOrigin() 返回当前页面 origin 作为降级。",
+      );
+    }
+    if (typeof window !== "undefined") {
+      return window.location.origin.replace(/\/$/, "");
+    }
+    return "";
   }
   const v = process.env.NEXT_PUBLIC_AGENT_API_ORIGIN?.trim();
   if (!v) {
@@ -48,6 +54,13 @@ export function getTaskNameMaxChars(): number {
   return Math.min(n, 200);
 }
 
+export function getChatMessageMaxChars(): number {
+  const raw = process.env.NEXT_PUBLIC_CHAT_MESSAGE_MAX_CHARS?.trim();
+  const n = raw ? Number.parseInt(raw, 10) : 100_000;
+  if (!Number.isFinite(n) || n < 1) return 100_000;
+  return Math.min(n, 100_000);
+}
+
 export function getAgentWsOrigin(): string {
   if (isAgentApiProxyEnabled()) {
     const explicit = process.env.NEXT_PUBLIC_AGENT_WS_ORIGIN?.trim();
@@ -55,6 +68,11 @@ export function getAgentWsOrigin(): string {
       return explicit.replace(/\/$/, "");
     }
     const port = (process.env.NEXT_PUBLIC_AGENT_BACKEND_PORT ?? "8000").trim();
+    if (typeof window !== "undefined" && typeof console !== "undefined") {
+      console.warn(
+        "代理模式下未设置 NEXT_PUBLIC_AGENT_WS_ORIGIN，WebSocket 将直连后端端口；生产环境请显式配置 WS 地址。",
+      );
+    }
     if (typeof window !== "undefined") {
       const proto = window.location.protocol === "https:" ? "wss" : "ws";
       return `${proto}://${window.location.hostname}:${port}`;

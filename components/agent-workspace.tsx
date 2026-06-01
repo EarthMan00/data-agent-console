@@ -651,18 +651,34 @@ function AgentRunWorkspaceView({
   };
 
   const handleFilesSelected = (files: FileList) => {
-    const fileArr = Array.from(files);
-    const attachmentItems = buildAttachmentItems(fileArr);
-    setQueuedAttachments((current) => ({
-      ...current,
-      [run.id]: attachmentItems,
-    }));
-    setQueuedAttachmentFiles((current) => ({
-      ...current,
-      [run.id]: fileArr,
-    }));
-    setNotice(`已添加附件：${attachmentItems.map((item) => item.name).join("、")}。`);
+    const picked = Array.from(files);
+    if (picked.length === 0) return;
+    handleAttachmentsChange(picked);
+    const attachmentItems = buildAttachmentItems(picked);
+    setNotice(`已选择附件：${attachmentItems.map((item) => item.name).join("、")}。`);
   };
+
+  const handleAttachmentsChange = useCallback((files: File[]) => {
+    const attachmentItems = buildAttachmentItems(files);
+    setQueuedAttachmentFiles((current) => {
+      const next = { ...current };
+      if (files.length > 0) {
+        next[run.id] = files;
+      } else {
+        delete next[run.id];
+      }
+      return next;
+    });
+    setQueuedAttachments((current) => {
+      const next = { ...current };
+      if (attachmentItems.length > 0) {
+        next[run.id] = attachmentItems;
+      } else {
+        delete next[run.id];
+      }
+      return next;
+    });
+  }, [run.id]);
 
   const handleFeedback = (kind: "喜欢" | "不喜欢" | "需要继续") => {
     setNotice(`已记录反馈：${kind}。`);
@@ -1050,6 +1066,7 @@ function AgentRunWorkspaceView({
               onToolSelect={applyCapability}
               onSourceRemove={removeCapability}
               onFilesSelected={handleFilesSelected}
+              onAttachmentsChange={handleAttachmentsChange}
               submitVariant={composerShowsStop ? "stop" : "send"}
               onStop={() => void stopCurrentRound()}
               onSubmit={() => void appendNote()}

@@ -10,8 +10,10 @@ import {
   createStreamingAssistantMessage,
   isStreamingAssistantMessage,
   sendSessionMessageStream,
+  sessionHasAssistantThinkingPlaceholder,
   sessionHasVisibleInFlightAssistant,
   finalizeStreamingAssistantMessage,
+  shouldShowAssistantThinkingPlaceholder,
 } from "@/lib/session-chat-send";
 import type { ChatSendResult, SessionMessageItem } from "@/lib/agent-api/types";
 import { safeRandomUUID } from "@/lib/random-uuid";
@@ -570,7 +572,14 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                               onSuggestionToggle={toggleGuidanceSuggestion}
                             />
                           </div>
-                        ) : hideAssistantBubble ? null : (
+                        ) : hideAssistantBubble ? null : shouldShowAssistantThinkingPlaceholder(
+                            m,
+                            messages,
+                            i,
+                            sending,
+                          ) ? (
+                          <AssistantLoadingRow variant="thinking" />
+                        ) : (
                           <SimpleAssistantBubble
                             body={m.content}
                             datetime={m.created_at}
@@ -605,7 +614,9 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                     </div>
                   );
                 })}
-                {sending && !sessionHasVisibleInFlightAssistant(messages) ? (
+                {sending &&
+                !sessionHasVisibleInFlightAssistant(messages) &&
+                !sessionHasAssistantThinkingPlaceholder(messages, sending) ? (
                   <AssistantLoadingRow variant="thinking" />
                 ) : null}
               </div>
@@ -625,7 +636,23 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
               onToolSelect={() => {}}
               onSourceRemove={() => {}}
               onFilesSelected={(files) => {
-                setPendingFiles(Array.from(files));
+                setPendingFiles((prev) => {
+                  const picked = Array.from(files);
+                  if (picked.length === 0) return prev;
+                  const seen = new Set(prev.map((f) => `${f.name}:${f.size}:${f.lastModified}`));
+                  const merged = [...prev];
+                  for (const f of picked) {
+                    const key = `${f.name}:${f.size}:${f.lastModified}`;
+                    if (!seen.has(key)) {
+                      seen.add(key);
+                      merged.push(f);
+                    }
+                  }
+                  return merged;
+                });
+              }}
+              onAttachmentsChange={(files) => {
+                setPendingFiles(files);
               }}
               onSubmit={() => void send()}
               visualStyle="default"

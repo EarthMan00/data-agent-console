@@ -66,6 +66,7 @@ export function SimpleAssistantBubble({
     const t = streaming ? stripModelThinkingForStreamPartial(body) : stripModelThinkingForUi(body);
     return t === "（无回复）" ? "" : t;
   })();
+  const waitingForContent = streaming && !targetNorm.trim();
   const latchedStreamRef = useRef(false);
   // eslint-disable-next-line react-hooks/refs
   if (streaming) latchedStreamRef.current = true;
@@ -93,12 +94,29 @@ export function SimpleAssistantBubble({
         <div className="shrink-0 rounded-[16px] border border-[#e2e2df] bg-white px-4 py-3 text-[#34322d] shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
           <div className="text-[12px] font-medium uppercase tracking-wide text-[#8b8c87] opacity-80">助手</div>
           <div className="mt-1 min-w-0">
-            <ChatMarkdown>{shown}</ChatMarkdown>
-            {showCursor ? (
-              <span className="ml-0.5 inline-block animate-pulse text-[#747571]" aria-hidden>
-                ▌
-              </span>
-            ) : null}
+            {waitingForContent ? (
+              <div
+                className="flex items-center gap-3 py-0.5 text-[14px] leading-7 text-[#747571]"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="thinking-dots text-[#111111]" aria-hidden>
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <span>我正在思考，请等我一下～</span>
+              </div>
+            ) : (
+              <>
+                <ChatMarkdown>{shown}</ChatMarkdown>
+                {showCursor ? (
+                  <span className="ml-0.5 inline-block animate-pulse text-[#747571]" aria-hidden>
+                    ▌
+                  </span>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
       </div>
