@@ -22,6 +22,7 @@ import {
   listSessionMessages,
 } from "@/lib/agent-api/client";
 import { getChatMessageMaxChars } from "@/lib/agent-api/config";
+import type { ChatSendResult, SessionMessageItem, TaskResponse } from "@/lib/agent-api/types";
 import {
   createStreamingAssistantMessage,
   isStreamingAssistantMessage,
