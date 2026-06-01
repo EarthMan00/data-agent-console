@@ -15,6 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  AlarmFilled,
   Bell,
   Bookmark,
   BookOpen,
@@ -60,6 +61,16 @@ const navItems = [
   { href: "/prompt-library", label: "提示词库", icon: Bookmark },
   { href: "/schedules", label: "定时任务", icon: Clock3 },
   { href: "/artifacts", label: "收藏夹", icon: FolderHeart },
+];
+
+const mockNotificationItems = [
+  {
+    id: "mock-task-complete",
+    title: "任务「搜集Github热门ai项目」已完成",
+    description: "点击查看任务详情",
+    time: "5/31 20:01",
+    unread: true,
+  },
 ];
 
 type MoreDataShellProps = {
@@ -1164,8 +1175,38 @@ function MoreDataShellComponent({
                     <X className="h-6 w-6" strokeWidth={1.6} />
                   </button>
                 </div>
-                <div className="flex min-h-0 flex-1 items-center justify-center pb-[34px]">
-                  <EmptyState className="m-0 min-h-0" message="暂无消息" />
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-2 sm:px-8">
+                  {mockNotificationItems.length > 0 ? (
+                    <div className="space-y-4">
+                      {mockNotificationItems.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className="relative flex min-h-[88px] w-full items-center gap-4 rounded-[22px] bg-white px-6 py-5 text-left transition hover:bg-[rgba(255,255,255,0.86)]"
+                        >
+                          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#f4f4f4] text-[#0084ff]">
+                            <AlarmFilled className="h-7 w-7" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[14px] font-semibold leading-[21px] text-[#111111]">
+                              {item.title}
+                            </span>
+                            <span className="mt-1 block truncate text-[12px] leading-[18px] text-[#858481]">
+                              {item.description}
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-[12px] leading-[18px] text-[#858481]">{item.time}</span>
+                          {item.unread ? (
+                            <span className="absolute right-4 top-4 h-1.5 w-1.5 rounded-full bg-[#ff3b3f]" aria-label="未读" />
+                          ) : null}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex h-full items-center justify-center pb-[34px]">
+                      <EmptyState className="m-0 min-h-0" message="暂无消息" />
+                    </div>
+                  )}
                 </div>
               </section>
             </div>

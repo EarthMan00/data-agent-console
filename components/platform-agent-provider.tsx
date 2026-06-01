@@ -22,6 +22,7 @@ import {
   createSession,
   formatAgentApiErrorForUser,
   login,
+  parseFastApiDetail,
   registerByEmail,
   refreshAccessToken,
   releaseSession,
@@ -42,9 +43,9 @@ import {
 import { invalidateSessionAndRequestLogin } from "@/lib/agent-runtime/auth";
 import { ArrowLeft, ArrowRight, Power } from "@/components/ui/tabler-icons";
 
-const LOGIN_INTRO_TEXT =
-  "我是 Alice，跨境电商运营助手，掌握数据，洞察数据的神。请先登录";
+const LOGIN_INTRO_TEXT = "欢迎回来，我是 Ailce，你的跨境运营助手";
 const LOGIN_RETURNING_TEXT = "我是 Alice，欢迎回来！";
+const REGISTER_INTRO_TEXT = "欢迎注册，我是 Alice，你的跨境运营助手";
 const REGISTER_CODE_TITLE = "请输入发送给您邮箱的验证码";
 const LOGIN_INTRO_CHAR_INTERVAL_MS = 34;
 const LOGIN_RETURNING_STORAGE_KEY = "mdata:alice-has-logged-in";
@@ -124,9 +125,13 @@ function formatLoginError(e: unknown): string {
   if (/failed to fetch|load failed|networkerror/i.test(msg)) {
     return "当前无法连接登录服务，请检查网络后重试。若仍无法登录，请联系管理员。";
   }
+  if (e instanceof AgentApiError) {
+    const detail = parseFastApiDetail(e.body);
+    if (detail && e.status !== 401 && e.status !== 403) return detail;
+  }
   if (
     (e instanceof AgentApiError && (e.status === 401 || e.status === 403)) ||
-    /login failed|invalid credentials|invalid password|incorrect|unauthorized/i.test(
+    /invalid credentials|invalid password|incorrect|unauthorized/i.test(
       msg,
     )
   ) {
@@ -267,7 +272,11 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     });
   }, []);
   const isRegisterCodeStep = authMode === "register" && registerStep === "code";
-  const baseLoginTitleText = isRegisterCodeStep ? REGISTER_CODE_TITLE : loginIntroFullText;
+  const baseLoginTitleText = isRegisterCodeStep
+    ? REGISTER_CODE_TITLE
+    : authMode === "register"
+      ? REGISTER_INTRO_TEXT
+      : loginIntroFullText;
   const activeLoginTitleText = loginTitleOverride || baseLoginTitleText;
   const activeLoginTitleKey = [
     loginTitleReplayId,
@@ -1008,14 +1017,14 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                   <h2
                     id="mdata-login-title"
                     aria-label={activeLoginTitleText}
-                    className={
-                      isRegisterCodeStep
-                        ? "mdata-auth-title h-8 max-w-none text-left text-[24px] font-semibold leading-8 tracking-normal text-white transition-colors duration-300"
-                        : `mdata-auth-title h-[46px] max-w-[730px] text-left text-[30px] font-medium leading-[45px] tracking-normal transition-colors duration-300 ${
-                            isLoginTitleError
-                              ? "text-white"
-                              : activeTitleTypingDone
-                                ? "mdata-auth-title-muted"
+	                    className={
+	                      isRegisterCodeStep
+	                        ? "mdata-auth-title min-h-8 max-w-none text-left text-[24px] font-semibold leading-8 tracking-normal text-white transition-colors duration-300"
+	                        : `mdata-auth-title min-h-[46px] max-w-[730px] text-left text-[30px] font-medium leading-[45px] tracking-normal transition-colors duration-300 ${
+	                            isLoginTitleError
+	                              ? "text-white"
+	                              : activeTitleTypingDone
+	                                ? "mdata-auth-title-muted"
                                 : "text-white"
                           }`
                     }
@@ -1028,9 +1037,9 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                       />
                     ) : null}
                   </h2>
-                  <form
-                    key={activeLoginTitleKey}
-                    className={`${isRegisterCodeStep ? "mt-2 h-auto" : "mt-4 h-[121px]"} w-full transition-[opacity,transform] ${
+	                  <form
+	                    key={activeLoginTitleKey}
+	                    className={`${isRegisterCodeStep ? "mt-2 h-auto" : "mt-6 h-[121px]"} w-full transition-[opacity,transform] ${
                       activeTitleTypingDone
                         ? "translate-y-0 opacity-100 duration-500"
                         : "pointer-events-none translate-y-2 opacity-0 duration-0"
