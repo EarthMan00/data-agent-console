@@ -12,8 +12,11 @@ const BACKEND_BASE = (
 ).replace(/\/$/, "");
 
 function buildUpstreamUrl(request: NextRequest, pathSegments: string[]) {
+  const base = new URL(`${BACKEND_BASE}/`);
+  const basePath = base.pathname.replace(/\/+$/, "");
   const path = pathSegments.map(encodeURIComponent).join("/");
-  const url = new URL(`/${path}`, BACKEND_BASE);
+  base.pathname = `${basePath}/${path}`.replace(/\/{2,}/g, "/");
+  const url = base;
   url.search = request.nextUrl.search;
   return url.toString();
 }
