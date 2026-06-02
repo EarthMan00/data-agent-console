@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, FileText } from "@/components/ui/tabler-icons";
 
 import { ChatMarkdown } from "@/components/chat-markdown";
@@ -66,14 +66,26 @@ export function SimpleAssistantBubble({
     const t = streaming ? stripModelThinkingForStreamPartial(body) : stripModelThinkingForUi(body);
     return t === "（无回复）" ? "" : t;
   })();
-  const waitingForContent = streaming && !targetNorm.trim();
+  const visibleLatchRef = useRef("");
+  const [latchedVisible, setLatchedVisible] = useState("");
+  if (targetNorm.trim()) {
+    visibleLatchRef.current = targetNorm;
+  }
+  useEffect(() => {
+    if (targetNorm.trim()) {
+      visibleLatchRef.current = targetNorm;
+      setLatchedVisible(targetNorm);
+    }
+  }, [targetNorm]);
+  const displayNorm = targetNorm.trim() || latchedVisible || visibleLatchRef.current;
+  const waitingForContent = streaming && !displayNorm.trim();
   const latchedStreamRef = useRef(false);
   // eslint-disable-next-line react-hooks/refs
   if (streaming) latchedStreamRef.current = true;
 
   // eslint-disable-next-line react-hooks/refs
-  const runTypewriter = typewriter && latchedStreamRef.current && charLen(targetNorm) > 0;
-  const { text: shown, revealing } = useTypewriterReveal(targetNorm, runTypewriter, {
+  const runTypewriter = typewriter && latchedStreamRef.current && charLen(displayNorm) > 0;
+  const { text: shown, revealing } = useTypewriterReveal(displayNorm, runTypewriter, {
     charIntervalMs: 22,
   });
   /** 仅在 SSE 进行中显示光标；流结束后继续打字机追平但不闪光标 */

@@ -80,6 +80,15 @@ export function stripModelThinkingForStreamPartial(text: string): string {
   return stripModelThinkingBase(text, false).trim();
 }
 
+/** 聊天区可见正文：仅返回脱敏后的内容，不含思考块或原始 markup。 */
+export function resolveAssistantBodyForUi(text: string, streaming: boolean): string {
+  if (!text.trim()) return "";
+  const partial = stripModelThinkingForStreamPartial(text).trim();
+  const full = stripModelThinkingForUi(text);
+  const fullNorm = full === "（无回复）" ? "" : full.trim();
+  return streaming ? partial || fullNorm : fullNorm;
+}
+
 export function streamSanitizeDeltaClient(prev: string, rawAccum: string): { display: string; delta: string } {
   const display = stripModelThinkingForStreamPartial(rawAccum);
   if (display.startsWith(prev)) {

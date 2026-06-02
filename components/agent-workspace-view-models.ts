@@ -8,7 +8,11 @@ import type {
 } from "@/lib/agent-events";
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { humanizeStepLabelForUi } from "@/lib/humanize-step-label";
-import { stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
+import {
+  resolveAssistantBodyForUi,
+  stripModelThinkingForStreamPartial,
+  stripModelThinkingForUi,
+} from "@/lib/strip-model-thinking";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import { splitEmbeddedPostTaskGuidance } from "@/lib/parse-post-task-guidance";
 import {
@@ -50,6 +54,8 @@ export type RoundViewModel = {
   platformSubtasks?: PlatformSubtaskSnapshot[];
   /** 纯对话：助手正文（流式累积或终稿） */
   assistantReplyText?: string;
+  /** 脱敏后实际展示的正文（不含思考块） */
+  assistantVisibleText?: string;
   assistantStreaming?: boolean;
   /** 本轮是否已结束（success / error） */
   roundTerminal?: boolean;
@@ -268,15 +274,13 @@ export function buildRoundViewModels(run: TaskRunLike) {
     const anyExecStepFailedEarly = Boolean(execStepsSorted?.some((s) => s.status === "error"));
 
     const streamRaw = streamNode?.text ?? "";
-    const streamForUi =
-      streamNode?.status === "streaming"
-        ? stripModelThinkingForStreamPartial(streamRaw)
-        : stripModelThinkingForUi(streamRaw);
-    const streamNorm = streamForUi === "（无回复）" ? "" : streamForUi.trim();
+    const streamBodyForUi = streamNode
+      ? resolveAssistantBodyForUi(streamRaw, streamNode.status === "streaming")
+      : "";
     const finalRaw = finalNode?.text ?? "";
     const finalNorm =
       (stripModelThinkingForUi(finalRaw) === "（无回复）" ? "" : stripModelThinkingForUi(finalRaw)).trim();
-    let assistantReplyText = (finalNorm || streamNorm).trim();
+    let assistantReplyText = (finalNorm || streamBodyForUi).trim();
     const clarifyFromRound = run.linkfoxClarificationByRound?.[node.roundId];
     const clarificationDialogRaw = run.clarificationDialogByRound?.[node.roundId];
     if (!assistantReplyText && clarifyFromRound?.message) {
@@ -315,7 +319,14 @@ export function buildRoundViewModels(run: TaskRunLike) {
         postTaskGuidance = split.guidanceBlock;
       }
     }
-    const assistantStreaming = streamNode?.status === "streaming";
+    const assistantStreaming =
+      streamNode?.status === "streaming" &&
+      !(uiLayout === "tool_orchestration" && hasExecSteps);
+
+    const assistantVisibleText = resolveAssistantBodyForUi(
+      assistantReplyText || streamRaw || finalRaw,
+      Boolean(assistantStreaming),
+    ).trim();
 
     const anyStepActivelyInProgress = Boolean(
       execStepsSorted?.some((s) => s.status === "running" || s.status === "awaiting_input"),
@@ -328,9 +339,10 @@ export function buildRoundViewModels(run: TaskRunLike) {
       (run.status === "running" || run.status === "queued") &&
       run.latestRoundId === node.roundId &&
       !assistantStreaming &&
-      !assistantReplyText &&
+      !assistantVisibleText &&
       !errorMessage &&
       !anyExecStepFailedEarly &&
+      !hasExecSteps &&
       !(streamNode?.status === "streaming" && streamRaw.trim().length > 0);
 
     let intentText =
@@ -443,6 +455,7 @@ export function buildRoundViewModels(run: TaskRunLike) {
       executionSteps: execStepsSorted,
       platformSubtasks,
       assistantReplyText: assistantReplyText || undefined,
+      assistantVisibleText: assistantVisibleText || undefined,
       assistantStreaming,
       roundTerminal,
       splitReveal:

@@ -15,7 +15,7 @@ import type {
   PlatformTaskArtifactRef,
   TaskExecutionStep,
 } from "@/lib/agent-events";
-import { stripModelThinkingForUi } from "@/lib/strip-model-thinking";
+import { stripModelThinkingForUi, stripModelThinkingForStreamPartial } from "@/lib/strip-model-thinking";
 import { upsertReportCollection, upsertRunCollection } from "@/lib/workspace-upsert";
 import { DEFAULT_RESULT_PREVIEW_KEY } from "@/lib/report-defaults";
 import { homeCapabilityItems } from "@/lib/home-capability-items";
@@ -347,6 +347,15 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
       ...(nextRun.splitRevealCompleteByRound ?? {}),
       [event.roundId]: false,
     };
+    nextRun.timeline = timeline.map((node) => {
+      if (node.kind !== "assistant_stream" || node.roundId !== event.roundId) return node;
+      if (node.status === "complete") return node;
+      const cleaned = stripModelThinkingForUi(node.text ?? "");
+      const resolved = cleaned === "（无回复）" ? "" : cleaned.trim();
+      const partial = stripModelThinkingForStreamPartial(node.text ?? "").trim();
+      const visible = (resolved || partial).trim();
+      return { ...node, status: "complete" as const, text: visible };
+    });
     return { run: nextRun, report: nextReport };
   }
 
@@ -386,6 +395,15 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
     delete subMap[event.roundId];
     nextRun.platformSubtasksByRound = subMap;
     nextRun.chains = chains.filter((c) => c.roundId !== event.roundId);
+    nextRun.timeline = timeline.map((node) => {
+      if (node.kind !== "assistant_stream" || node.roundId !== event.roundId) return node;
+      if (node.status === "complete") return node;
+      const cleaned = stripModelThinkingForUi(node.text ?? "");
+      const resolved = cleaned === "（无回复）" ? "" : cleaned.trim();
+      const partial = stripModelThinkingForStreamPartial(node.text ?? "").trim();
+      const visible = (resolved || partial).trim();
+      return { ...node, status: "complete" as const, text: visible };
+    });
     return { run: nextRun, report: nextReport };
   }
 
@@ -633,17 +651,17 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
     const finalRaw = (event.text ?? "").trim();
     const finalText = finalRaw === "（无回复）" ? "" : finalRaw;
     nextRun.timeline = timeline.map((node) => {
-      if (node.kind === "assistant_stream" && node.roundId === event.roundId) {
-        const streamedClean = stripModelThinkingForUi(node.text ?? "");
-        const streamedNorm = streamedClean === "（无回复）" ? "" : streamedClean.trim();
-        const resolved = finalText || streamedNorm;
-        return {
-          ...node,
-          status: "complete" as const,
-          text: resolved,
-        };
-      }
-      return node;
+      if (node.kind !== "assistant_stream" || node.roundId !== event.roundId) return node;
+      const streamedClean = stripModelThinkingForUi(node.text ?? "");
+      const streamedNorm = streamedClean === "（无回复）" ? "" : streamedClean.trim();
+      const streamedPartial = stripModelThinkingForStreamPartial(node.text ?? "").trim();
+      const visibleStreamed = (streamedNorm || streamedPartial).trim();
+      const resolved = (finalText || visibleStreamed).trim();
+      // 纯闲聊：仅更新正文，保持 streaming 直至 round_completed，避免 final 与 round_completed 之间闪回「思考中」
+      return {
+        ...node,
+        text: resolved,
+      };
     });
     if (!hadStream) {
       nextRun.timeline = [

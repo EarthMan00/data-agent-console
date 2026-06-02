@@ -801,15 +801,16 @@ function AgentRunWorkspaceView({
                     </div>
                   ) : null}
 
-                  {round.uiLayout === "simple_chat" ? (
+                  {round.uiLayout === "simple_chat" && !(round.executionSteps?.length) ? (
                     <div className="w-full space-y-3">
                       {round.errorMessage ? (
                         <SimpleSystemBubble message={round.errorMessage} />
-                      ) : round.assistantStreaming || round.assistantReplyText ? (
+                      ) : round.assistantStreaming || round.assistantVisibleText ? (
                         <SimpleAssistantBubble
-                          body={round.assistantReplyText ?? ""}
+                          body={round.assistantVisibleText ?? round.assistantReplyText ?? ""}
                           datetime={round.createdAt}
                           streaming={round.assistantStreaming}
+                          typewriter={Boolean(round.assistantStreaming)}
                         />
                       ) : round.assistantPending ? (
                         <AssistantLoadingRow variant="thinking" />
@@ -948,9 +949,9 @@ function AgentRunWorkspaceView({
                             notifySplitRevealComplete(round.roundId);
                           }}
                           beforeSplit={
-                            round.assistantReplyText ? (
+                            round.assistantVisibleText || round.assistantReplyText ? (
                               <SimpleAssistantBubble
-                                body={round.assistantReplyText ?? ""}
+                                body={round.assistantVisibleText ?? round.assistantReplyText ?? ""}
                                 datetime={round.createdAt}
                                 streaming={round.assistantStreaming}
                               />

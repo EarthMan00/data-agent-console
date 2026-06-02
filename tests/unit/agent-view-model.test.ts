@@ -134,6 +134,38 @@ describe("agent view model helpers", () => {
     expect(round.assistantStreaming).toBe(true);
   });
 
+  it("falls back to resultSummary when stream only contains thinking markup", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      status: "success",
+      objective: "你好",
+      chains: [],
+      roundUiLayouts: { "round-1": "simple_chat" },
+      timeline: [
+        {
+          id: "node-user",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:00",
+          kind: "user_message",
+          text: "你好",
+        },
+        {
+          id: "node-stream",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:05",
+          kind: "assistant_stream",
+          text: "<thinking>\n内部推理\n</thinking>",
+          status: "complete",
+        },
+      ],
+    };
+    const [round] = buildRoundViewModels(run);
+    expect(round.assistantReplyText).toBeUndefined();
+    expect(round.assistantVisibleText).toBeUndefined();
+    expect(round.resultSummary).toContain("你好");
+    expect(round.assistantPending).toBe(false);
+  });
+
   it("prefers assistant_stream text over report_patch summary in simple_chat", () => {
     const run: TaskRunLike = {
       ...sampleRun,
@@ -166,6 +198,7 @@ describe("agent view model helpers", () => {
     };
     const [round] = buildRoundViewModels(run);
     expect(round.resultSummary).toBe("你好！我是数据分析助手。");
+    expect(round.assistantVisibleText).toBe("你好！我是数据分析助手。");
     expect(round.assistantStreaming).toBe(false);
   });
 
@@ -197,6 +230,41 @@ describe("agent view model helpers", () => {
     expect(round.splitItems.some((line) => line.includes("打开百度首页"))).toBe(true);
     expect(round.executionGroups).toHaveLength(0);
     expect(round.executionSteps).toHaveLength(2);
+    expect(round.assistantStreaming).toBe(false);
+    expect(round.assistantPending).toBe(false);
+  });
+
+  it("does not keep assistantStreaming during tool orchestration when stream node is still open", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      status: "running",
+      chains: [],
+      roundUiLayouts: { "round-1": "tool_orchestration" },
+      taskExecutionStepsByRound: {
+        "round-1": [{ id: "s1", roundId: "round-1", order: 0, label: "步骤一", status: "running" }],
+      },
+      timeline: [
+        {
+          id: "node-user",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:00",
+          kind: "user_message",
+          text: "你好",
+        },
+        {
+          id: "node-stream",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:05",
+          kind: "assistant_stream",
+          text: "你好！",
+          status: "streaming",
+        },
+      ],
+    };
+    const [round] = buildRoundViewModels(run);
+    expect(round.assistantStreaming).toBe(false);
+    expect(round.assistantReplyText).toBe("你好！");
+    expect(round.assistantPending).toBe(false);
   });
 
   it("does not mark hasResult until platform steps are complete even if final text exists", () => {

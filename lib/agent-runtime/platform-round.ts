@@ -291,11 +291,13 @@ export async function runPlatformRound(
           prevSanitizedStream = display;
           if (!delta) return;
           hadStreamDelta = true;
-          handlers.onEvent({
-            type: "round_ui_layout",
-            roundId: input.roundId,
-            layout: "simple_chat",
-          });
+          if (!hadSplitStreamSteps) {
+            handlers.onEvent({
+              type: "round_ui_layout",
+              roundId: input.roundId,
+              layout: "simple_chat",
+            });
+          }
           handlers.onEvent({ type: "delta", roundId: input.roundId, text: delta });
         },
         onSplitDelta: (steps) => {
@@ -312,7 +314,39 @@ export async function runPlatformRound(
             steps,
           });
         },
-        onAssistantComplete: () => {
+        onAssistantComplete: (full) => {
+          const cleaned = stripModelThinkingForUi(full);
+          const finalText = cleaned === "（无回复）" ? "" : cleaned.trim();
+          if (finalText) {
+            if (finalText.length > prevSanitizedStream.length) {
+              const tail = finalText.startsWith(prevSanitizedStream)
+                ? finalText.slice(prevSanitizedStream.length)
+                : finalText;
+              if (tail) {
+                hadStreamDelta = true;
+                prevSanitizedStream = finalText;
+                if (!hadSplitStreamSteps) {
+                  handlers.onEvent({
+                    type: "round_ui_layout",
+                    roundId: input.roundId,
+                    layout: "simple_chat",
+                  });
+                }
+                handlers.onEvent({ type: "delta", roundId: input.roundId, text: tail });
+              }
+            } else if (!prevSanitizedStream.trim()) {
+              hadStreamDelta = true;
+              prevSanitizedStream = finalText;
+              if (!hadSplitStreamSteps) {
+                handlers.onEvent({
+                  type: "round_ui_layout",
+                  roundId: input.roundId,
+                  layout: "simple_chat",
+                });
+              }
+              handlers.onEvent({ type: "delta", roundId: input.roundId, text: finalText });
+            }
+          }
           if (hadSplitStreamSteps) {
             handlers.onEvent({ type: "task_split_stream_end", roundId: input.roundId });
           }
@@ -333,6 +367,13 @@ export async function runPlatformRound(
           orchestrationId: result.orchestration_id,
         });
       }
+      if (prevSanitizedStream.trim()) {
+        handlers.onEvent({
+          type: "final",
+          roundId: input.roundId,
+          text: prevSanitizedStream,
+        });
+      }
     }
 
     if (result.kind === "completed") {
@@ -346,21 +387,21 @@ export async function runPlatformRound(
         });
         const text = stripModelThinkingForUi(result.message || rawStreamAccum);
         const finalText = text === "（无回复）" ? "" : text;
-        if (hadStreamDelta && finalText && finalText.length > prevSanitizedStream.length) {
-          const tail = finalText.startsWith(prevSanitizedStream)
-            ? finalText.slice(prevSanitizedStream.length)
+        const resolvedFinal = (finalText || prevSanitizedStream).trim();
+        if (hadStreamDelta && resolvedFinal && resolvedFinal.length > prevSanitizedStream.length) {
+          const tail = resolvedFinal.startsWith(prevSanitizedStream)
+            ? resolvedFinal.slice(prevSanitizedStream.length)
             : "";
           if (tail) {
             handlers.onEvent({ type: "delta", roundId: input.roundId, text: tail });
           }
-        } else if (!hadStreamDelta && finalText) {
-          handlers.onEvent({ type: "delta", roundId: input.roundId, text: finalText });
+        } else if (!hadStreamDelta && resolvedFinal) {
+          handlers.onEvent({ type: "delta", roundId: input.roundId, text: resolvedFinal });
         }
-        prevSanitizedStream = finalText;
         handlers.onEvent({
           type: "final",
           roundId: input.roundId,
-          text: finalText,
+          text: resolvedFinal,
         });
         handlers.onEvent({ type: "round_completed", roundId: input.roundId });
         return;
