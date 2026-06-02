@@ -190,7 +190,9 @@ export async function login(account: string, password: string): Promise<LoginRes
   } catch {
     const preview = rawText.replace(/\s+/g, " ").trim().slice(0, 120);
     throw new AgentApiError(
-      `登录接口返回非 JSON（多为网关/服务端 500）。响应片段：${preview || "(empty)"}`,
+      res.status === 400 && /text\/html/i.test(res.headers.get("content-type") || "")
+        ? "登录请求被网关拒绝（HTTP 400）。请检查服务器 AGENT_WEB_PLATFORM_INTERNAL_URL 是否指向本机后端（如 http://127.0.0.1:8000），勿使用公网 /agent-platform 地址。"
+        : `登录接口返回非 JSON（多为网关/服务端 500）。响应片段：${preview || "(empty)"}`,
       res.status,
       rawText,
     );

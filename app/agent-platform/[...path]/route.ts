@@ -11,6 +11,26 @@ const BACKEND_BASE = (
   process.env.AGENT_WEB_PLATFORM_INTERNAL_URL?.trim() || "http://127.0.0.1:8000"
 ).replace(/\/$/, "");
 
+/** 生产环境勿将 INTERNAL 指到公网 /agent-platform（会与浏览器请求形成 IIS/Next 回环，返回 HTML 400「错误的请求」）。 */
+function warnMisconfiguredBackendBase() {
+  const raw = process.env.AGENT_WEB_PLATFORM_INTERNAL_URL?.trim();
+  if (!raw) return;
+  try {
+    const u = new URL(raw.includes("://") ? raw : `http://${raw}`);
+    const host = u.hostname.toLowerCase();
+    const isLoopback = host === "localhost" || host === "127.0.0.1" || host.startsWith("10.") || host.startsWith("192.168.");
+    if (!isLoopback && u.pathname.replace(/\/+$/, "").endsWith("/agent-platform")) {
+      console.error(
+        "[agent-platform proxy] AGENT_WEB_PLATFORM_INTERNAL_URL 指向公网 /agent-platform，易引发代理回环与 IIS 400。",
+        "生产请改为本机后端，例如 http://127.0.0.1:8000（由 IIS 负责对外 /agent-platform 路径）。",
+      );
+    }
+  } catch {
+    /* ignore invalid URL at startup */
+  }
+}
+warnMisconfiguredBackendBase();
+
 function buildUpstreamUrl(request: NextRequest, pathSegments: string[]) {
   const base = new URL(`${BACKEND_BASE}/`);
   const basePath = base.pathname.replace(/\/+$/, "");
@@ -67,7 +87,11 @@ async function proxy(request: NextRequest, pathSegments: string[]) {
   } catch (err) {
     console.error("[agent-platform proxy] upstream fetch failed:", method, url, err);
     return Response.json(
-      { detail: `无法连接后端 ${BACKEND_BASE}，请确认服务已启动或配置 AGENT_WEB_PLATFORM_INTERNAL_URL` },
+      {
+        detail:
+          `无法连接后端 ${BACKEND_BASE}。生产环境请将 AGENT_WEB_PLATFORM_INTERNAL_URL 设为本机 API ` +
+          `(如 http://127.0.0.1:8000)，勿指向公网 http(s)://域名/agent-platform，否则会触发 IIS 400「错误的请求」。`,
+      },
       { status: 502 },
     );
   }

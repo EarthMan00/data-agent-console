@@ -25,6 +25,7 @@ import {
   looksLikeClarificationPrompt,
   sanitizeClarificationForUserDisplay,
 } from "@/lib/linkfox-clarification";
+import { safeRandomUUID } from "@/lib/random-uuid";
 import type { FavoriteItem, PromptCard, ResultPreview, RunRecord, ScheduleItem } from "@/lib/workspace-domain-types";
 
 export type TaskDraft = {
@@ -144,7 +145,7 @@ export type QueueFollowupInput = {
 const capabilityLabelMap = new Map(homeCapabilityItems.map((item) => [item.id, item.label]));
 
 function createId(prefix: string) {
-  return `${prefix}-${crypto.randomUUID()}`;
+  return `${prefix}-${safeRandomUUID()}`;
 }
 
 function formatDate(date = new Date()) {
