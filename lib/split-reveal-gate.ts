@@ -71,7 +71,8 @@ export async function yieldToUi(): Promise<void> {
 }
 
 /**
- * 等待任务拆分 UI 展示完毕：轮询 store + 文案长度预算；不依赖单次 React effect。
+ * 等待任务拆分 UI 展示完毕：优先 await 已注册的 Promise（由 notifySplitRevealComplete 触发），
+ * 超时后降级为 store 轮询兜底。
  */
 export async function waitForSplitRevealComplete(
   roundId: string,
@@ -79,14 +80,24 @@ export async function waitForSplitRevealComplete(
   options?: { timeoutMs?: number },
 ): Promise<void> {
   const budgetMs = options?.timeoutMs ?? estimateSplitTypewriterMs(stepLabels);
-  const deadline = Date.now() + budgetMs;
 
   await yieldToUi();
 
-  if (!waiters.has(roundId)) {
+  let waiter = waiters.get(roundId);
+  if (!waiter || waiter.settled) {
     registerSplitRevealWait(roundId);
+    waiter = waiters.get(roundId);
   }
 
+  if (waiter) {
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, budgetMs));
+    await Promise.race([waiter.promise, timeout]);
+    clearSplitRevealWait(roundId);
+    return;
+  }
+
+  // 极端兜底：waiter 仍为空时，回退到 store 轮询
+  const deadline = Date.now() + budgetMs;
   while (Date.now() < deadline) {
     if (isSplitRevealCompleteInStore(roundId)) {
       clearSplitRevealWait(roundId);

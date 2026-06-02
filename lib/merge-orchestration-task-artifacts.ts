@@ -85,6 +85,37 @@ export type OrchestrationAnchor = {
   orchestrationId: string | null;
 };
 
+/**
+ * 从单条消息的 meta 中解析编排 anchor，不扫描全 session。
+ * 用于 per-message bundles 加载，使每轮独立获取自己的产物。
+ */
+export function resolveOrchestrationAnchorFromMessageMeta(
+  meta: Record<string, unknown> | undefined,
+): { primaryTaskId: string; bundleTaskIds: string[]; orchestrationId: string | null } | null {
+  if (!meta) return null;
+  const raw = Array.isArray(meta.orchestration_step_task_ids)
+    ? (meta.orchestration_step_task_ids as unknown[])
+    : [];
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const ids = raw
+    .map((x) => (typeof x === "string" ? x.trim() : ""))
+    .filter((x) => x.length > 0 && UUID_RE.test(x));
+  const tid = typeof meta.task_id === "string" && UUID_RE.test(meta.task_id.trim())
+    ? meta.task_id.trim()
+    : "";
+  const orchId =
+    typeof meta.orchestration_id === "string" && meta.orchestration_id.trim()
+      ? meta.orchestration_id.trim()
+      : null;
+  const primary = tid || ids[ids.length - 1] || "";
+  if (!primary) return null;
+  return {
+    primaryTaskId: primary,
+    bundleTaskIds: ids.length > 0 ? ids : [primary],
+    orchestrationId: orchId,
+  };
+}
+
 export function pickBestOrchestrationAnchor(messages: SessionMessageItem[]): OrchestrationAnchor | null {
   let best: OrchestrationAnchor | null = null;
   let bestScore = -1;

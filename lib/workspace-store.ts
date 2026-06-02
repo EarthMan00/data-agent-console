@@ -675,32 +675,41 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
         }),
       ];
     }
-    const clarifyCandidate = (() => {
-      const fromFinal = sanitizeClarificationForUserDisplay(finalText || "").trim();
-      if (fromFinal && looksLikeClarificationPrompt(fromFinal)) return fromFinal;
-      for (const node of [...nextRun.timeline].reverse()) {
-        if (node.roundId !== event.roundId) continue;
-        if (node.kind !== "assistant_final" && node.kind !== "assistant_stream") continue;
-        if (!("text" in node)) continue;
-        const cleaned = sanitizeClarificationForUserDisplay(String(node.text ?? "")).trim();
-        if (cleaned && looksLikeClarificationPrompt(cleaned)) return cleaned;
+    const layout = nextRun.roundUiLayouts?.[event.roundId];
+    const roundChains = nextRun.chains.filter((c) => c.roundId === event.roundId);
+    const hasExecSteps = Boolean(nextRun.taskExecutionStepsByRound?.[event.roundId]?.length);
+    const isPureChat =
+      layout === "simple_chat" ||
+      (layout === undefined && roundChains.length === 0 && !hasExecSteps);
+
+    if (!isPureChat) {
+      const clarifyCandidate = (() => {
+        const fromFinal = sanitizeClarificationForUserDisplay(finalText || "").trim();
+        if (fromFinal && looksLikeClarificationPrompt(fromFinal)) return fromFinal;
+        for (const node of [...nextRun.timeline].reverse()) {
+          if (node.roundId !== event.roundId) continue;
+          if (node.kind !== "assistant_final" && node.kind !== "assistant_stream") continue;
+          if (!("text" in node)) continue;
+          const cleaned = sanitizeClarificationForUserDisplay(String(node.text ?? "")).trim();
+          if (cleaned && looksLikeClarificationPrompt(cleaned)) return cleaned;
+        }
+        return "";
+      })();
+      if (clarifyCandidate) {
+        const existing = nextRun.clarificationDialogByRound?.[event.roundId];
+        const linkfox = nextRun.linkfoxClarificationByRound?.[event.roundId];
+        nextRun.clarificationDialogByRound = {
+          ...(nextRun.clarificationDialogByRound ?? {}),
+          [event.roundId]: {
+            message: clarifyCandidate,
+            stepIndex: existing?.stepIndex ?? linkfox?.stepIndex ?? null,
+            orchestrationId: existing?.orchestrationId ?? linkfox?.orchestrationId ?? null,
+            answered: existing?.answered ?? false,
+            createdAt: existing?.createdAt ?? formatDate(),
+            answeredAt: existing?.answeredAt,
+          },
+        };
       }
-      return "";
-    })();
-    if (clarifyCandidate) {
-      const existing = nextRun.clarificationDialogByRound?.[event.roundId];
-      const linkfox = nextRun.linkfoxClarificationByRound?.[event.roundId];
-      nextRun.clarificationDialogByRound = {
-        ...(nextRun.clarificationDialogByRound ?? {}),
-        [event.roundId]: {
-          message: clarifyCandidate,
-          stepIndex: existing?.stepIndex ?? linkfox?.stepIndex ?? null,
-          orchestrationId: existing?.orchestrationId ?? linkfox?.orchestrationId ?? null,
-          answered: existing?.answered ?? false,
-          createdAt: existing?.createdAt ?? formatDate(),
-          answeredAt: existing?.answeredAt,
-        },
-      };
     }
     return { run: nextRun, report: nextReport };
   }
@@ -794,8 +803,36 @@ function emit(nextState: DemoState) {
   listeners.forEach((listener) => listener());
 }
 
+const MAX_RUNS = 50;
+const MAX_RUN_AGE_MS = 24 * 60 * 60 * 1000;
+
+function pruneOldRuns(current: DemoState): DemoState {
+  const cutoff = Date.now() - MAX_RUN_AGE_MS;
+
+  let toKeep = current.runs.filter((run) => {
+    return new Date(run.startedAt).getTime() > cutoff || run.starred;
+  });
+
+  // 第二阶段：按数量上限截断（保留最新 + 所有 starred）
+  const starredBeyondLimit = toKeep.slice(MAX_RUNS).filter((r) => r.starred);
+  toKeep = [...toKeep.slice(0, MAX_RUNS), ...starredBeyondLimit];
+
+  const keepIds = new Set(toKeep.map((r) => r.id));
+
+  return {
+    ...current,
+    runs: toKeep,
+    reports: current.reports.filter((r) => keepIds.has(r.runId)),
+    artifacts: current.artifacts.filter((a) => keepIds.has(a.sourceRunId)),
+    runRecords: current.runRecords.filter((rr) => keepIds.has(rr.runId)),
+    taskDrafts: current.taskDrafts.filter((d) =>
+      toKeep.some((r) => r.taskDraftId === d.id),
+    ),
+  };
+}
+
 function updateState(updater: (current: DemoState) => DemoState) {
-  emit(updater(state));
+  emit(pruneOldRuns(updater(state)));
 }
 
 function createTemplateFromInput(input: {

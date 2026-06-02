@@ -179,6 +179,9 @@ export function AgentWorkspace() {
   return <AgentRunWorkspaceView run={run} report={report} platformAgent={platformAgent} />;
 }
 
+/** 模块级 ref，避免 Strict Mode / 视图切换 remount 导致组件级 ref 在旧闭包中被误判为 true */
+const abortPollRef = { current: false };
+
 function AgentRunWorkspaceView({
   run,
   report,
@@ -212,7 +215,7 @@ function AgentRunWorkspaceView({
   }, []);
   const [notice, setNotice] = useState("");
   const executingRoundsRef = useRef<Set<string>>(new Set());
-  const abortPollRef = useRef(false);
+  const activeRoundIdRef = useRef<string | null>(null);
   const acceptedToolRef = useRef<{ taskId: string | null; orchestrationId: string | null }>({
     taskId: null,
     orchestrationId: null,
@@ -231,6 +234,9 @@ function AgentRunWorkspaceView({
   useEffect(() => {
     setAgentRoundInFlight(false);
   }, [run.id]);
+
+  // abort 仅由用户主动停止（stopCurrentRound）触发，不随组件卸载自动中止
+  // 模块级 abortPollRef 保证 Strict Mode 双挂载时新旧闭包共享同一 ref
 
   const composerMode = composerModes[run.id] ?? (run.mode === "专业模式" ? "深度模式" : "普通模式");
   const selectedSourceIds = selectedSourceOverrides[run.id] ?? [];
@@ -454,6 +460,24 @@ function AgentRunWorkspaceView({
     prevLatestSubtasksCountRef.current = latestSubtasksCount;
   }, [latestSubtasksCount]);
 
+  const prevStepCountsRef = useRef<Record<string, number>>({});
+  useEffect(() => {
+    prevStepCountsRef.current = {};
+  }, [run.id]);
+  useEffect(() => {
+    const stepMap = run.taskExecutionStepsByRound ?? {};
+    for (const [roundId, steps] of Object.entries(stepMap)) {
+      const prev = prevStepCountsRef.current[roundId] ?? 0;
+      if (steps.length > prev) {
+        setExecutionCardExpandedByRound((current) => ({
+          ...current,
+          [roundId]: true,
+        }));
+      }
+      prevStepCountsRef.current[roundId] = steps.length;
+    }
+  }, [run.taskExecutionStepsByRound]);
+
   const taskPanelOpen = showTaskResultPanel;
 
   useChatStickToBottom(messagesScrollRef, messagesInnerRef, [
@@ -500,6 +524,7 @@ function AgentRunWorkspaceView({
     executingRoundsRef.current.add(input.roundId);
     setAgentRoundInFlight(true);
     abortPollRef.current = false;
+    activeRoundIdRef.current = input.roundId;
     const preservedOrchId =
       input.clarificationResume?.orchestrationId ?? acceptedToolRef.current.orchestrationId;
     acceptedToolRef.current = { taskId: null, orchestrationId: preservedOrchId };
@@ -527,7 +552,8 @@ function AgentRunWorkspaceView({
           ? {
               platform: {
                 withFreshToken: platformAgent.withFreshToken,
-                shouldAbortPoll: () => abortPollRef.current,
+                shouldAbortPoll: () =>
+                  abortPollRef.current || activeRoundIdRef.current !== input.roundId,
                 clarificationResume: input.clarificationResume,
                 onToolTaskAccepted: (p) => {
                   acceptedToolRef.current = {
@@ -578,7 +604,8 @@ function AgentRunWorkspaceView({
     const value = sanitizeObjective(draft);
     if (!value) return;
 
-    const awaitingRound = roundModels.find((r) => isRoundAwaitingUserInput(r));
+    const latestHasGuidance = Boolean(latestRoundModel?.postTaskGuidance);
+    const awaitingRound = latestHasGuidance ? undefined : roundModels.find((r) => isRoundAwaitingUserInput(r));
     if (awaitingRound && run.platformSessionId) {
       const orchId = resolveClarificationOrchestrationId(run, awaitingRound, acceptedToolRef.current.orchestrationId);
       workspaceActions.appendUserMessageOnRound(run.id, awaitingRound.roundId, value);
@@ -772,15 +799,7 @@ function AgentRunWorkspaceView({
                 return (
                 <div key={round.roundId} className="space-y-3">
                   {round.userMessage ? (
-                    round.uiLayout === "simple_chat" ? (
-                      <SimpleUserBubble text={round.userMessage} datetime={round.createdAt} />
-                    ) : (
-                      <div className="flex justify-end">
-                        <div className="w-full max-w-[780px]" data-testid="agent-user-input-card">
-                          <ConversationBubble role="user" title="你" datetime={round.createdAt} body={compactText(round.userMessage, 220)} />
-                        </div>
-                      </div>
-                    )
+                    <SimpleUserBubble text={round.userMessage} datetime={round.createdAt} />
                   ) : null}
 
                   {round.attachments.length > 0 ? (
@@ -874,10 +893,16 @@ function AgentRunWorkspaceView({
                                   ))}
                                 </div>
                               ))}
-                              {round.executionGroups.length === 0 && !round.assistantPending ? (
-                                <div className="rounded-[18px] border border-dashed border-[#e5e7eb] bg-[#fcfcfd] px-4 py-5 text-[14px] leading-7 text-[#6c7571]">
-                                  正在为这轮任务准备执行节点，稍后会把关键过程同步到这里。
-                                </div>
+                              {round.executionGroups.length === 0 ? (
+                                round.assistantPending ? (
+                                  <div className="py-3">
+                                    <AssistantLoadingRow variant="task" />
+                                  </div>
+                                ) : (
+                                  <div className="rounded-[18px] border border-dashed border-[#e5e7eb] bg-[#fcfcfd] px-4 py-5 text-[14px] leading-7 text-[#6c7571]">
+                                    正在为这轮任务准备执行节点，稍后会把关键过程同步到这里。
+                                  </div>
+                                )
                               ) : null}
                             </>
                           )}
@@ -949,7 +974,11 @@ function AgentRunWorkspaceView({
                             notifySplitRevealComplete(round.roundId);
                           }}
                           beforeSplit={
-                            round.assistantVisibleText || round.assistantReplyText ? (
+                            (round.assistantVisibleText || round.assistantReplyText) &&
+                            !(
+                              round.uiLayout === "tool_orchestration" &&
+                              (round.splitItems.length > 0 || (round.executionSteps?.length ?? 0) > 0)
+                            ) ? (
                               <SimpleAssistantBubble
                                 body={round.assistantVisibleText ?? round.assistantReplyText ?? ""}
                                 datetime={round.createdAt}
@@ -977,11 +1006,21 @@ function AgentRunWorkspaceView({
                         </TaskOrchestrationBlock>
                       );
 
+                      const guidanceBubble = round.postTaskGuidance ? (
+                        <PostTaskGuidanceBubble
+                          content={round.postTaskGuidance}
+                          datetime={round.createdAt}
+                          composerDraft={draft}
+                          onSuggestionToggle={toggleGuidanceSuggestion}
+                        />
+                      ) : null;
+
                       if (deferExecution) {
                         return (
                           <>
                             {orchestrationBlock}
                             {clarificationBubble}
+                            {guidanceBubble}
                             {supplementBubbles}
                             {splitRevealDone ? (
                               <>
@@ -1009,6 +1048,7 @@ function AgentRunWorkspaceView({
                         <>
                           {orchestrationBlock}
                           {clarificationBubble}
+                          {guidanceBubble}
                           {supplementBubbles}
                         </>
                       );
@@ -1016,7 +1056,7 @@ function AgentRunWorkspaceView({
                   </div>
                   )}
 
-                  {round.postTaskGuidance ? (
+                  {round.uiLayout !== "tool_orchestration" && round.postTaskGuidance ? (
                     <PostTaskGuidanceBubble
                       content={round.postTaskGuidance}
                       datetime={round.createdAt}

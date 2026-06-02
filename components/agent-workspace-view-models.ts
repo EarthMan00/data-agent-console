@@ -385,7 +385,7 @@ export function buildRoundViewModels(run: TaskRunLike) {
     const patchSummaryText = (patchNode?.summary ?? []).join("。");
     const baseConversationOutput = Boolean(
       assistantReplyText ||
-        (uiLayout === "tool_orchestration" && patchNode?.summary && patchNode.summary.length > 0),
+        (patchNode?.summary && patchNode.summary.length > 0),
     );
     const executionPhasesComplete =
       uiLayout === "simple_chat" ||
@@ -406,7 +406,7 @@ export function buildRoundViewModels(run: TaskRunLike) {
     const resultSummary = errorMessage
       ? ""
       : assistantReplyText ||
-        (uiLayout === "tool_orchestration" ? patchSummaryText : "") ||
+        patchSummaryText ||
         (waitingExecSummary ? "任务执行完成后将在此展示结果摘要。" : "") ||
         (roundTerminal && !assistantReplyText
           ? buildExecutionSummaryFallback(run.objective, sourceLabels)

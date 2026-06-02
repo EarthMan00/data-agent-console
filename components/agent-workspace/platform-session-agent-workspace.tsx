@@ -53,6 +53,7 @@ import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
 import { buildTaskStepsFromDecompositionLabels } from "@/lib/schedule-trial-execution-presentation";
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import {
+  buildLatestStepsMessageIdByTaskId,
   isSupersededTaskExecutionStepsMessage,
   messageIdsEligibleForTaskResultCard,
 } from "@/lib/session-task-result-card-visibility";
@@ -71,6 +72,7 @@ import {
   fetchTaskOrchestrationForResultPanel,
   mergeBundlesIntoPlatformSnapshots,
   pickBestOrchestrationAnchor,
+  resolveOrchestrationAnchorFromMessageMeta,
   type OrchestrationAnchor,
   type TaskOrchestrationBundleRow,
 } from "@/lib/merge-orchestration-task-artifacts";
@@ -119,9 +121,10 @@ export function PlatformSessionAgentWorkspace({
   fallbackTaskId?: string;
 }) {
   const platformAgent = useOptionalPlatformAgent();
-  const { refreshHistory } = useMoreDataShellState();
+  const { refreshHistory, refreshHistoryNow, setActiveSessionTitle } = useMoreDataShellState();
   const router = useRouter();
   const isMounted = useRef(true);
+  const abortPollRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -140,6 +143,8 @@ export function PlatformSessionAgentWorkspace({
   const [showResultPanel, setShowResultPanel] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [orchestrationBundles, setOrchestrationBundles] = useState<TaskOrchestrationBundleRow[]>([]);
+  const [supplementalBundlesById, setSupplementalBundlesById] = useState<Record<string, TaskOrchestrationBundleRow[]>>({});
+  const fetchedSupplementalRef = useRef<Set<string>>(new Set());
   const [panelSubtaskFocus, setPanelSubtaskFocus] = useState<{
     taskId: string;
     artifacts: PlatformTaskArtifactRef[];
@@ -192,8 +197,10 @@ export function PlatformSessionAgentWorkspace({
 
   useEffect(() => {
     isMounted.current = true;
+    abortPollRef.current = false;
     return () => {
       isMounted.current = false;
+      abortPollRef.current = true;
     };
   }, [sessionId]);
 
@@ -435,6 +442,10 @@ export function PlatformSessionAgentWorkspace({
     return firstUserMessage ? compactText(firstUserMessage.content, 52) : "";
   }, [messages]);
 
+  useEffect(() => {
+    setActiveSessionTitle(firstUserMessageTitle);
+  }, [firstUserMessageTitle, setActiveSessionTitle]);
+
   const headerLabel = scheduleTrial
     ? (loadScheduleCreateDraft()?.title?.trim() || "试跑")
     : scheduledRunRecord
@@ -603,6 +614,37 @@ export function PlatformSessionAgentWorkspace({
     };
   }, [effectiveOrchestrationAnchor, platformAgent, showResultPanel, scheduleTrial, trialRunInFlight]);
 
+  const loadSupplementalBundlesForMessage = useCallback((messageId: string, meta: Record<string, unknown> | undefined) => {
+    if (!platformAgent?.auth) return;
+    if (supplementalBundlesById[messageId] || fetchedSupplementalRef.current.has(messageId)) return;
+    const anchor = resolveOrchestrationAnchorFromMessageMeta(meta);
+    if (!anchor) {
+      fetchedSupplementalRef.current.add(messageId);
+      return;
+    }
+    fetchedSupplementalRef.current.add(messageId);
+    void platformAgent.withFreshToken(async (token) => {
+      try {
+        const data = await fetchTaskOrchestrationForResultPanel(
+          token,
+          anchor.primaryTaskId,
+          anchor.bundleTaskIds.length > 0 ? anchor.bundleTaskIds : undefined,
+          { orchestrationId: anchor.orchestrationId },
+        );
+        if (isMounted.current) {
+          setSupplementalBundlesById((prev) => ({ ...prev, [messageId]: data.bundles }));
+        }
+      } catch {
+        // 任务已过期/删除或 task_id 无效 → 该消息无 supplemental bundles，子任务卡不可点
+      }
+    });
+  }, [platformAgent, supplementalBundlesById]);
+
+  useEffect(() => {
+    fetchedSupplementalRef.current = new Set();
+    setSupplementalBundlesById({});
+  }, [sessionId]);
+
   const firstAssistantIndex = useMemo(
     () => messages.findIndex((m) => m.role === "assistant"),
     [messages],
@@ -618,6 +660,11 @@ export function PlatformSessionAgentWorkspace({
     }
     return null;
   }, [messages]);
+
+  const latestStepsByTaskId = useMemo(
+    () => buildLatestStepsMessageIdByTaskId(messages),
+    [messages],
+  );
 
   const latestExecutionSteps = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -869,16 +916,20 @@ export function PlatformSessionAgentWorkspace({
           filesToSend,
         );
         if (sendResult.kind === "accepted") {
-          await pollPlatformTaskUntilSettled((fn) => platformAgent.withFreshToken(fn), sendResult);
+          await pollPlatformTaskUntilSettled(
+            (fn) => platformAgent.withFreshToken(fn),
+            sendResult,
+            () => abortPollRef.current,
+          );
         }
       });
       finalizeStreamingAssistantMessage(setMessages, assistantStreamId);
       await reload();
-      void refreshHistory();
+      void refreshHistoryNow();
     } catch (e) {
       setError(formatAgentApiErrorForUser(e));
       await reload();
-      void refreshHistory();
+      void refreshHistoryNow();
     } finally {
       setSending(false);
     }
@@ -1006,7 +1057,7 @@ export function PlatformSessionAgentWorkspace({
                       ? runRecordExecutionStepsForLabels
                       : null;
                   if (
-                    isSupersededTaskExecutionStepsMessage(m, latestStepsMessageId, taskStepsFromMessage)
+                    isSupersededTaskExecutionStepsMessage(m, latestStepsByTaskId, taskStepsFromMessage)
                   ) {
                     return null;
                   }
@@ -1077,12 +1128,16 @@ export function PlatformSessionAgentWorkspace({
                               )}
                               datetime={m.created_at}
                               platformSubtasks={
-                                stepsMessageIdForBundles && orchestrationBundlesForUi.length > 0
-                                  ? mergeBundlesIntoPlatformSnapshots(
-                                      latestExecutionSteps!,
-                                      orchestrationBundlesForUi,
-                                    )
-                                  : undefined
+                                (() => {
+                                  const supp = supplementalBundlesById[m.id];
+                                  if (supp && supp.length > 0) {
+                                    return mergeBundlesIntoPlatformSnapshots(latestExecutionSteps!, supp);
+                                  }
+                                  if (stepsMessageIdForBundles && orchestrationBundlesForUi.length > 0) {
+                                    return mergeBundlesIntoPlatformSnapshots(latestExecutionSteps!, orchestrationBundlesForUi);
+                                  }
+                                  return undefined;
+                                })()
                               }
                               timelineRunId={sessionId}
                               activeHighlightTaskId={stepTimelineHighlightTaskId}
@@ -1104,9 +1159,20 @@ export function PlatformSessionAgentWorkspace({
                               )}
                               datetime={m.created_at}
                               platformSubtasks={
-                                m.id === stepsMessageIdForBundles && orchestrationBundlesForUi.length > 0
-                                  ? mergeBundlesIntoPlatformSnapshots(taskStepsToShow!, orchestrationBundlesForUi)
-                                  : undefined
+                                (() => {
+                                  const supp = supplementalBundlesById[m.id];
+                                  if (supp && supp.length > 0) {
+                                    return mergeBundlesIntoPlatformSnapshots(taskStepsToShow!, supp);
+                                  }
+                                  if (m.id === stepsMessageIdForBundles && orchestrationBundlesForUi.length > 0) {
+                                    return mergeBundlesIntoPlatformSnapshots(taskStepsToShow!, orchestrationBundlesForUi);
+                                  }
+                                  if (taskStepsToShow && taskStepsToShow.length > 0 && m.id !== stepsMessageIdForBundles) {
+                                    const meta2 = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
+                                    loadSupplementalBundlesForMessage(m.id, meta2);
+                                  }
+                                  return undefined;
+                                })()
                               }
                               timelineRunId={sessionId}
                               activeHighlightTaskId={stepTimelineHighlightTaskId}

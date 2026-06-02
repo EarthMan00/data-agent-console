@@ -64,7 +64,9 @@ import {
   yieldToUi,
 } from "@/lib/split-reveal-gate";
 import {
+  createPollScheduler,
   ORCHESTRATION_STATUS_POLL_INTERVAL_MS,
+  PollTimeoutError,
   TASK_STATUS_POLL_INTERVAL_MS,
 } from "@/lib/task-status-poll";
 import { sleep } from "./util";
@@ -634,8 +636,18 @@ export async function runPlatformRound(
 
       if (orchestrationId) {
         let userStopped = false;
-        for (let polls = 0; polls < 4500; polls += 1) {
-          await sleep(ORCHESTRATION_STATUS_POLL_INTERVAL_MS);
+        const orchScheduler = createPollScheduler({
+          maxDurationMs: 30 * 60 * 1000,
+          initialDelayMs: ORCHESTRATION_STATUS_POLL_INTERVAL_MS,
+          maxDelayMs: 30_000,
+        });
+        while (true) {
+          try {
+            await orchScheduler.nextDelay();
+          } catch (e) {
+            if (e instanceof PollTimeoutError) break;
+            throw e;
+          }
           if (shouldAbortPoll?.()) {
             userStopped = true;
             break;
@@ -714,16 +726,24 @@ export async function runPlatformRound(
         if (stepDefs.length > 0) {
           emitStep(stepDefs[0]!.id, "running");
         }
-        let polls = 0;
         let userStoppedSingle = false;
-        while (!sharedTask.finished_at && polls < 600) {
-          await sleep(TASK_STATUS_POLL_INTERVAL_MS);
+        const taskScheduler = createPollScheduler({
+          maxDurationMs: 15 * 60 * 1000,
+          initialDelayMs: TASK_STATUS_POLL_INTERVAL_MS,
+          maxDelayMs: 30_000,
+        });
+        while (!sharedTask.finished_at) {
+          try {
+            await taskScheduler.nextDelay();
+          } catch (e) {
+            if (e instanceof PollTimeoutError) break;
+            throw e;
+          }
           if (shouldAbortPoll?.()) {
             userStoppedSingle = true;
             break;
           }
           sharedTask = await getTask(accessToken, parentTaskId);
-          polls += 1;
         }
         if (userStoppedSingle) {
           if (stepDefs.length > 0) {
@@ -982,10 +1002,19 @@ export async function runPlatformRound(
     }
   });
   } catch (e) {
-    const message =
-      e instanceof ChatStreamError
-        ? e.message
-        : formatAgentApiErrorForUser(e);
+    let message: string;
+    try {
+      if (e instanceof ChatStreamError) {
+        message = e.message;
+      } else {
+        message = formatAgentApiErrorForUser(e);
+      }
+    } catch {
+      message = "发生未知错误，请稍后重试。";
+    }
+    if (!message || message.trim().length === 0) {
+      message = "发生未知错误，请稍后重试。";
+    }
     handlers.onEvent({
       type: "error",
       roundId: input.roundId,

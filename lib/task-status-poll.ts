@@ -1,3 +1,4 @@
+import { sleep } from "@/lib/agent-runtime/util";
 import type { TaskResponse } from "@/lib/agent-api/types";
 
 /** 单任务执行期间 GET /api/tasks/{id} 轮询间隔（platform-round） */
@@ -11,6 +12,52 @@ export const SCHEDULE_TRIAL_TASK_POLL_INTERVAL_MS = 8_000;
 
 /** 试跑首条 in_flight 时刷新会话消息列表 */
 export const SCHEDULE_TRIAL_SESSION_RELOAD_INTERVAL_MS = 6_000;
+
+// ── 指数退避轮询调度器 ──
+
+const INITIAL_POLL_MS = 2_000;
+const MAX_POLL_MS = 30_000;
+const BACKOFF_FACTOR = 1.5;
+
+export class PollTimeoutError extends Error {
+  constructor(message = "轮询超时") {
+    super(message);
+    this.name = "PollTimeoutError";
+  }
+}
+
+export interface PollScheduler {
+  nextDelay(): Promise<void>;
+  readonly attempts: number;
+}
+
+export function createPollScheduler(options: {
+  maxDurationMs: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+}): PollScheduler {
+  const { maxDurationMs } = options;
+  const initialDelayMs = options.initialDelayMs ?? INITIAL_POLL_MS;
+  const maxDelayMs = options.maxDelayMs ?? MAX_POLL_MS;
+
+  const startTime = Date.now();
+  let currentDelay = initialDelayMs;
+  let _attempts = 0;
+
+  return {
+    get attempts() {
+      return _attempts;
+    },
+    async nextDelay() {
+      if (Date.now() - startTime > maxDurationMs) {
+        throw new PollTimeoutError("轮询超时");
+      }
+      await sleep(currentDelay);
+      _attempts += 1;
+      currentDelay = Math.min(currentDelay * BACKOFF_FACTOR, maxDelayMs);
+    },
+  };
+}
 
 /** 任务是否仍在执行（未结束） */
 export function isTaskInFlight(t: TaskResponse | null | undefined): boolean {

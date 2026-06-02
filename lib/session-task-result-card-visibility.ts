@@ -40,12 +40,40 @@ export function messageIdsEligibleForTaskResultCard(messages: SessionMessageItem
   return out;
 }
 
-/** 同一会话内仅渲染最新一条 task_execution_steps 气泡，忽略较早的占位消息。 */
+/** 按 task_id / orchestration_id 分组，返回每组最新的 steps 消息 id。 */
+export function buildLatestStepsMessageIdByTaskId(
+  messages: SessionMessageItem[],
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role !== "assistant") continue;
+    const meta = messageMeta(m);
+    const steps = parseTaskExecutionStepsFromMeta(meta);
+    if (!steps?.length) continue;
+    const tid = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+    const oid = typeof meta?.orchestration_id === "string" ? meta.orchestration_id.trim() : "";
+    const key = tid || oid || "__global__";
+    if (!map[key]) map[key] = m.id;
+  }
+  return map;
+}
+
+/**
+ * 仅当与同 task_id / orchestration_id 的最新 steps 消息不同时视为 superseded。
+ * 不同任务各自保留最新的 progress 消息。
+ */
 export function isSupersededTaskExecutionStepsMessage(
   message: SessionMessageItem,
-  latestStepsMessageId: string | null,
+  latestStepsByTaskId: Record<string, string> | null,
   taskStepsFromMessage: ReturnType<typeof parseTaskExecutionStepsFromMeta>,
 ): boolean {
-  if (!taskStepsFromMessage?.length || !latestStepsMessageId) return false;
-  return message.id !== latestStepsMessageId;
+  if (!taskStepsFromMessage?.length || !latestStepsByTaskId) return false;
+  const meta = messageMeta(message);
+  const tid = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+  const oid = typeof meta?.orchestration_id === "string" ? meta.orchestration_id.trim() : "";
+  const key = tid || oid || "__global__";
+  const latestForThisTask = latestStepsByTaskId[key];
+  if (!latestForThisTask) return false;
+  return message.id !== latestForThisTask;
 }

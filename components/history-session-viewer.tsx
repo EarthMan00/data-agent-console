@@ -34,6 +34,7 @@ import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
 import { TaskExecutionStepsAssistantBubble } from "@/components/task-execution-steps-assistant-bubble";
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import {
+  buildLatestStepsMessageIdByTaskId,
   isSupersededTaskExecutionStepsMessage,
   messageIdsEligibleForTaskResultCard,
 } from "@/lib/session-task-result-card-visibility";
@@ -94,7 +95,7 @@ function SimpleSystemBubble({ message }: { message: string }) {
 export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const platformAgent = useOptionalPlatformAgent();
-  const { refreshHistory } = useMoreDataShellState();
+  const { refreshHistory, refreshHistoryNow } = useMoreDataShellState();
   const isMounted = useRef(true);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
@@ -198,6 +199,11 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
       cancelled = true;
     };
   }, [orchestrationAnchor, platformAgent, showResultPanel]);
+
+  const latestStepsByTaskId = useMemo(
+    () => buildLatestStepsMessageIdByTaskId(messages),
+    [messages],
+  );
 
   const latestStepsMessageId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -416,7 +422,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
       await reload();
     } finally {
       setSending(false);
-      void refreshHistory();
+      void refreshHistoryNow();
     }
   }, [draft, pendingFiles, platformAgent, reload, refreshHistory, sending, sessionId]);
 
@@ -475,7 +481,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                   const meta = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
                   const taskStepsFromMessage = parseTaskExecutionStepsFromMeta(meta);
                   if (
-                    isSupersededTaskExecutionStepsMessage(m, latestStepsMessageId, taskStepsFromMessage)
+                    isSupersededTaskExecutionStepsMessage(m, latestStepsByTaskId, taskStepsFromMessage)
                   ) {
                     return null;
                   }
@@ -517,7 +523,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                               steps={taskSteps!}
                               datetime={m.created_at}
                               platformSubtasks={
-                                (m.id === latestStepsMessageId || isThisOrchestrationTurn) &&
+                                (Object.values(latestStepsByTaskId).includes(m.id) || isThisOrchestrationTurn) &&
                                 orchestrationBundlesForUi.length > 0
                                   ? mergeBundlesIntoPlatformSnapshots(taskSteps!, orchestrationBundlesForUi)
                                   : undefined

@@ -60,16 +60,12 @@ export function looksLikeClarificationPrompt(message: string): boolean {
     "请补充",
     "请告诉",
     "请选择",
-    "关键词",
     "英文关键词",
     "哪个关键词",
     "如下几个",
     "二次确认",
   ];
-  if (markers.some((m) => text.includes(m))) return true;
-  const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
-  const optionLines = lines.filter((l) => BULLET_ITEM.test(l) || NUMBERED_ITEM.test(l));
-  return optionLines.length >= 2;
+  return markers.some((m) => text.includes(m));
 }
 
 /** 将澄清正文拆成引导语 + 可点击关键词/选项列表。 */

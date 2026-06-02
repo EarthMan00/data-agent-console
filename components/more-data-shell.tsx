@@ -189,6 +189,9 @@ type MoreDataShellStateValue = {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (next: boolean | ((current: boolean) => boolean)) => void;
   setHistoryError: (next: string) => void;
+  /** 当前活跃会话的乐观标题（来自 workspace 实时首条用户消息），覆盖 enrichment 尚未完成的 firstMessage */
+  activeSessionTitle: string;
+  setActiveSessionTitle: (title: string) => void;
 };
 
 const MoreDataShellStateContext = createContext<MoreDataShellStateValue | null>(null);
@@ -201,6 +204,7 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyError, setHistoryError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeSessionTitle, setActiveSessionTitle] = useState("");
   const [historyWasLoaded, setHistoryWasLoaded] = useState(false);
   const historyPageRef = useRef(0);
   const historyLoadMoreLockRef = useRef(false);
@@ -327,6 +331,8 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
       sidebarCollapsed,
       setSidebarCollapsed,
       setHistoryError,
+      activeSessionTitle,
+      setActiveSessionTitle,
     }),
     [
       historySessions,
@@ -339,6 +345,7 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
       loadMoreHistory,
       sidebarCollapsed,
       setHistoryError,
+      activeSessionTitle,
     ],
   );
 
@@ -460,6 +467,7 @@ function MoreDataShellComponent({
     sidebarCollapsed,
     setSidebarCollapsed,
     setHistoryError,
+    activeSessionTitle,
   } = useMoreDataShellState();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [historyPurgeConfirmId, setHistoryPurgeConfirmId] = useState<string | null>(null);
@@ -822,7 +830,7 @@ function MoreDataShellComponent({
                           >
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-[14px] leading-5 transition-[padding] group-hover/history:pr-[148px] group-focus-within/history:pr-[148px]">
-                                {s.firstMessage || s.session_id}
+                                {s.firstMessage || (s.session_id === effectiveActiveSessionId ? activeSessionTitle : null) || "新对话"}
                               </div>
                             </div>
                           </button>
@@ -1084,7 +1092,7 @@ function MoreDataShellComponent({
                           </span>
                           <span className="min-w-0 flex-1 pr-4">
                             <span className="block truncate text-sm font-medium leading-5 text-[#34322d]">
-                              {s.firstMessage || s.session_id}
+                              {s.firstMessage || (s.session_id === effectiveActiveSessionId ? activeSessionTitle : null) || "新对话"}
                             </span>
                             <span className="block truncate text-sm font-normal leading-5 text-[#858481]">
                               {s.session_id}
