@@ -19,6 +19,12 @@ import type {
   UserFavoriteCreateBody,
   UserFavoriteDetailDto,
   UserFavoriteListDto,
+  AdminRole,
+  AdminPermission,
+  AdminPlan,
+  AdminPromptCategory,
+  AdminPromptTemplate,
+  AdminFeedbackEntry,
 } from "@/lib/agent-api/types";
 
 function apiUrl(path: string): string {
@@ -1045,4 +1051,251 @@ export function buildTaskWsUrl(taskId: string): string {
 /** 浏览器 WebSocket 无法自定义 Header 时，在 onopen 后发送此字符串完成鉴权。 */
 export function taskWebSocketAuthPayload(accessToken: string): string {
   return JSON.stringify({ type: "auth", access_token: accessToken });
+}
+
+// --- Roles ---
+
+export async function adminListRoles(accessToken: string): Promise<{ roles: AdminRole[] }> {
+  const res = await fetch(apiUrl("/admin/roles"), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("list roles failed", res.status, data);
+  return data as { roles: AdminRole[] };
+}
+
+export async function adminListPermissions(accessToken: string): Promise<{ permissions: AdminPermission[] }> {
+  const res = await fetch(apiUrl("/admin/permissions"), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("list permissions failed", res.status, data);
+  return data as { permissions: AdminPermission[] };
+}
+
+export async function adminCreateRole(
+  accessToken: string,
+  body: { name: string; code: string; description?: string; permission_ids?: string[] },
+): Promise<{ role: AdminRole }> {
+  const res = await fetch(apiUrl("/admin/roles"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("create role failed", res.status, data);
+  return data as { role: AdminRole };
+}
+
+export async function adminPatchRole(
+  accessToken: string, roleId: string,
+  body: { name?: string; description?: string; permission_ids?: string[] },
+): Promise<{ role: AdminRole }> {
+  const res = await fetch(apiUrl(`/admin/roles/${encodeURIComponent(roleId)}`), {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("patch role failed", res.status, data);
+  return data as { role: AdminRole };
+}
+
+export async function adminDeleteRole(accessToken: string, roleId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/admin/roles/${encodeURIComponent(roleId)}`), {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.ok) return;
+  throw new AgentApiError("delete role failed", res.status, await safeJson(res));
+}
+
+// --- Plans ---
+
+export async function adminListPlans(accessToken: string): Promise<{ plans: AdminPlan[] }> {
+  const res = await fetch(apiUrl("/admin/plans"), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("list plans failed", res.status, data);
+  return data as { plans: AdminPlan[] };
+}
+
+export async function adminCreatePlan(
+  accessToken: string,
+  body: { code: string; name: string; level?: number; can_use_tools?: boolean; tool_allowlist?: string[]; features?: Record<string, unknown> },
+): Promise<{ plan: AdminPlan }> {
+  const res = await fetch(apiUrl("/admin/plans"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("create plan failed", res.status, data);
+  return data as { plan: AdminPlan };
+}
+
+export async function adminPatchPlan(
+  accessToken: string, planId: string,
+  body: { name?: string; level?: number; can_use_tools?: boolean; tool_allowlist?: string[]; features?: Record<string, unknown> },
+): Promise<{ plan: AdminPlan }> {
+  const res = await fetch(apiUrl(`/admin/plans/${encodeURIComponent(planId)}`), {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("patch plan failed", res.status, data);
+  return data as { plan: AdminPlan };
+}
+
+export async function adminDeletePlan(accessToken: string, planId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/admin/plans/${encodeURIComponent(planId)}`), {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.ok) return;
+  throw new AgentApiError("delete plan failed", res.status, await safeJson(res));
+}
+
+// --- User roles ---
+
+export async function adminSetUserRoles(
+  accessToken: string, userId: string, roleIds: string[],
+): Promise<void> {
+  const res = await fetch(apiUrl(`/admin/users/${encodeURIComponent(userId)}/roles`), {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ role_ids: roleIds }),
+  });
+  if (res.ok) return;
+  throw new AgentApiError("set user roles failed", res.status, await safeJson(res));
+}
+
+// --- Prompts ---
+
+export async function adminListPromptCategories(accessToken: string): Promise<{ categories: AdminPromptCategory[] }> {
+  const res = await fetch(apiUrl("/admin/prompts/categories"), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("list prompt categories failed", res.status, data);
+  return data as { categories: AdminPromptCategory[] };
+}
+
+export async function adminCreatePromptCategory(
+  accessToken: string, body: { name: string; sort_order?: number },
+): Promise<{ category: AdminPromptCategory }> {
+  const res = await fetch(apiUrl("/admin/prompts/categories"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("create prompt category failed", res.status, data);
+  return data as { category: AdminPromptCategory };
+}
+
+export async function adminPatchPromptCategory(
+  accessToken: string, categoryId: string, body: { name: string; sort_order?: number },
+): Promise<{ category: AdminPromptCategory }> {
+  const res = await fetch(apiUrl(`/admin/prompts/categories/${encodeURIComponent(categoryId)}`), {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("patch prompt category failed", res.status, data);
+  return data as { category: AdminPromptCategory };
+}
+
+export async function adminDeletePromptCategory(accessToken: string, categoryId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/admin/prompts/categories/${encodeURIComponent(categoryId)}`), {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.ok) return;
+  throw new AgentApiError("delete prompt category failed", res.status, await safeJson(res));
+}
+
+export async function adminListPromptTemplates(
+  accessToken: string, categoryId?: string, status?: string,
+): Promise<{ templates: AdminPromptTemplate[] }> {
+  const params = new URLSearchParams();
+  if (categoryId) params.set("category_id", categoryId);
+  if (status) params.set("status", status);
+  const qs = params.toString();
+  const res = await fetch(apiUrl(`/admin/prompts${qs ? `?${qs}` : ""}`), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("list prompt templates failed", res.status, data);
+  return data as { templates: AdminPromptTemplate[] };
+}
+
+export async function adminCreatePromptTemplate(
+  accessToken: string, body: Record<string, unknown>,
+): Promise<{ template: AdminPromptTemplate }> {
+  const res = await fetch(apiUrl("/admin/prompts"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("create prompt template failed", res.status, data);
+  return data as { template: AdminPromptTemplate };
+}
+
+export async function adminPatchPromptTemplate(
+  accessToken: string, templateId: string, body: Record<string, unknown>,
+): Promise<{ template: AdminPromptTemplate }> {
+  const res = await fetch(apiUrl(`/admin/prompts/${encodeURIComponent(templateId)}`), {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("patch prompt template failed", res.status, data);
+  return data as { template: AdminPromptTemplate };
+}
+
+export async function adminDeletePromptTemplate(accessToken: string, templateId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/admin/prompts/${encodeURIComponent(templateId)}`), {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.ok) return;
+  throw new AgentApiError("delete prompt template failed", res.status, await safeJson(res));
+}
+
+// --- Feedback ---
+
+export async function adminListFeedback(
+  accessToken: string, params?: { status?: string; page_path?: string; page?: number; page_size?: number },
+): Promise<{ entries: AdminFeedbackEntry[] }> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.page_path) qs.set("page_path", params.page_path);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.page_size) qs.set("page_size", String(params.page_size));
+  const query = qs.toString();
+  const res = await fetch(apiUrl(`/admin/feedback${query ? `?${query}` : ""}`), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("list feedback failed", res.status, data);
+  return data as { entries: AdminFeedbackEntry[] };
+}
+
+export async function adminPatchFeedback(
+  accessToken: string, entryId: string, body: { status?: string; assigned_to?: string; admin_note?: string },
+): Promise<{ entry: AdminFeedbackEntry }> {
+  const res = await fetch(apiUrl(`/admin/feedback/${encodeURIComponent(entryId)}`), {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("patch feedback failed", res.status, data);
+  return data as { entry: AdminFeedbackEntry };
 }

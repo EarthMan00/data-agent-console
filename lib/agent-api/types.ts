@@ -348,3 +348,73 @@ export type UserFavoriteCreateBody = {
   snapshot: Record<string, unknown>;
   copy_artifact_id?: string | null;
 };
+
+export type AdminRole = {
+  id: string;
+  name: string;
+  code: string;
+  description: string | null;
+  is_system: boolean;
+  permission_ids: string[];
+  user_count: number;
+};
+
+export type AdminPermission = {
+  id: string;
+  code: string;
+  name: string;
+  resource: string;
+  description: string | null;
+};
+
+export type AdminPlan = {
+  id: string;
+  code: string;
+  name: string;
+  level: number;
+  can_use_tools: boolean;
+  tool_allowlist: string[];
+  features: Record<string, unknown>;
+  user_count: number;
+  created_at: string | null;
+};
+
+export type AdminPromptCategory = {
+  id: string;
+  name: string;
+  sort_order: number;
+};
+
+export type AdminPromptTemplate = {
+  id: string;
+  category_id: string | null;
+  category_name: string | null;
+  title: string;
+  description: string | null;
+  prompt_text: string;
+  variables: Record<string, unknown>[];
+  meta_line: string | null;
+  capability_ids: string[];
+  replay_run_id: string | null;
+  replay_share_id: string | null;
+  status: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type AdminFeedbackEntry = {
+  id: string;
+  created_at: string;
+  message: string;
+  page_path: string;
+  context_type: string | null;
+  context_id: string | null;
+  app_version: string | null;
+  user_agent: string | null;
+  status: string;
+  assigned_to: string | null;
+  admin_note: string | null;
+  updated_at: string | null;
+};
