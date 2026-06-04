@@ -25,6 +25,8 @@ export type TaskExecutionStep = {
   status: TaskExecutionStepStatus;
   /** 运行中时的可读进度（如 LinkFox 已等待时长） */
   runtimeHint?: string;
+  /** 后端任务实际开始时间；用于前端本地秒表展示，避免跟随轮询间隔跳秒。 */
+  runtimeStartedAt?: string;
 };
 
 export type DataSourceChain = {
@@ -218,6 +220,7 @@ export type AgentRoundRuntimeEvent =
       stepId: string;
       status: TaskExecutionStepStatus;
       runtimeHint?: string;
+      runtimeStartedAt?: string;
     }
   | {
       type: "linkfox_clarification_pending";

@@ -6,7 +6,8 @@ import type { SessionMessageItem } from "@/lib/agent-api/types";
 function msg(partial: Partial<SessionMessageItem> & Pick<SessionMessageItem, "id" | "role" | "content">): SessionMessageItem {
   return {
     created_at: "2026-03-28 12:00:00",
-    meta: null,
+    message_index: 0,
+    meta: undefined,
     ...partial,
   };
 }

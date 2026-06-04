@@ -43,10 +43,11 @@ import {
 import { invalidateSessionAndRequestLogin } from "@/lib/agent-runtime/auth";
 import { ArrowLeft, ArrowRight, Power } from "@/components/ui/tabler-icons";
 
-const LOGIN_INTRO_TEXT = "欢迎回来，我是 Ailce，你的跨境运营助手";
-const LOGIN_RETURNING_TEXT = "我是 Alice，欢迎回来！";
+const LOGIN_INTRO_TEXT = "我是 Alice，欢迎回来。";
+const LOGIN_RETURNING_TEXT = "我是 Alice，欢迎回来。";
 const REGISTER_INTRO_TEXT = "欢迎注册，我是 Alice，你的跨境运营助手";
 const REGISTER_CODE_TITLE = "请输入发送给您邮箱的验证码";
+const LOGIN_INTRO_INITIAL_DELAY_MS = 3000;
 const LOGIN_INTRO_CHAR_INTERVAL_MS = 34;
 const LOGIN_RETURNING_STORAGE_KEY = "mdata:alice-has-logged-in";
 const PENDING_HOME_TASK_STORAGE_KEY = "mdata:pending-home-task-after-login";
@@ -399,14 +400,18 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       }
     };
 
-    timer = window.setTimeout(tick, LOGIN_INTRO_CHAR_INTERVAL_MS);
+    const initialDelay =
+      authMode === "login" && !loginTitleOverride
+        ? LOGIN_INTRO_INITIAL_DELAY_MS
+        : LOGIN_INTRO_CHAR_INTERVAL_MS;
+    timer = window.setTimeout(tick, initialDelay);
     return () => {
       cancelled = true;
       if (timer !== undefined) {
         window.clearTimeout(timer);
       }
     };
-  }, [activeLoginTitleKey, activeLoginTitleText, loginOpen]);
+  }, [activeLoginTitleKey, activeLoginTitleText, authMode, loginOpen, loginTitleOverride]);
 
   useEffect(() => {
     if (!loginOpen || !activeTitleTypingDone) return;
@@ -974,25 +979,9 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
             className="mdata-auth-panel fixed left-1/2 top-1/2 h-[calc(100vh-40px)] w-[calc(100vw-40px)] max-w-none -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[24px] border-0 bg-[#141414] p-0 text-white shadow-none sm:rounded-[24px]"
           >
             <div className="relative h-full w-full overflow-hidden">
-              <div className="absolute left-9 top-[21px] flex h-[31px] items-center gap-2.5">
-                <div className="flex items-center gap-2.5">
-                  <Image
-                    src="/mdata-logo.png"
-                    alt="Alice"
-                    width={31}
-                    height={31}
-                    className="h-[31px] w-[31px] object-contain"
-                    draggable={false}
-                    priority
-                  />
-                  <span className="mdata-auth-title text-[28px] font-medium leading-[31px] text-white">
-                    Alice
-                  </span>
-                </div>
-              </div>
               <button
                 type="button"
-                className="absolute right-[18px] top-3.5 z-20 inline-flex h-16 w-16 items-center justify-center rounded-full text-white/58 transition-[color,background-color,opacity] duration-300 hover:bg-white/[0.04] hover:text-white/82"
+                className="absolute right-8 top-7 z-20 inline-flex h-[42px] w-[42px] items-center justify-center rounded-full text-white/58 transition-[color,background-color,opacity] duration-300 hover:bg-white/[0.04] hover:text-white/82"
                 aria-label="关闭登录"
                 onPointerDown={(e) => {
                   e.stopPropagation();
@@ -1014,32 +1003,55 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                       : "h-[250px] w-[min(730px,calc(100vw-120px))]"
                   }
                 >
-                  <h2
-                    id="mdata-login-title"
-                    aria-label={activeLoginTitleText}
-	                    className={
-	                      isRegisterCodeStep
-	                        ? "mdata-auth-title min-h-8 max-w-none text-left text-[24px] font-semibold leading-8 tracking-normal text-white transition-colors duration-300"
-	                        : `mdata-auth-title min-h-[46px] max-w-[730px] text-left text-[30px] font-medium leading-[45px] tracking-normal transition-colors duration-300 ${
-	                            isLoginTitleError
-	                              ? "text-white"
-	                              : activeTitleTypingDone
-	                                ? "mdata-auth-title-muted"
-                                : "text-white"
-                          }`
+                  <div
+                    className={
+                      isRegisterCodeStep
+                        ? "flex items-center gap-4"
+                        : "flex items-center gap-5"
                     }
                   >
-                    {visibleLoginIntroText}
-                    {!activeTitleTypingDone ? (
-                      <span
-                        className="ml-1 inline-block h-[1em] w-[2px] translate-y-[4px] animate-pulse bg-white/80"
-                        aria-hidden
-                      />
-                    ) : null}
-                  </h2>
+                    <Image
+                      src="/mdata-logo.png"
+                      alt="Alice"
+                      width={52}
+                      height={52}
+                      className={
+                        isRegisterCodeStep
+                          ? "mt-0.5 h-12 w-12 shrink-0 object-contain"
+                          : "mt-0.5 h-[52px] w-[52px] shrink-0 object-contain"
+                      }
+                      draggable={false}
+                      priority
+                    />
+                    <div className="min-w-0 flex-1">
+                      <h2
+                        id="mdata-login-title"
+                        aria-label={activeLoginTitleText}
+                        className={
+                          isRegisterCodeStep
+                            ? "mdata-auth-title min-h-8 max-w-none text-left text-[24px] font-semibold leading-8 tracking-normal text-white transition-colors duration-300"
+                            : `mdata-auth-title min-h-[46px] max-w-[640px] text-left text-[30px] font-medium leading-[45px] tracking-normal transition-colors duration-300 ${
+                                isLoginTitleError
+                                  ? "text-white"
+                                  : activeTitleTypingDone
+                                    ? "mdata-auth-title-muted"
+                                    : "text-white"
+                              }`
+                        }
+                      >
+                        {visibleLoginIntroText}
+                        {!activeTitleTypingDone ? (
+                          <span
+                            className="ml-1 inline-block h-[1em] w-[2px] translate-y-[4px] animate-pulse bg-white/80"
+                            aria-hidden
+                          />
+                        ) : null}
+                      </h2>
+                    </div>
+                  </div>
 	                  <form
 	                    key={activeLoginTitleKey}
-	                    className={`${isRegisterCodeStep ? "mt-2 h-auto" : "mt-6 h-[121px]"} w-full transition-[opacity,transform] ${
+	                    className={`${isRegisterCodeStep ? "ml-16 mt-4 h-auto" : "ml-[72px] mt-8 h-[121px]"} transition-[opacity,transform] ${
                       activeTitleTypingDone
                         ? "translate-y-0 opacity-100 duration-500"
                         : "pointer-events-none translate-y-2 opacity-0 duration-0"
@@ -1263,7 +1275,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                 </div>
               ) : null}
               <div
-                className={`absolute bottom-3.5 right-[18px] z-20 flex items-center gap-2 transition-opacity ${
+                className={`absolute bottom-7 right-8 z-20 flex items-center gap-2 transition-opacity ${
                   activeTitleTypingDone
                     ? "opacity-100 duration-300"
                     : "pointer-events-none opacity-0 duration-0"
@@ -1276,7 +1288,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                       authMode === "register" ? "返回上一步" : "返回账号"
                     }
                     disabled={loginBusy || !activeTitleTypingDone}
-                    className="inline-flex h-16 w-16 items-center justify-center rounded-full text-white transition-[color,background-color,opacity] duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
+                    className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-full text-white transition-[color,background-color,opacity] duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
                     onClick={
                       authMode === "register"
                         ? returnRegisterStep

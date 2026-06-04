@@ -96,7 +96,7 @@ function ExcelStyleSheetTabBar({
   if (tabs.length <= 1) return null;
 
   return (
-    <div className="flex shrink-0 items-stretch border-t border-[#dadce0] bg-[#f1f3f4]">
+    <div className="flex min-w-0 shrink-0 items-stretch border-t border-[#dadce0] bg-[#f1f3f4]">
       <Popover open={sheetMenuOpen} onOpenChange={setSheetMenuOpen}>
         <PopoverTrigger asChild>
           <button
@@ -131,7 +131,7 @@ function ExcelStyleSheetTabBar({
         </PopoverContent>
       </Popover>
       <div
-        className="flex min-h-9 min-w-0 flex-1 items-end gap-0 overflow-x-auto px-0.5"
+        className="flex min-h-9 min-w-0 flex-1 items-end gap-0 overflow-x-auto overflow-y-hidden px-0.5"
         role="tablist"
         aria-label="工作表"
       >
@@ -150,7 +150,7 @@ function ExcelStyleSheetTabBar({
                 active ? "font-medium text-[#15803d]" : "text-[#5f6368] hover:bg-[rgba(55,53,47,0.06)]",
               )}
             >
-              <span className="line-clamp-1 max-w-[min(220px,40vw)]">{t.label}</span>
+              <span className="line-clamp-1 max-w-[min(220px,52vw)]">{t.label}</span>
               {active ? (
                 <span
                   className="absolute bottom-0 left-2 right-2 h-[3px] rounded-t-[2px] bg-[#15803d]"
@@ -329,16 +329,16 @@ export function AgentTaskResultPanel({
   const showSubtaskSheetBar = Boolean(subtaskResultTabs && subtaskResultTabs.length > 1 && onSubtaskSelect);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white" data-testid="agent-preview-panel">
-      <div className="flex shrink-0 flex-col gap-1 border-b border-[#e2e2df] bg-white px-3 py-2">
-        <div className="flex items-start justify-between gap-2">
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-white" data-testid="agent-preview-panel">
+      <div className="flex shrink-0 flex-col gap-1 border-b border-[#e2e2df] bg-white px-3 py-2 sm:px-4">
+        <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-[14px] font-medium text-[#1f2421]">任务执行结果</div>
             {dateLine ? (
               <div className="mt-0.5 text-[12px] text-[#8b8c87]">最后生成时间：{dateLine}</div>
             ) : null}
           </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          <div className="flex max-w-[55%] shrink-0 flex-wrap items-center justify-end gap-1 sm:max-w-none">
             {showTableCodeToggle ? (
               <div className="mr-1 flex rounded-[10px] border border-[#e2e2df] bg-[#f0f0ef] p-0.5">
                 <button
@@ -422,7 +422,7 @@ export function AgentTaskResultPanel({
       ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-3 pt-2">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto px-3 pt-2 sm:px-4">
           {withFreshToken && useSheetUi && activeSheet ? (
             <TaskResultSheetBody sheet={activeSheet} viewMode={viewMode} withFreshToken={withFreshToken} />
           ) : withFreshToken && !useSheetUi && fallbackPrimary ? (

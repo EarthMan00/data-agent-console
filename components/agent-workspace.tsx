@@ -7,7 +7,7 @@ import {
   useSearchParamFlagSnapshot,
   useSearchParamSnapshot,
 } from "@/lib/use-search-param-snapshot";
-import { ListRestart, MessageCircleMore, ThumbsDown, ThumbsUp } from "@/components/ui/tabler-icons";
+import { MessageCircleMore, ThumbsDown, ThumbsUp } from "@/components/ui/tabler-icons";
 import type {
   AgentAttachment,
   PlatformSubtaskSnapshot,
@@ -22,7 +22,6 @@ import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
 import { buildAttachmentItems } from "@/components/agent-workspace/attachment-utils";
 import {
-  ConversationBubble,
   AliceMessageBubble,
   ORCHESTRATION_BLOCK_MAX,
   SIMPLE_CHAT_BUBBLE_MAX,
@@ -600,8 +599,8 @@ function AgentRunWorkspaceView({
     });
   }, [executeRound, run.id, run.latestRoundId, run.objective, run.selectedCapabilities, run.status]);
 
-  const appendNote = async () => {
-    const value = sanitizeObjective(draft);
+  const appendNote = async (valueOverride?: string) => {
+    const value = sanitizeObjective(valueOverride ?? draft);
     if (!value) return;
 
     const latestHasGuidance = Boolean(latestRoundModel?.postTaskGuidance);
@@ -657,6 +656,10 @@ function AgentRunWorkspaceView({
     });
   };
 
+  const submitGuidanceSuggestion = (item: string) => {
+    void appendNote(item);
+  };
+
   const applyCapability = (capabilityId: string) => {
     const item = homeCapabilityItems.find((entry) => entry.id === capabilityId);
     if (!item) return;
@@ -707,9 +710,23 @@ function AgentRunWorkspaceView({
     });
   }, [run.id]);
 
-  const handleFeedback = (kind: "喜欢" | "不喜欢" | "需要继续") => {
+  const handleFeedback = (kind: "喜欢" | "不喜欢") => {
     setNotice(`已记录反馈：${kind}。`);
   };
+
+  const resultFeedbackActions = (
+    <div className="flex items-center gap-1 text-[#8a97a8]">
+      <Button aria-label="反馈喜欢" variant="ghost" size="iconSm" onClick={() => handleFeedback("喜欢")}>
+        <ThumbsUp className="h-4 w-4" />
+      </Button>
+      <Button aria-label="反馈不喜欢" variant="ghost" size="iconSm" onClick={() => handleFeedback("不喜欢")}>
+        <ThumbsDown className="h-4 w-4" />
+      </Button>
+      <Button aria-label="添加会话备注" variant="ghost" size="iconSm" onClick={() => setNotice("评论接口入口已预留。")}>
+        <MessageCircleMore className="h-4 w-4" />
+      </Button>
+    </div>
+  );
 
   return (
     <MoreDataShell
@@ -909,26 +926,33 @@ function AgentRunWorkspaceView({
                         </>
                       ) : null;
 
+                      const showResultCard =
+                        round.showTaskResultInChat && (run.activePreviewId || latestRoundWantsTaskPanel);
+
                       const afterExecution = (
                         <>
                           {round.errorMessage ? <p className="text-sm text-red-600">{round.errorMessage}</p> : null}
-                          {round.showTaskResultInChat && (run.activePreviewId || latestRoundWantsTaskPanel) ? (
-                            <TaskResultSummaryCard
-                              title={compactText(round.resultTitle, 48)}
-                              summary={compactText(round.resultSummary, 220)}
-                              hasResult={round.hasResult}
-                              expanded={taskPanelOpen}
-                              onToggle={() => {
-                                if (!latestRoundWantsTaskPanel && !run.activePreviewId) return;
-                                const currentOpen = panelVisibility[run.id] ?? false;
-                                const next = !currentOpen;
-                                if (next && run.activePreviewId) {
-                                  workspaceActions.setActivePreview(run.id, run.activePreviewId);
-                                  setPreviewOverrides((current) => ({ ...current, [run.id]: run.activePreviewId! }));
-                                }
-                                setPanelVisibility((current) => ({ ...current, [run.id]: next }));
-                              }}
-                            />
+                          {showResultCard ? (
+                            <>
+                              <TaskResultSummaryCard
+                                title={compactText(round.resultTitle, 48)}
+                                summary=""
+                                completedAt={report.generatedAt}
+                                hasResult={round.hasResult}
+                                expanded={taskPanelOpen}
+                                onToggle={() => {
+                                  if (!latestRoundWantsTaskPanel && !run.activePreviewId) return;
+                                  const currentOpen = panelVisibility[run.id] ?? false;
+                                  const next = !currentOpen;
+                                  if (next && run.activePreviewId) {
+                                    workspaceActions.setActivePreview(run.id, run.activePreviewId);
+                                    setPreviewOverrides((current) => ({ ...current, [run.id]: run.activePreviewId! }));
+                                  }
+                                  setPanelVisibility((current) => ({ ...current, [run.id]: next }));
+                                }}
+                              />
+                              {resultFeedbackActions}
+                            </>
                           ) : null}
                         </>
                       );
@@ -1010,8 +1034,7 @@ function AgentRunWorkspaceView({
                         <PostTaskGuidanceBubble
                           content={round.postTaskGuidance}
                           datetime={round.createdAt}
-                          composerDraft={draft}
-                          onSuggestionToggle={toggleGuidanceSuggestion}
+                          onSuggestionToggle={submitGuidanceSuggestion}
                         />
                       ) : null;
 
@@ -1060,8 +1083,7 @@ function AgentRunWorkspaceView({
                     <PostTaskGuidanceBubble
                       content={round.postTaskGuidance}
                       datetime={round.createdAt}
-                      composerDraft={draft}
-                      onSuggestionToggle={toggleGuidanceSuggestion}
+                      onSuggestionToggle={submitGuidanceSuggestion}
                     />
                   ) : null}
 
@@ -1071,20 +1093,6 @@ function AgentRunWorkspaceView({
               })}
             </div>
 
-            <div className="flex items-center gap-1 text-[#8a97a8]">
-                <Button aria-label="继续追问" variant="ghost" size="iconSm" onClick={() => handleFeedback("需要继续")}>
-                  <ListRestart className="h-4 w-4" />
-                </Button>
-                <Button aria-label="反馈喜欢" variant="ghost" size="iconSm" onClick={() => handleFeedback("喜欢")}>
-                  <ThumbsUp className="h-4 w-4" />
-                </Button>
-                <Button aria-label="反馈不喜欢" variant="ghost" size="iconSm" onClick={() => handleFeedback("不喜欢")}>
-                  <ThumbsDown className="h-4 w-4" />
-                </Button>
-                <Button aria-label="添加会话备注" variant="ghost" size="iconSm" onClick={() => setNotice("评论接口入口已预留。")}>
-                  <MessageCircleMore className="h-4 w-4" />
-                </Button>
-            </div>
             </div>
           </div>
         </div>
@@ -1113,7 +1121,7 @@ function AgentRunWorkspaceView({
               onSubmit={() => void appendNote()}
               containerClassName="overflow-visible rounded-[18px] border border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]"
               textareaClassName="min-h-[84px] max-h-[12em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-[14px] leading-6 text-[#34322d] caret-[#34322d] outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-visible:[box-shadow:none!important]"
-              sendButtonClassName="h-9 w-9 rounded-[10px]"
+              sendButtonClassName="h-10 w-10 min-w-0 rounded-full border border-transparent bg-[#111111] p-0 text-white shadow-none transition hover:bg-[#2a2a2a]"
             />
 
             <div className="mt-3 text-center text-xs text-[#8b8c87]">内容由 AI 大模型生成，请仔细甄别</div>

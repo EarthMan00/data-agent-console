@@ -27,7 +27,9 @@ export function parseTaskExecutionStepsFromMeta(
     const rawLabel = typeof o.label === "string" ? o.label : "";
     const label = rawLabel ? humanizeStepLabelForUi(rawLabel) : "";
     const status: TaskExecutionStepStatus = isStepStatus(o.status) ? o.status : "pending";
-    out.push({ id, label, order: i + 1, status, roundId });
+    const runtimeHint = typeof o.runtime_hint === "string" ? o.runtime_hint : undefined;
+    const runtimeStartedAt = typeof o.runtime_started_at === "string" ? o.runtime_started_at : undefined;
+    out.push({ id, label, order: i + 1, status, roundId, runtimeHint, runtimeStartedAt });
   }
   return out.length > 0 ? out : null;
 }
