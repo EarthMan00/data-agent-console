@@ -1288,7 +1288,7 @@ export async function adminListFeedback(
 }
 
 export async function adminPatchFeedback(
-  accessToken: string, entryId: string, body: { status?: string; assigned_to?: string; admin_note?: string },
+  accessToken: string, entryId: string, body: { status?: string; admin_note?: string },
 ): Promise<{ entry: AdminFeedbackEntry }> {
   const res = await fetch(apiUrl(`/admin/feedback/${encodeURIComponent(entryId)}`), {
     method: "PATCH",

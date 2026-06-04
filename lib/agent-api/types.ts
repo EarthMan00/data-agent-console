@@ -414,7 +414,6 @@ export type AdminFeedbackEntry = {
   app_version: string | null;
   user_agent: string | null;
   status: string;
-  assigned_to: string | null;
   admin_note: string | null;
   updated_at: string | null;
 };
