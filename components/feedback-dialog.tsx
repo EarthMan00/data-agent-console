@@ -3,6 +3,7 @@
 import { LoaderCircle } from "@/components/ui/tabler-icons";
 import { useEffect, useMemo, useState } from "react";
 
+import { getAgentHttpApiBase } from "@/lib/agent-api/config";
 import { RequiredAsterisk } from "@/components/required-mark";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -58,32 +59,22 @@ export function FeedbackDialog({
       setSubmitting(true);
       setNotice("");
 
-      const response = await fetch("/api/feedback", {
+      const base = getAgentHttpApiBase();
+      const res = await fetch(`${base}/api/feedback`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: value,
-          pagePath,
-          context,
+          page_path: pagePath,
+          context_type: context?.type ?? null,
+          context_id: context?.id ?? null,
+          app_version: "dev",
         }),
       });
 
-      let payload: { error?: string; success?: boolean } | null = null;
-      const text = await response.text();
-      if (text) {
-        try {
-          payload = JSON.parse(text) as { error?: string; success?: boolean };
-        } catch (e) {
-          setNotice(`反馈响应非 JSON：${e instanceof Error ? e.message : String(e)}`);
-          return;
-        }
-      }
-
-      if (!response.ok) {
-        setNotice(typeof payload?.error === "string" && payload.error ? payload.error : `反馈提交失败 (HTTP ${response.status})`);
-        return;
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "反馈提交失败");
       }
 
       setMessage("");
