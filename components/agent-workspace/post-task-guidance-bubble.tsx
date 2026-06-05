@@ -37,7 +37,7 @@ export function PostTaskGuidanceBubble({
   if (suggestions.length === 0) return null;
 
   return (
-    <div className={cn("flex w-full justify-start", WRAP, className)}>
+    <div className={cn("flex w-full justify-start text-left", WRAP, className)}>
       <div className="w-full space-y-3">
         <div className="flex w-full min-w-0 items-center justify-between gap-3 text-[14px] font-medium text-[#303734]">
           <div className="flex min-w-0 items-center gap-3">
@@ -58,11 +58,10 @@ export function PostTaskGuidanceBubble({
           <div className="shrink-0 text-[12px] text-[#858481]">{formatTime(datetime)}</div>
         </div>
 
-        <div className="space-y-2.5 pl-0 sm:pl-12">
+        <div className="space-y-1 pl-0">
           <p className="text-[13px] leading-5 text-[#5c5f5b]">接下来您可以试试：</p>
           <div
-            className="flex flex-row flex-wrap items-start gap-2"
-            role={interactive ? "list" : undefined}
+            className="flex flex-row flex-wrap items-start gap-1"
           >
             {suggestions.map((item, index) => {
               const selected =
@@ -80,7 +79,6 @@ export function PostTaskGuidanceBubble({
                   <button
                     key={`${index}-${item.slice(0, 24)}`}
                     type="button"
-                    role="listitem"
                     aria-pressed={selected}
                     className={cn(chipClass, "active:scale-[0.98]")}
                     onClick={() => onSuggestionToggle(item)}
@@ -93,7 +91,6 @@ export function PostTaskGuidanceBubble({
               return (
                 <div
                   key={`${index}-${item.slice(0, 24)}`}
-                  role="listitem"
                   className={cn(chipClass, "border-[#e2e2df] bg-[#fafaf9] text-[#5c5f5b]")}
                 >
                   <span className="whitespace-pre-wrap break-words">{item}</span>

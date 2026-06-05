@@ -1,8 +1,11 @@
 "use client";
 
-import { AlertCircle, CheckCircle2, Loader2, XCircle } from "@/components/ui/tabler-icons";
+import { useEffect, useMemo, useState } from "react";
+
+import { AlertCircle, CheckCircle2, XCircle } from "@/components/ui/tabler-icons";
 
 import { Button } from "@/components/ui/button";
+import { DotmSquare11 } from "@/components/ui/dotm-square-11";
 import { humanizeStepLabelForUi } from "@/lib/humanize-step-label";
 import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
 import { cn } from "@/lib/utils";
@@ -63,6 +66,55 @@ function executionSubtitle(status: TaskExecutionStep["status"]): string {
   return "执行失败";
 }
 
+function formatElapsed(seconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const rest = safeSeconds % 60;
+  return `${minutes} 分 ${rest} 秒`;
+}
+
+function runtimeHintWithElapsed(runtimeHint: string | undefined, elapsedSeconds: number): string {
+  const elapsedText = `已等待 ${formatElapsed(elapsedSeconds)}`;
+  const hint = stripInternalToolNamesForUi(runtimeHint ?? "").trim();
+  if (!hint) return elapsedText;
+  if (/已等待\s*\d+\s*分\s*\d+\s*秒/.test(hint)) {
+    return hint.replace(/已等待\s*\d+\s*分\s*\d+\s*秒/g, elapsedText);
+  }
+  return `${hint} · ${elapsedText}`;
+}
+
+function RunningStepRuntimeHint({ step }: { step: TaskExecutionStep }) {
+  const startedAtMs = useMemo(() => {
+    if (!step.runtimeStartedAt) return null;
+    const parsed = new Date(step.runtimeStartedAt).getTime();
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [step.runtimeStartedAt]);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!startedAtMs) return undefined;
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAtMs]);
+
+  if (!step.runtimeHint && !startedAtMs) return null;
+
+  const text =
+    startedAtMs === null
+      ? stripInternalToolNamesForUi(step.runtimeHint ?? "")
+      : runtimeHintWithElapsed(step.runtimeHint, (nowMs - startedAtMs) / 1000);
+
+  if (!text.trim()) return null;
+
+  return (
+    <p className="mt-2 pl-10 text-[12px] leading-5 text-[#6b7280]">
+      {text}
+    </p>
+  );
+}
+
 /** 当前正在排队或执行中的步骤（非终态） */
 export function ExecutionStepCard({
   step,
@@ -74,6 +126,7 @@ export function ExecutionStepCard({
   total: number;
 }) {
   const stepNo = stepIndex + 1;
+  const showStatusIcon = step.status !== "pending";
   return (
     <div
       className={cn(
@@ -90,30 +143,32 @@ export function ExecutionStepCard({
       <div className="mb-2 text-[12px] font-medium uppercase tracking-wide text-[#9aa39e]">
         步骤 {stepNo} / {total} · {executionSubtitle(step.status)}
       </div>
-      <div className="flex gap-3">
-        <div className="flex w-7 shrink-0 justify-center pt-0.5" aria-hidden>
-          {step.status === "pending" ? (
-            <span className="mt-2 block h-2 w-2 rounded-full bg-[#d1d5db]" />
-          ) : step.status === "running" ? (
-            <Loader2 className="h-5 w-5 animate-spin text-[#2563eb]" />
-          ) : step.status === "awaiting_input" ? (
-            <AlertCircle className="h-5 w-5 text-amber-600" />
-          ) : step.status === "done" ? (
-            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-          ) : (
-            <XCircle className="h-5 w-5 text-red-500" />
-          )}
-        </div>
+      <div className={cn("flex", showStatusIcon ? "gap-3" : "gap-0")}>
+        {showStatusIcon ? (
+          <div className="flex w-7 shrink-0 justify-center pt-0.5" aria-hidden>
+            {step.status === "running" ? (
+              <DotmSquare11
+                ariaLabel="步骤执行中"
+                color="#111111"
+                dotShape="square"
+                dotSize={2}
+                size={18}
+                speed={1.15}
+              />
+            ) : step.status === "awaiting_input" ? (
+              <AlertCircle className="h-5 w-5 text-amber-600" />
+            ) : step.status === "done" ? (
+              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+            ) : (
+              <XCircle className="h-5 w-5 text-red-500" />
+            )}
+          </div>
+        ) : null}
         <p className="min-w-0 flex-1 break-words text-[14px] leading-6.5 [overflow-wrap:anywhere]">
-          <span className="text-[#9ca3af]">{stepNo}. </span>
           {humanizeStepLabelForUi(step.label)}
         </p>
       </div>
-      {step.status === "running" && step.runtimeHint ? (
-        <p className="mt-2 pl-10 text-[12px] leading-5 text-[#6b7280]">
-          {stripInternalToolNamesForUi(step.runtimeHint)}
-        </p>
-      ) : null}
+      {step.status === "running" ? <RunningStepRuntimeHint step={step} /> : null}
     </div>
   );
 }
@@ -164,7 +219,15 @@ export function StepResultPendingCard({
           disabled
           className="mt-3 h-8 cursor-not-allowed rounded-[10px] px-3 text-xs"
         >
-          <Loader2 className="mr-1.5 h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+          <DotmSquare11
+            ariaLabel="结果加载中"
+            className="mr-1.5 shrink-0"
+            color="#111111"
+            dotShape="square"
+            dotSize={1.6}
+            size={14}
+            speed={1.15}
+          />
           结果加载中…
         </Button>
       ) : null}

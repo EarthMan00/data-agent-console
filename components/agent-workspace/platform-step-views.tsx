@@ -29,7 +29,6 @@ function PlatformSubtaskResultCard({
   /** 与执行卡片对齐的步骤总数，用于「步骤 N / M」 */
   totalSteps?: number;
 }) {
-  const ok = snap.outcome === "success";
   const stepNo = snap.stepIndex + 1;
   const hasPreviewFiles = hasTabularTaskResultFiles(snap.artifacts);
   const header =
@@ -55,14 +54,6 @@ function PlatformSubtaskResultCard({
           <div className="text-[14px] font-semibold text-[#1f2421]">步骤 {stepNo}</div>
           <p className="mt-1 text-[12px] leading-5.5 text-[#4f5753]">{compactText(snap.label, 200)}</p>
         </div>
-        <span
-          className={cn(
-            "shrink-0 rounded-full px-2 py-0.5 text-[12px] font-medium",
-            ok ? "bg-[#dcfce7] text-[#166534]" : "bg-[#fee2e2] text-[#991b1b]",
-          )}
-        >
-          {ok ? "已完成" : "失败"}
-        </span>
       </div>
       {snap.errorMessage ? (
         <p className="mt-2 text-[12px] leading-5 text-[#b91c1c]">

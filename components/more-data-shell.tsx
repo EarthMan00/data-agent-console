@@ -476,6 +476,8 @@ function MoreDataShellComponent({
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [isResultCompactViewport, setIsResultCompactViewport] = useState(false);
+  const [compactChatDrawerOpen, setCompactChatDrawerOpen] = useState(false);
   const historySearchInputRef = useRef<HTMLInputElement | null>(null);
   const historyListScrollRef = useRef<HTMLDivElement | null>(null);
   const historyLoadSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -488,6 +490,9 @@ function MoreDataShellComponent({
   const sidebarExpandedWidth = 300;
   const sidebarCollapsedWidth = 68;
   const effectiveSidebarCollapsed = !isMobileViewport && sidebarCollapsed;
+  const showCompactRightRailMode = Boolean(rightRail && clientMounted && !isMobileViewport && isResultCompactViewport);
+  const showDesktopRightRail = Boolean(rightRail && clientMounted && !isMobileViewport && !isResultCompactViewport);
+  const showMobileRightRailDrawer = Boolean(rightRail && clientMounted && isMobileViewport);
 
   const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
 
@@ -498,6 +503,18 @@ function MoreDataShellComponent({
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1279px)");
+    const update = () => setIsResultCompactViewport(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    if (!showCompactRightRailMode) setCompactChatDrawerOpen(false);
+  }, [showCompactRightRailMode]);
 
   useEffect(() => {
     setMobileSidebarOpen(false);
@@ -804,7 +821,7 @@ function MoreDataShellComponent({
                       return (
                         <div
                           key={s.session_id}
-                          className={`group/history relative flex w-full items-stretch gap-0.5 rounded-[10px] text-[16px] font-normal leading-6 transition-colors ${
+                          className={`group relative flex w-full items-stretch gap-0.5 rounded-[10px] text-[16px] font-normal leading-6 transition-colors ${
                             historyItemActive
                               ? "bg-[rgba(55,53,47,0.06)] text-[#34322d]"
                               : "text-[#34322d] hover:bg-[rgba(55,53,47,0.06)]"
@@ -820,7 +837,7 @@ function MoreDataShellComponent({
                             className="relative flex min-w-0 flex-1 items-center overflow-hidden px-[9px] py-1.5 text-left"
                           >
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-[14px] leading-5 transition-[padding] group-hover/history:pr-[148px] group-focus-within/history:pr-[148px]">
+                              <div className="truncate text-[14px] leading-5">
                                 {s.firstMessage || (s.session_id === effectiveActiveSessionId ? activeSessionTitle : null) || "新对话"}
                               </div>
                             </div>
@@ -828,8 +845,8 @@ function MoreDataShellComponent({
                           {createdTime ? (
                             <span
                               className={cn(
-                                "pointer-events-none absolute right-10 top-1/2 hidden max-w-[140px] -translate-y-1/2 items-center truncate bg-gradient-to-l from-[#f3f3f2] via-[#f3f3f2] to-transparent pl-8 pr-0 text-[12px] leading-4 text-[#858481] group-focus-within/history:flex group-hover/history:flex",
-                                historyPurgeConfirmId === s.session_id && "flex"
+                                "pointer-events-none inline-flex w-0 shrink-0 items-center justify-end overflow-hidden whitespace-nowrap text-right text-[12px] leading-4 text-[#858481] opacity-0 transition-[width,opacity] duration-150 group-focus-within:w-[136px] group-focus-within:opacity-100 group-hover:w-[136px] group-hover:opacity-100",
+                                historyPurgeConfirmId === s.session_id && "w-[136px] opacity-100"
                               )}
                             >
                               {createdTime}
@@ -844,7 +861,7 @@ function MoreDataShellComponent({
                             <PopoverTrigger asChild>
                               <button
                                 type="button"
-                                className="inline-flex w-8 shrink-0 items-center justify-center rounded-r-[9px] text-[#7f817d] opacity-0 transition hover:bg-transparent hover:text-red-600 group-hover/history:opacity-100 focus-visible:opacity-100 disabled:opacity-40 data-[state=open]:bg-transparent data-[state=open]:text-red-600 data-[state=open]:opacity-100"
+                                className="inline-flex w-8 shrink-0 items-center justify-center rounded-r-[9px] text-[#7f817d] opacity-0 transition hover:bg-transparent hover:text-red-600 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-40 data-[state=open]:bg-transparent data-[state=open]:text-red-600 data-[state=open]:opacity-100"
                                 aria-label="删除该历史任务"
                                 aria-expanded={historyPurgeConfirmId === s.session_id}
                                 disabled={deletingId === s.session_id}
@@ -1245,7 +1262,7 @@ function MoreDataShellComponent({
 
           {showTopHeader || currentRunLabel ? (
             <header className="sticky top-0 z-50 flex h-14.5 items-center bg-white px-3 sm:px-4 md:px-6">
-              <div className="flex min-w-0 items-center gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
                 <button
                   type="button"
                   aria-label="打开侧边栏"
@@ -1260,6 +1277,17 @@ function MoreDataShellComponent({
                   </div>
                 ) : null}
               </div>
+              {showCompactRightRailMode ? (
+                <button
+                  type="button"
+                  aria-label="查看对话过程"
+                  className="ml-3 hidden h-9 shrink-0 items-center gap-2 rounded-[10px] px-3 text-[14px] font-medium text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] md:inline-flex xl:hidden"
+                  onClick={() => setCompactChatDrawerOpen(true)}
+                >
+                  <MessageCircleMore className="h-[18px] w-[18px]" strokeWidth={1.9} />
+                  查看过程
+                </button>
+              ) : null}
             </header>
           ) : null}
 
@@ -1267,7 +1295,7 @@ function MoreDataShellComponent({
             className={cn(
               "min-h-0 flex-1",
               !showTopHeader && !currentRunLabel && "pt-16 md:pt-0",
-              rightRail && "grid min-h-0 grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(580px,61%)]",
+              showDesktopRightRail && "grid min-h-0 grid-cols-1 xl:grid-cols-[minmax(360px,42%)_minmax(680px,58%)]",
             )}
           >
             <div
@@ -1285,14 +1313,14 @@ function MoreDataShellComponent({
                   childManagedScroll ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "h-full",
                 )}
               >
-                {children}
+                {showCompactRightRailMode ? rightRail : children}
               </div>
             </div>
-            {rightRail ? (
+            {showDesktopRightRail ? (
               <aside
                 className={cn(
                   "flex min-h-0 min-w-0 flex-col border-l border-[#e3e8ef] bg-[rgba(255,255,255,0.7)] backdrop-blur-xl",
-                  "border-l-0 border-t md:border-l md:border-t-0",
+                  "border-l-0 border-t xl:border-l xl:border-t-0",
                   childManagedScroll ? "overflow-hidden" : "overflow-visible",
                 )}
               >
@@ -1302,6 +1330,62 @@ function MoreDataShellComponent({
           </div>
         </main>
       </div>
+
+      {showCompactRightRailMode ? (
+        <div
+          className={cn(
+            "fixed inset-0 z-[70] hidden transition md:block xl:hidden",
+            compactChatDrawerOpen ? "pointer-events-auto" : "pointer-events-none",
+          )}
+          role="dialog"
+          aria-modal={compactChatDrawerOpen ? "true" : undefined}
+          aria-hidden={!compactChatDrawerOpen}
+          aria-label="对话过程"
+        >
+          <button
+            type="button"
+            aria-label="关闭对话过程"
+            className={cn(
+              "absolute inset-0 bg-black/[0.18] backdrop-blur-[1px] transition-opacity",
+              compactChatDrawerOpen ? "opacity-100" : "opacity-0",
+            )}
+            onClick={() => setCompactChatDrawerOpen(false)}
+          />
+          <aside
+            className={cn(
+              "absolute bottom-0 left-0 top-0 flex w-[min(440px,calc(100vw-72px))] min-w-0 flex-col border-r border-[#e2e2df] bg-white shadow-[18px_0_48px_rgba(15,23,42,0.16)] transition-transform duration-200 ease-out",
+              compactChatDrawerOpen ? "translate-x-0" : "-translate-x-full",
+            )}
+          >
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-[#e2e2df] px-4">
+              <div className="truncate text-[16px] font-semibold leading-6 text-[#111111]">对话过程</div>
+              <button
+                type="button"
+                aria-label="关闭对话过程"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#7f817d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
+                onClick={() => setCompactChatDrawerOpen(false)}
+              >
+                <X className="h-5 w-5" strokeWidth={1.8} />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+          </aside>
+        </div>
+      ) : null}
+
+      {showMobileRightRailDrawer ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/[0.18] backdrop-blur-[1px] md:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="任务执行结果抽屉"
+        >
+          <div className="flex max-h-[82dvh] min-h-0 w-full max-w-[980px] flex-col overflow-hidden rounded-t-[20px] border border-b-0 border-[#e2e2df] bg-white shadow-[0_-18px_50px_rgba(15,23,42,0.18)]">
+            <div className="mx-auto my-2 h-1 w-10 shrink-0 rounded-full bg-[#d6d6d3]" aria-hidden />
+            <div className="min-h-0 flex-1 overflow-hidden">{rightRail}</div>
+          </div>
+        </div>
+      ) : null}
 
     </div>
   );

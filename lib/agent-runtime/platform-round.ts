@@ -193,7 +193,12 @@ async function finishRoundAwaitingLinkfoxClarification(input: {
   rowStatuses: TaskExecutionStepStatus[];
   persistRows: (statuses: TaskExecutionStepStatus[], taskId?: string) => Promise<void>;
   parentTaskId: string;
-  emitStep: (stepId: string, status: TaskExecutionStepStatus, runtimeHint?: string) => void;
+  emitStep: (
+    stepId: string,
+    status: TaskExecutionStepStatus,
+    runtimeHint?: string,
+    runtimeStartedAt?: string,
+  ) => void;
 }) {
   const { handlers, roundInput, clarify, stepDefs, orchestrationId, rowStatuses, persistRows, parentTaskId, emitStep } =
     input;
@@ -597,13 +602,19 @@ export async function runPlatformRound(
         }
       };
 
-      const emitStep = (stepId: string, status: TaskExecutionStepStatus, runtimeHint?: string) => {
+      const emitStep = (
+        stepId: string,
+        status: TaskExecutionStepStatus,
+        runtimeHint?: string,
+        runtimeStartedAt?: string,
+      ) => {
         handlers.onEvent({
           type: "task_execution_step_update",
           roundId: input.roundId,
           stepId,
           status,
           ...(runtimeHint ? { runtimeHint } : {}),
+          ...(runtimeStartedAt ? { runtimeStartedAt } : {}),
         });
       };
 
@@ -658,7 +669,12 @@ export async function runPlatformRound(
           lastOrch.steps.forEach((st, idx) => {
             const def = stepDefs[idx];
             if (!def) return;
-            emitStep(def.id, mapServerOrchestrationStepStatus(st.status), st.runtime_hint ?? undefined);
+            emitStep(
+              def.id,
+              mapServerOrchestrationStepStatus(st.status),
+              st.runtime_hint ?? undefined,
+              st.task_started_at ?? undefined,
+            );
           });
           await emitFinishedOrchestrationSubtasks(lastOrch);
           const orchNeedsClarifyUi =

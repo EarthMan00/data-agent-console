@@ -557,7 +557,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                             composerDraft={draft}
                             onSuggestionToggle={toggleGuidanceSuggestion}
                           />
-                        ) : guidancePresentation.kind !== "none" ? (
+                        ) : guidancePresentation.kind !== "none" && !taskId ? (
                           <div className="space-y-2">
                             {guidancePresentation.kind === "embedded" &&
                             guidancePresentation.leading ? (
@@ -616,6 +616,28 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                             );
                           }}
                         />
+                      ) : null}
+                      {taskId && guidancePresentation.kind !== "none" ? (
+                        <div className="space-y-2">
+                          {guidancePresentation.kind === "embedded" &&
+                          guidancePresentation.leading ? (
+                            <SimpleAssistantBubble
+                              body={guidancePresentation.leading}
+                              datetime={m.created_at}
+                              streaming={isStreamingAssistantMessage(m)}
+                            />
+                          ) : null}
+                          <PostTaskGuidanceBubble
+                            content={
+                              guidancePresentation.kind === "dedicated"
+                                ? guidancePresentation.content
+                                : guidancePresentation.guidanceBlock
+                            }
+                            datetime={m.created_at}
+                            composerDraft={draft}
+                            onSuggestionToggle={toggleGuidanceSuggestion}
+                          />
+                        </div>
                       ) : null}
                     </div>
                   );

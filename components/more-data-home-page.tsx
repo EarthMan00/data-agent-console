@@ -3,10 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowUp, Check, Copy } from "@/components/ui/tabler-icons";
+import { AnimatedArrowUpIcon } from "@/components/ui/animated-arrow-up-icon";
 import { fetchHomePromptRecommendations } from "@/lib/agent-api/home-prompts";
 import type { HomePromptCard } from "@/lib/workspace-domain-types";
-import { homeCapabilityItems } from "@/lib/home-capability-items";
+import {
+  getHomeCapabilityFilterIds,
+  getHomeCapabilityGroup,
+  getHomeCapabilityItem,
+  homeCapabilityCategories,
+  homeDataSourceItems,
+} from "@/lib/home-capability-items";
 import { AgentWorkspace } from "@/components/agent-workspace";
 import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
 import { MoreDataShell } from "@/components/more-data-shell";
@@ -23,9 +29,6 @@ import {
 } from "@/lib/agent-runtime";
 import { cn } from "@/lib/utils";
 import { TaskComposer } from "@/components/task-composer";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { copyTextToClipboard } from "@/lib/clipboard";
 
 const PENDING_HOME_TASK_STORAGE_KEY = "mdata:pending-home-task-after-login";
 const PENDING_HOME_TASK_MAX_AGE_MS = 30 * 60 * 1000;
@@ -122,14 +125,14 @@ export function MoreDataHomePage() {
   const homePromptCacheKey = platformAgent?.auth?.userId ?? (platformAgent?.authHydrated ? HOME_PROMPT_ANONYMOUS_CACHE_KEY : null);
   const cachedPromptCards = homePromptCacheKey ? getCachedHomePromptCards(homePromptCacheKey) : null;
   const [query, setQuery] = useState("");
-  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
-  const [activeCapabilityId, setActiveCapabilityId] = useState(homeCapabilityItems[0]?.id ?? "scenarios");
+  const [activeCapabilityId, setActiveCapabilityId] = useState("scenarios");
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [composerMode, setComposerMode] = useState<"普通模式" | "深度模式">("深度模式");
   const [pendingHomeFiles, setPendingHomeFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
   const [launching, setLaunching] = useState(false);
-  const [promptCopied, setPromptCopied] = useState(false);
+  const [appliedPromptId, setAppliedPromptId] = useState<string | null>(null);
+  const [composerPulse, setComposerPulse] = useState(false);
   const [remotePromptCards, setRemotePromptCards] = useState<HomePromptCard[]>(() => cachedPromptCards ?? []);
   const [promptCardsLoading, setPromptCardsLoading] = useState(() => !cachedPromptCards);
   const activeRunId = searchParams.get("runId");
@@ -177,8 +180,9 @@ export function MoreDataHomePage() {
 
   const cards = useMemo(() => {
     const source = remotePromptCards;
-    if (!activeCapabilityId || activeCapabilityId === "scenarios") return source;
-    const filtered = source.filter((card) => card.capabilityIds.includes(activeCapabilityId));
+    const filterIds = getHomeCapabilityFilterIds(activeCapabilityId);
+    if (filterIds.length === 0) return source;
+    const filtered = source.filter((card) => card.capabilityIds.some((id) => filterIds.includes(id)));
     return filtered.length > 0 ? filtered : source;
   }, [activeCapabilityId, remotePromptCards]);
   const composerCanSubmit = sanitizeObjective(query).length > 0 && !launching;
@@ -268,14 +272,14 @@ export function MoreDataHomePage() {
   }, [activeRunId, launching, launchAgent, platformAgent?.auth]);
 
   const applyBrowseCapability = (capabilityId: string) => {
-    const item = homeCapabilityItems.find((entry) => entry.id === capabilityId);
+    const item = homeCapabilityCategories.find((entry) => entry.id === capabilityId);
     if (!item) return;
     setActiveCapabilityId(item.id);
     setNotice(`已切换首页浏览视角到「${item.label}」，可继续选择示例任务或直接输入需求。`);
   };
 
   const applyComposerTool = (capabilityId: string) => {
-    const item = homeCapabilityItems.find((entry) => entry.id === capabilityId);
+    const item = getHomeCapabilityItem(capabilityId);
     if (!item || item.id === "scenarios") return;
     setSelectedSourceIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
     setNotice(`已选择数据源「${item.label}」，可以继续补充要求后直接发送。`);
@@ -308,13 +312,6 @@ export function MoreDataHomePage() {
     setNotice(`已选择附件：${picked.map((file) => file.name).join("、")}。`);
   };
 
-  const selectedPrompt = cards.find((card) => card.id === selectedPromptId) ?? null;
-
-  const openPromptCard = (cardId: string) => {
-    setPromptCopied(false);
-    setSelectedPromptId(cardId);
-  };
-
   const applyPromptCard = (card: HomePromptCard) => {
     const prefill = parseDatasourceMentions(card.prompt);
     const selectedIds = Array.from(new Set([...card.capabilityIds, ...prefill.selectedSourceIds]));
@@ -324,36 +321,19 @@ export function MoreDataHomePage() {
     setNotice(`已载入示例任务「${card.title}」，可继续补充要求后发送。`);
   };
 
-  const usePromptCard = () => {
-    if (!selectedPrompt) return;
-    applyPromptCard(selectedPrompt);
-    setSelectedPromptId(null);
-  };
-
-  const previewPromptRun = () => {
-    if (!selectedPrompt) return;
-    setSelectedPromptId(null);
-    const runId = selectedPrompt.replayRunId;
-    const shareId = selectedPrompt.replayShareId ?? selectedPrompt.replayRunId;
-    if (!shareId) {
-      setNotice("该推荐未配置回放或分享 ID。");
-      return;
-    }
-    if (runId) {
-      workspaceActions.setCurrentRun(runId);
-    }
-    window.open(`/share/${shareId}`, "_blank", "noopener,noreferrer");
-  };
-
-  const copyPromptCard = async () => {
-    if (!selectedPrompt) return;
-    const ok = await copyTextToClipboard(selectedPrompt.prompt);
-    if (ok) {
-      setPromptCopied(true);
-      window.setTimeout(() => setPromptCopied(false), 1500);
-    } else {
-      setNotice("复制失败，请改为选中提示词后手动复制，或为站点启用 HTTPS。");
-    }
+  const handlePromptCardClick = (card: HomePromptCard) => {
+    applyPromptCard(card);
+    setAppliedPromptId(card.id);
+    setComposerPulse(true);
+    window.setTimeout(() => {
+      setAppliedPromptId((current) => (current === card.id ? null : current));
+    }, 420);
+    window.setTimeout(() => setComposerPulse(false), 520);
+    window.requestAnimationFrame(() => {
+      const composerRoot = document.getElementById("sym:TaskComposer");
+      composerRoot?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      composerRoot?.querySelector<HTMLElement>('[data-testid="task-composer-editor"]')?.focus();
+    });
   };
 
   if (activeRunId) {
@@ -379,7 +359,7 @@ export function MoreDataHomePage() {
                 Alice
               </h1>
               <div className="mt-0.5 text-[14px] font-normal leading-6 text-[#34322d] sm:mt-1 sm:text-[18px] sm:leading-7">
-                💬 你的跨境运营助手，24h随时在线
+                💬 你的跨境运营助理，24h随时在线
               </div>
             </div>
           </div>
@@ -404,8 +384,11 @@ export function MoreDataHomePage() {
                     }
                   }}
                   visualStyle="heroMinimal"
-                  containerClassName="relative z-30 w-full rounded-[20px] border border-[#e2e2df] bg-white shadow-[0_18px_44px_rgba(17,17,17,0.05)] sm:rounded-[24px]"
-                  textareaClassName="min-h-[112px] max-h-[10em] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-[14px] font-normal leading-6 text-[#34322d] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 sm:min-h-[136px]"
+                  containerClassName={cn(
+                    "relative z-30 w-full rounded-[20px] border border-[#e2e2df] bg-white shadow-[0_18px_44px_rgba(17,17,17,0.05)] transition-[border-color,box-shadow,transform] duration-300 sm:rounded-[24px]",
+                    composerPulse && "border-[#111111]/25 shadow-[0_20px_52px_rgba(17,17,17,0.1)]",
+                  )}
+                  textareaClassName="min-h-[112px] max-h-[10em] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-[14px] font-normal leading-8 text-[#34322d] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 sm:min-h-[136px]"
                   sendButtonClassName={cn(
                     "h-10 w-10 min-w-0 rounded-full border border-transparent p-0 text-white shadow-none transition",
                     composerCanSubmit ? "bg-[#111111] hover:bg-[#2a2a2a]" : "bg-[#dededc] hover:bg-[#d1d1cf]",
@@ -422,8 +405,9 @@ export function MoreDataHomePage() {
             id="sym:homeCapabilityItems"
             className="mt-7 flex w-full flex-wrap items-center gap-x-4 gap-y-2 text-[14px] leading-5 sm:mt-10 sm:gap-x-6 sm:gap-y-3 sm:text-[16px] sm:leading-6"
           >
-            {homeCapabilityItems.map((item) => {
-              const active = item.id === activeCapabilityId;
+            {homeCapabilityCategories.map((item) => {
+              const activeGroup = getHomeCapabilityGroup(activeCapabilityId);
+              const active = item.id === activeCapabilityId || activeGroup?.id === item.id;
               return (
                 <button
                   key={item.id}
@@ -465,22 +449,31 @@ export function MoreDataHomePage() {
                   </div>
                 ))
               ) : cards.map((card) => {
-                const capability = homeCapabilityItems.find((item) => card.capabilityIds.includes(item.id));
+                const capability =
+                  card.capabilityIds.map((id) => getHomeCapabilityItem(id)).find(Boolean) ??
+                  homeDataSourceItems.find((item) => card.capabilityIds.includes(item.parentId));
                 return (
                   <div
                     key={card.id}
                     role="button"
                     tabIndex={0}
-                    aria-haspopup="dialog"
-                    aria-label={`打开示例任务 ${card.title}`}
-                    onClick={() => openPromptCard(card.id)}
+                    aria-label={`使用示例任务 ${card.title}`}
+                    onClick={(event) => {
+                      event.currentTarget.blur();
+                      handlePromptCardClick(card);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        openPromptCard(card.id);
+                        event.currentTarget.blur();
+                        handlePromptCardClick(card);
                       }
                     }}
-                    className="group relative overflow-hidden rounded-[14px] border border-white/70 bg-white/72 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)] outline-none transition duration-200 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)] focus-visible:bg-white focus-visible:shadow-[0_10px_24px_rgba(17,17,17,0.06)] sm:rounded-[18px]"
+                    className={cn(
+                      "group relative overflow-visible rounded-[14px] border border-white/70 bg-white/72 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)] outline-none transition-[transform,background-color,border-color,box-shadow] duration-200 hover:z-20 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)] focus-visible:z-20 focus-visible:bg-white focus-visible:shadow-[0_10px_24px_rgba(17,17,17,0.06)] active:scale-[0.985] sm:rounded-[18px]",
+                      appliedPromptId === card.id &&
+                        "scale-[0.985] border-[#111111]/20 bg-white shadow-[0_14px_28px_rgba(17,17,17,0.08)]",
+                    )}
                   >
                     <div className="flex min-h-[112px] flex-col px-4 py-4 sm:min-h-[132px] sm:px-5 sm:py-[18px]">
                       <div className="flex items-start gap-2.5">
@@ -501,7 +494,7 @@ export function MoreDataHomePage() {
                         </div>
                       </div>
                       <div className="mt-auto flex items-end justify-end pt-3">
-                        <ArrowUp className="h-4 w-4 shrink-0 text-[#b1b2ae]" strokeWidth={1.8} />
+                        <AnimatedArrowUpIcon className="shrink-0 text-[#b1b2ae]" size={16} />
                       </div>
                     </div>
                   </div>
@@ -512,49 +505,6 @@ export function MoreDataHomePage() {
         </section>
       </div>
 
-      <Dialog open={Boolean(selectedPrompt)} onOpenChange={(open) => (!open ? setSelectedPromptId(null) : null)}>
-        <DialogContent className="max-w-[608px] !rounded-[18px] border-[rgba(0,0,0,0.08)] bg-white p-0 shadow-[0_20px_48px_rgba(24,24,27,0.12)] sm:!rounded-[18px]">
-          {selectedPrompt ? (
-            <div className="p-5">
-              <DialogTitle className="pr-8 text-[16px] font-normal leading-6 tracking-normal text-[#34322d]">
-                {selectedPrompt.title}
-              </DialogTitle>
-              <DialogDescription className="mt-3 text-[14px] leading-6 text-[#858481]">
-                {selectedPrompt.body}
-              </DialogDescription>
-
-              <div className="mt-5 overflow-hidden rounded-[14px] border border-[rgba(0,0,0,0.06)] bg-white">
-                <div className="flex items-center justify-between border-b border-[rgba(0,0,0,0.06)] bg-[rgba(55,53,47,0.04)] px-4 py-3">
-                  <div className="text-[14px] text-[#858481]">提示词(Prompt)</div>
-                  <button
-                    type="button"
-                    onClick={copyPromptCard}
-                    className="inline-flex items-center gap-1.5 text-[14px] text-[#34322d] transition hover:text-[#111111]"
-                  >
-                    {promptCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    {promptCopied ? "已复制" : "复制"}
-                  </button>
-                </div>
-                <div className="bg-white px-4 py-4 text-[14px] leading-7 text-[#34322d]">
-                  <p className="whitespace-pre-wrap">{selectedPrompt.prompt}</p>
-                </div>
-              </div>
-
-              <div className="mt-7 flex items-center justify-end gap-2.5">
-                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedPromptId(null)}>
-                  取消
-                </Button>
-                <Button type="button" variant="outline" size="sm" onClick={previewPromptRun}>
-                  查看回放
-                </Button>
-                <Button type="button" size="sm" onClick={usePromptCard}>
-                  使用
-                </Button>
-              </div>
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
     </MoreDataShell>
   );
 }

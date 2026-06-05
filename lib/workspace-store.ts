@@ -278,6 +278,23 @@ function upsertTimelineNode(
   return timeline.map((node, nodeIndex) => (nodeIndex === index ? updateNode(node) : node));
 }
 
+function parseElapsedSecondsFromHint(hint: string | undefined): number | null {
+  if (!hint) return null;
+  const match = hint.match(/已等待\s*(\d+)\s*分\s*(\d+)\s*秒/);
+  if (!match) return null;
+  const minutes = Number(match[1]);
+  const seconds = Number(match[2]);
+  if (!Number.isFinite(minutes) || !Number.isFinite(seconds)) return null;
+  return Math.max(0, minutes * 60 + seconds);
+}
+
+function fallbackRuntimeStartedAt(runtimeHint: string | undefined): string {
+  const elapsedSeconds = parseElapsedSecondsFromHint(runtimeHint);
+  const now = Date.now();
+  const startedAtMs = elapsedSeconds === null ? now : now - elapsedSeconds * 1000;
+  return new Date(startedAtMs).toISOString();
+}
+
 function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeEvent) {
   const timeline = [...run.timeline];
   const chains = [...run.chains];
@@ -418,6 +435,10 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
                 ...s,
                 status: event.status,
                 runtimeHint: event.runtimeHint ?? (event.status === "running" ? s.runtimeHint : undefined),
+                runtimeStartedAt:
+                  event.status === "running"
+                    ? event.runtimeStartedAt ?? s.runtimeStartedAt ?? fallbackRuntimeStartedAt(event.runtimeHint)
+                    : undefined,
               }
             : s,
         ),

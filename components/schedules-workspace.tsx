@@ -1264,10 +1264,28 @@ export function SchedulesWorkspace() {
             </div>
           ) : null}
           <div>
-            {/* 第一行：与目标稿一致 — 仅 标题 | 搜索 + 创建（同一行、左右分栏） */}
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center">
               <h1 className="shrink-0 whitespace-nowrap text-[24px] font-semibold leading-8 text-[#111111]">定时任务</h1>
-              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:justify-end">
+            </div>
+
+            <div className="mt-5 flex min-h-[40px] flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <Tabs
+                value={primaryTab}
+                onValueChange={(value) => {
+                  setPrimaryTab(value as (typeof PRIMARY_TABS)[number]);
+                  setSearch("");
+                }}
+                className="min-w-0"
+              >
+                <TabsList>
+                  {PRIMARY_TABS.map((tab) => (
+                    <TabsTrigger key={tab} value={tab}>
+                      {tab}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 lg:w-auto lg:shrink-0">
                 <div className="relative w-full min-w-0 max-[960px]:hidden sm:w-[220px]">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
                   <Input
@@ -1301,24 +1319,6 @@ export function SchedulesWorkspace() {
                 </Button>
               </div>
             </div>
-
-            {/* 第二行：主 Tab */}
-            <Tabs
-              value={primaryTab}
-              onValueChange={(value) => {
-                setPrimaryTab(value as (typeof PRIMARY_TABS)[number]);
-                setSearch("");
-              }}
-              className="mt-5"
-            >
-              <TabsList>
-                {PRIMARY_TABS.map((tab) => (
-                  <TabsTrigger key={tab} value={tab}>
-                    {tab}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
 
             {/* 第三行：已定时 = 左分组胶囊 + 右（状态/批量/视图，与目标稿第二幅图对齐）；运行记录 = 仅右侧筛选区 */}
             {primaryTab === "已定时" ? (

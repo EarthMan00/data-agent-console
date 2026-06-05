@@ -186,6 +186,55 @@ input#history-task-search:focus-visible {
   }
 }
 
+@keyframes mdata-arrow-up-head-loop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(3px);
+  }
+}
+
+@keyframes mdata-arrow-up-stem-loop {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.64);
+  }
+}
+
+.mdata-arrow-up-icon svg {
+  display: block;
+  overflow: visible;
+}
+
+.mdata-arrow-up-icon__head,
+.mdata-arrow-up-icon__stem {
+  transform-box: view-box;
+}
+
+.mdata-arrow-up-icon__stem {
+  transform-origin: 12px 19px;
+}
+
+.group:hover .mdata-arrow-up-icon__head {
+  animation: mdata-arrow-up-head-loop 0.4s ease-in-out infinite;
+}
+
+.group:hover .mdata-arrow-up-icon__stem {
+  animation: mdata-arrow-up-stem-loop 0.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .group:hover .mdata-arrow-up-icon__head,
+  .group:hover .mdata-arrow-up-icon__stem {
+    animation: none;
+  }
+}
+
 @keyframes mdata-auth-panel-in {
   0% {
     opacity: 0;

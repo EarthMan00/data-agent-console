@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowRightLeft,
   Copy,
-  Eye,
+  EyeFilled,
   InfoCircle,
   MoreVertical,
   Pencil,
@@ -405,39 +405,11 @@ export function PromptLibraryWorkspace() {
       <div className="px-8 pb-14 pt-5">
         <div className="mx-auto max-w-[1040px]">
           <div className="space-y-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center">
               <h1 className="shrink-0 whitespace-nowrap text-[24px] font-semibold leading-8 text-[#111111]">我的提示词</h1>
-              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:justify-end">
-                <div className="relative w-full min-w-0 max-[960px]:hidden sm:w-[220px]">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
-                  <Input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="搜索提示词"
-                    className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  aria-label="搜索提示词"
-                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[rgba(55,53,47,0.06)] max-[960px]:inline-flex"
-                  onClick={() => setSearchDialogOpen(true)}
-                >
-                  <Search className="h-4 w-4" />
-                </Button>
-                <Button
-                  className="h-9 shrink-0 rounded-[10px] bg-[#111111] px-3 text-white hover:bg-[#2a2a2a] sm:px-4"
-                  onClick={openCreate}
-                >
-                  <Plus />
-                  创建提示词
-                </Button>
-              </div>
             </div>
 
-            <div className="flex min-h-[40px] flex-wrap items-center justify-between gap-x-4 gap-y-3">
+            <div className="flex min-h-[40px] flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                 <Tabs value={tabToValue(tab)} onValueChange={(value) => setTab(valueToTab(value))}>
                   <TabsList className="flex-wrap justify-start">
@@ -482,6 +454,34 @@ export function PromptLibraryWorkspace() {
                   }}
                 >
                   <PlusThin />
+                </Button>
+              </div>
+              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 lg:w-auto lg:shrink-0">
+                <div className="relative w-full min-w-0 max-[960px]:hidden sm:w-[220px]">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="搜索提示词"
+                    className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label="搜索提示词"
+                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[rgba(55,53,47,0.06)] max-[960px]:inline-flex"
+                  onClick={() => setSearchDialogOpen(true)}
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
+                <Button
+                  className="h-9 shrink-0 rounded-[10px] bg-[#111111] px-3 text-white hover:bg-[#2a2a2a] sm:px-4"
+                  onClick={openCreate}
+                >
+                  <Plus />
+                  创建提示词
                 </Button>
               </div>
             </div>
@@ -992,8 +992,8 @@ function PromptLibraryCard({
         </div>
         <p className="mt-3 line-clamp-4 whitespace-pre-wrap text-[14px] leading-6 text-[#747571]">{p.prompt_text}</p>
         <div className="mt-auto flex flex-wrap justify-end gap-2 pt-4">
-          <Button type="button" variant="outline" size="sm" className="rounded-[8px]" onClick={() => onPreview(p)}>
-            <Eye className="mr-1 h-3.5 w-3.5" />
+          <Button type="button" variant="outline" size="sm" className="gap-1 rounded-[8px]" onClick={() => onPreview(p)}>
+            <EyeFilled className="h-3.5 w-3.5" />
             预览
           </Button>
           <Button

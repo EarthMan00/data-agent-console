@@ -326,32 +326,11 @@ export function FavoritesWorkspace() {
       <div className="px-8 pb-14 pt-5">
         <div className="mx-auto max-w-[1040px]">
           <div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center">
               <h1 className="shrink-0 whitespace-nowrap text-[24px] font-semibold leading-8 text-[#111111]">我的收藏夹</h1>
-              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:justify-end">
-                <div className="relative w-full min-w-0 max-[960px]:hidden sm:w-[220px]">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
-                  <Input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="搜索收藏"
-                    className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  aria-label="搜索收藏"
-                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[rgba(55,53,47,0.06)] max-[960px]:inline-flex"
-                  onClick={() => setSearchDialogOpen(true)}
-                >
-                  <Search className="h-4 w-4" />
-                </Button>
-              </div>
             </div>
 
-            <div className="mt-5 flex min-h-[40px] flex-wrap items-center justify-between gap-x-4 gap-y-3">
+            <div className="mt-5 flex min-h-[40px] flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                 <Tabs value={activeChip} onValueChange={setActiveChip}>
                   <TabsList className="flex-wrap justify-start">
@@ -438,7 +417,26 @@ export function FavoritesWorkspace() {
                   <PlusThin />
                 </Button>
               </div>
-              <div className="flex w-full min-w-0 items-center justify-end sm:w-auto sm:shrink-0">
+              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 lg:w-auto lg:shrink-0">
+                <div className="relative w-full min-w-0 max-[960px]:hidden sm:w-[220px]">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="搜索收藏"
+                    className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label="搜索收藏"
+                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[rgba(55,53,47,0.06)] max-[960px]:inline-flex"
+                  onClick={() => setSearchDialogOpen(true)}
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
                 <Select value={typeFilter} onValueChange={setTypeFilter}>
                   <SelectTrigger className="h-9 w-[128px] rounded-[10px] border-[#e2e2df]">
                     <SelectValue placeholder="全部类型" />

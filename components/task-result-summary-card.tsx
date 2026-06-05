@@ -7,18 +7,29 @@ import { cn } from "@/lib/utils";
 type TaskResultSummaryCardProps = {
   title: string;
   summary: string;
+  completedAt?: string;
   hasResult?: boolean;
   expanded: boolean;
   onToggle: () => void;
 };
 
+function formatResultTime(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString();
+}
+
 export function TaskResultSummaryCard({
   title,
   summary,
+  completedAt,
   hasResult = true,
   expanded,
   onToggle,
 }: TaskResultSummaryCardProps) {
+  const displayTime = formatResultTime(completedAt);
+
   return (
     <div className="space-y-3" data-testid="agent-result-section">
       <div className="rounded-[18px] border border-[#e2e2df] bg-white px-4 py-4 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
@@ -31,6 +42,9 @@ export function TaskResultSummaryCard({
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[14px] font-semibold text-[#202124]">{title}</div>
+              {displayTime ? (
+                <div className="mt-[2px] truncate text-[12px] leading-5 text-[#858481]">{displayTime}</div>
+              ) : null}
             </div>
           </div>
           {hasResult ? (
