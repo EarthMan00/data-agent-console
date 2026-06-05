@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { clearAgentSession } from "@/lib/agent-api/session";
 import {
+  LogOut,
   Users,
   Shield,
   Package,
@@ -22,6 +24,12 @@ const navItems = [
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = useCallback(() => {
+    clearAgentSession();
+    router.replace("/admin/login");
+  }, [router]);
 
   return (
     <div className="flex h-screen bg-[#fafaf9]">
@@ -51,12 +59,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="border-t border-[#f0f0ef] p-3">
-          <Link
-            href="/"
-            className="block rounded-[10px] px-3 py-2 text-sm text-[#71717a] hover:bg-[#f7f7f7] hover:text-[#18181b]"
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex w-full items-center gap-2.5 rounded-[10px] px-3 py-2 text-sm text-[#71717a] transition-colors hover:bg-[#f7f7f7] hover:text-[#ef4444]"
           >
-            返回应用
-          </Link>
+            <LogOut className="h-4 w-4" />
+            退出登录
+          </button>
         </div>
       </aside>
 

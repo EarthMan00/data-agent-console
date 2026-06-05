@@ -34,7 +34,6 @@ import {
   Trash2,
   UserCircle,
   UserRound,
-  Users,
   X,
 } from "@/components/ui/tabler-icons";
 
@@ -568,14 +567,6 @@ function MoreDataShellComponent({
     };
   }, [historySearchOpen]);
 
-  const sidebarNavItems = useMemo(() => {
-    const base = [...navItems];
-    if (showAuthSidebar && platformAgent?.auth?.userRole === "admin") {
-      base.push({ href: "/user-management", label: "用户管理", icon: Users });
-    }
-    return base;
-  }, [showAuthSidebar, platformAgent?.auth?.userRole]);
-
   const filteredHistorySessions = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
     const base = q ? historySessions.filter((s) => {
@@ -749,7 +740,7 @@ function MoreDataShellComponent({
               )}
 
               <nav className={cn("space-y-1", effectiveSidebarCollapsed ? "mt-3 px-2" : "px-2 pt-2")}>
-              {sidebarNavItems.map(({ href, label, icon: Icon }) => {
+              {navItems.map(({ href, label, icon: Icon }) => {
                 const active = currentPath === href || (href === "/" && currentPath === "/agent" && !agentHasSpecificSelection);
                 return (
                   <Link
