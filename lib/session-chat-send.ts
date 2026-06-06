@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from "react";
 
 import { sendChatMessageStream, uploadSessionAttachments } from "@/lib/agent-api/client";
 import type { ChatSendResult, SessionMessageItem } from "@/lib/agent-api/types";
-import { stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
+import { streamSanitizeDeltaClient, stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 
 export function createStreamingAssistantMessage(id: string, createdAt: string): SessionMessageItem {
   return {
@@ -74,6 +74,10 @@ export function finalizeStreamingAssistantMessage(
   );
 }
 
+function isAbortError(e: unknown): boolean {
+  return e instanceof DOMException && e.name === "AbortError";
+}
+
 export async function sendSessionMessageStream(
   accessToken: string,
   sessionId: string,
@@ -82,43 +86,93 @@ export async function sendSessionMessageStream(
   setMessages: Dispatch<SetStateAction<SessionMessageItem[]>>,
   assistantStreamId: string,
   files: File[] = [],
+  signal?: AbortSignal,
 ): Promise<ChatSendResult> {
   const attachmentIds =
     files.length > 0
       ? (await uploadSessionAttachments(accessToken, sessionId, files)).map((item) => item.attachment_id)
       : [];
 
-  return sendChatMessageStream(accessToken, sessionId, text, messageId, {
-    onDelta: (chunk) => {
-      if (!chunk) return;
-      setMessages((cur) =>
-        cur.map((m) => (m.id === assistantStreamId ? { ...m, content: `${m.content}${chunk}` } : m)),
-      );
-    },
-    onAssistantComplete: (full) => {
-      const cleaned = stripModelThinkingForUi(full);
-      setMessages((cur) =>
-        cur.map((m) => {
-          if (m.id !== assistantStreamId) return m;
-          const merged =
-            cleaned && cleaned !== "（无回复）" ? cleaned : (m.content ?? "");
-          return { ...m, content: merged, meta: { streaming: true } };
-        }),
-      );
-    },
-    onError: (message) => {
-      const cleaned = stripModelThinkingForUi(message);
-      setMessages((cur) =>
-        cur.map((m) =>
-          m.id === assistantStreamId
-            ? {
-                ...m,
-                content: cleaned || "任务启动失败，请稍后重试。",
-                meta: { streaming: false, kind: "model_error" },
-              }
-            : m,
-        ),
-      );
-    },
-  }, { attachmentIds });
+  // 流式 thinking 清洗状态（对齐平台轮次的 streamSanitizeDeltaClient）
+  let rawStreamAccum = "";
+  let prevSanitizedStream = "";
+  // rAF 节流状态
+  let pendingDelta = "";
+  let rafId: number | null = null;
+
+  const flushPendingDelta = () => {
+    if (rafId != null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    if (pendingDelta) {
+      const batch = pendingDelta;
+      pendingDelta = "";
+      setMessages((cur) => {
+        if (!cur.some((m) => m.id === assistantStreamId)) return cur;
+        return cur.map((m) =>
+          m.id === assistantStreamId ? { ...m, content: `${m.content}${batch}` } : m,
+        );
+      });
+    }
+  };
+
+  try {
+    return await sendChatMessageStream(accessToken, sessionId, text, messageId, {
+      onDelta: (chunk) => {
+        if (!chunk) return;
+        rawStreamAccum += chunk;
+        const { display, delta } = streamSanitizeDeltaClient(prevSanitizedStream, rawStreamAccum);
+        prevSanitizedStream = display;
+        if (!delta) return;
+
+        pendingDelta += delta;
+        if (rafId != null) return;
+        rafId = requestAnimationFrame(() => {
+          const batch = pendingDelta;
+          pendingDelta = "";
+          rafId = null;
+          setMessages((cur) => {
+            if (!cur.some((m) => m.id === assistantStreamId)) return cur;
+            return cur.map((m) =>
+              m.id === assistantStreamId ? { ...m, content: `${m.content}${batch}` } : m,
+            );
+          });
+        });
+      },
+      onAssistantComplete: (full) => {
+        flushPendingDelta();
+        const cleaned = stripModelThinkingForUi(full);
+        setMessages((cur) =>
+          cur.map((m) => {
+            if (m.id !== assistantStreamId) return m;
+            const merged =
+              cleaned && cleaned !== "（无回复）" ? cleaned : (m.content ?? "");
+            return { ...m, content: merged, meta: { streaming: true } };
+          }),
+        );
+      },
+      onError: (message) => {
+        flushPendingDelta();
+        const cleaned = stripModelThinkingForUi(message);
+        setMessages((cur) =>
+          cur.map((m) =>
+            m.id === assistantStreamId
+              ? {
+                  ...m,
+                  content: cleaned || "任务启动失败，请稍后重试。",
+                  meta: { streaming: false, kind: "model_error" },
+                }
+              : m,
+          ),
+        );
+      },
+    }, { attachmentIds, signal });
+  } catch (e) {
+    if (isAbortError(e)) {
+      flushPendingDelta();
+      return { kind: "completed", session_id: sessionId, message: "" };
+    }
+    throw e;
+  }
 }

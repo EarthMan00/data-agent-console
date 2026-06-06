@@ -167,6 +167,7 @@ export function AgentWorkspace() {
   if (isPlatformSession) {
     return (
       <PlatformSessionAgentWorkspace
+        key={historySessionId}
         sessionId={historySessionId}
         scheduleTrial={scheduleTrial}
         scheduledRunRecord={scheduledRunRecord}

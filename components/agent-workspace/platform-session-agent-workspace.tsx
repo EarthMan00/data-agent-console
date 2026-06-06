@@ -85,6 +85,8 @@ import {
 } from "@/lib/task-status-poll";
 import { cn } from "@/lib/utils";
 
+import { readSessionMessageCache, writeSessionMessageCache } from "@/lib/session-message-cache";
+
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import { PostTaskGuidanceBubble } from "./post-task-guidance-bubble";
 import {
@@ -126,7 +128,8 @@ export function PlatformSessionAgentWorkspace({
   const router = useRouter();
   const isMounted = useRef(true);
   const abortPollRef = useRef(false);
-  const reloadGenRef = useRef(0);
+  const sseAbortRef = useRef<AbortController | null>(null);
+  const sessionGenRef = useRef(0);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -181,26 +184,31 @@ export function PlatformSessionAgentWorkspace({
 
   const reload = useCallback(async () => {
     if (!platformAgent?.auth) return;
-    const gen = reloadGenRef.current;
-    if (isMounted.current) {
+
+    // 检查缓存：命中则立即展示，未命中则显示加载态
+    const cached = readSessionMessageCache(sessionId);
+    if (cached) {
+      setMessages(cached);
+      setBusy(false);
+      setError("");
+    } else {
       setBusy(true);
       setError("");
     }
+
     try {
       await platformAgent.withFreshToken(async (token) => {
         const res = await listSessionMessages(token, sessionId, 100);
-        if (isMounted.current && reloadGenRef.current === gen) {
-          setMessages(res.messages ?? []);
-        }
+        const fresh = res.messages ?? [];
+        writeSessionMessageCache(sessionId, fresh);
+        setMessages(fresh);
       });
     } catch (e) {
-      if (isMounted.current && reloadGenRef.current === gen) {
+      if (!readSessionMessageCache(sessionId)) {
         setError(formatAgentApiErrorForUser(e));
       }
     } finally {
-      if (isMounted.current && reloadGenRef.current === gen) {
-        setBusy(false);
-      }
+      setBusy(false);
     }
   }, [platformAgent, sessionId]);
 
@@ -232,7 +240,7 @@ export function PlatformSessionAgentWorkspace({
         try {
           await platformAgent.withFreshToken(async (token) => {
             const task = await getTask(token, tid);
-            if (cancelled || !isMounted.current) return;
+            if (cancelled) return;
             let resolved: typeof steps | null = null;
 
             if (task.status === "SUCCESS") {
@@ -269,7 +277,7 @@ export function PlatformSessionAgentWorkspace({
               }
             }
 
-            if (cancelled || !isMounted.current) return;
+            if (cancelled) return;
             resolveStaleRef.current.add(m.id);
             setMessages((prev) =>
               prev.map((msg) => {
@@ -309,9 +317,14 @@ export function PlatformSessionAgentWorkspace({
   useEffect(() => {
     isMounted.current = true;
     abortPollRef.current = false;
+    sessionGenRef.current += 1;
     return () => {
       isMounted.current = false;
       abortPollRef.current = true;
+      if (sseAbortRef.current) {
+        sseAbortRef.current.abort();
+        sseAbortRef.current = null;
+      }
     };
   }, [sessionId]);
 
@@ -621,10 +634,11 @@ export function PlatformSessionAgentWorkspace({
   });
 
   useEffect(() => {
-    reloadGenRef.current += 1;
-    setMessages([]);
+    // 在 reset effect 中同步检查缓存：缓存命中则立即展示，不依赖后续 effect 调用时序
+    const cached = readSessionMessageCache(sessionId);
+    setMessages(cached ?? []);
     setLiveOrchStepStatuses(null);
-    setBusy(true);
+
     setShowResultPanel(false);
     setFocusedTaskId(null);
     setOrchestrationBundles([]);
@@ -639,6 +653,14 @@ export function PlatformSessionAgentWorkspace({
     setLiveOrchClarification(null);
     setSupplementalBundlesById({});
   }, [sessionId]);
+
+  // 防御性守卫：只要 messages 非空，busy 就必须是 false
+  // 避免 guard 阻止 reload() 后 busy 永远停留在 true
+  useEffect(() => {
+    if (messages.length > 0) {
+      setBusy(false);
+    }
+  }, [messages]);
 
   const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
 
@@ -722,7 +744,7 @@ export function PlatformSessionAgentWorkspace({
         effectiveOrchestrationAnchor.bundleTaskIds,
         { orchestrationId: effectiveOrchestrationAnchor.orchestrationId },
       );
-      if (!cancelled && isMounted.current) setOrchestrationBundles(data.bundles);
+      if (!cancelled) setOrchestrationBundles(data.bundles);
     });
     return () => {
       cancelled = true;
@@ -746,9 +768,7 @@ export function PlatformSessionAgentWorkspace({
           anchor.bundleTaskIds.length > 0 ? anchor.bundleTaskIds : undefined,
           { orchestrationId: anchor.orchestrationId },
         );
-        if (isMounted.current) {
-          setSupplementalBundlesById((prev) => ({ ...prev, [messageId]: data.bundles }));
-        }
+        setSupplementalBundlesById((prev) => ({ ...prev, [messageId]: data.bundles }));
       } catch {
         // 任务已过期/删除或 task_id 无效 → 该消息无 supplemental bundles，子任务卡不可点
       }
@@ -1002,6 +1022,13 @@ export function PlatformSessionAgentWorkspace({
       platformAgent?.openLogin("请先登录后再发送消息。");
       return;
     }
+    // Cancel any in-flight SSE from previous send (defensive, normally cleaned by session switch)
+    if (sseAbortRef.current) {
+      sseAbortRef.current.abort();
+    }
+    const sendGen = sessionGenRef.current;
+    const abortController = new AbortController();
+    sseAbortRef.current = abortController;
     setSending(true);
     setError("");
     const optimistic: SessionMessageItem = {
@@ -1029,7 +1056,9 @@ export function PlatformSessionAgentWorkspace({
           setMessages,
           assistantStreamId,
           filesToSend,
+          abortController.signal,
         );
+        if (sessionGenRef.current !== sendGen) return;
         // Refresh sidebar immediately so the session list updates without
         // waiting for task polling to finish.
         void refreshHistoryNow();
@@ -1037,18 +1066,24 @@ export function PlatformSessionAgentWorkspace({
           await pollPlatformTaskUntilSettled(
             (fn) => platformAgent.withFreshToken(fn),
             sendResult,
-            () => abortPollRef.current,
+            () => abortPollRef.current || sessionGenRef.current !== sendGen,
           );
         }
       });
-      finalizeStreamingAssistantMessage(setMessages, assistantStreamId);
-      await reload();
+      if (sessionGenRef.current === sendGen) {
+        finalizeStreamingAssistantMessage(setMessages, assistantStreamId);
+        await reload();
+      }
     } catch (e) {
-      setError(formatAgentApiErrorForUser(e));
-      await reload();
-      void refreshHistoryNow();
+      if (sessionGenRef.current === sendGen) {
+        setError(formatAgentApiErrorForUser(e));
+        await reload();
+        void refreshHistoryNow();
+      }
     } finally {
-      setSending(false);
+      if (sessionGenRef.current === sendGen) {
+        setSending(false);
+      }
     }
   }, [draft, pendingFiles, platformAgent, reload, refreshHistoryNow, sending, sessionId]);
 

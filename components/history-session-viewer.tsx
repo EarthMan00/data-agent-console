@@ -54,6 +54,8 @@ import {
   type TaskOrchestrationBundleRow,
 } from "@/lib/merge-orchestration-task-artifacts";
 
+import { readSessionMessageCache, writeSessionMessageCache } from "@/lib/session-message-cache";
+
 const SIMPLE_CHAT_COLUMN_MAX = "max-w-[min(100%,920px)]";
 const SIMPLE_CHAT_BUBBLE_MAX = "max-w-[min(100%,720px)]";
 
@@ -97,6 +99,8 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   const platformAgent = useOptionalPlatformAgent();
   const { refreshHistory, refreshHistoryNow } = useMoreDataShellState();
   const isMounted = useRef(true);
+  const sseAbortRef = useRef<AbortController | null>(null);
+  const sessionGenRef = useRef(0);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -130,36 +134,60 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
 
   useEffect(() => {
     isMounted.current = true;
+    sessionGenRef.current += 1;
     return () => {
       isMounted.current = false;
+      if (sseAbortRef.current) {
+        sseAbortRef.current.abort();
+        sseAbortRef.current = null;
+      }
     };
   }, [sessionId]);
 
   const reload = useCallback(async () => {
     if (!platformAgent?.authValidated) return;
-    setBusy(true);
-    setError("");
+
+    const cached = readSessionMessageCache(sessionId);
+    if (cached) {
+      setMessages(cached);
+      setBusy(false);
+      setError("");
+    } else {
+      setBusy(true);
+      setError("");
+    }
+
     try {
       await platformAgent.withFreshToken(async (token) => {
         const res = await listSessionMessages(token, sessionId, 200);
-        setMessages(res.messages ?? []);
+        const fresh = res.messages ?? [];
+        writeSessionMessageCache(sessionId, fresh);
+        setMessages(fresh);
       });
     } catch (e) {
-      setError(formatAgentApiErrorForUser(e));
+      if (!readSessionMessageCache(sessionId)) {
+        setError(formatAgentApiErrorForUser(e));
+      }
     } finally {
       setBusy(false);
     }
   }, [platformAgent, sessionId]);
 
   useEffect(() => {
-    setMessages([]);
-    setBusy(true);
+    const cached = readSessionMessageCache(sessionId);
+    setMessages(cached ?? []);
     setShowResultPanel(false);
     setFocusedTaskId(null);
     setOrchestrationBundles([]);
     setPanelSubtaskFocus(null);
     setCurrentTaskFinishedAt(null);
   }, [sessionId]);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      setBusy(false);
+    }
+  }, [messages]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -360,6 +388,12 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
       platformAgent?.openLogin("请先登录后再发送消息。");
       return;
     }
+    if (sseAbortRef.current) {
+      sseAbortRef.current.abort();
+    }
+    const sendGen = sessionGenRef.current;
+    const abortController = new AbortController();
+    sseAbortRef.current = abortController;
     setSending(true);
     setError("");
     const nowIso = new Date().toISOString();
@@ -391,7 +425,9 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
           setMessages,
           assistantStreamId,
           filesToSend,
+          abortController.signal,
         );
+        if (sessionGenRef.current !== sendGen) return;
         if (res.kind === "completed") {
           await reload();
           return;
@@ -416,16 +452,22 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
           await reload();
         }
       });
-      finalizeStreamingAssistantMessage(setMessages, assistantStreamId);
+      if (sessionGenRef.current === sendGen) {
+        finalizeStreamingAssistantMessage(setMessages, assistantStreamId);
+      }
     } catch (e) {
-      setError(formatAgentApiErrorForUser(e));
-      // 即使 500，后端也会把“用户消息 + 错误提示”写入 session_messages，所以这里刷新即可看到真实落库结果
-      await reload();
+      if (sessionGenRef.current === sendGen) {
+        setError(formatAgentApiErrorForUser(e));
+        // 即使 500，后端也会把"用户消息 + 错误提示"写入 session_messages，所以这里刷新即可看到真实落库结果
+        await reload();
+      }
     } finally {
-      setSending(false);
-      void refreshHistoryNow();
+      if (sessionGenRef.current === sendGen) {
+        setSending(false);
+        void refreshHistoryNow();
+      }
     }
-  }, [draft, pendingFiles, platformAgent, reload, refreshHistory, sending, sessionId]);
+  }, [draft, pendingFiles, platformAgent, reload, refreshHistoryNow, sending, sessionId]);
 
   return (
     <MoreDataShell

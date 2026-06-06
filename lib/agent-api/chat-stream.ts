@@ -191,21 +191,39 @@ export async function consumeChatSendStream(
     }
   };
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const { completed, rest } = readSSEChunk(buffer);
-    buffer = rest;
-    for (const block of completed) {
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const { completed, rest } = readSSEChunk(buffer);
+      buffer = rest;
+      for (const block of completed) {
+        handleParsed(parseChatStreamBlock(block));
+      }
+    }
+
+    buffer += decoder.decode();
+    const { completed: tailBlocks } = readSSEChunk(`${buffer}\n\n`);
+    for (const block of tailBlocks) {
       handleParsed(parseChatStreamBlock(block));
     }
-  }
-
-  buffer += decoder.decode();
-  const { completed: tailBlocks } = readSSEChunk(`${buffer}\n\n`);
-  for (const block of tailBlocks) {
-    handleParsed(parseChatStreamBlock(block));
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      // 会话切换主动取消 SSE，返回已有结果或空完成态
+      const assistantCompleteFallback = streamState.lastAssistantComplete;
+      return (
+        outcome ??
+        (assistantCompleteFallback
+          ? {
+              kind: "completed" as const,
+              session_id: assistantCompleteFallback.session_id,
+              message: assistantCompleteFallback.text,
+            }
+          : { kind: "completed" as const, session_id: "", message: "" })
+      );
+    }
+    throw e;
   }
 
   const assistantCompleteFallback = streamState.lastAssistantComplete;
