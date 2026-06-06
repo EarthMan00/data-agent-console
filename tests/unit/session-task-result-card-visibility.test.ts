@@ -45,6 +45,42 @@ describe("messageIdsEligibleForTaskResultCard", () => {
     expect(ids.has("completion")).toBe(false);
     expect(ids.has("steps")).toBe(true);
   });
+
+  it("excludes task_execution_steps messages whose steps are not all terminal", () => {
+    const messages: SessionMessageItem[] = [
+      assistant("steps-partial", {
+        content: "（以下为该轮任务的执行步骤记录）",
+        meta: {
+          kind: "task_execution_steps",
+          task_id: "task-2",
+          steps: [
+            { id: "s1", label: "步骤一", status: "done" },
+            { id: "s2", label: "步骤二", status: "pending" },
+          ],
+        },
+      }),
+    ];
+    const ids = messageIdsEligibleForTaskResultCard(messages);
+    expect(ids.has("steps-partial")).toBe(false);
+  });
+
+  it("includes task_execution_steps with all-error steps as eligible", () => {
+    const messages: SessionMessageItem[] = [
+      assistant("steps-failed", {
+        content: "（以下为该轮任务的执行步骤记录）",
+        meta: {
+          kind: "task_execution_steps",
+          task_id: "task-3",
+          steps: [
+            { id: "s1", label: "步骤一", status: "error" },
+            { id: "s2", label: "步骤二", status: "done" },
+          ],
+        },
+      }),
+    ];
+    const ids = messageIdsEligibleForTaskResultCard(messages);
+    expect(ids.has("steps-failed")).toBe(true);
+  });
 });
 
 describe("isSupersededTaskExecutionStepsMessage", () => {

@@ -475,6 +475,7 @@ export type TaskExecutionStepsPersistBody = {
   round_id: string;
   task_id: string;
   steps: TaskExecutionStepPersistPayload[];
+  orchestration_id?: string | null;
 };
 
 /** 任务受理后尽早插入步骤占位（pending），使 message_index 早于任务结果消息。 */

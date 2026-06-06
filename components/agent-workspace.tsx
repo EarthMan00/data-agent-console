@@ -14,7 +14,7 @@ import type {
   PlatformTaskArtifactRef,
 } from "@/lib/agent-events";
 import { AgentRoutePlaceholder } from "@/components/agent-route-placeholder";
-import { MoreDataShell } from "@/components/more-data-shell";
+import { MoreDataShell, useMoreDataShellState } from "@/components/more-data-shell";
 import { AssistantAttachmentList } from "@/components/assistant-attachment-list";
 import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
@@ -122,6 +122,15 @@ export function AgentWorkspace() {
   const runId = urlRunId || currentRunId;
   const run = runId ? (runs.find((item) => item.id === runId) ?? null) : null;
   const report = run ? (reports.find((item) => item.id === run.reportId) ?? null) : null;
+  const { refreshHistory } = useMoreDataShellState();
+
+  // Ensure the session list reflects newly-created sessions as soon as we
+  // enter a task view (every entry point: homepage, template, replay, etc.).
+  useEffect(() => {
+    if (runId && isPlatformBackendEnabled() && clientMounted) {
+      refreshHistory();
+    }
+  }, [runId, clientMounted, refreshHistory]);
 
   const platformRouteReady = !isPlatformBackendEnabled() || clientMounted;
   const isPlatformSession =

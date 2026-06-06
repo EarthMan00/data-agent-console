@@ -152,7 +152,8 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   }, [platformAgent, sessionId]);
 
   useEffect(() => {
-    // 切换会话时默认不展开右侧任务结果区
+    setMessages([]);
+    setBusy(true);
     setShowResultPanel(false);
     setFocusedTaskId(null);
     setOrchestrationBundles([]);

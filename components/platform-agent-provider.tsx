@@ -844,11 +844,12 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     try {
       let nextSid: string | null = null;
       await withFreshToken(async (token) => {
+        // Release the old session in the background — we don't need to wait
+        // for it before creating the new one, and blocking here freezes the
+        // UI while a previous task may still be polling on the old token.
         const sid = platformSessionId ?? loadPlatformSessionId();
         if (sid) {
-          try {
-            await releaseSession(token, sid);
-          } catch (e) {
+          releaseSession(token, sid).catch((e) => {
             console.warn(
               "[platform-agent] release_session_before_new_home_failed",
               {
@@ -857,7 +858,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                 status: e instanceof AgentApiError ? e.status : undefined,
               },
             );
-          }
+          });
         }
         const created = await createSession(token);
         savePlatformSessionId(created.session_id);

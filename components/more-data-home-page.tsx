@@ -15,7 +15,7 @@ import {
 } from "@/lib/home-capability-items";
 import { AgentWorkspace } from "@/components/agent-workspace";
 import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
-import { MoreDataShell } from "@/components/more-data-shell";
+import { MoreDataShell, useMoreDataShellState } from "@/components/more-data-shell";
 import { PlatformLogo } from "@/components/platform-logo";
 import { sanitizeObjective } from "@/lib/agent-attachments";
 import { parseComposerPrefillStorageValue, parseDatasourceMentions } from "@/lib/composer-prefill";
@@ -122,6 +122,7 @@ export function MoreDataHomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
+  const { refreshHistoryNow } = useMoreDataShellState();
   const homePromptCacheKey = platformAgent?.auth?.userId ?? (platformAgent?.authHydrated ? HOME_PROMPT_ANONYMOUS_CACHE_KEY : null);
   const cachedPromptCards = homePromptCacheKey ? getCachedHomePromptCards(homePromptCacheKey) : null;
   const [query, setQuery] = useState("");
@@ -226,6 +227,7 @@ export function MoreDataHomePage() {
       try {
         const sid = await platformAgent.beginNewHomeTaskSession();
         if (!sid) return;
+        void refreshHistoryNow();
         const runId = workspaceActions.startPlatformTask({
           platformSessionId: sid,
           objective: nextQuery,

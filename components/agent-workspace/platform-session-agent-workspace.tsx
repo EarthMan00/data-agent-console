@@ -20,6 +20,7 @@ import {
   getTask,
   getToolOrchestration,
   listSessionMessages,
+  patchTaskExecutionSteps,
 } from "@/lib/agent-api/client";
 import { getChatMessageMaxChars } from "@/lib/agent-api/config";
 import type { ChatSendResult, SessionMessageItem, TaskResponse } from "@/lib/agent-api/types";
@@ -125,6 +126,7 @@ export function PlatformSessionAgentWorkspace({
   const router = useRouter();
   const isMounted = useRef(true);
   const abortPollRef = useRef(false);
+  const reloadGenRef = useRef(0);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -179,6 +181,7 @@ export function PlatformSessionAgentWorkspace({
 
   const reload = useCallback(async () => {
     if (!platformAgent?.auth) return;
+    const gen = reloadGenRef.current;
     if (isMounted.current) {
       setBusy(true);
       setError("");
@@ -186,14 +189,122 @@ export function PlatformSessionAgentWorkspace({
     try {
       await platformAgent.withFreshToken(async (token) => {
         const res = await listSessionMessages(token, sessionId, 100);
-        if (isMounted.current) setMessages(res.messages ?? []);
+        if (isMounted.current && reloadGenRef.current === gen) {
+          setMessages(res.messages ?? []);
+        }
       });
     } catch (e) {
-      if (isMounted.current) setError(formatAgentApiErrorForUser(e));
+      if (isMounted.current && reloadGenRef.current === gen) {
+        setError(formatAgentApiErrorForUser(e));
+      }
     } finally {
-      if (isMounted.current) setBusy(false);
+      if (isMounted.current && reloadGenRef.current === gen) {
+        setBusy(false);
+      }
     }
   }, [platformAgent, sessionId]);
+
+  // Resolve stale task_execution_steps in the background every time messages
+  // are loaded, without blocking render or the session-list refresh.
+  const resolveStaleRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (busy || messages.length === 0 || !platformAgent?.auth) return;
+    let cancelled = false;
+
+    const resolve = async () => {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (cancelled) return;
+        const m = messages[i]!;
+        if (m.role !== "assistant") continue;
+        const meta =
+          m.meta && typeof m.meta === "object" && !Array.isArray(m.meta)
+            ? (m.meta as Record<string, unknown>)
+            : undefined;
+        if (!meta) continue;
+        const steps = parseTaskExecutionStepsFromMeta(meta);
+        if (!steps?.length) continue;
+        if (steps.every((s) => s.status === "done" || s.status === "error")) continue;
+        const tid = typeof meta.task_id === "string" ? meta.task_id.trim() : "";
+        if (!tid) continue;
+        // Skip messages we already resolved this session cycle
+        if (resolveStaleRef.current.has(m.id)) continue;
+
+        try {
+          await platformAgent.withFreshToken(async (token) => {
+            const task = await getTask(token, tid);
+            if (cancelled || !isMounted.current) return;
+            let resolved: typeof steps | null = null;
+
+            if (task.status === "SUCCESS") {
+              resolved = steps.map((s) => ({ ...s, status: "done" as TaskExecutionStepStatus }));
+            } else if (task.status === "FAILED") {
+              resolved = steps.map((s) => ({ ...s, status: "error" as TaskExecutionStepStatus }));
+            } else if (task.status === "RUNNING" && steps[0]?.status === "pending") {
+              resolved = steps.map((s, idx) => ({
+                ...s,
+                status: idx === 0 ? ("running" as TaskExecutionStepStatus) : s.status,
+              }));
+            }
+
+            if (!resolved) return;
+
+            if (task.status === "SUCCESS" || task.status === "FAILED") {
+              const orchId =
+                typeof meta.orchestration_id === "string" && meta.orchestration_id.trim()
+                  ? meta.orchestration_id.trim()
+                  : null;
+              try {
+                await patchTaskExecutionSteps(token, sessionId, m.id as any, {
+                  round_id: (meta.round_id as string) || "",
+                  task_id: tid,
+                  steps: resolved.map((s) => ({
+                    id: s.id,
+                    label: s.label,
+                    status: s.status,
+                  })),
+                  orchestration_id: orchId,
+                });
+              } catch {
+                /* best-effort */
+              }
+            }
+
+            if (cancelled || !isMounted.current) return;
+            resolveStaleRef.current.add(m.id);
+            setMessages((prev) =>
+              prev.map((msg) => {
+                if (msg.id === m.id && msg.meta && typeof msg.meta === "object") {
+                  return {
+                    ...msg,
+                    meta: {
+                      ...(msg.meta as Record<string, unknown>),
+                      steps: resolved!.map((s) => ({
+                        id: s.id,
+                        label: s.label,
+                        status: s.status,
+                      })),
+                    },
+                  };
+                }
+                return msg;
+              }),
+            );
+          });
+        } catch {
+          /* task may have been deleted */
+        }
+      }
+    };
+
+    void resolve();
+    return () => {
+      cancelled = true;
+    };
+  }, [busy, messages, platformAgent, sessionId]);
+
+  useEffect(() => {
+    resolveStaleRef.current = new Set();
+  }, [sessionId]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -510,6 +621,10 @@ export function PlatformSessionAgentWorkspace({
   });
 
   useEffect(() => {
+    reloadGenRef.current += 1;
+    setMessages([]);
+    setLiveOrchStepStatuses(null);
+    setBusy(true);
     setShowResultPanel(false);
     setFocusedTaskId(null);
     setOrchestrationBundles([]);
@@ -522,6 +637,7 @@ export function PlatformSessionAgentWorkspace({
     trialDoneReloadedRef.current = false;
     trialClarificationReloadedRef.current = false;
     setLiveOrchClarification(null);
+    setSupplementalBundlesById({});
   }, [sessionId]);
 
   const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
@@ -573,7 +689,6 @@ export function PlatformSessionAgentWorkspace({
             if (scheduleTrial) setTrialRunInFlight(false);
           } else if (!orch.awaiting_clarification) {
             setLiveOrchClarification(null);
-            if (orch.finished) setLiveOrchStepStatuses(null);
           }
         });
       } catch {
@@ -915,6 +1030,9 @@ export function PlatformSessionAgentWorkspace({
           assistantStreamId,
           filesToSend,
         );
+        // Refresh sidebar immediately so the session list updates without
+        // waiting for task polling to finish.
+        void refreshHistoryNow();
         if (sendResult.kind === "accepted") {
           await pollPlatformTaskUntilSettled(
             (fn) => platformAgent.withFreshToken(fn),
@@ -925,7 +1043,6 @@ export function PlatformSessionAgentWorkspace({
       });
       finalizeStreamingAssistantMessage(setMessages, assistantStreamId);
       await reload();
-      void refreshHistoryNow();
     } catch (e) {
       setError(formatAgentApiErrorForUser(e));
       await reload();
@@ -933,7 +1050,7 @@ export function PlatformSessionAgentWorkspace({
     } finally {
       setSending(false);
     }
-  }, [draft, pendingFiles, platformAgent, reload, refreshHistory, sending, sessionId]);
+  }, [draft, pendingFiles, platformAgent, reload, refreshHistoryNow, sending, sessionId]);
 
   return (
     <>
