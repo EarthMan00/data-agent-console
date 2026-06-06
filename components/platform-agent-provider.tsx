@@ -47,19 +47,12 @@ const LOGIN_INTRO_TEXT = "我是 Alice，欢迎回来。";
 const LOGIN_RETURNING_TEXT = "我是 Alice，欢迎回来。";
 const REGISTER_INTRO_TEXT = "欢迎注册，我是 Alice，你的跨境运营助手";
 const REGISTER_CODE_TITLE = "请输入发送给您邮箱的验证码";
-const LOGIN_INTRO_INITIAL_DELAY_MS = 3000;
-const LOGIN_INTRO_CHAR_INTERVAL_MS = 34;
 const LOGIN_RETURNING_STORAGE_KEY = "mdata:alice-has-logged-in";
 const PENDING_HOME_TASK_STORAGE_KEY = "mdata:pending-home-task-after-login";
 const REGISTER_CODE_LENGTH = 6;
 type AuthMode = "login" | "register";
 type RegisterStep = "email" | "code" | "password";
 type LoginContinuation = () => void | Promise<void>;
-type AuthTitleAnimationState = {
-  done: boolean;
-  key: string;
-  text: string;
-};
 
 const REGISTER_STEP_META: Record<
   RegisterStep,
@@ -232,8 +225,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [loginIntroFullText, setLoginIntroFullText] = useState(LOGIN_INTRO_TEXT);
-  const [loginTitleAnimation, setLoginTitleAnimation] =
-    useState<AuthTitleAnimationState>({ done: false, key: "", text: "" });
   const [loginTitleOverride, setLoginTitleOverride] = useState("");
   const [loginTitleReplayId, setLoginTitleReplayId] = useState(0);
   const [registerStep, setRegisterStep] = useState<RegisterStep>("email");
@@ -288,12 +279,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     activeLoginTitleText,
   ].join(":");
   const isLoginTitleError = Boolean(loginTitleOverride);
-  const activeTitleTypingDone =
-    loginTitleAnimation.key === activeLoginTitleKey && loginTitleAnimation.done;
-  const visibleLoginIntroText =
-    loginTitleAnimation.key === activeLoginTitleKey
-      ? loginTitleAnimation.text
-      : "";
+  const activeTitleTypingDone = true;
+  const visibleLoginIntroText = activeLoginTitleText;
 
   useEffect(() => {
     const snap = loadAgentSession();
@@ -340,7 +327,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       hasLoggedInOnThisDevice() ? LOGIN_RETURNING_TEXT : LOGIN_INTRO_TEXT,
     );
     setLoginTitleOverride("");
-    setLoginTitleAnimation({ done: false, key: "", text: "" });
     setLoginOpen(true);
   }, [resetRegisterForm]);
 
@@ -359,7 +345,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     loginContinuationRef.current = null;
     setLoginStep("account");
     setLoginTitleOverride("");
-    setLoginTitleAnimation({ done: false, key: "", text: "" });
     setLoginOpen(false);
   }, [resetRegisterForm]);
 
@@ -377,45 +362,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    if (!loginOpen) return;
-    let cancelled = false;
-    let timer: number | undefined;
-    let index = 0;
-    const chars = [...activeLoginTitleText];
-    const key = activeLoginTitleKey;
-
-    setLoginTitleAnimation({ done: false, key, text: "" });
-
-    const tick = () => {
-      if (cancelled) return;
-      index += 1;
-      const done = index >= chars.length;
-      setLoginTitleAnimation({
-        done,
-        key,
-        text: chars.slice(0, index).join(""),
-      });
-      if (!done) {
-        timer = window.setTimeout(tick, LOGIN_INTRO_CHAR_INTERVAL_MS);
-      }
-    };
-
-    const initialDelay =
-      authMode === "login" && !loginTitleOverride
-        ? LOGIN_INTRO_INITIAL_DELAY_MS
-        : LOGIN_INTRO_CHAR_INTERVAL_MS;
-    timer = window.setTimeout(tick, initialDelay);
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) {
-        window.clearTimeout(timer);
-      }
-    };
-  }, [activeLoginTitleKey, activeLoginTitleText, authMode, loginOpen, loginTitleOverride]);
-
-  useEffect(() => {
     if (!loginOpen || !activeTitleTypingDone) return;
-    const t = window.setTimeout(() => {
+    const focusActiveInput = () => {
       if (authMode === "register") {
         if (registerStep === "code") {
           focusRegisterCodeDigit(Math.min(registerCode.length, REGISTER_CODE_LENGTH - 1));
@@ -427,8 +375,9 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       } else {
         passwordInputRef.current?.focus();
       }
-    }, 120);
-    return () => window.clearTimeout(t);
+    };
+    const raf = window.requestAnimationFrame(focusActiveInput);
+    return () => window.cancelAnimationFrame(raf);
   }, [activeTitleTypingDone, authMode, focusRegisterCodeDigit, loginOpen, loginStep, registerCode.length, registerStep]);
 
   useEffect(() => {
@@ -1040,12 +989,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                         }
                       >
                         {visibleLoginIntroText}
-                        {!activeTitleTypingDone ? (
-                          <span
-                            className="ml-1 inline-block h-[1em] w-[2px] translate-y-[4px] animate-pulse bg-white/80"
-                            aria-hidden
-                          />
-                        ) : null}
                       </h2>
                     </div>
                   </div>
