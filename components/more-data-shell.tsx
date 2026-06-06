@@ -88,26 +88,29 @@ type ShellMeta = Pick<
   "currentPath" | "rightRail" | "currentRunLabel" | "mainDecoration" | "contentScrollMode" | "showTopHeader" | "mainClassName"
 >;
 
-type ShellMetaContextValue = {
-  meta: ShellMeta;
-  setMeta: (next: ShellMeta) => void;
-};
-
-const ShellMetaContext = createContext<ShellMetaContextValue | null>(null);
+const ShellMetaValueContext = createContext<ShellMeta | null>(null);
+const ShellMetaDispatchContext = createContext<((next: ShellMeta) => void) | null>(null);
 
 function ShellMetaProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [meta, setMeta] = useState<ShellMeta>({ currentPath: pathname ?? "/", contentScrollMode: "shell" });
+  const updateMeta = useCallback((next: ShellMeta) => {
+    setMeta(next);
+  }, []);
 
-  return <ShellMetaContext.Provider value={{ meta, setMeta }}>{children}</ShellMetaContext.Provider>;
+  return (
+    <ShellMetaDispatchContext.Provider value={updateMeta}>
+      <ShellMetaValueContext.Provider value={meta}>{children}</ShellMetaValueContext.Provider>
+    </ShellMetaDispatchContext.Provider>
+  );
 }
 
 function useShellMetaContext() {
-  const context = useContext(ShellMetaContext);
-  if (!context) {
+  const meta = useContext(ShellMetaValueContext);
+  if (!meta) {
     throw new Error("useShellMetaContext must be used within ShellMetaProvider");
   }
-  return context;
+  return { meta };
 }
 
 type HistoryEntry = SessionListItem & {
@@ -382,8 +385,7 @@ export function MoreDataShell({
   showTopHeader = true,
   mainClassName,
 }: MoreDataShellProps) {
-  const shellMetaContext = useContext(ShellMetaContext);
-  const setShellMeta = shellMetaContext?.setMeta;
+  const setShellMeta = useContext(ShellMetaDispatchContext);
 
   useEffect(() => {
     setShellMeta?.({
