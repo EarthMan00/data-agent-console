@@ -2,10 +2,47 @@ import { AgentApiError, readErrorResponseBody } from "@/lib/agent-api/client";
 import { getAgentHttpApiBase } from "@/lib/agent-api/config";
 import type { HomePromptRecommendationDto } from "@/lib/agent-api/types";
 
-/** 拉取首页推荐提示词；失败时抛出，由调用方展示错误。 */
-export async function fetchHomePromptRecommendations(): Promise<HomePromptRecommendationDto[]> {
+export type PublicPromptCategory = {
+  id: string;
+  name: string;
+  sort_order: number;
+};
+
+/** 拉取公开的 Prompt 分类列表。 */
+export async function fetchPublicPromptCategories(): Promise<PublicPromptCategory[]> {
   const base = getAgentHttpApiBase();
-  const res = await fetch(`${base}/api/home-prompt-recommendations`);
+  const res = await fetch(`${base}/api/prompt-categories`);
+  const data = await readErrorResponseBody(res);
+  if (!res.ok) {
+    throw new AgentApiError("fetch prompt categories failed", res.status, data);
+  }
+  if (!data || typeof data !== "object" || !Array.isArray((data as { categories?: unknown }).categories)) {
+    throw new AgentApiError("invalid prompt categories response", res.status, data);
+  }
+  const out: PublicPromptCategory[] = [];
+  for (const raw of (data as { categories: unknown[] }).categories) {
+    if (!raw || typeof raw !== "object") continue;
+    const o = raw as Record<string, unknown>;
+    const id = typeof o.id === "string" ? o.id : "";
+    const name = typeof o.name === "string" ? o.name : "";
+    if (!id || !name) continue;
+    out.push({
+      id,
+      name,
+      sort_order: typeof o.sort_order === "number" ? o.sort_order : 0,
+    });
+  }
+  return out;
+}
+
+/** 拉取首页推荐提示词；失败时抛出，由调用方展示错误。capabilityId 可为逗号分隔多个 ID。 */
+export async function fetchHomePromptRecommendations(capabilityId?: string, categoryId?: string): Promise<HomePromptRecommendationDto[]> {
+  const base = getAgentHttpApiBase();
+  const params = new URLSearchParams();
+  if (capabilityId) params.set("capability_id", capabilityId);
+  if (categoryId) params.set("category_id", categoryId);
+  const qs = params.toString();
+  const res = await fetch(`${base}/api/home-prompt-recommendations${qs ? `?${qs}` : ""}`);
   const data = await readErrorResponseBody(res);
   if (!res.ok) {
     const detail =

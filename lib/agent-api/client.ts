@@ -24,6 +24,7 @@ import type {
   AdminPlan,
   AdminPromptCategory,
   AdminPromptTemplate,
+  AdminPromptTemplateListResponse,
   AdminFeedbackEntry,
 } from "@/lib/agent-api/types";
 
@@ -1220,18 +1221,24 @@ export async function adminDeletePromptCategory(accessToken: string, categoryId:
 }
 
 export async function adminListPromptTemplates(
-  accessToken: string, categoryId?: string, status?: string,
-): Promise<{ templates: AdminPromptTemplate[] }> {
+  accessToken: string,
+  categoryId?: string,
+  status?: string,
+  page?: number,
+  pageSize?: number,
+): Promise<AdminPromptTemplateListResponse> {
   const params = new URLSearchParams();
   if (categoryId) params.set("category_id", categoryId);
   if (status) params.set("status", status);
+  if (page != null) params.set("page", String(page));
+  if (pageSize != null) params.set("page_size", String(pageSize));
   const qs = params.toString();
   const res = await fetch(apiUrl(`/admin/prompts${qs ? `?${qs}` : ""}`), {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const data = await safeJson(res);
   if (!res.ok) throw new AgentApiError("list prompt templates failed", res.status, data);
-  return data as { templates: AdminPromptTemplate[] };
+  return data as AdminPromptTemplateListResponse;
 }
 
 export async function adminCreatePromptTemplate(
@@ -1267,6 +1274,34 @@ export async function adminDeletePromptTemplate(accessToken: string, templateId:
   });
   if (res.ok) return;
   throw new AgentApiError("delete prompt template failed", res.status, await safeJson(res));
+}
+
+export type AdminImportPromptsResult = {
+  ok: boolean;
+  categories_created: number;
+  categories_deleted: number;
+  templates_created: number;
+  templates_deleted: number;
+  errors: string[];
+};
+
+export async function adminImportPromptsFromExcel(
+  accessToken: string,
+  file: File,
+): Promise<AdminImportPromptsResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(apiUrl("/admin/prompts/import"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    const detail = parseFastApiDetail(data) || `导入失败 (HTTP ${res.status})`;
+    throw new AgentApiError(detail, res.status, data);
+  }
+  return data as AdminImportPromptsResult;
 }
 
 // --- Feedback ---

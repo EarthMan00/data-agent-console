@@ -86,6 +86,14 @@ import {
 import { cn } from "@/lib/utils";
 
 import { readSessionMessageCache, writeSessionMessageCache } from "@/lib/session-message-cache";
+import {
+  registerStream,
+  updateStreamContent,
+  completeStream,
+  getStreamState,
+  subscribe as subscribeToStream,
+  releaseStream,
+} from "@/lib/streaming-session-manager";
 
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import { PostTaskGuidanceBubble } from "./post-task-guidance-bubble";
@@ -182,13 +190,34 @@ export function PlatformSessionAgentWorkspace({
   const [liveOrchStepStatuses, setLiveOrchStepStatuses] = useState<TaskExecutionStepStatus[] | null>(null);
   const trialTaskId = scheduleTrial ? loadScheduleTrialMeta()?.taskId : null;
 
+  const _processStreamingMessages = (msgs: SessionMessageItem[]): SessionMessageItem[] => {
+    const streamState = getStreamState(sessionId);
+    return msgs.map((m) => {
+      if (
+        m.role === "assistant" &&
+        m.meta &&
+        typeof m.meta === "object" &&
+        (m.meta as Record<string, unknown>).streaming === true
+      ) {
+        if (streamState && streamState.status === "streaming") {
+          const liveContent = streamState.content || (m.content || "");
+          return { ...m, content: liveContent, meta: { ...m.meta as Record<string, unknown>, streaming: true } };
+        }
+        const meta = { ...(m.meta as Record<string, unknown>) };
+        delete (meta as Record<string, unknown>).streaming;
+        const body = (m.content || "").trim();
+        return { ...m, meta, content: body };
+      }
+      return m;
+    });
+  };
+
   const reload = useCallback(async () => {
     if (!platformAgent?.auth) return;
 
-    // 检查缓存：命中则立即展示，未命中则显示加载态
     const cached = readSessionMessageCache(sessionId);
     if (cached) {
-      setMessages(cached);
+      setMessages(_processStreamingMessages(cached));
       setBusy(false);
       setError("");
     } else {
@@ -199,7 +228,7 @@ export function PlatformSessionAgentWorkspace({
     try {
       await platformAgent.withFreshToken(async (token) => {
         const res = await listSessionMessages(token, sessionId, 100);
-        const fresh = res.messages ?? [];
+        const fresh = _processStreamingMessages(res.messages ?? []);
         writeSessionMessageCache(sessionId, fresh);
         setMessages(fresh);
       });
@@ -321,10 +350,7 @@ export function PlatformSessionAgentWorkspace({
     return () => {
       isMounted.current = false;
       abortPollRef.current = true;
-      if (sseAbortRef.current) {
-        sseAbortRef.current.abort();
-        sseAbortRef.current = null;
-      }
+      // SSE 流保持存活（跨会话切换不断流），交由 streaming-session-manager 管理生命周期
     };
   }, [sessionId]);
 
@@ -337,6 +363,43 @@ export function PlatformSessionAgentWorkspace({
     }
     void reload();
   }, [platformAgent, reload, sessionId, scheduleTrial]);
+
+  // 切回会话时，如果有活跃的后台 SSE 流，订阅其更新以继续打字机效果
+  useEffect(() => {
+    const streamState = getStreamState(sessionId);
+    if (!streamState || streamState.status !== "streaming") return;
+
+    const unsub = subscribeToStream(sessionId, () => {
+      const s = getStreamState(sessionId);
+      if (!s || s.status !== "streaming") {
+        if (s && s.status === "completed") {
+          void reload();
+        }
+        return;
+      }
+      setMessages((cur) => {
+        const targetId = s.assistantStreamId;
+        const existingMeta = (m: { meta?: Record<string, unknown> }) => m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : {};
+        // 先尝试按 assistantStreamId 匹配
+        const byId = cur.find((m) => m.id === targetId);
+        if (byId) {
+          return cur.map((m) =>
+            m.id === targetId ? { ...m, content: s.content, meta: { ...existingMeta(m), streaming: true } } : m,
+          );
+        }
+        // fallback：匹配最后一条 assistant 消息
+        const lastIdx = cur.reduce<number>((best, m, i) => (m.role === "assistant" ? i : best), -1);
+        if (lastIdx === -1) return cur;
+        return cur.map((m, i) =>
+          i === lastIdx ? { ...m, content: s.content, meta: { ...existingMeta(m), streaming: true } } : m,
+        );
+      });
+    });
+
+    return () => {
+      unsub();
+    };
+  }, [sessionId, reload]);
 
   /** 试跑首条在会话页发送：进入页面后再发，避免在定时页等接口导致进页时对话已过半。 */
   useEffect(() => {
@@ -1022,7 +1085,8 @@ export function PlatformSessionAgentWorkspace({
       platformAgent?.openLogin("请先登录后再发送消息。");
       return;
     }
-    // Cancel any in-flight SSE from previous send (defensive, normally cleaned by session switch)
+    // 释放当前会话的上一个流（如有），避免新旧流并存
+    releaseStream(sessionId);
     if (sseAbortRef.current) {
       sseAbortRef.current.abort();
     }
@@ -1042,6 +1106,7 @@ export function PlatformSessionAgentWorkspace({
     const mid = safeRandomUUID();
     const assistantStreamId = `streaming_assistant_${mid}`;
     const nowIso = new Date().toISOString();
+    registerStream(sessionId, { abortController, assistantStreamId });
     setMessages((cur) => [...cur, optimistic, createStreamingAssistantMessage(assistantStreamId, nowIso)]);
     setDraft("");
     const filesToSend = pendingFiles;
@@ -1057,10 +1122,10 @@ export function PlatformSessionAgentWorkspace({
           assistantStreamId,
           filesToSend,
           abortController.signal,
+          (content) => updateStreamContent(sessionId, content),
         );
+        completeStream(sessionId);
         if (sessionGenRef.current !== sendGen) return;
-        // Refresh sidebar immediately so the session list updates without
-        // waiting for task polling to finish.
         void refreshHistoryNow();
         if (sendResult.kind === "accepted") {
           await pollPlatformTaskUntilSettled(
@@ -1075,6 +1140,7 @@ export function PlatformSessionAgentWorkspace({
         await reload();
       }
     } catch (e) {
+      completeStream(sessionId);
       if (sessionGenRef.current === sendGen) {
         setError(formatAgentApiErrorForUser(e));
         await reload();

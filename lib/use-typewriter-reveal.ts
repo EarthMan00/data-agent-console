@@ -35,19 +35,23 @@ export function useTypewriterReveal(
   const displayLenRef = useRef(enabled ? 0 : charLen(target));
   const targetRef = useRef(target);
   const enabledRef = useRef(enabled);
+  const prevEnabledRef = useRef(enabled);
 
   useEffect(() => {
     targetRef.current = target;
   }, [target]);
 
   useEffect(() => {
+    const wasDisabled = !prevEnabledRef.current;
+    prevEnabledRef.current = enabled;
     enabledRef.current = enabled;
     if (!enabled) {
       displayLenRef.current = charLen(target);
       setDisplay(target);
       return;
     }
-    if (charLen(target) === 0) {
+    // 从 disabled 切到 enabled 且已有内容时重置打字机，避免恢复内容一次性全量展示
+    if (wasDisabled || charLen(target) === 0) {
       displayLenRef.current = 0;
       setDisplay("");
     }

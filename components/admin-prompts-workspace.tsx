@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -15,10 +15,11 @@ import {
   adminCreatePromptTemplate,
   adminPatchPromptTemplate,
   adminDeletePromptTemplate,
+  adminImportPromptsFromExcel,
   AgentApiError,
   parseFastApiDetail,
 } from "@/lib/agent-api/client";
-import type { AdminPromptCategory, AdminPromptTemplate } from "@/lib/agent-api/types";
+import type { AdminPromptCategory, AdminPromptTemplate, AdminPromptTemplateListResponse } from "@/lib/agent-api/types";
 
 export function AdminPromptsWorkspace() {
   const platformAgent = useOptionalPlatformAgent();
@@ -28,6 +29,9 @@ export function AdminPromptsWorkspace() {
   const [notice, setNotice] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 20;
 
   // category edit
   const [ceOpen, setCeOpen] = useState(false);
@@ -61,13 +65,11 @@ export function AdminPromptsWorkspace() {
   const [tdTarget, setTdTarget] = useState<AdminPromptTemplate | null>(null);
   const [tdBusy, setTdBusy] = useState(false);
 
-  const tmplCountByCat = (catId: string) => templates.filter((t) => t.category_id === catId).length;
+  // 导入 Excel
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
 
-  const filteredTemplates = templates.filter((t) => {
-    if (selectedCategoryId && t.category_id !== selectedCategoryId) return false;
-    if (statusFilter && t.status !== statusFilter) return false;
-    return true;
-  });
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const refresh = useCallback(async () => {
     if (!platformAgent?.auth) return;
@@ -76,15 +78,17 @@ export function AdminPromptsWorkspace() {
     try {
       await platformAgent.withFreshToken(async (token) => {
         const [cRes, tRes] = await Promise.all([
-          adminListPromptCategories(token), adminListPromptTemplates(token),
+          adminListPromptCategories(token),
+          adminListPromptTemplates(token, selectedCategoryId ?? undefined, statusFilter || undefined, page, pageSize),
         ]);
         setCategories(cRes.categories ?? []);
         setTemplates(tRes.templates ?? []);
+        setTotal(tRes.total ?? 0);
       });
     } catch (e) {
       setNotice(e instanceof AgentApiError ? parseFastApiDetail(e.body) ?? e.message : String(e));
     } finally { setLoading(false); }
-  }, [platformAgent]);
+  }, [platformAgent, selectedCategoryId, statusFilter, page]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -162,6 +166,28 @@ export function AdminPromptsWorkspace() {
     } finally { setTdBusy(false); }
   };
 
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !platformAgent?.auth) return;
+    setImportBusy(true); setNotice("");
+    try {
+      await platformAgent.withFreshToken(async (token) => {
+        const result = await adminImportPromptsFromExcel(token, file);
+        setNotice(
+          `导入完成：分类 新建 ${result.categories_created} / 删除 ${result.categories_deleted}，` +
+          `模板 新建 ${result.templates_created} / 删除 ${result.templates_deleted}` +
+          (result.errors.length > 0 ? `（${result.errors.length} 条异常）` : ""),
+        );
+        await refresh();
+      });
+    } catch (e) {
+      setNotice(e instanceof AgentApiError ? parseFastApiDetail(e.body) ?? e.message : String(e));
+    } finally {
+      setImportBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const statusBadge = (s: string) => {
     const m: Record<string, string> = { draft: "bg-gray-100 text-gray-700", published: "bg-green-100 text-green-700", archived: "bg-yellow-100 text-yellow-700" };
     const l: Record<string, string> = { draft: "草稿", published: "已发布", archived: "已归档" };
@@ -186,6 +212,21 @@ export function AdminPromptsWorkspace() {
             <div className="flex items-center justify-between border-b border-[#e2e2df] px-4 py-3">
               <span className="text-sm font-semibold text-[#111111]">分类</span>
               <Button size="sm" className="h-7 rounded-[8px] text-xs" onClick={oc}>新增分类</Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={(e) => { void handleImportExcel(e); }}
+              />
+              <Button
+                size="sm"
+                className="h-7 rounded-[8px] text-xs"
+                disabled={importBusy}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {importBusy ? "导入中…" : "导入"}
+              </Button>
             </div>
             {loading ? (
               <div className="px-4 py-8 text-center text-sm text-[#94a3b8]">加载中…</div>
@@ -197,11 +238,18 @@ export function AdminPromptsWorkspace() {
                   <li
                     key={cat.id}
                     className={`flex cursor-pointer items-center justify-between px-4 py-2.5 text-sm transition-colors hover:bg-[#f7f7f7] ${selectedCategoryId === cat.id ? "bg-[#f0f0ef]" : ""}`}
-                    onClick={() => setSelectedCategoryId(selectedCategoryId === cat.id ? null : cat.id)}
+                    onClick={() => {
+                      if (selectedCategoryId === cat.id) {
+                        setSelectedCategoryId(null);
+                      } else {
+                        setSelectedCategoryId(cat.id);
+                      }
+                      setPage(1);
+                    }}
                   >
                     <div className="flex items-center gap-2 overflow-hidden">
                       <span className="truncate text-[#111111]">{cat.name}</span>
-                      <span className="shrink-0 text-xs text-[#94a3b8]">({tmplCountByCat(cat.id)})</span>
+                      <span className="shrink-0 text-xs text-[#94a3b8]"></span>
                     </div>
                     <div className="flex shrink-0 gap-0.5">
                       <Button variant="ghost" size="sm" className="h-6 w-6 rounded-[6px] p-0 text-xs text-[#747571]" onClick={(e) => { e.stopPropagation(); oce(cat); }}>✎</Button>
@@ -218,13 +266,13 @@ export function AdminPromptsWorkspace() {
         <div className="min-w-0 flex-1">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-[#111111]">
-              {selectedCategoryId ? `模板列表 (${filteredTemplates.length})` : `全部模板 (${templates.length})`}
+              {selectedCategoryId ? `模板列表 (${total})` : `全部模板 (${total})`}
             </h2>
             <div className="flex items-center gap-3">
               <select
                 className="h-9 rounded-[10px] border border-[#e2e2df] bg-white px-3 text-sm text-[#111111] outline-none"
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
               >
                 <option value="">全部状态</option>
                 <option value="draft">草稿</option>
@@ -250,9 +298,9 @@ export function AdminPromptsWorkspace() {
               <tbody>
                 {loading ? (
                   <tr><td colSpan={6} className="px-4 py-8 text-center text-[#94a3b8]">加载中…</td></tr>
-                ) : filteredTemplates.length === 0 ? (
+                ) : templates.length === 0 ? (
                   <tr><td colSpan={6} className="px-4 py-8 text-center text-[#94a3b8]">暂无模板</td></tr>
-                ) : filteredTemplates.map((t) => (
+                ) : templates.map((t) => (
                   <tr key={t.id} className="border-b border-[#f0f0ef] last:border-0">
                     <td className="max-w-[200px] truncate px-4 py-3 font-medium text-[#111111]">{t.title}</td>
                     <td className="px-4 py-3 text-[#747571]">{t.category_name ?? "—"}</td>
@@ -268,6 +316,33 @@ export function AdminPromptsWorkspace() {
               </tbody>
             </table>
           </div>
+
+          {/* --- pagination --- */}
+          {total > pageSize && (
+            <div className="mt-4 flex items-center justify-between text-sm text-[#747571]">
+              <span>共 {total} 条，第 {page}/{totalPages} 页</span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-[8px] text-xs"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  上一页
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-[8px] text-xs"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  下一页
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -87,6 +87,7 @@ export async function sendSessionMessageStream(
   assistantStreamId: string,
   files: File[] = [],
   signal?: AbortSignal,
+  onPersist?: (content: string) => void,
 ): Promise<ChatSendResult> {
   const attachmentIds =
     files.length > 0
@@ -114,6 +115,7 @@ export async function sendSessionMessageStream(
           m.id === assistantStreamId ? { ...m, content: `${m.content}${batch}` } : m,
         );
       });
+      onPersist?.(prevSanitizedStream);
     }
   };
 
@@ -138,6 +140,7 @@ export async function sendSessionMessageStream(
               m.id === assistantStreamId ? { ...m, content: `${m.content}${batch}` } : m,
             );
           });
+          onPersist?.(prevSanitizedStream);
         });
       },
       onAssistantComplete: (full) => {
