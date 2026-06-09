@@ -465,6 +465,7 @@ export function PlatformSessionAgentWorkspace({
             orchestrationId,
           });
         });
+        await new Promise((r) => setTimeout(r, 0));
         finalizeStreamingAssistantMessage(setMessages, assistantStreamId);
         if (isMounted.current) await reload();
       } catch (e) {
@@ -1136,6 +1137,9 @@ export function PlatformSessionAgentWorkspace({
         }
       });
       if (sessionGenRef.current === sendGen) {
+        // 让出主线程确保 React 先渲染 streaming=true 的中间态，
+        // 否则在代理缓冲场景下会与 finalize 合并到一个帧里跳过打字机
+        await new Promise((r) => setTimeout(r, 0));
         finalizeStreamingAssistantMessage(setMessages, assistantStreamId);
         await reload();
       }
