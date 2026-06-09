@@ -90,6 +90,8 @@ export async function sendSessionMessageStream(
   onPersist?: (content: string) => void,
   /** 读取当前已展示的字符数（用于 chunk 兜底追赶） */
   getDisplayedLen?: () => number,
+  /** 当前会话是否仍活跃（用于 finally 守卫，避免卸载后 setMessages） */
+  isCurrent?: () => boolean,
 ): Promise<ChatSendResult> {
   const attachmentIds =
     files.length > 0
@@ -108,10 +110,10 @@ export async function sendSessionMessageStream(
       onDelta: (chunk) => {
         if (!chunk) return;
         rawStreamAccum += chunk;
-        const { display } = streamSanitizeDeltaClient(prevSanitizedStream, rawStreamAccum);
+        const { display, delta } = streamSanitizeDeltaClient(prevSanitizedStream, rawStreamAccum);
         prevSanitizedStream = display;
-        // 每条有效增量写入 manager，由订阅方决定是否更新 UI
-        if (display) onPersist?.(display);
+        // 仅在有可见增量时写入 manager，减少无效 rAF
+        if (delta) onPersist?.(display);
       },
       onAssistantComplete: (full) => {
         fullCleaned = stripModelThinkingForUi(full);
@@ -133,28 +135,31 @@ export async function sendSessionMessageStream(
     }
     throw e;
   } finally {
-    // 兜底：SSE 已结束但消息内容落后于全文时，由 chunk 机制追赶剩余部分
-    const content = fullCleaned || prevSanitizedStream;
-    if (content) {
-      const displayed = getDisplayedLen?.() ?? 0;
-      if (displayed < [...content].length) {
-        await _feedContentInChunks(setMessages, assistantStreamId, content, displayed, onPersist);
-      } else {
-        onPersist?.(content);
+    // 会话已切走则跳过 UI 更新（manager + 订阅接管后续展示）
+    if (!isCurrent || isCurrent()) {
+      // 兜底：SSE 已结束但消息内容落后于全文时，由 chunk 机制追赶剩余部分
+      const content = fullCleaned || prevSanitizedStream;
+      if (content) {
+        const displayed = getDisplayedLen?.() ?? 0;
+        if (displayed < [...content].length) {
+          await _feedContentInChunks(setMessages, assistantStreamId, content, displayed, onPersist);
+        } else {
+          onPersist?.(content);
+        }
       }
+      // 移除 streaming meta
+      setMessages((cur) =>
+        cur.map((m) => {
+          if (m.id !== assistantStreamId || !isStreamingAssistantMessage(m)) return m;
+          const meta =
+            m.meta && typeof m.meta === "object" && !Array.isArray(m.meta)
+              ? { ...(m.meta as Record<string, unknown>) }
+              : {};
+          delete meta.streaming;
+          return { ...m, meta };
+        }),
+      );
     }
-    // 移除 streaming meta
-    setMessages((cur) =>
-      cur.map((m) => {
-        if (m.id !== assistantStreamId || !isStreamingAssistantMessage(m)) return m;
-        const meta =
-          m.meta && typeof m.meta === "object" && !Array.isArray(m.meta)
-            ? { ...(m.meta as Record<string, unknown>) }
-            : {};
-        delete meta.streaming;
-        return { ...m, meta };
-      }),
-    );
   }
 }
 

@@ -238,6 +238,15 @@ export function PlatformSessionAgentWorkspace({
           const streamId = streamState.assistantStreamId;
           const curStreaming = cur.find((m) => m.id === streamId && isStreamingAssistantMessage(m));
           if (!curStreaming) return fresh;
+          // fresh 中无此流式条（服务端尚未落库）→ 将本地流式 + 乐观 user 追加到列表
+          if (!fresh.some((m) => m.id === streamId)) {
+            const userMsg = cur.find((m) => m.role === "user" && m.id.startsWith("optimistic_user_"));
+            const tail = userMsg ? [userMsg, curStreaming] : [curStreaming];
+            // 去重：避免与 fresh 中已存在的同 id 消息重复
+            const freshIds = new Set(fresh.map((m) => m.id));
+            const append = tail.filter((m) => !freshIds.has(m.id));
+            return [...fresh, ...append];
+          }
           return fresh.map((m) =>
             m.id === streamId ? curStreaming : m,
           );
@@ -375,11 +384,9 @@ export function PlatformSessionAgentWorkspace({
     void reload();
   }, [platformAgent, reload, sessionId, scheduleTrial]);
 
-  // 切回会话时，如果有活跃的后台 SSE 流，订阅其更新以继续打字机效果
+  // 订阅 stream manager 更新：始终建立订阅（不因挂载时无流而跳过），
+  // 有活跃流时立即 flush 同步首屏内容；后续 onDelta 写 manager 时自动推送。
   useEffect(() => {
-    const streamState = getStreamState(sessionId);
-    if (!streamState || streamState.status !== "streaming") return;
-
     let rafId: number | null = null;
     let pending = false;
 
@@ -410,7 +417,6 @@ export function PlatformSessionAgentWorkspace({
           i === lastIdx ? { ...m, content, meta: { ...existingMeta(m), streaming: true } } : m,
         );
       });
-      // 更新已展示长度（供 chunk 兜底追赶用）
       contentLenRef.current = [...content].length;
     };
 
@@ -420,8 +426,15 @@ export function PlatformSessionAgentWorkspace({
       rafId = requestAnimationFrame(flush);
     });
 
+    // 挂载时若已有活跃流（切回场景），立即同步首屏内容
+    const initial = getStreamState(sessionId);
+    if (initial && initial.status === "streaming" && initial.content) {
+      flush();
+    }
+
     return () => {
       unsub();
+      if (rafId != null) cancelAnimationFrame(rafId);
     };
   }, [sessionId, reload]);
 
@@ -448,6 +461,11 @@ export function PlatformSessionAgentWorkspace({
     const mid = safeRandomUUID();
     const assistantStreamId = `streaming_assistant_${mid}`;
     const nowIso = new Date().toISOString();
+    // 与主 send() 对齐：注册 stream 以便 manager 接收 onDelta 推送
+    releaseStream(sessionId);
+    const trialAbort = new AbortController();
+    registerStream(sessionId, { abortController: trialAbort, assistantStreamId });
+    contentLenRef.current = 0;
     setMessages([optimistic, createStreamingAssistantMessage(assistantStreamId, nowIso)]);
     void (async () => {
       try {
@@ -460,9 +478,10 @@ export function PlatformSessionAgentWorkspace({
             setMessages,
             assistantStreamId,
             [],    // files
-            undefined, // signal
+            trialAbort.signal,
             (content) => updateStreamContent(sessionId, content),
             () => contentLenRef.current,
+            () => isMounted.current,
           );
           let taskId: string | null = null;
           let sendKind: ScheduleTrialSendState = "unknown";
@@ -1152,6 +1171,7 @@ export function PlatformSessionAgentWorkspace({
           abortController.signal,
           (content) => updateStreamContent(sessionId, content),
           () => contentLenRef.current,
+          () => sessionGenRef.current === sendGen,
         );
         completeStream(sessionId);
         if (sessionGenRef.current !== sendGen) return;
