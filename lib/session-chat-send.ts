@@ -154,7 +154,7 @@ export async function sendSessionMessageStream(
   }
 }
 
-/** 将全文按定时器分块喂入消息，每次追加一小段以驱动打字机逐字展示。 */
+/** 将全文按动画帧分块喂入消息，每次追加一小段以驱动打字机逐字展示。 */
 async function _feedContentInChunks(
   setMessages: Dispatch<SetStateAction<SessionMessageItem[]>>,
   assistantStreamId: string,
@@ -163,12 +163,34 @@ async function _feedContentInChunks(
 ): Promise<void> {
   const chars = [...fullText];
   if (chars.length === 0) return;
-  const CHUNK = 5; // 每帧追加 5 个字符
+  const CHUNK = 3; // 每帧追加 3 个字符
+
+  // 超时兜底：2 秒后如果还没完成，直接展示全文
+  const FALLBACK_MS = 2000;
+  let finished = false;
 
   return new Promise<void>((resolve) => {
+    const fallbackTimer = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      setMessages((cur) => {
+        if (!cur.some((m) => m.id === assistantStreamId)) return cur;
+        return cur.map((m) =>
+          m.id === assistantStreamId
+            ? { ...m, content: fullText, meta: { streaming: true } }
+            : m,
+        );
+      });
+      onPersist?.(fullText);
+      resolve();
+    }, FALLBACK_MS);
+
     let pos = 0;
     const tick = () => {
+      if (finished) return;
       if (pos >= chars.length) {
+        finished = true;
+        clearTimeout(fallbackTimer);
         onPersist?.(fullText);
         resolve();
         return;
@@ -183,8 +205,8 @@ async function _feedContentInChunks(
             : m,
         );
       });
-      setTimeout(tick, 22);
+      requestAnimationFrame(tick);
     };
-    tick();
+    requestAnimationFrame(tick);
   });
 }
