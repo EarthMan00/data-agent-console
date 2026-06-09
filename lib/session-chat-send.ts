@@ -154,6 +154,11 @@ export async function sendSessionMessageStream(
   }
 }
 
+// DEBUG: 在浏览器 Console 中执行 window.__feedContentVersion 验证代码版本（应为 3）
+if (typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__feedContentVersion = 3;
+}
+
 /** 将全文按动画帧分块喂入消息，每次追加一小段以驱动打字机逐字展示。 */
 async function _feedContentInChunks(
   setMessages: Dispatch<SetStateAction<SessionMessageItem[]>>,
@@ -163,6 +168,7 @@ async function _feedContentInChunks(
 ): Promise<void> {
   const chars = [...fullText];
   if (chars.length === 0) return;
+  console.log("[feed-chunks] start len=", chars.length);
   const CHUNK = 3; // 每帧追加 3 个字符
 
   // 超时兜底：2 秒后如果还没完成，直接展示全文
@@ -172,6 +178,7 @@ async function _feedContentInChunks(
   return new Promise<void>((resolve) => {
     const fallbackTimer = setTimeout(() => {
       if (finished) return;
+      console.log("[feed-chunks] FALLBACK triggered");
       finished = true;
       setMessages((cur) => {
         if (!cur.some((m) => m.id === assistantStreamId)) return cur;
@@ -191,6 +198,7 @@ async function _feedContentInChunks(
       if (pos >= chars.length) {
         finished = true;
         clearTimeout(fallbackTimer);
+        console.log("[feed-chunks] done, pos=", pos);
         onPersist?.(fullText);
         resolve();
         return;
