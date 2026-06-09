@@ -137,6 +137,8 @@ export function PlatformSessionAgentWorkspace({
   const abortPollRef = useRef(false);
   const sseAbortRef = useRef<AbortController | null>(null);
   const sessionGenRef = useRef(0);
+  /** manager 订阅已推送到 UI 的字符数（用于 chunk 兜底追赶起点） */
+  const contentLenRef = useRef(0);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -229,7 +231,17 @@ export function PlatformSessionAgentWorkspace({
         const res = await listSessionMessages(token, sessionId, 100);
         const fresh = _processStreamingMessages(res.messages ?? []);
         writeSessionMessageCache(sessionId, fresh);
-        setMessages(fresh);
+        // 合并进行中的流式消息，避免 reload 冲掉 manager 推送的增量内容
+        setMessages((cur) => {
+          const streamState = getStreamState(sessionId);
+          if (!streamState || streamState.status !== "streaming") return fresh;
+          const streamId = streamState.assistantStreamId;
+          const curStreaming = cur.find((m) => m.id === streamId && isStreamingAssistantMessage(m));
+          if (!curStreaming) return fresh;
+          return fresh.map((m) =>
+            m.id === streamId ? curStreaming : m,
+          );
+        });
       });
     } catch (e) {
       if (!readSessionMessageCache(sessionId)) {
@@ -368,7 +380,12 @@ export function PlatformSessionAgentWorkspace({
     const streamState = getStreamState(sessionId);
     if (!streamState || streamState.status !== "streaming") return;
 
-    const unsub = subscribeToStream(sessionId, () => {
+    let rafId: number | null = null;
+    let pending = false;
+
+    const flush = () => {
+      rafId = null;
+      pending = false;
       const s = getStreamState(sessionId);
       if (!s || s.status !== "streaming") {
         if (s && s.status === "completed") {
@@ -376,23 +393,31 @@ export function PlatformSessionAgentWorkspace({
         }
         return;
       }
+      const targetId = s.assistantStreamId;
+      const content = s.content;
       setMessages((cur) => {
-        const targetId = s.assistantStreamId;
-        const existingMeta = (m: { meta?: Record<string, unknown> }) => m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : {};
-        // 先尝试按 assistantStreamId 匹配
+        const existingMeta = (m: { meta?: Record<string, unknown> }) =>
+          m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : {};
         const byId = cur.find((m) => m.id === targetId);
         if (byId) {
           return cur.map((m) =>
-            m.id === targetId ? { ...m, content: s.content, meta: { ...existingMeta(m), streaming: true } } : m,
+            m.id === targetId ? { ...m, content, meta: { ...existingMeta(m), streaming: true } } : m,
           );
         }
-        // fallback：匹配最后一条 assistant 消息
         const lastIdx = cur.reduce<number>((best, m, i) => (m.role === "assistant" ? i : best), -1);
         if (lastIdx === -1) return cur;
         return cur.map((m, i) =>
-          i === lastIdx ? { ...m, content: s.content, meta: { ...existingMeta(m), streaming: true } } : m,
+          i === lastIdx ? { ...m, content, meta: { ...existingMeta(m), streaming: true } } : m,
         );
       });
+      // 更新已展示长度（供 chunk 兜底追赶用）
+      contentLenRef.current = [...content].length;
+    };
+
+    const unsub = subscribeToStream(sessionId, () => {
+      if (pending) return;
+      pending = true;
+      rafId = requestAnimationFrame(flush);
     });
 
     return () => {
@@ -434,6 +459,10 @@ export function PlatformSessionAgentWorkspace({
             mid,
             setMessages,
             assistantStreamId,
+            [],    // files
+            undefined, // signal
+            (content) => updateStreamContent(sessionId, content),
+            () => contentLenRef.current,
           );
           let taskId: string | null = null;
           let sendKind: ScheduleTrialSendState = "unknown";
@@ -1105,6 +1134,7 @@ export function PlatformSessionAgentWorkspace({
     const assistantStreamId = `streaming_assistant_${mid}`;
     const nowIso = new Date().toISOString();
     registerStream(sessionId, { abortController, assistantStreamId });
+    contentLenRef.current = 0;
     setMessages((cur) => [...cur, optimistic, createStreamingAssistantMessage(assistantStreamId, nowIso)]);
     setDraft("");
     const filesToSend = pendingFiles;
@@ -1121,6 +1151,7 @@ export function PlatformSessionAgentWorkspace({
           filesToSend,
           abortController.signal,
           (content) => updateStreamContent(sessionId, content),
+          () => contentLenRef.current,
         );
         completeStream(sessionId);
         if (sessionGenRef.current !== sendGen) return;

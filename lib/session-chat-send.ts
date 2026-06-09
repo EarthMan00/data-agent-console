@@ -88,17 +88,19 @@ export async function sendSessionMessageStream(
   files: File[] = [],
   signal?: AbortSignal,
   onPersist?: (content: string) => void,
+  /** 读取当前已展示的字符数（用于 chunk 兜底追赶） */
+  getDisplayedLen?: () => number,
 ): Promise<ChatSendResult> {
   const attachmentIds =
     files.length > 0
       ? (await uploadSessionAttachments(accessToken, sessionId, files)).map((item) => item.attachment_id)
       : [];
 
-  // 流式 thinking 清洗状态（对齐平台轮次的 streamSanitizeDeltaClient）
+  // 流式 thinking 清洗状态
   let rawStreamAccum = "";
   let prevSanitizedStream = "";
 
-  // SSE 完成后的全文（用于分块模拟送达以驱动打字机）
+  // SSE 完成后的全文
   let fullCleaned = "";
 
   try {
@@ -108,6 +110,8 @@ export async function sendSessionMessageStream(
         rawStreamAccum += chunk;
         const { display } = streamSanitizeDeltaClient(prevSanitizedStream, rawStreamAccum);
         prevSanitizedStream = display;
+        // 每条有效增量写入 manager，由订阅方决定是否更新 UI
+        if (display) onPersist?.(display);
       },
       onAssistantComplete: (full) => {
         fullCleaned = stripModelThinkingForUi(full);
@@ -117,11 +121,7 @@ export async function sendSessionMessageStream(
         setMessages((cur) =>
           cur.map((m) =>
             m.id === assistantStreamId
-              ? {
-                  ...m,
-                  content: cleaned || "任务启动失败，请稍后重试。",
-                  meta: { streaming: false, kind: "model_error" },
-                }
+              ? { ...m, content: cleaned || "任务启动失败，请稍后重试。", meta: { streaming: false, kind: "model_error" } }
               : m,
           ),
         );
@@ -133,13 +133,17 @@ export async function sendSessionMessageStream(
     }
     throw e;
   } finally {
-    // 无论 SSE 是否被代理缓冲、是否异常，均以定时器逐块推进内容，
-    // 确保打字机有稳定的增量渲染帧可消费
+    // 兜底：SSE 已结束但消息内容落后于全文时，由 chunk 机制追赶剩余部分
     const content = fullCleaned || prevSanitizedStream;
     if (content) {
-      await _feedContentInChunks(setMessages, assistantStreamId, content, onPersist);
+      const displayed = getDisplayedLen?.() ?? 0;
+      if (displayed < [...content].length) {
+        await _feedContentInChunks(setMessages, assistantStreamId, content, displayed, onPersist);
+      } else {
+        onPersist?.(content);
+      }
     }
-    // 确保 streaming meta 在分块送达完成后才移除
+    // 移除 streaming meta
     setMessages((cur) =>
       cur.map((m) => {
         if (m.id !== assistantStreamId || !isStreamingAssistantMessage(m)) return m;
@@ -154,51 +158,46 @@ export async function sendSessionMessageStream(
   }
 }
 
-// DEBUG: 在浏览器 Console 中执行 window.__feedContentVersion 验证代码版本（应为 3）
+// DEBUG: 在浏览器 Console 中执行 window.__feedContentVersion 验证代码版本（应为 4）
 if (typeof window !== "undefined") {
-  (window as unknown as Record<string, unknown>).__feedContentVersion = 3;
+  (window as unknown as Record<string, unknown>).__feedContentVersion = 4;
 }
 
-/** 将全文按动画帧分块喂入消息，每次追加一小段以驱动打字机逐字展示。 */
+/** 兜底：从 startPos 位置起，按动画帧分块追赶全文剩余部分。 */
 async function _feedContentInChunks(
   setMessages: Dispatch<SetStateAction<SessionMessageItem[]>>,
   assistantStreamId: string,
   fullText: string,
+  startPos: number,
   onPersist?: (content: string) => void,
 ): Promise<void> {
   const chars = [...fullText];
-  if (chars.length === 0) return;
-  console.log("[feed-chunks] start len=", chars.length);
-  const CHUNK = 3; // 每帧追加 3 个字符
+  if (startPos >= chars.length) return;
+  const CHUNK = 3;
 
-  // 超时兜底：2 秒后如果还没完成，直接展示全文
   const FALLBACK_MS = 2000;
   let finished = false;
 
   return new Promise<void>((resolve) => {
     const fallbackTimer = setTimeout(() => {
       if (finished) return;
-      console.log("[feed-chunks] FALLBACK triggered");
       finished = true;
       setMessages((cur) => {
         if (!cur.some((m) => m.id === assistantStreamId)) return cur;
         return cur.map((m) =>
-          m.id === assistantStreamId
-            ? { ...m, content: fullText, meta: { streaming: true } }
-            : m,
+          m.id === assistantStreamId ? { ...m, content: fullText, meta: { streaming: true } } : m,
         );
       });
       onPersist?.(fullText);
       resolve();
     }, FALLBACK_MS);
 
-    let pos = 0;
+    let pos = startPos;
     const tick = () => {
       if (finished) return;
       if (pos >= chars.length) {
         finished = true;
         clearTimeout(fallbackTimer);
-        console.log("[feed-chunks] done, pos=", pos);
         onPersist?.(fullText);
         resolve();
         return;
