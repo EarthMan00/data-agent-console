@@ -79,11 +79,8 @@ export function SimpleAssistantBubble({
   // eslint-disable-next-line react-hooks/refs
   if (streaming) latchedStreamRef.current = true;
 
-  // 挂载时已有内容（如切换会话再切回）则跳过快照重播，直接展示全文
-  const hadContentOnMount = useRef(charLen(displayNorm) > 0);
-
   // eslint-disable-next-line react-hooks/refs
-  const runTypewriter = typewriter && latchedStreamRef.current && charLen(displayNorm) > 0 && !hadContentOnMount.current;
+  const runTypewriter = typewriter && latchedStreamRef.current && charLen(displayNorm) > 0;
   const { text: shown, revealing } = useTypewriterReveal(displayNorm, runTypewriter, {
     charIntervalMs: 22,
   });
@@ -173,11 +170,8 @@ export function AliceMessageBubble({
   // eslint-disable-next-line react-hooks/refs
   if (streaming) latchedStreamRef.current = true;
 
-  // 挂载时已有内容则跳过快照重播
-  const _hadContentOnMount2 = useRef(charLen(targetNorm) > 0);
-
   // eslint-disable-next-line react-hooks/refs
-  const runTypewriter = typewriter && latchedStreamRef.current && charLen(targetNorm) > 0 && !_hadContentOnMount2.current;
+  const runTypewriter = typewriter && latchedStreamRef.current && charLen(targetNorm) > 0;
   const { text: shown, revealing } = useTypewriterReveal(targetNorm, runTypewriter, {
     charIntervalMs: 22,
   });

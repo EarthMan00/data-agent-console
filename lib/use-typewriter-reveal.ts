@@ -31,8 +31,10 @@ export function useTypewriterReveal(
 ): TypewriterRevealResult {
   const charIntervalMs = options?.charIntervalMs ?? 22;
 
-  const [display, setDisplay] = useState(() => (enabled ? "" : target));
-  const displayLenRef = useRef(enabled ? 0 : charLen(target));
+  // disabled 或挂载时已有内容 → 从全文开始；否则从 0 开始（新流式）
+  const _initDisplayLen = (!enabled || charLen(target) > 0) ? charLen(target) : 0;
+  const [display, setDisplay] = useState(() => takeChars(target, _initDisplayLen));
+  const displayLenRef = useRef(_initDisplayLen);
   const targetRef = useRef(target);
   const enabledRef = useRef(enabled);
   const prevEnabledRef = useRef(enabled);
@@ -50,8 +52,8 @@ export function useTypewriterReveal(
       setDisplay(target);
       return;
     }
-    // 从 disabled 切到 enabled 且已有内容时重置打字机，避免恢复内容一次性全量展示
-    if (wasDisabled || charLen(target) === 0) {
+    // 从 disabled 切到 enabled 时重置打字机位置；已在挂载时有内容的跳过
+    if (wasDisabled) {
       displayLenRef.current = 0;
       setDisplay("");
     }
