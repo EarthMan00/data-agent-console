@@ -12,7 +12,6 @@ import {
   sendSessionMessageStream,
   sessionHasAssistantThinkingPlaceholder,
   sessionHasVisibleInFlightAssistant,
-  finalizeStreamingAssistantMessage,
   shouldShowAssistantThinkingPlaceholder,
 } from "@/lib/session-chat-send";
 import type { ChatSendResult, SessionMessageItem } from "@/lib/agent-api/types";
@@ -55,6 +54,14 @@ import {
 } from "@/lib/merge-orchestration-task-artifacts";
 
 import { readSessionMessageCache, writeSessionMessageCache } from "@/lib/session-message-cache";
+import {
+  registerStream,
+  updateStreamContent,
+  completeStream,
+  getStreamState,
+  subscribe as subscribeToStream,
+  releaseStream,
+} from "@/lib/streaming-session-manager";
 
 const SIMPLE_CHAT_COLUMN_MAX = "max-w-[min(100%,920px)]";
 const SIMPLE_CHAT_BUBBLE_MAX = "max-w-[min(100%,720px)]";
@@ -97,10 +104,12 @@ function SimpleSystemBubble({ message }: { message: string }) {
 export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const platformAgent = useOptionalPlatformAgent();
-  const { refreshHistory, refreshHistoryNow } = useMoreDataShellState();
+  const { refreshHistoryNow } = useMoreDataShellState();
   const isMounted = useRef(true);
   const sseAbortRef = useRef<AbortController | null>(null);
   const sessionGenRef = useRef(0);
+  /** manager 订阅已推送到 UI 的字符数（用于 chunk 兜底追赶起点） */
+  const contentLenRef = useRef(0);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -132,15 +141,34 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     platformAgent?.authValidated,
   );
 
+  const _processStreamingMessages = (msgs: SessionMessageItem[]): SessionMessageItem[] => {
+    const streamState = getStreamState(sessionId);
+    return msgs.map((m) => {
+      if (
+        m.role === "assistant" &&
+        m.meta &&
+        typeof m.meta === "object" &&
+        (m.meta as Record<string, unknown>).streaming === true
+      ) {
+        if (streamState && streamState.status === "streaming") {
+          const liveContent = streamState.content || (m.content || "");
+          return { ...m, content: liveContent, meta: { ...m.meta as Record<string, unknown>, streaming: true } };
+        }
+        const meta = { ...(m.meta as Record<string, unknown>) };
+        delete (meta as Record<string, unknown>).streaming;
+        const body = (m.content || "").trim();
+        return { ...m, meta, content: body };
+      }
+      return m;
+    });
+  };
+
   useEffect(() => {
     isMounted.current = true;
     sessionGenRef.current += 1;
     return () => {
       isMounted.current = false;
-      if (sseAbortRef.current) {
-        sseAbortRef.current.abort();
-        sseAbortRef.current = null;
-      }
+      // SSE 流保持存活（跨会话切换不断流），交由 streaming-session-manager 管理生命周期
     };
   }, [sessionId]);
 
@@ -149,7 +177,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
 
     const cached = readSessionMessageCache(sessionId);
     if (cached) {
-      setMessages(cached);
+      setMessages(_processStreamingMessages(cached));
       setBusy(false);
       setError("");
     } else {
@@ -160,9 +188,23 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     try {
       await platformAgent.withFreshToken(async (token) => {
         const res = await listSessionMessages(token, sessionId, 200);
-        const fresh = res.messages ?? [];
+        const fresh = _processStreamingMessages(res.messages ?? []);
         writeSessionMessageCache(sessionId, fresh);
-        setMessages(fresh);
+        setMessages((cur) => {
+          const streamState = getStreamState(sessionId);
+          if (!streamState || streamState.status !== "streaming") return fresh;
+          const streamId = streamState.assistantStreamId;
+          const curStreaming = cur.find((m) => m.id === streamId && isStreamingAssistantMessage(m));
+          if (!curStreaming) return fresh;
+          if (!fresh.some((m) => m.id === streamId)) {
+            const userMsg = cur.find((m) => m.role === "user" && m.id.startsWith("optimistic_user_"));
+            const tail = userMsg ? [userMsg, curStreaming] : [curStreaming];
+            const freshIds = new Set(fresh.map((m) => m.id));
+            const append = tail.filter((m) => !freshIds.has(m.id));
+            return [...fresh, ...append];
+          }
+          return fresh.map((m) => (m.id === streamId ? curStreaming : m));
+        });
       });
     } catch (e) {
       if (!readSessionMessageCache(sessionId)) {
@@ -175,7 +217,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
 
   useEffect(() => {
     const cached = readSessionMessageCache(sessionId);
-    setMessages(cached ?? []);
+    setMessages(_processStreamingMessages(cached ?? []));
     setShowResultPanel(false);
     setFocusedTaskId(null);
     setOrchestrationBundles([]);
@@ -203,6 +245,58 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     platformAgent.setActivePlatformSession(sessionId);
     void reload();
   }, [platformAgent, reload, router, sessionId]);
+
+  // 订阅 stream manager：与侧栏会话页对齐，支持切走不断流、切回续播
+  useEffect(() => {
+    let rafId: number | null = null;
+    let pending = false;
+
+    const flush = () => {
+      rafId = null;
+      pending = false;
+      const s = getStreamState(sessionId);
+      if (!s || s.status !== "streaming") {
+        if (s && s.status === "completed") {
+          void reload();
+        }
+        return;
+      }
+      const targetId = s.assistantStreamId;
+      const content = s.content;
+      setMessages((cur) => {
+        const existingMeta = (m: { meta?: Record<string, unknown> }) =>
+          m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : {};
+        const byId = cur.find((m) => m.id === targetId);
+        if (byId) {
+          return cur.map((m) =>
+            m.id === targetId ? { ...m, content, meta: { ...existingMeta(m), streaming: true } } : m,
+          );
+        }
+        const lastIdx = cur.reduce<number>((best, m, i) => (m.role === "assistant" ? i : best), -1);
+        if (lastIdx === -1) return cur;
+        return cur.map((m, i) =>
+          i === lastIdx ? { ...m, content, meta: { ...existingMeta(m), streaming: true } } : m,
+        );
+      });
+      contentLenRef.current = [...content].length;
+    };
+
+    const unsub = subscribeToStream(sessionId, () => {
+      if (pending) return;
+      pending = true;
+      rafId = requestAnimationFrame(flush);
+    });
+
+    const initial = getStreamState(sessionId);
+    if (initial && initial.status === "streaming" && initial.content) {
+      flush();
+    }
+
+    return () => {
+      unsub();
+      if (rafId != null) cancelAnimationFrame(rafId);
+    };
+  }, [sessionId, reload]);
 
   useChatStickToBottom(scrollRef, messagesInnerRef, [busy, messages, sending], { resetKey: sessionId });
 
@@ -388,6 +482,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
       platformAgent?.openLogin("请先登录后再发送消息。");
       return;
     }
+    releaseStream(sessionId);
     if (sseAbortRef.current) {
       sseAbortRef.current.abort();
     }
@@ -407,6 +502,8 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     };
     const mid = safeRandomUUID();
     const assistantStreamId = `streaming_assistant_${mid}`;
+    registerStream(sessionId, { abortController, assistantStreamId });
+    contentLenRef.current = 0;
     setMessages((cur) => [
       ...cur,
       optimisticUser,
@@ -426,7 +523,11 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
           assistantStreamId,
           filesToSend,
           abortController.signal,
+          (content) => updateStreamContent(sessionId, content),
+          () => contentLenRef.current,
+          () => sessionGenRef.current === sendGen && isMounted.current,
         );
+        completeStream(sessionId);
         if (sessionGenRef.current !== sendGen) return;
         if (res.kind === "completed") {
           await reload();
@@ -452,10 +553,8 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
           await reload();
         }
       });
-      if (sessionGenRef.current === sendGen) {
-        finalizeStreamingAssistantMessage(setMessages, assistantStreamId);
-      }
     } catch (e) {
+      completeStream(sessionId);
       if (sessionGenRef.current === sendGen) {
         setError(formatAgentApiErrorForUser(e));
         // 即使 500，后端也会把"用户消息 + 错误提示"写入 session_messages，所以这里刷新即可看到真实落库结果

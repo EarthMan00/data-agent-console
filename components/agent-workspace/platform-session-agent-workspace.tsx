@@ -466,6 +466,7 @@ export function PlatformSessionAgentWorkspace({
     const trialAbort = new AbortController();
     registerStream(sessionId, { abortController: trialAbort, assistantStreamId });
     contentLenRef.current = 0;
+    const trialSendGen = sessionGenRef.current;
     setMessages([optimistic, createStreamingAssistantMessage(assistantStreamId, nowIso)]);
     void (async () => {
       try {
@@ -481,8 +482,9 @@ export function PlatformSessionAgentWorkspace({
             trialAbort.signal,
             (content) => updateStreamContent(sessionId, content),
             () => contentLenRef.current,
-            () => isMounted.current,
+            () => sessionGenRef.current === trialSendGen && isMounted.current,
           );
+          completeStream(sessionId);
           let taskId: string | null = null;
           let sendKind: ScheduleTrialSendState = "unknown";
           let executionStepLabels: string[] | null = null;
@@ -514,6 +516,7 @@ export function PlatformSessionAgentWorkspace({
         });
         if (isMounted.current) await reload();
       } catch (e) {
+        completeStream(sessionId);
         saveScheduleTrialMeta({ v: 1, sessionId, taskId: null, sendKind: "unknown" });
         if (isMounted.current) setError(formatAgentApiErrorForUser(e) || "发送失败");
         if (isMounted.current) await reload();

@@ -119,6 +119,7 @@ export async function sendSessionMessageStream(
         fullCleaned = stripModelThinkingForUi(full);
       },
       onError: (message) => {
+        if (isCurrent && !isCurrent()) return;
         const cleaned = stripModelThinkingForUi(message);
         setMessages((cur) =>
           cur.map((m) =>
@@ -163,9 +164,9 @@ export async function sendSessionMessageStream(
   }
 }
 
-// DEBUG: 在浏览器 Console 中执行 window.__feedContentVersion 验证代码版本（应为 4）
+// DEBUG: 在浏览器 Console 中执行 window.__feedContentVersion 验证代码版本（应为 5）
 if (typeof window !== "undefined") {
-  (window as unknown as Record<string, unknown>).__feedContentVersion = 4;
+  (window as unknown as Record<string, unknown>).__feedContentVersion = 5;
 }
 
 /** 兜底：从 startPos 位置起，按动画帧分块追赶全文剩余部分。 */

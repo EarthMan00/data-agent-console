@@ -6,22 +6,45 @@ export type StreamState = {
   content: string;
   status: "streaming" | "completed" | "error";
   errorMessage?: string;
-  listeners: Set<() => void>;
 };
 
 const streams = new Map<string, StreamState>();
+
+/** UI 订阅表：与 StreamState 生命周期分离，releaseStream 不删除 */
+const sessionListeners = new Map<string, Set<() => void>>();
+
+function listenerSet(sessionId: string): Set<() => void> {
+  let set = sessionListeners.get(sessionId);
+  if (!set) {
+    set = new Set();
+    sessionListeners.set(sessionId, set);
+  }
+  return set;
+}
+
+function notify(sessionId: string): void {
+  const set = sessionListeners.get(sessionId);
+  if (!set) return;
+  set.forEach((fn) => fn());
+}
+
+function maybeCleanupStream(sessionId: string): void {
+  const state = streams.get(sessionId);
+  const listeners = sessionListeners.get(sessionId);
+  if (state && state.status !== "streaming" && (!listeners || listeners.size === 0)) {
+    streams.delete(sessionId);
+  }
+}
 
 export function registerStream(
   sessionId: string,
   state: { abortController: AbortController; assistantStreamId: string },
 ): void {
-  const existing = streams.get(sessionId);
   streams.set(sessionId, {
     abortController: state.abortController,
     assistantStreamId: state.assistantStreamId,
     content: "",
     status: "streaming",
-    listeners: existing?.listeners ?? new Set(),
   });
 }
 
@@ -29,14 +52,15 @@ export function updateStreamContent(sessionId: string, content: string): void {
   const state = streams.get(sessionId);
   if (!state || state.status !== "streaming") return;
   state.content = content;
-  state.listeners.forEach((fn) => fn());
+  notify(sessionId);
 }
 
 export function completeStream(sessionId: string): void {
   const state = streams.get(sessionId);
   if (!state) return;
   state.status = "completed";
-  state.listeners.forEach((fn) => fn());
+  notify(sessionId);
+  maybeCleanupStream(sessionId);
 }
 
 export function getStreamState(sessionId: string): StreamState | undefined {
@@ -44,15 +68,15 @@ export function getStreamState(sessionId: string): StreamState | undefined {
 }
 
 export function subscribe(sessionId: string, listener: () => void): () => void {
-  const state = streams.get(sessionId);
-  if (!state) return () => {};
-  state.listeners.add(listener);
+  listenerSet(sessionId).add(listener);
   return () => {
-    state.listeners.delete(listener);
-    const s = streams.get(sessionId);
-    if (s && s.listeners.size === 0 && s.status !== "streaming") {
-      streams.delete(sessionId);
+    const set = sessionListeners.get(sessionId);
+    if (!set) return;
+    set.delete(listener);
+    if (set.size === 0) {
+      sessionListeners.delete(sessionId);
     }
+    maybeCleanupStream(sessionId);
   };
 }
 
