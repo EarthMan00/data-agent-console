@@ -97,66 +97,22 @@ export async function sendSessionMessageStream(
   // 流式 thinking 清洗状态（对齐平台轮次的 streamSanitizeDeltaClient）
   let rawStreamAccum = "";
   let prevSanitizedStream = "";
-  // rAF 节流状态
-  let pendingDelta = "";
-  let rafId: number | null = null;
 
-  const flushPendingDelta = () => {
-    if (rafId != null) {
-      cancelAnimationFrame(rafId);
-      rafId = null;
-    }
-    if (pendingDelta) {
-      const batch = pendingDelta;
-      pendingDelta = "";
-      setMessages((cur) => {
-        if (!cur.some((m) => m.id === assistantStreamId)) return cur;
-        return cur.map((m) =>
-          m.id === assistantStreamId ? { ...m, content: `${m.content}${batch}` } : m,
-        );
-      });
-      onPersist?.(prevSanitizedStream);
-    }
-  };
+  // SSE 完成后的全文（用于分块模拟送达以驱动打字机）
+  let fullCleaned = "";
 
   try {
     return await sendChatMessageStream(accessToken, sessionId, text, messageId, {
       onDelta: (chunk) => {
         if (!chunk) return;
         rawStreamAccum += chunk;
-        const { display, delta } = streamSanitizeDeltaClient(prevSanitizedStream, rawStreamAccum);
+        const { display } = streamSanitizeDeltaClient(prevSanitizedStream, rawStreamAccum);
         prevSanitizedStream = display;
-        if (!delta) return;
-
-        pendingDelta += delta;
-        if (rafId != null) return;
-        rafId = requestAnimationFrame(() => {
-          const batch = pendingDelta;
-          pendingDelta = "";
-          rafId = null;
-          setMessages((cur) => {
-            if (!cur.some((m) => m.id === assistantStreamId)) return cur;
-            return cur.map((m) =>
-              m.id === assistantStreamId ? { ...m, content: `${m.content}${batch}` } : m,
-            );
-          });
-          onPersist?.(prevSanitizedStream);
-        });
       },
       onAssistantComplete: (full) => {
-        flushPendingDelta();
-        const cleaned = stripModelThinkingForUi(full);
-        setMessages((cur) =>
-          cur.map((m) => {
-            if (m.id !== assistantStreamId) return m;
-            const merged =
-              cleaned && cleaned !== "（无回复）" ? cleaned : (m.content ?? "");
-            return { ...m, content: merged, meta: { streaming: true } };
-          }),
-        );
+        fullCleaned = stripModelThinkingForUi(full);
       },
       onError: (message) => {
-        flushPendingDelta();
         const cleaned = stripModelThinkingForUi(message);
         setMessages((cur) =>
           cur.map((m) =>
@@ -173,9 +129,62 @@ export async function sendSessionMessageStream(
     }, { attachmentIds, signal });
   } catch (e) {
     if (isAbortError(e)) {
-      flushPendingDelta();
       return { kind: "completed", session_id: sessionId, message: "" };
     }
     throw e;
+  } finally {
+    // 无论 SSE 是否被代理缓冲、是否异常，均以定时器逐块推进内容，
+    // 确保打字机有稳定的增量渲染帧可消费
+    const content = fullCleaned || prevSanitizedStream;
+    if (content) {
+      await _feedContentInChunks(setMessages, assistantStreamId, content, onPersist);
+    }
+    // 确保 streaming meta 在分块送达完成后才移除
+    setMessages((cur) =>
+      cur.map((m) => {
+        if (m.id !== assistantStreamId || !isStreamingAssistantMessage(m)) return m;
+        const meta =
+          m.meta && typeof m.meta === "object" && !Array.isArray(m.meta)
+            ? { ...(m.meta as Record<string, unknown>) }
+            : {};
+        delete meta.streaming;
+        return { ...m, meta };
+      }),
+    );
   }
+}
+
+/** 将全文按定时器分块喂入消息，每次追加一小段以驱动打字机逐字展示。 */
+async function _feedContentInChunks(
+  setMessages: Dispatch<SetStateAction<SessionMessageItem[]>>,
+  assistantStreamId: string,
+  fullText: string,
+  onPersist?: (content: string) => void,
+): Promise<void> {
+  const chars = [...fullText];
+  if (chars.length === 0) return;
+  const CHUNK = 5; // 每帧追加 5 个字符
+
+  return new Promise<void>((resolve) => {
+    let pos = 0;
+    const tick = () => {
+      if (pos >= chars.length) {
+        onPersist?.(fullText);
+        resolve();
+        return;
+      }
+      const piece = chars.slice(pos, pos + CHUNK).join("");
+      pos += CHUNK;
+      setMessages((cur) => {
+        if (!cur.some((m) => m.id === assistantStreamId)) return cur;
+        return cur.map((m) =>
+          m.id === assistantStreamId
+            ? { ...m, content: m.content + piece, meta: { streaming: true } }
+            : m,
+        );
+      });
+      setTimeout(tick, 22);
+    };
+    tick();
+  });
 }
