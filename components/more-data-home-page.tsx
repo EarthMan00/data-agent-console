@@ -123,7 +123,7 @@ export function MoreDataHomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
-  const { refreshHistoryNow } = useMoreDataShellState();
+  const { refreshHistoryNow, setActiveSessionTitle } = useMoreDataShellState();
   const [query, setQuery] = useState("");
   const [activeCapabilityId, setActiveCapabilityId] = useState("scenarios");
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
@@ -245,6 +245,7 @@ export function MoreDataHomePage() {
       try {
         const sid = await platformAgent.beginNewHomeTaskSession();
         if (!sid) return;
+        setActiveSessionTitle(nextQuery);
         void refreshHistoryNow();
         const runId = workspaceActions.startPlatformTask({
           platformSessionId: sid,
