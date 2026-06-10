@@ -6,7 +6,6 @@ import type { ReactNode } from "react";
 import { ORCHESTRATION_BLOCK_MAX } from "@/components/agent-workspace/chat-bubbles";
 import { TaskExecutionPanel } from "@/components/agent-workspace/task-execution-panel";
 import { cn } from "@/lib/utils";
-import { TaskSplitSection } from "@/components/agent-workspace/task-split-section";
 
 type TaskOrchestrationBlockProps = {
   splitItems: string[];
@@ -65,16 +64,6 @@ export function TaskOrchestrationBlock({
       </div>
 
       {beforeSplit}
-
-      {splitItems.length > 0 ? (
-        <TaskSplitSection
-          items={splitItems}
-          reveal={splitReveal}
-          streamEnded={splitStreamEnded}
-          onRevealComplete={onSplitRevealComplete}
-          testId={splitTestId}
-        />
-      ) : null}
 
       {showExecutionPanel ? (
         <TaskExecutionPanel

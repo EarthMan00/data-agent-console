@@ -817,11 +817,7 @@ function AgentRunWorkspaceView({
                   (!round.collapseExecution ||
                     Boolean(round.linkfoxClarification) ||
                     Boolean(round.clarificationDialog && !round.clarificationDialog.answered));
-                const splitRevealDone =
-                  round.splitItems.length === 0 ||
-                  !round.splitReveal ||
-                  round.roundTerminal ||
-                  Boolean(round.splitRevealComplete);
+                const splitRevealDone = true;
 
                 return (
                 <div key={round.roundId} className="space-y-3">
