@@ -45,6 +45,10 @@ type AgentTaskResultPanelProps = {
   subtaskResultTabs?: AgentTaskSubtaskTab[];
   activeSubtaskTaskId?: string | null;
   onSubtaskSelect?: (taskId: string) => void;
+  /** 任务失败时的错误信息 */
+  errorMessage?: string | null;
+  /** 任务状态（如 FAILED / SUCCESS） */
+  taskStatus?: string | null;
 };
 
 function effectiveBundleDownloadPath(p: {
@@ -177,6 +181,8 @@ export function AgentTaskResultPanel({
   subtaskResultTabs,
   activeSubtaskTaskId,
   onSubtaskSelect,
+  errorMessage,
+  taskStatus,
 }: AgentTaskResultPanelProps) {
   const tid = (taskId ?? "").trim();
   const sheets = useMemo(() => buildTaskResultSheets(artifacts ?? []), [artifacts]);
@@ -422,11 +428,25 @@ export function AgentTaskResultPanel({
       ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {(taskStatus === "FAILED" && errorMessage) ? (
+          <div className="shrink-0 border-b border-[#fecaca] bg-[#fef2f2] px-3 py-3 sm:px-4">
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 shrink-0 text-sm font-semibold text-[#dc2626]">执行失败</span>
+            </div>
+            <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-[#7f1d1d]">
+              {errorMessage}
+            </p>
+          </div>
+        ) : null}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto px-3 pt-2 sm:px-4">
           {withFreshToken && useSheetUi && activeSheet ? (
             <TaskResultSheetBody sheet={activeSheet} viewMode={viewMode} withFreshToken={withFreshToken} />
           ) : withFreshToken && !useSheetUi && fallbackPrimary ? (
             <TaskSingleDataArtifactPreview artifact={fallbackPrimary} withFreshToken={withFreshToken} />
+          ) : taskStatus === "FAILED" ? (
+            <p className="text-[13px] leading-6 text-[#64748b]">
+              任务未产生可展示的数据文件（CSV/JSON 等），详情请查看上方错误信息。
+            </p>
           ) : (
             <p className="text-[14px] leading-6 text-[#64748b]">
               暂无数据或报告类结果文件（CSV/JSON/Markdown/HTML/PDF 等）可展示。

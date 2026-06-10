@@ -174,6 +174,8 @@ export async function fetchTaskOrchestrationForResultPanel(
   bundles: TaskOrchestrationBundleRow[];
   mergedArtifacts: PlatformTaskArtifactRef[];
   finishedAt: string | null;
+  errorMessage: string | null;
+  lastStatus: string | null;
 }> {
   let stepIds = dedupeOrchestrationTaskIds(primaryTaskId, bundleTaskIds);
 
@@ -196,11 +198,17 @@ export async function fetchTaskOrchestrationForResultPanel(
   const bundles: TaskOrchestrationBundleRow[] = [];
   const mergedArtifacts: PlatformTaskArtifactRef[] = [];
   let finishedAt: string | null = null;
+  let errorMessage: string | null = null;
+  let lastStatus: string | null = null;
 
   for (let i = 0; i < stepIds.length; i++) {
     const id = stepIds[i]!;
     const task = await getTask(token, id);
     finishedAt = task.finished_at ?? finishedAt;
+    lastStatus = task.status ?? lastStatus;
+    if ((task.error_message ?? "").trim()) {
+      errorMessage = task.error_message!;
+    }
     const arts = (task.artifacts ?? []).map((a) => ({
       artifact_id: a.artifact_id,
       artifact_type: a.artifact_type,
@@ -216,7 +224,7 @@ export async function fetchTaskOrchestrationForResultPanel(
     });
   }
 
-  return { bundles, mergedArtifacts, finishedAt };
+  return { bundles, mergedArtifacts, finishedAt, errorMessage, lastStatus };
 }
 
 export async function fetchArtifactsForResultPanel(
