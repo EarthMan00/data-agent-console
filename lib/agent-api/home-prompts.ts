@@ -35,12 +35,12 @@ export async function fetchPublicPromptCategories(): Promise<PublicPromptCategor
   return out;
 }
 
-/** 拉取首页推荐提示词；失败时抛出，由调用方展示错误。capabilityId 可为逗号分隔多个 ID。 */
-export async function fetchHomePromptRecommendations(capabilityId?: string, categoryId?: string): Promise<HomePromptRecommendationDto[]> {
+/** 拉取首页推荐提示词；失败时抛出，由调用方展示错误。capabilityId 可为逗号分隔多个 ID。categoryId 必填。 */
+export async function fetchHomePromptRecommendations(categoryId: string, capabilityId?: string): Promise<HomePromptRecommendationDto[]> {
   const base = getAgentHttpApiBase();
   const params = new URLSearchParams();
+  params.set("category_id", categoryId);
   if (capabilityId) params.set("capability_id", capabilityId);
-  if (categoryId) params.set("category_id", categoryId);
   const qs = params.toString();
   const res = await fetch(`${base}/api/home-prompt-recommendations${qs ? `?${qs}` : ""}`);
   const data = await readErrorResponseBody(res);

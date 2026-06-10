@@ -1222,13 +1222,13 @@ export async function adminDeletePromptCategory(accessToken: string, categoryId:
 
 export async function adminListPromptTemplates(
   accessToken: string,
-  categoryId?: string,
+  categoryId: string,
   status?: string,
   page?: number,
   pageSize?: number,
 ): Promise<AdminPromptTemplateListResponse> {
   const params = new URLSearchParams();
-  if (categoryId) params.set("category_id", categoryId);
+  params.set("category_id", categoryId);
   if (status) params.set("status", status);
   if (page != null) params.set("page", String(page));
   if (pageSize != null) params.set("page_size", String(pageSize));

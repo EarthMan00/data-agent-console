@@ -68,12 +68,12 @@ function getCachedHomePromptCards(cacheKey: string) {
   return homePromptCardCache.get(cacheKey)?.cards ?? null;
 }
 
-function loadHomePromptCardsOnce(cacheKey: string, capabilityId?: string, categoryId?: string) {
+function loadHomePromptCardsOnce(cacheKey: string, categoryId: string, capabilityId?: string) {
   const cached = homePromptCardCache.get(cacheKey);
   if (cached?.cards) return Promise.resolve(cached.cards);
   if (cached?.promise) return cached.promise;
 
-  const promise = fetchHomePromptRecommendations(capabilityId, categoryId)
+  const promise = fetchHomePromptRecommendations(categoryId, capabilityId)
     .then(mapHomePromptCards)
     .then((cards) => {
       homePromptCardCache.set(cacheKey, { cards, promise: null });
@@ -129,7 +129,7 @@ export function MoreDataHomePage() {
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [promptCategories, setPromptCategories] = useState<PublicPromptCategory[]>([]);
   const userCachePrefix = platformAgent?.auth?.userId ?? (platformAgent?.authHydrated ? HOME_PROMPT_ANONYMOUS_CACHE_KEY : null);
-  const homePromptCacheKey = userCachePrefix ? `${userCachePrefix}:cat:${activeCategoryId ?? "__all__"}` : null;
+  const homePromptCacheKey = userCachePrefix && activeCategoryId ? `${userCachePrefix}:cat:${activeCategoryId}` : null;
   const cachedPromptCards = homePromptCacheKey ? getCachedHomePromptCards(homePromptCacheKey) : null;
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [composerMode, setComposerMode] = useState<"普通模式" | "深度模式">("深度模式");
@@ -154,12 +154,17 @@ export function MoreDataHomePage() {
     }
   }, []);
 
-  // 加载公开的 prompt 分类列表
+  // 加载公开的 prompt 分类列表，默认选中第一个
   useEffect(() => {
     let cancelled = false;
     fetchPublicPromptCategories()
       .then((cats) => {
-        if (!cancelled) setPromptCategories(cats);
+        if (!cancelled) {
+          setPromptCategories(cats);
+          if (cats.length > 0 && !activeCategoryId) {
+            setActiveCategoryId(cats[0].id);
+          }
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) console.warn("[prompt-categories]", err);
@@ -168,8 +173,8 @@ export function MoreDataHomePage() {
   }, []);
 
   useEffect(() => {
-    if (!userCachePrefix) return;
-    const cacheKey = `${userCachePrefix}:cat:${activeCategoryId ?? "__all__"}`;
+    if (!userCachePrefix || !activeCategoryId) return;
+    const cacheKey = `${userCachePrefix}:cat:${activeCategoryId}`;
 
     const cached = getCachedHomePromptCards(cacheKey);
     if (cached) {
@@ -180,7 +185,7 @@ export function MoreDataHomePage() {
 
     let cancelled = false;
     setPromptCardsLoading(true);
-    void loadHomePromptCardsOnce(cacheKey, undefined, activeCategoryId ?? undefined)
+    void loadHomePromptCardsOnce(cacheKey, activeCategoryId)
       .then((cards) => {
         if (cancelled) return;
         setRemotePromptCards(cards);
@@ -413,22 +418,6 @@ export function MoreDataHomePage() {
             id="sym:homeCapabilityItems"
             className="mt-7 flex w-full flex-wrap items-center gap-x-4 gap-y-2 text-[14px] leading-5 sm:mt-10 sm:gap-x-6 sm:gap-y-3 sm:text-[16px] sm:leading-6"
           >
-            {/* "全部" 标签 */}
-            <button
-              type="button"
-              onClick={() => setActiveCategoryId(null)}
-              className={cn(
-                "inline-flex items-center gap-2 p-1 font-medium transition",
-                activeCategoryId === null ? "text-[#111111]" : "text-[#8b8c87] hover:text-[#34322d]",
-              )}
-            >
-              <PlatformLogo
-                name="grid"
-                color={activeCategoryId === null ? "#111111" : "#8b9bb0"}
-                className="h-[15px] w-[15px] shrink-0"
-              />
-              全部
-            </button>
             {/* 数据库中的 Prompt 分类 */}
             {promptCategories.map((cat) => (
               <button

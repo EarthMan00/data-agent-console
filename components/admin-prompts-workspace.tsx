@@ -77,13 +77,22 @@ export function AdminPromptsWorkspace() {
     setNotice("");
     try {
       await platformAgent.withFreshToken(async (token) => {
-        const [cRes, tRes] = await Promise.all([
-          adminListPromptCategories(token),
-          adminListPromptTemplates(token, selectedCategoryId ?? undefined, statusFilter || undefined, page, pageSize),
-        ]);
-        setCategories(cRes.categories ?? []);
-        setTemplates(tRes.templates ?? []);
-        setTotal(tRes.total ?? 0);
+        const cRes = await adminListPromptCategories(token);
+        const cats = cRes.categories ?? [];
+        setCategories(cats);
+        // 若无选中分类，默认选中第一个
+        const effectiveCategoryId = selectedCategoryId ?? cats[0]?.id ?? null;
+        if (!selectedCategoryId && effectiveCategoryId) {
+          setSelectedCategoryId(effectiveCategoryId);
+        }
+        if (effectiveCategoryId) {
+          const tRes = await adminListPromptTemplates(token, effectiveCategoryId, statusFilter || undefined, page, pageSize);
+          setTemplates(tRes.templates ?? []);
+          setTotal(tRes.total ?? 0);
+        } else {
+          setTemplates([]);
+          setTotal(0);
+        }
       });
     } catch (e) {
       setNotice(e instanceof AgentApiError ? parseFastApiDetail(e.body) ?? e.message : String(e));
@@ -112,7 +121,10 @@ export function AdminPromptsWorkspace() {
     setCdBusy(true); setNotice("");
     try {
       await platformAgent.withFreshToken(async (t) => { await adminDeletePromptCategory(t, cdTarget.id); });
-      if (selectedCategoryId === cdTarget.id) setSelectedCategoryId(null);
+      if (selectedCategoryId === cdTarget.id) {
+        const next = categories.find((c) => c.id !== cdTarget.id);
+        setSelectedCategoryId(next?.id ?? null);
+      }
       setCdTarget(null); await refresh();
     } catch (e) {
       setNotice(e instanceof AgentApiError ? parseFastApiDetail(e.body) ?? e.message : String(e));
@@ -239,11 +251,7 @@ export function AdminPromptsWorkspace() {
                     key={cat.id}
                     className={`flex cursor-pointer items-center justify-between px-4 py-2.5 text-sm transition-colors hover:bg-[#f7f7f7] ${selectedCategoryId === cat.id ? "bg-[#f0f0ef]" : ""}`}
                     onClick={() => {
-                      if (selectedCategoryId === cat.id) {
-                        setSelectedCategoryId(null);
-                      } else {
-                        setSelectedCategoryId(cat.id);
-                      }
+                      setSelectedCategoryId(cat.id);
                       setPage(1);
                     }}
                   >
@@ -266,7 +274,7 @@ export function AdminPromptsWorkspace() {
         <div className="min-w-0 flex-1">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-[#111111]">
-              {selectedCategoryId ? `模板列表 (${total})` : `全部模板 (${total})`}
+              {selectedCategoryId ? `模板列表 (${total})` : `模板列表 (${total})`}
             </h2>
             <div className="flex items-center gap-3">
               <select

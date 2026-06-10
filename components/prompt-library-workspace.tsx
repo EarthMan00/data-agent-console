@@ -52,7 +52,7 @@ import {
   patchUserPrompt,
 } from "@/lib/agent-api/user-prompts";
 
-type FilterTab = { kind: "all" } | { kind: "default" } | { kind: "group"; id: string };
+type FilterTab = { kind: "default" } | { kind: "group"; id: string };
 const DEFAULT_GROUP_VALUE = "__default__";
 
 function sortGroupsByCreatedAsc(groups: UserPromptGroupDto[]) {
@@ -72,7 +72,7 @@ const tabToValue = (tab: FilterTab) => (tab.kind === "group" ? `group:${tab.id}`
 function valueToTab(value: string): FilterTab {
   if (value === "default") return { kind: "default" };
   if (value.startsWith("group:")) return { kind: "group", id: value.slice("group:".length) };
-  return { kind: "all" };
+  return { kind: "default" };
 }
 
 function formatDateTime(iso: string) {
@@ -103,11 +103,9 @@ async function fetchAllPromptsForFilter(
   const page_size = 100;
   while (true) {
     const params =
-      tab.kind === "all"
-        ? { page, page_size }
-        : tab.kind === "default"
-          ? { page, page_size, only_default: true as const }
-          : { page, page_size, group_id: tab.id };
+      tab.kind === "default"
+        ? { page, page_size, only_default: true as const }
+        : { page, page_size, group_id: tab.id };
     const r = await listUserPrompts(token, params);
     out.push(...r.items);
     if (out.length >= r.total || r.items.length === 0) break;
@@ -130,7 +128,7 @@ export function PromptLibraryWorkspace() {
   const [search, setSearch] = useState("");
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
   const searchDialogInputRef = useRef<HTMLInputElement | null>(null);
-  const [tab, setTab] = useState<FilterTab>({ kind: "all" });
+  const [tab, setTab] = useState<FilterTab>({ kind: "default" });
 
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
@@ -209,7 +207,7 @@ export function PromptLibraryWorkspace() {
     setEditingId(null);
     setFormTitle("");
     setFormPrompt("");
-    setFormGroupId(tab.kind === "default" ? null : tab.kind === "group" ? tab.id : null);
+    setFormGroupId(tab.kind === "default" ? null : tab.id);
     setSaveOpen(true);
   };
 
@@ -308,7 +306,7 @@ export function PromptLibraryWorkspace() {
         await deleteUserPromptGroup(token, id);
       });
       setDeleteGroupId(null);
-      if (tab.kind === "group" && tab.id === id) setTab({ kind: "all" });
+      if (tab.kind === "group" && tab.id === id) setTab({ kind: "default" });
       await refresh();
     } catch (e) {
       const msg =
@@ -413,7 +411,6 @@ export function PromptLibraryWorkspace() {
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                 <Tabs value={tabToValue(tab)} onValueChange={(value) => setTab(valueToTab(value))}>
                   <TabsList className="flex-wrap justify-start">
-                    <TabsTrigger value="all">全部</TabsTrigger>
                     <TabsTrigger value="default">默认</TabsTrigger>
                     {groups.map((g) => (
                       <div key={g.id} className="group/chip relative inline-flex items-center rounded-[8px]">
@@ -500,7 +497,7 @@ export function PromptLibraryWorkspace() {
             prompts.length === 0 ? (
               <EmptyState
                 className="min-h-[calc(100vh-260px)]"
-                message={tab.kind === "all" ? "暂无提示词" : tab.kind === "default" ? "默认分组下暂无提示词" : "该分组下暂无提示词"}
+                message={tab.kind === "default" ? "默认分组下暂无提示词" : "该分组下暂无提示词"}
                 action={
                   <Button
                     type="button"
