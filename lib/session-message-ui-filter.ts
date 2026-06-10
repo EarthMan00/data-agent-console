@@ -30,7 +30,12 @@ export function shouldHideAssistantMessageBubble(m: SessionMessageItem): boolean
   if (m.role !== "assistant") return false;
   const meta = messageMeta(m);
   const kind = typeof meta?.kind === "string" ? meta.kind.trim() : "";
-  if (kind === "task_execution_steps") return false;
+  if (kind === "task_execution_steps") {
+    // 步骤卡片由 TaskExecutionStepsAssistantBubble 渲染；
+    // 若正文仅为占位文本，隐藏纯文本气泡避免重复展示。
+    if (matchesOrchestrationStatusContent(m.content || "")) return true;
+    return false;
+  }
   if (
     kind === "linkfox_clarification" ||
     kind === "post_task_guidance" ||

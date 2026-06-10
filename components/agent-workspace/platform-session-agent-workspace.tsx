@@ -845,25 +845,24 @@ export function PlatformSessionAgentWorkspace({
   }, [effectiveOrchestrationAnchor?.orchestrationId, platformAgent, scheduleTrial]);
 
   useEffect(() => {
-    if (!effectiveOrchestrationAnchor || !platformAgent?.auth || showResultPanel) return;
-    /** 试跑执行中由消息 meta + 编排轮询展示进度，避免反复 GET /api/tasks/{id} */
+    if (!effectiveOrchestrationAnchor || !platformAgent?.auth || showResultPanel) {
+      return;
+    }
     if (scheduleTrial && trialRunInFlight) return;
-    const anchorKey = [
-      effectiveOrchestrationAnchor.primaryTaskId,
-      effectiveOrchestrationAnchor.orchestrationId ?? "",
-      (effectiveOrchestrationAnchor.bundleTaskIds ?? []).join(","),
-    ].join("|");
-    if (trialPrefetchAnchorRef.current === anchorKey) return;
-    trialPrefetchAnchorRef.current = anchorKey;
+
     let cancelled = false;
     void platformAgent.withFreshToken(async (token) => {
-      const data = await fetchTaskOrchestrationForResultPanel(
-        token,
-        effectiveOrchestrationAnchor.primaryTaskId,
-        effectiveOrchestrationAnchor.bundleTaskIds,
-        { orchestrationId: effectiveOrchestrationAnchor.orchestrationId },
-      );
-      if (!cancelled) setOrchestrationBundles(data.bundles);
+      try {
+        const data = await fetchTaskOrchestrationForResultPanel(
+          token,
+          effectiveOrchestrationAnchor.primaryTaskId,
+          effectiveOrchestrationAnchor.bundleTaskIds,
+          { orchestrationId: effectiveOrchestrationAnchor.orchestrationId },
+        );
+        if (!cancelled) setOrchestrationBundles(data.bundles);
+      } catch {
+        // task/orchestration may have been deleted
+      }
     });
     return () => {
       cancelled = true;
@@ -889,7 +888,7 @@ export function PlatformSessionAgentWorkspace({
         );
         setSupplementalBundlesById((prev) => ({ ...prev, [messageId]: data.bundles }));
       } catch {
-        // 任务已过期/删除或 task_id 无效 → 该消息无 supplemental bundles，子任务卡不可点
+        // task/orchestration may have been deleted
       }
     });
   }, [platformAgent, supplementalBundlesById]);
