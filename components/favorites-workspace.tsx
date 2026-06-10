@@ -193,7 +193,11 @@ export function FavoritesWorkspace() {
   const onDownload = (id: string, title: string) => {
     if (!platformAgent?.withFreshToken) return;
     void platformAgent.withFreshToken(async (token) => {
-      await downloadAuthorizedFile(token, `/api/user/favorites/${id}/download`, `${title || "report"}.bin`);
+      try {
+        await downloadAuthorizedFile(token, `/api/user/favorites/${id}/download`, `${title || "report"}.bin`);
+      } catch (e) {
+        setError(formatAgentApiErrorForUser(e) || "下载失败，该收藏项暂无可下载内容");
+      }
     });
   };
 
