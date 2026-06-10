@@ -52,7 +52,6 @@ export function buildPlatformStepTimeline(
       }
     } else {
       items.push({ kind: "executing", step, stepIndex: i, total: n });
-      break;
     }
   }
   return items;
