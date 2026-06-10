@@ -682,7 +682,9 @@ export function PlatformSessionAgentWorkspace({
   }, [messages]);
 
   useEffect(() => {
-    setActiveSessionTitle(firstUserMessageTitle);
+    if (firstUserMessageTitle) {
+      setActiveSessionTitle(firstUserMessageTitle);
+    }
   }, [firstUserMessageTitle, setActiveSessionTitle]);
 
   const headerLabel = scheduleTrial
