@@ -97,6 +97,7 @@ import {
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import { PostTaskGuidanceBubble } from "./post-task-guidance-bubble";
 import {
+  AliceErrorBubble,
   AliceMessageBubble,
   SIMPLE_CHAT_COLUMN_MAX,
   SimpleAssistantBubble,
@@ -166,6 +167,8 @@ export function PlatformSessionAgentWorkspace({
   const [currentBundleDownloadApi, setCurrentBundleDownloadApi] = useState<string | null>(null);
   const [currentBundleDownloadName, setCurrentBundleDownloadName] = useState<string | null>(null);
   const [currentTaskFinishedAt, setCurrentTaskFinishedAt] = useState<string | null>(null);
+  const [currentTaskError, setCurrentTaskError] = useState<string | null>(null);
+  const [currentTaskStatus, setCurrentTaskStatus] = useState<string | null>(null);
   const [lastTaskSnapshot, setLastTaskSnapshot] = useState<TaskResponse | null>(null);
   const [trialOrchestrationDone, setTrialOrchestrationDone] = useState<{
     finished: boolean;
@@ -756,6 +759,8 @@ export function PlatformSessionAgentWorkspace({
     setOrchestrationBundles([]);
     setPanelSubtaskFocus(null);
     setCurrentTaskFinishedAt(null);
+    setCurrentTaskError(null);
+    setCurrentTaskStatus(null);
     setTrialOrchestrationDone(null);
     trialAutoOpenedPanelRef.current = false;
     scheduledRunAutoOpenedPanelRef.current = false;
@@ -1078,6 +1083,8 @@ export function PlatformSessionAgentWorkspace({
           setCurrentBundleDownloadApi(api);
           setCurrentBundleDownloadName(ids.length > 1 ? `${taskId}.zip` : null);
           setCurrentTaskFinishedAt(data.finishedAt);
+          setCurrentTaskError(data.errorMessage ?? null);
+          setCurrentTaskStatus(data.lastStatus ?? null);
           setFocusedTaskId(taskId);
           setShowResultPanel(true);
         });
@@ -1251,6 +1258,8 @@ export function PlatformSessionAgentWorkspace({
             bundleDownloadName={currentBundleDownloadName}
             taskId={resolvedSubtaskTaskIdForPanel ?? focusedTaskId}
             resultGeneratedAt={currentTaskFinishedAt}
+            errorMessage={currentTaskError}
+            taskStatus={currentTaskStatus}
               subtaskResultTabs={
                 subtasksWithTabularPreview.length > 1
                   ? subtasksWithTabularPreview.map((s) => ({
@@ -1273,6 +1282,8 @@ export function PlatformSessionAgentWorkspace({
               setCurrentBundleDownloadApi(null);
               setCurrentBundleDownloadName(null);
               setCurrentTaskFinishedAt(null);
+              setCurrentTaskError(null);
+              setCurrentTaskStatus(null);
             }}
           />
         ) : undefined
@@ -1369,6 +1380,11 @@ export function PlatformSessionAgentWorkspace({
                   const msgKind =
                     meta && typeof meta.kind === "string" ? (meta.kind as string).trim() : "";
                   const isLinkfoxClarification = msgKind === "linkfox_clarification";
+                  const isOrchestrationFailure = msgKind === "orchestration_failure";
+                  const isTaskError =
+                    m.role === "assistant" &&
+                    meta?.task_status === "FAILED" &&
+                    typeof meta?.error_message === "string";
                   const guidancePresentation =
                     m.role === "assistant" && !showTaskStepsAtThisMessage && !hideAssistantBubble
                       ? resolvePostTaskGuidancePresentation(m, meta)
@@ -1448,6 +1464,16 @@ export function PlatformSessionAgentWorkspace({
                               setPanelSubtaskFocus={setPanelSubtaskFocus}
                               setPanelVisibility={setPanelVisibilityRecord}
                             />
+                            {isOrchestrationFailure ? (
+                              <AliceErrorBubble
+                                body={m.content}
+                                datetime={m.created_at}
+                                composerDraft={scheduleTrial || scheduledRunRecord ? "" : draft}
+                                onSuggestionToggle={
+                                  scheduleTrial || scheduledRunRecord ? undefined : toggleGuidanceSuggestion
+                                }
+                              />
+                            ) : null}
                             {(m.id === latestStepsMessageId || isThisOrchestrationTurn) &&
                             linkfoxClarificationForSteps &&
                             !deferStepsToUserId &&
@@ -1507,6 +1533,24 @@ export function PlatformSessionAgentWorkspace({
                               }
                             />
                           </div>
+                        ) : isOrchestrationFailure ? (
+                          <AliceErrorBubble
+                            body={m.content}
+                            datetime={m.created_at}
+                            composerDraft={scheduleTrial || scheduledRunRecord ? "" : draft}
+                            onSuggestionToggle={
+                              scheduleTrial || scheduledRunRecord ? undefined : toggleGuidanceSuggestion
+                            }
+                          />
+                        ) : isTaskError ? (
+                          <AliceErrorBubble
+                            body={m.content}
+                            datetime={m.created_at}
+                            composerDraft={scheduleTrial || scheduledRunRecord ? "" : draft}
+                            onSuggestionToggle={
+                              scheduleTrial || scheduledRunRecord ? undefined : toggleGuidanceSuggestion
+                            }
+                          />
                         ) : hideAssistantBubble ? null : shouldShowAssistantThinkingPlaceholder(
                             m,
                             messages,
@@ -1524,10 +1568,16 @@ export function PlatformSessionAgentWorkspace({
                       ) : (
                         <SimpleSystemBubble message={m.content} />
                       )}
-                      {taskId ? (
+                      {taskId && meta?.has_artifacts === true ? (
                         <TaskResultSummaryCard
                           title="任务结果"
-                          summary="该轮任务已完成，可在右侧查看任务结果与数据文件。"
+                          summary={
+                            meta?.task_status === "FAILED" && typeof meta?.error_message === "string"
+                              ? `任务执行失败：${meta!.error_message}`
+                              : meta?.task_status === "FAILED"
+                                ? "任务执行失败，可在右侧查看任务结果详情。"
+                                : "该轮任务已完成，可在右侧查看任务结果与数据文件。"
+                          }
                           expanded={showResultPanel && focusedTaskId === taskId}
                           onToggle={() => {
                             if (showResultPanel && focusedTaskId === taskId) {

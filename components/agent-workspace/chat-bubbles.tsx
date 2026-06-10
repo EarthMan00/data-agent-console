@@ -416,3 +416,101 @@ export function ToolCard({
     </div>
   );
 }
+
+/**
+ * 任务失败错误气泡：以 Alice 身份展示，错误原因红字，补救方法为可点击气泡。
+ * 复用 splitClarificationForDisplay 将编号列表项解析为可点击建议。
+ */
+export function AliceErrorBubble({
+  body,
+  datetime,
+  composerDraft = "",
+  onSuggestionToggle,
+}: {
+  body: string;
+  datetime: string;
+  composerDraft?: string;
+  onSuggestionToggle?: (item: string) => void;
+}) {
+  const { leading, suggestions } = splitClarificationForDisplay(body);
+  const interactive = typeof onSuggestionToggle === "function" && suggestions.length > 0;
+  // 去重建议列表
+  const uniqueSuggestions = suggestions.filter(
+    (s, i) => suggestions.findIndex((x) => x === s) === i,
+  );
+
+  const displayCause = leading || (uniqueSuggestions.length > 0 ? "" : body);
+
+  return (
+    <div className="flex w-full justify-start">
+      <div className={cn("group w-full space-y-3", SIMPLE_CHAT_BUBBLE_MAX)}>
+        {/* Alice 身份头 */}
+        <div className="flex w-full min-w-0 items-center justify-between gap-3 text-[14px] font-medium text-[#303734]">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center">
+              <Image
+                src="/mdata-logo.png"
+                alt="Alice"
+                width={36}
+                height={36}
+                className="h-9 w-9 shrink-0 object-contain"
+                draggable={false}
+              />
+            </div>
+            <div className="text-[14px] font-semibold text-[#1f2421]">Alice</div>
+          </div>
+          <div className="shrink-0 text-[12px] text-[#858481] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            {formatTimeForBubble(datetime)}
+          </div>
+        </div>
+
+        {/* 错误原因 */}
+        {displayCause ? (
+          <div className="shrink-0 rounded-[16px] border border-[#fecaca] bg-[#fef2f2] px-4 py-3">
+            <div className="whitespace-pre-wrap text-[14px] leading-7 text-[#b91c1c]">
+              {displayCause}
+            </div>
+          </div>
+        ) : null}
+
+        {/* 补救措施（可点击气泡） */}
+        {uniqueSuggestions.length > 0 ? (
+          <div className="space-y-2.5 pl-0 sm:pl-12">
+            <p className="text-[12px] font-medium text-[#78716c]">可尝试以下操作：</p>
+            <div className="flex flex-row flex-wrap items-start gap-2" role={interactive ? "list" : undefined}>
+              {uniqueSuggestions.map((item, index) => {
+                const selected = composerDraftContainsSuggestion(composerDraft, item);
+                const chipClass = cn(
+                  "inline-flex max-w-full rounded-[999px] border px-3.5 py-2 text-left text-[13px] leading-5 transition",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15",
+                  selected
+                    ? "border-[#111111] bg-[#111111] text-white shadow-[0_1px_2px_rgba(17,17,17,0.08)]"
+                    : "border-[#e2e2df] bg-white text-[#34322d] shadow-[0_1px_2px_rgba(17,17,17,0.03)] hover:border-[#c9c9c4] hover:bg-[#fafaf9]",
+                );
+                if (interactive) {
+                  return (
+                    <button
+                      key={`err-sug-${index}-${item.slice(0, 24)}`}
+                      type="button"
+                      role="listitem"
+                      aria-pressed={selected}
+                      className={cn(chipClass, "active:scale-[0.98]")}
+                      onClick={() => onSuggestionToggle(item)}
+                    >
+                      <span className="whitespace-pre-wrap break-words">{item}</span>
+                    </button>
+                  );
+                }
+                return (
+                  <div key={`err-sug-${index}-${item.slice(0, 24)}`} role="listitem" className={chipClass}>
+                    <span className="whitespace-pre-wrap break-words">{item}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
