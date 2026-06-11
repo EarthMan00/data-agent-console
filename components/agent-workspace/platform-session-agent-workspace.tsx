@@ -108,6 +108,7 @@ import {
   SimpleUserBubble,
 } from "./chat-bubbles";
 import { sanitizeClarificationForUserDisplay } from "@/lib/linkfox-clarification";
+import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { sessionHasOrchestrationFailure } from "@/lib/orchestration-failure-message";
 
 function mergeTaskStepStatuses(
@@ -1629,7 +1630,7 @@ export function PlatformSessionAgentWorkspace({
                           title="任务结果"
                           summary={
                             meta?.task_status === "FAILED" && typeof meta?.error_message === "string"
-                              ? `任务执行失败：${meta!.error_message}`
+                              ? `任务执行失败：${humanizeTaskErrorMessage(meta!.error_message as string)}`
                               : meta?.task_status === "FAILED"
                                 ? "任务执行失败，可在右侧查看任务结果详情。"
                                 : "该轮任务已完成，可在右侧查看任务结果与数据文件。"

@@ -103,6 +103,7 @@ describe("isUnhelpfulApiTaskLabel / displayLabelForIndexedSubtask", () => {
   it("将 hash:os: 等 key_hint 视为无展示意义", () => {
     expect(isUnhelpfulApiTaskLabel("hash:os:e64f58ae8")).toBe(true);
     expect(isUnhelpfulApiTaskLabel("查询关键词数据")).toBe(false);
+    expect(isUnhelpfulApiTaskLabel("run_linkfox_task")).toBe(true);
   });
 
   it("有拆解步骤文案时优先用作 Sheet 名", () => {

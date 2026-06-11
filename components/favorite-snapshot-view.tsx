@@ -119,11 +119,9 @@ export function FavoriteSnapshotView({
     );
   }
 
-  if (kind === "linkfox" && content_text) {
+  if (kind === "linkfox") {
     return (
-      <pre className="min-h-0 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-[#e5e7eb] bg-[#f8fafc] p-3 text-[12px] leading-relaxed text-[#31405a]">
-        {content_text}
-      </pre>
+      <p className="px-4 py-8 text-sm text-[#64748b]">无法展示该收藏的快照内容。</p>
     );
   }
 

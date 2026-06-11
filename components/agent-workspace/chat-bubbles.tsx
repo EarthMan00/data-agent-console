@@ -10,6 +10,8 @@ import { useTypewriterReveal } from "@/lib/use-typewriter-reveal";
 import { cn } from "@/lib/utils";
 import { stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 import { sanitizeClarificationForUserDisplay, splitClarificationForDisplay } from "@/lib/linkfox-clarification";
+import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
+import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
 import { composerDraftContainsSuggestion } from "@/lib/composer-prefill";
 
 function charLen(text: string): number {
@@ -65,7 +67,8 @@ export function SimpleAssistantBubble({
 }) {
   const targetNorm = (() => {
     const t = streaming ? stripModelThinkingForStreamPartial(body) : stripModelThinkingForUi(body);
-    return t === "（无回复）" ? "" : t;
+    const norm = t === "（无回复）" ? "" : t;
+    return stripInternalToolNamesForUi(norm);
   })();
   const [latchedVisible, setLatchedVisible] = useState(() => (targetNorm.trim() ? targetNorm : ""));
   useEffect(() => {
@@ -432,14 +435,15 @@ export function AliceErrorBubble({
   composerDraft?: string;
   onSuggestionToggle?: (item: string) => void;
 }) {
-  const { leading, suggestions } = splitClarificationForDisplay(body);
+  const errorBody = humanizeTaskErrorMessage(body);
+  const { leading, suggestions } = splitClarificationForDisplay(errorBody);
   const interactive = typeof onSuggestionToggle === "function" && suggestions.length > 0;
   // 去重建议列表
   const uniqueSuggestions = suggestions.filter(
     (s, i) => suggestions.findIndex((x) => x === s) === i,
   );
 
-  const displayCause = leading || (uniqueSuggestions.length > 0 ? "" : body);
+  const displayCause = leading || (uniqueSuggestions.length > 0 ? "" : errorBody);
 
   return (
     <div className="flex w-full justify-start">

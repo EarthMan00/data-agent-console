@@ -99,6 +99,7 @@ import type {
   UserScheduledTaskItemApi,
 } from "@/lib/agent-api/types";
 import { cn } from "@/lib/utils";
+import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 
 const PRIMARY_TABS = ["已定时", "运行记录"] as const;
 const WORKFLOW_STATUS_OPTIONS = ["全部状态", "生效中", "已暂停", "已完结"] as const;
@@ -1966,8 +1967,14 @@ function ApiRunRecordRow({
 
   const summaryText = (() => {
     const err = (r.error_message || "").trim();
-    if (err) return err;
+    if (err) return humanizeTaskErrorMessage(err);
     return (r.prompt_snapshot || "").trim() || "—";
+  })();
+
+  const statusTooltip = (() => {
+    const err = (r.error_message || "").trim();
+    if (err) return humanizeTaskErrorMessage(err);
+    return st.text === "运行成功" ? "执行成功" : st.text;
   })();
 
   return (
@@ -1979,9 +1986,7 @@ function ApiRunRecordRow({
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5 pr-1">
             <span
               className={cn("inline-flex w-fit shrink-0 items-center rounded-md px-2.5 py-1 text-xs font-medium", st.className)}
-              title={
-                (r.error_message && r.error_message.trim()) || (st.text === "运行成功" ? "执行成功" : st.text)
-              }
+              title={statusTooltip}
             >
               {st.text}
             </span>

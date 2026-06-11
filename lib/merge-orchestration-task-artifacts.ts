@@ -27,6 +27,7 @@ export function isUnhelpfulApiTaskLabel(s: string): boolean {
   if (/^hash:/i.test(t)) return true;
   if (/^hash:os:[a-f0-9]+$/i.test(t)) return true;
   if (/^os:[a-f0-9]+$/i.test(t)) return true;
+  if (/^run_(?:linkfox|chatexcel)_task$/i.test(t)) return true;
   return false;
 }
 
@@ -34,10 +35,6 @@ function labelForOrchestrationStep(task: TaskResponse, stepIndex: number): strin
   const hint = (task.key_hint ?? "").trim();
   if (hint && !isUnhelpfulApiTaskLabel(hint)) {
     return hint.length > 36 ? `${hint.slice(0, 33)}...` : hint;
-  }
-  const tn = (task.tool_name ?? "").trim();
-  if (tn && !isUnhelpfulApiTaskLabel(tn)) {
-    return tn.length > 36 ? `${tn.slice(0, 33)}...` : tn;
   }
   return `步骤 ${stepIndex + 1}`;
 }

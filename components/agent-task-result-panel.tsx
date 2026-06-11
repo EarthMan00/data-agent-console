@@ -16,7 +16,8 @@ import {
 } from "@/lib/agent-api/client";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { buildFavoriteSnapshotFromArtifacts } from "@/lib/build-favorite-snapshot";
-import { listDownloadableTaskArtifacts, pickPrimaryTaskDataArtifact } from "@/lib/platform-task-artifacts";
+import { artifactDownloadNameForUi, listDownloadableTaskArtifacts, pickPrimaryTaskDataArtifact } from "@/lib/platform-task-artifacts";
+import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import {
   buildTaskResultSheets,
   sheetSupportsTableCodeToggle,
@@ -187,6 +188,10 @@ export function AgentTaskResultPanel({
   const sheets = useMemo(() => buildTaskResultSheets(artifacts ?? []), [artifacts]);
   const fallbackPrimary = pickPrimaryTaskDataArtifact(artifacts ?? []);
   const useSheetUi = sheets.length > 0;
+  const displayErrorMessage = useMemo(
+    () => humanizeTaskErrorMessage(errorMessage ?? ""),
+    [errorMessage],
+  );
 
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "code">("table");
@@ -249,7 +254,7 @@ export function AgentTaskResultPanel({
         await downloadAuthorizedFile(
           token,
           target.download_api,
-          safeFilename(target.original_name, "download"),
+          safeFilename(artifactDownloadNameForUi(target.original_name), "download"),
         );
       });
       return;
@@ -437,13 +442,13 @@ export function AgentTaskResultPanel({
       ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {(taskStatus === "FAILED" && errorMessage) ? (
+        {(taskStatus === "FAILED" && displayErrorMessage) ? (
           <div className="shrink-0 border-b border-[#fecaca] bg-[#fef2f2] px-3 py-3 sm:px-4">
             <div className="flex items-start gap-2">
               <span className="mt-0.5 shrink-0 text-sm font-semibold text-[#dc2626]">执行失败</span>
             </div>
             <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-[#7f1d1d]">
-              {errorMessage}
+              {displayErrorMessage}
             </p>
           </div>
         ) : null}
