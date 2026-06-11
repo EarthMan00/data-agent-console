@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
@@ -65,15 +65,18 @@ import {
   shouldSuppressSessionClarificationAt,
 } from "@/lib/session-clarification-flow";
 import { safeRandomUUID } from "@/lib/random-uuid";
-import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import {
+  buildBundleDownloadApiForPanel,
   enrichOrchestrationBundlesWithStepLabels,
   fetchTaskOrchestrationForResultPanel,
   mergeBundlesIntoPlatformSnapshots,
   pickBestOrchestrationAnchor,
+  resolveAnchorForPanelFromMessageMeta,
   resolveOrchestrationAnchorFromMessageMeta,
   type OrchestrationAnchor,
+  type PanelOrchestrationAnchor,
+  type ResultPanelContext,
   type TaskOrchestrationBundleRow,
 } from "@/lib/merge-orchestration-task-artifacts";
 import { pollPlatformTaskUntilSettled } from "@/lib/poll-task-until-settled";
@@ -157,18 +160,10 @@ export function PlatformSessionAgentWorkspace({
   const messagesInnerRef = useRef<HTMLDivElement>(null);
   const [showResultPanel, setShowResultPanel] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+  const [resultPanelContext, setResultPanelContext] = useState<ResultPanelContext | null>(null);
   const [orchestrationBundles, setOrchestrationBundles] = useState<TaskOrchestrationBundleRow[]>([]);
   const [supplementalBundlesById, setSupplementalBundlesById] = useState<Record<string, TaskOrchestrationBundleRow[]>>({});
   const fetchedSupplementalRef = useRef<Set<string>>(new Set());
-  const [panelSubtaskFocus, setPanelSubtaskFocus] = useState<{
-    taskId: string;
-    artifacts: PlatformTaskArtifactRef[];
-  } | null>(null);
-  const [currentBundleDownloadApi, setCurrentBundleDownloadApi] = useState<string | null>(null);
-  const [currentBundleDownloadName, setCurrentBundleDownloadName] = useState<string | null>(null);
-  const [currentTaskFinishedAt, setCurrentTaskFinishedAt] = useState<string | null>(null);
-  const [currentTaskError, setCurrentTaskError] = useState<string | null>(null);
-  const [currentTaskStatus, setCurrentTaskStatus] = useState<string | null>(null);
   const [lastTaskSnapshot, setLastTaskSnapshot] = useState<TaskResponse | null>(null);
   const [trialOrchestrationDone, setTrialOrchestrationDone] = useState<{
     finished: boolean;
@@ -758,11 +753,8 @@ export function PlatformSessionAgentWorkspace({
 
     setShowResultPanel(false);
     setFocusedTaskId(null);
+    setResultPanelContext(null);
     setOrchestrationBundles([]);
-    setPanelSubtaskFocus(null);
-    setCurrentTaskFinishedAt(null);
-    setCurrentTaskError(null);
-    setCurrentTaskStatus(null);
     setTrialOrchestrationDone(null);
     trialAutoOpenedPanelRef.current = false;
     scheduledRunAutoOpenedPanelRef.current = false;
@@ -884,7 +876,7 @@ export function PlatformSessionAgentWorkspace({
           token,
           anchor.primaryTaskId,
           anchor.bundleTaskIds.length > 0 ? anchor.bundleTaskIds : undefined,
-          { orchestrationId: anchor.orchestrationId },
+          { orchestrationId: anchor.orchestrationId, expandOrchestration: false },
         );
         setSupplementalBundlesById((prev) => ({ ...prev, [messageId]: data.bundles }));
       } catch {
@@ -1011,43 +1003,60 @@ export function PlatformSessionAgentWorkspace({
     [orchestrationBundlesForUi],
   );
 
-  const resolvedSubtaskTaskIdForPanel = useMemo(() => {
-    if (subtasksWithTabularPreview.length === 0) return null;
-    const fid = panelSubtaskFocus?.taskId;
-    if (fid && subtasksWithTabularPreview.some((s) => s.taskId === fid)) return fid;
-    return subtasksWithTabularPreview[0]!.taskId;
-  }, [panelSubtaskFocus, subtasksWithTabularPreview]);
+  const executionStepsForPanelMessage = useMemo(() => {
+    if (!resultPanelContext?.sourceMessageId) return executionStepsForBundleLabels;
+    const m = messages.find((x) => x.id === resultPanelContext.sourceMessageId);
+    const meta = m?.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
+    return parseTaskExecutionStepsFromMeta(meta) ?? executionStepsForBundleLabels;
+  }, [resultPanelContext, messages, executionStepsForBundleLabels]);
+
+  const panelBundlesForUi = useMemo(
+    () =>
+      resultPanelContext
+        ? enrichOrchestrationBundlesWithStepLabels(resultPanelContext.bundles, executionStepsForPanelMessage)
+        : [],
+    [resultPanelContext, executionStepsForPanelMessage],
+  );
+
+  const panelSubtasksWithTabular = useMemo(
+    () =>
+      panelBundlesForUi
+        .filter((s) => hasTabularTaskResultFiles(s.artifacts))
+        .slice()
+        .sort((a, b) => b.stepIndex - a.stepIndex),
+    [panelBundlesForUi],
+  );
+
+  const resolvedPanelSubtaskId = useMemo(() => {
+    if (!resultPanelContext) return null;
+    const focus = resultPanelContext.focusedSubtaskId;
+    if (focus && panelSubtasksWithTabular.some((s) => s.taskId === focus)) return focus;
+    if (panelSubtasksWithTabular.some((s) => s.taskId === resultPanelContext.primaryTaskId)) {
+      return resultPanelContext.primaryTaskId;
+    }
+    return panelSubtasksWithTabular[0]?.taskId ?? resultPanelContext.primaryTaskId;
+  }, [resultPanelContext, panelSubtasksWithTabular]);
 
   const artifactsForTaskPanel = useMemo(() => {
-    if (subtasksWithTabularPreview.length > 0) {
-      const hit = subtasksWithTabularPreview.find((s) => s.taskId === resolvedSubtaskTaskIdForPanel);
-      return hit?.artifacts ?? [];
+    if (!resultPanelContext) return [];
+    if (panelSubtasksWithTabular.length > 0) {
+      const hit = panelSubtasksWithTabular.find((s) => s.taskId === resolvedPanelSubtaskId);
+      if (hit) return hit.artifacts;
     }
-    const merged: PlatformTaskArtifactRef[] = [];
-    for (const b of orchestrationBundles) merged.push(...b.artifacts);
-    return merged;
-  }, [orchestrationBundles, resolvedSubtaskTaskIdForPanel, subtasksWithTabularPreview]);
+    return panelBundlesForUi.flatMap((b) => b.artifacts);
+  }, [resultPanelContext, panelSubtasksWithTabular, panelBundlesForUi, resolvedPanelSubtaskId]);
 
   const stepTimelineHighlightTaskId = useMemo(() => {
-    if (panelSubtaskFocus?.taskId) return panelSubtaskFocus.taskId;
+    if (showResultPanel && resultPanelContext) {
+      return resultPanelContext.focusedSubtaskId ?? resultPanelContext.primaryTaskId;
+    }
     if (subtasksWithTabularPreview.length > 0) return subtasksWithTabularPreview[0]!.taskId;
     const last =
       orchestrationBundlesForUi.length > 0
         ? orchestrationBundlesForUi[orchestrationBundlesForUi.length - 1]
         : undefined;
     return last?.taskId ?? null;
-  }, [orchestrationBundlesForUi, panelSubtaskFocus, subtasksWithTabularPreview]);
-
-  const setPanelVisibilityRecord = useCallback<Dispatch<SetStateAction<Record<string, boolean>>>>(
-    (updater) => {
-      setShowResultPanel((prevShow) => {
-        const cur: Record<string, boolean> = { [sessionId]: prevShow };
-        const next = typeof updater === "function" ? updater(cur) : updater;
-        return Boolean(next[sessionId]);
-      });
-    },
-    [sessionId],
-  );
+  }, [showResultPanel, resultPanelContext, orchestrationBundlesForUi, subtasksWithTabularPreview]);
 
   const showTrialRunFooterLine = useMemo(() => {
     if (!scheduleTrial || !trialRunInFlight || sending) return false;
@@ -1062,8 +1071,46 @@ export function PlatformSessionAgentWorkspace({
     return true;
   }, [scheduleTrial, trialRunInFlight, sending, messages, firstAssistantIndex, sessionId]);
 
-  const openTaskResultPanel = useCallback(
-    async (taskId: string, bundleTaskIds?: string[], orchestrationId?: string | null) => {
+  const closeResultPanel = useCallback(() => {
+    setShowResultPanel(false);
+    setFocusedTaskId(null);
+    setResultPanelContext(null);
+  }, []);
+
+  const applyPanelFetchToContext = useCallback(
+    (
+      messageId: string | null,
+      anchor: PanelOrchestrationAnchor,
+      data: Awaited<ReturnType<typeof fetchTaskOrchestrationForResultPanel>>,
+      focusedSubtaskId?: string | null,
+    ) => {
+      const dl = buildBundleDownloadApiForPanel(anchor.primaryTaskId, anchor.bundleTaskIds);
+      const focus =
+        (focusedSubtaskId ?? "").trim() ||
+        anchor.primaryTaskId;
+      setResultPanelContext({
+        sourceMessageId: messageId,
+        primaryTaskId: anchor.primaryTaskId,
+        bundles: data.bundles,
+        finishedAt: data.finishedAt,
+        errorMessage: data.errorMessage,
+        lastStatus: data.lastStatus,
+        bundleDownloadApi: dl.api,
+        bundleDownloadName: dl.name,
+        focusedSubtaskId: focus,
+      });
+      setFocusedTaskId(anchor.primaryTaskId);
+      setShowResultPanel(true);
+    },
+    [],
+  );
+
+  const openResultPanelFromAnchor = useCallback(
+    async (
+      anchor: PanelOrchestrationAnchor,
+      messageId: string | null = null,
+      options?: { focusedSubtaskId?: string | null },
+    ) => {
       if (!platformAgent?.auth) {
         platformAgent?.openLogin("请先登录后再查看任务结果。");
         return;
@@ -1071,63 +1118,75 @@ export function PlatformSessionAgentWorkspace({
       setError("");
       try {
         await platformAgent.withFreshToken(async (token) => {
-          const data = await fetchTaskOrchestrationForResultPanel(token, taskId, bundleTaskIds, {
-            orchestrationId: orchestrationId ?? undefined,
-          });
-          setOrchestrationBundles(data.bundles);
-          setPanelSubtaskFocus(null);
-          const ids = (bundleTaskIds ?? []).map((x) => (x || "").trim()).filter(Boolean);
-          const api =
-            ids.length > 0
-              ? `/api/tasks/download?` + ids.map((id) => `task_ids=${encodeURIComponent(id)}`).join("&")
-              : `/api/tasks/${encodeURIComponent(taskId)}/download`;
-          setCurrentBundleDownloadApi(api);
-          setCurrentBundleDownloadName(ids.length > 1 ? `${taskId}.zip` : null);
-          setCurrentTaskFinishedAt(data.finishedAt);
-          setCurrentTaskError(data.errorMessage ?? null);
-          setCurrentTaskStatus(data.lastStatus ?? null);
-          setFocusedTaskId(taskId);
-          setShowResultPanel(true);
+          const data = await fetchTaskOrchestrationForResultPanel(
+            token,
+            anchor.primaryTaskId,
+            anchor.bundleTaskIds,
+            {
+              orchestrationId: anchor.orchestrationId ?? undefined,
+              expandOrchestration: false,
+            },
+          );
+          applyPanelFetchToContext(messageId, anchor, data, options?.focusedSubtaskId);
         });
       } catch (e) {
         setError(formatAgentApiErrorForUser(e));
       }
     },
-    [platformAgent],
+    [applyPanelFetchToContext, platformAgent],
+  );
+
+  const openResultPanelForMessage = useCallback(
+    async (
+      meta: Record<string, unknown> | undefined,
+      messageId: string | null,
+      options?: { focusedSubtaskId?: string | null },
+    ) => {
+      const anchor = resolveAnchorForPanelFromMessageMeta(meta);
+      if (!anchor) return;
+      await openResultPanelFromAnchor(anchor, messageId, options);
+    },
+    [openResultPanelFromAnchor],
   );
 
   useEffect(() => {
     if (!scheduleTrial || trialRunInFlight || trialAutoOpenedPanelRef.current) return;
     if (subtasksWithTabularPreview.length === 0 || !effectiveOrchestrationAnchor) return;
     trialAutoOpenedPanelRef.current = true;
-    void openTaskResultPanel(
-      effectiveOrchestrationAnchor.primaryTaskId,
-      effectiveOrchestrationAnchor.bundleTaskIds,
-      effectiveOrchestrationAnchor.orchestrationId,
+    void openResultPanelFromAnchor(
+      {
+        primaryTaskId: effectiveOrchestrationAnchor.primaryTaskId,
+        bundleTaskIds: effectiveOrchestrationAnchor.bundleTaskIds,
+        orchestrationId: effectiveOrchestrationAnchor.orchestrationId,
+      },
+      effectiveOrchestrationAnchor.messageId || null,
     );
   }, [
     scheduleTrial,
     trialRunInFlight,
     subtasksWithTabularPreview.length,
     effectiveOrchestrationAnchor,
-    openTaskResultPanel,
+    openResultPanelFromAnchor,
   ]);
 
   useEffect(() => {
     if (!scheduledRunRecord || scheduledRunAutoOpenedPanelRef.current || busy) return;
     if (subtasksWithTabularPreview.length === 0 || !effectiveOrchestrationAnchor) return;
     scheduledRunAutoOpenedPanelRef.current = true;
-    void openTaskResultPanel(
-      effectiveOrchestrationAnchor.primaryTaskId,
-      effectiveOrchestrationAnchor.bundleTaskIds,
-      effectiveOrchestrationAnchor.orchestrationId,
+    void openResultPanelFromAnchor(
+      {
+        primaryTaskId: effectiveOrchestrationAnchor.primaryTaskId,
+        bundleTaskIds: effectiveOrchestrationAnchor.bundleTaskIds,
+        orchestrationId: effectiveOrchestrationAnchor.orchestrationId,
+      },
+      effectiveOrchestrationAnchor.messageId || null,
     );
   }, [
     scheduledRunRecord,
     busy,
     subtasksWithTabularPreview.length,
     effectiveOrchestrationAnchor,
-    openTaskResultPanel,
+    openResultPanelFromAnchor,
   ]);
 
   const send = useCallback(async () => {
@@ -1251,41 +1310,34 @@ export function PlatformSessionAgentWorkspace({
       contentScrollMode="child"
       currentRunLabel={headerLabel}
       rightRail={
-        showResultPanel && platformAgent?.withFreshToken ? (
+        showResultPanel && platformAgent?.withFreshToken && resultPanelContext ? (
           <AgentTaskResultPanel
             artifacts={artifactsForTaskPanel}
             withFreshToken={platformAgent.withFreshToken}
-            bundleDownloadApi={currentBundleDownloadApi}
-            bundleDownloadName={currentBundleDownloadName}
-            taskId={resolvedSubtaskTaskIdForPanel ?? focusedTaskId}
-            resultGeneratedAt={currentTaskFinishedAt}
-            errorMessage={currentTaskError}
-            taskStatus={currentTaskStatus}
+            bundleDownloadApi={resultPanelContext.bundleDownloadApi}
+            bundleDownloadName={resultPanelContext.bundleDownloadName}
+            taskId={resolvedPanelSubtaskId ?? resultPanelContext.primaryTaskId}
+            resultGeneratedAt={resultPanelContext.finishedAt}
+            errorMessage={resultPanelContext.errorMessage}
+            taskStatus={resultPanelContext.lastStatus}
               subtaskResultTabs={
-                subtasksWithTabularPreview.length > 1
-                  ? subtasksWithTabularPreview.map((s) => ({
+                panelSubtasksWithTabular.length > 1
+                  ? panelSubtasksWithTabular.map((s) => ({
                       taskId: s.taskId,
                       label: compactText(s.label, 36),
                     }))
                   : undefined
               }
-              activeSubtaskTaskId={resolvedSubtaskTaskIdForPanel}
+              activeSubtaskTaskId={resolvedPanelSubtaskId}
               onSubtaskSelect={(taskId) => {
-                const row = orchestrationBundlesForUi.find((s) => s.taskId === taskId);
+                const row = panelBundlesForUi.find((s) => s.taskId === taskId);
                 if (row && hasTabularTaskResultFiles(row.artifacts)) {
-                  setPanelSubtaskFocus({ taskId, artifacts: row.artifacts });
+                  setResultPanelContext((prev) =>
+                    prev ? { ...prev, focusedSubtaskId: taskId } : null,
+                  );
                 }
               }}
-            onClose={() => {
-              setShowResultPanel(false);
-              setFocusedTaskId(null);
-              setPanelSubtaskFocus(null);
-              setCurrentBundleDownloadApi(null);
-              setCurrentBundleDownloadName(null);
-              setCurrentTaskFinishedAt(null);
-              setCurrentTaskError(null);
-              setCurrentTaskStatus(null);
-            }}
+            onClose={closeResultPanel}
           />
         ) : undefined
       }
@@ -1358,16 +1410,6 @@ export function PlatformSessionAgentWorkspace({
                     linkfoxClarificationForSteps?.message ??
                     null;
                   const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
-                  const rawBundle = Array.isArray(meta?.orchestration_step_task_ids)
-                    ? (meta?.orchestration_step_task_ids as unknown[])
-                    : [];
-                  const bundleTaskIds = rawBundle
-                    .map((x) => (typeof x === "string" ? x.trim() : ""))
-                    .filter((x) => x.length > 0);
-                  const orchIdMeta =
-                    typeof meta?.orchestration_id === "string" && meta.orchestration_id.trim()
-                      ? meta.orchestration_id.trim()
-                      : null;
                   const trialResultOnFirstAssistant =
                     scheduleTrial &&
                     isThisOrchestrationTurn &&
@@ -1427,8 +1469,18 @@ export function PlatformSessionAgentWorkspace({
                               }
                               timelineRunId={sessionId}
                               activeHighlightTaskId={stepTimelineHighlightTaskId}
-                              setPanelSubtaskFocus={setPanelSubtaskFocus}
-                              setPanelVisibility={setPanelVisibilityRecord}
+                              onOpenSubtaskResult={(subtaskTaskId) => {
+                                const stepsMsg = latestStepsMessageId
+                                  ? messages.find((x) => x.id === latestStepsMessageId)
+                                  : undefined;
+                                const stepsMeta =
+                                  stepsMsg?.meta && typeof stepsMsg.meta === "object"
+                                    ? (stepsMsg.meta as Record<string, unknown>)
+                                    : undefined;
+                                void openResultPanelForMessage(stepsMeta, stepsMsg?.id ?? null, {
+                                  focusedSubtaskId: subtaskTaskId,
+                                });
+                              }}
                             />
                           ) : null}
                         </>
@@ -1462,8 +1514,11 @@ export function PlatformSessionAgentWorkspace({
                               }
                               timelineRunId={sessionId}
                               activeHighlightTaskId={stepTimelineHighlightTaskId}
-                              setPanelSubtaskFocus={setPanelSubtaskFocus}
-                              setPanelVisibility={setPanelVisibilityRecord}
+                              onOpenSubtaskResult={(subtaskTaskId) => {
+                                void openResultPanelForMessage(meta, m.id, {
+                                  focusedSubtaskId: subtaskTaskId,
+                                });
+                              }}
                             />
                             {isOrchestrationFailure ? (
                               <AliceErrorBubble
@@ -1582,27 +1637,10 @@ export function PlatformSessionAgentWorkspace({
                           expanded={showResultPanel && focusedTaskId === taskId}
                           onToggle={() => {
                             if (showResultPanel && focusedTaskId === taskId) {
-                              setShowResultPanel(false);
-                              setFocusedTaskId(null);
-                              setPanelSubtaskFocus(null);
+                              closeResultPanel();
                               return;
                             }
-                            void openTaskResultPanel(
-                              taskId,
-                              bundleTaskIds.length > 0
-                                ? bundleTaskIds
-                                : (() => {
-                                    // 优先使用该消息已加载的 supplemental bundles 中的 taskId 列表
-                                    const supp = supplementalBundlesById[m.id];
-                                    if (supp && supp.length > 0) {
-                                      return supp.map((b) => b.taskId);
-                                    }
-                                    return undefined;
-                                  })(),
-                              orchIdMeta ??
-                                effectiveOrchestrationAnchor?.orchestrationId ??
-                                orchestrationAnchor?.orchestrationId,
-                            );
+                            void openResultPanelForMessage(meta, m.id);
                           }}
                         />
                       ) : null}

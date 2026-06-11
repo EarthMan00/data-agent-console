@@ -71,14 +71,17 @@ export function PlatformRoundStepTimeline({
   runId,
   setPanelSubtaskFocus,
   setPanelVisibility,
+  onOpenSubtaskResult,
 }: {
   executionSteps: TaskExecutionStep[];
   platformSubtasks: PlatformSubtaskSnapshot[] | undefined;
   /** 与右侧结果区当前页签对齐的步骤 taskId（含默认选中「最新有结果的一步」） */
   activeHighlightTaskId: string | null;
   runId: string;
-  setPanelSubtaskFocus: Dispatch<SetStateAction<{ taskId: string; artifacts: PlatformTaskArtifactRef[] } | null>>;
-  setPanelVisibility: Dispatch<SetStateAction<Record<string, boolean>>>;
+  setPanelSubtaskFocus?: Dispatch<SetStateAction<{ taskId: string; artifacts: PlatformTaskArtifactRef[] } | null>>;
+  setPanelVisibility?: Dispatch<SetStateAction<Record<string, boolean>>>;
+  /** 历史回放：按该轮消息打开结果面板，优先于 setPanelSubtaskFocus */
+  onOpenSubtaskResult?: (taskId: string) => void;
 }) {
   const items = buildPlatformStepTimeline(executionSteps, platformSubtasks);
   const total = executionSteps.length;
@@ -116,6 +119,11 @@ export function PlatformRoundStepTimeline({
             isActive={active}
             totalSteps={total}
             onSelect={() => {
+              if (onOpenSubtaskResult) {
+                onOpenSubtaskResult(snap.taskId);
+                return;
+              }
+              if (!setPanelSubtaskFocus || !setPanelVisibility) return;
               setPanelSubtaskFocus({ taskId: snap.taskId, artifacts: snap.artifacts });
               setPanelVisibility((c) => ({ ...c, [runId]: true }));
             }}

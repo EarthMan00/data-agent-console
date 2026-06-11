@@ -85,6 +85,25 @@ export type OrchestrationAnchor = {
   orchestrationId: string | null;
 };
 
+/** 右侧结果面板：按用户点中的单条消息隔离，不复用会话级最新 anchor */
+export type ResultPanelContext = {
+  sourceMessageId: string | null;
+  primaryTaskId: string;
+  bundles: TaskOrchestrationBundleRow[];
+  finishedAt: string | null;
+  errorMessage: string | null;
+  lastStatus: string | null;
+  bundleDownloadApi: string | null;
+  bundleDownloadName: string | null;
+  focusedSubtaskId: string | null;
+};
+
+export type PanelOrchestrationAnchor = {
+  primaryTaskId: string;
+  bundleTaskIds: string[] | undefined;
+  orchestrationId: string | null;
+};
+
 /**
  * 从单条消息的 meta 中解析编排 anchor，不扫描全 session。
  * 用于 per-message bundles 加载，使每轮独立获取自己的产物。
@@ -113,6 +132,47 @@ export function resolveOrchestrationAnchorFromMessageMeta(
     primaryTaskId: primary,
     bundleTaskIds: ids.length > 0 ? ids : [primary],
     orchestrationId: orchId,
+  };
+}
+
+/**
+ * 从单条消息 meta 解析面板 anchor；不回退到会话级最新编排。
+ * 用于历史回放点击某轮任务卡 / 步骤结果卡。
+ */
+export function resolveAnchorForPanelFromMessageMeta(
+  meta: Record<string, unknown> | undefined,
+): PanelOrchestrationAnchor | null {
+  const fromOrch = resolveOrchestrationAnchorFromMessageMeta(meta);
+  if (fromOrch) {
+    return {
+      primaryTaskId: fromOrch.primaryTaskId,
+      bundleTaskIds: fromOrch.bundleTaskIds.length > 0 ? fromOrch.bundleTaskIds : undefined,
+      orchestrationId: fromOrch.orchestrationId,
+    };
+  }
+  const tid = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+  if (!tid) return null;
+  return {
+    primaryTaskId: tid,
+    bundleTaskIds: undefined,
+    orchestrationId: null,
+  };
+}
+
+export function buildBundleDownloadApiForPanel(
+  primaryTaskId: string,
+  bundleTaskIds: string[] | undefined,
+): { api: string; name: string | null } {
+  const ids = (bundleTaskIds ?? []).map((x) => (x || "").trim()).filter(Boolean);
+  if (ids.length > 0) {
+    return {
+      api: `/api/tasks/download?${ids.map((id) => `task_ids=${encodeURIComponent(id)}`).join("&")}`,
+      name: ids.length > 1 ? `${primaryTaskId}.zip` : null,
+    };
+  }
+  return {
+    api: `/api/tasks/${encodeURIComponent(primaryTaskId)}/download`,
+    name: null,
   };
 }
 
@@ -169,7 +229,7 @@ export async function fetchTaskOrchestrationForResultPanel(
   token: string,
   primaryTaskId: string,
   bundleTaskIds: string[] | undefined,
-  options?: { orchestrationId?: string | null },
+  options?: { orchestrationId?: string | null; expandOrchestration?: boolean },
 ): Promise<{
   bundles: TaskOrchestrationBundleRow[];
   mergedArtifacts: PlatformTaskArtifactRef[];
@@ -179,7 +239,8 @@ export async function fetchTaskOrchestrationForResultPanel(
 }> {
   let stepIds = dedupeOrchestrationTaskIds(primaryTaskId, bundleTaskIds);
 
-  if (stepIds.length <= 1 && options?.orchestrationId) {
+  const mayExpandOrch = options?.expandOrchestration !== false;
+  if (stepIds.length <= 1 && options?.orchestrationId && mayExpandOrch) {
     try {
       const orch = await getToolOrchestration(token, options.orchestrationId);
       const fromOrch = orch.steps

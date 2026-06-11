@@ -73,6 +73,8 @@ export function TaskExecutionStepsAssistantBubble({
 
   setPanelVisibility,
 
+  onOpenSubtaskResult,
+
 }: {
 
   steps: TaskExecutionStep[];
@@ -90,6 +92,10 @@ export function TaskExecutionStepsAssistantBubble({
   setPanelSubtaskFocus?: Dispatch<SetStateAction<{ taskId: string; artifacts: PlatformTaskArtifactRef[] } | null>>;
 
   setPanelVisibility?: Dispatch<SetStateAction<Record<string, boolean>>>;
+
+  /** 历史回放：点击步骤结果卡时按该轮消息打开面板 */
+
+  onOpenSubtaskResult?: (taskId: string) => void;
 
 }) {
 
@@ -113,11 +119,9 @@ export function TaskExecutionStepsAssistantBubble({
 
       timelineRunId &&
 
-      setPanelSubtaskFocus &&
+      activeHighlightTaskId !== undefined &&
 
-      setPanelVisibility &&
-
-      activeHighlightTaskId !== undefined,
+      (onOpenSubtaskResult || (setPanelSubtaskFocus && setPanelVisibility)),
 
   );
 
@@ -164,9 +168,11 @@ export function TaskExecutionStepsAssistantBubble({
 
             runId={timelineRunId!}
 
-            setPanelSubtaskFocus={setPanelSubtaskFocus!}
+            setPanelSubtaskFocus={setPanelSubtaskFocus}
 
-            setPanelVisibility={setPanelVisibility!}
+            setPanelVisibility={setPanelVisibility}
+
+            onOpenSubtaskResult={onOpenSubtaskResult}
 
           />
 

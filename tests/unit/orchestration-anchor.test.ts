@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { SessionMessageItem } from "@/lib/agent-api/types";
 import {
+  buildBundleDownloadApiForPanel,
   displayLabelForIndexedSubtask,
   isUnhelpfulApiTaskLabel,
   mergeBundlesIntoPlatformSnapshots,
   pickBestOrchestrationAnchor,
+  resolveAnchorForPanelFromMessageMeta,
 } from "@/lib/merge-orchestration-task-artifacts";
 import type { TaskExecutionStep } from "@/lib/agent-events";
 
@@ -40,6 +42,60 @@ describe("pickBestOrchestrationAnchor", () => {
     expect(anchor?.messageId).toBe("b");
     expect(anchor?.bundleTaskIds).toEqual(["t1", "t2", "t3"]);
     expect(anchor?.primaryTaskId).toBe("step-last");
+  });
+});
+
+describe("resolveAnchorForPanelFromMessageMeta", () => {
+  it("从单条 completion 消息解析 task_id，不含会话级回退", () => {
+    const anchor = resolveAnchorForPanelFromMessageMeta({
+      task_id: "6e4eb5b6-0593-4a25-83f4-4d23f8666e86",
+      has_artifacts: true,
+    });
+    expect(anchor?.primaryTaskId).toBe("6e4eb5b6-0593-4a25-83f4-4d23f8666e86");
+    expect(anchor?.bundleTaskIds).toEqual(["6e4eb5b6-0593-4a25-83f4-4d23f8666e86"]);
+    expect(anchor?.orchestrationId).toBeNull();
+  });
+
+  it("从编排完成消息解析本消息内的 step task ids 与 orchestration_id", () => {
+    const anchor = resolveAnchorForPanelFromMessageMeta({
+      task_id: "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+      orchestration_id: "orch-round-2",
+      orchestration_step_task_ids: [
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+      ],
+    });
+    expect(anchor?.primaryTaskId).toBe("cf0d16f8-aafd-47ce-a220-ba081fdc1a6b");
+    expect(anchor?.bundleTaskIds).toEqual([
+      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+    ]);
+    expect(anchor?.orchestrationId).toBe("orch-round-2");
+  });
+
+  it("两轮任务的 anchor 互不含对方 task_id", () => {
+    const round1 = resolveAnchorForPanelFromMessageMeta({
+      task_id: "6e4eb5b6-0593-4a25-83f4-4d23f8666e86",
+    });
+    const round2 = resolveAnchorForPanelFromMessageMeta({
+      task_id: "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+    });
+    expect(round1?.primaryTaskId).not.toBe(round2?.primaryTaskId);
+    expect(round1?.bundleTaskIds ?? []).not.toContain(round2!.primaryTaskId);
+  });
+});
+
+describe("buildBundleDownloadApiForPanel", () => {
+  it("单任务下载 API", () => {
+    const r = buildBundleDownloadApiForPanel("task-a", undefined);
+    expect(r.api).toBe("/api/tasks/task-a/download");
+    expect(r.name).toBeNull();
+  });
+
+  it("多任务聚合下载 API", () => {
+    const r = buildBundleDownloadApiForPanel("task-a", ["t1", "t2"]);
+    expect(r.api).toContain("task_ids=");
+    expect(r.name).toBe("task-a.zip");
   });
 });
 
