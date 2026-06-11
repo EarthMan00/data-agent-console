@@ -19,6 +19,15 @@ export function filterArtifactsForTaskResultPanel(artifacts: PlatformTaskArtifac
   return artifacts.filter((a) => !TASK_RESULT_TXT_RE.test((a.original_name ?? "").trim()));
 }
 
+const ZIP_ARTIFACT_RE = /\.zip$/i;
+
+/** 任务级打包下载纳入的产物（与后端 api_tasks 过滤规则对齐，排除 zip 与 *_result.txt） */
+export function listDownloadableTaskArtifacts(artifacts: PlatformTaskArtifactRef[]): PlatformTaskArtifactRef[] {
+  return filterArtifactsForTaskResultPanel(artifacts).filter(
+    (a) => !ZIP_ARTIFACT_RE.test((a.original_name ?? "").trim()),
+  );
+}
+
 /** 是否存在可预览的表格/结构化文件（不含 *_result.txt） */
 export function hasTabularTaskResultFiles(artifacts: PlatformTaskArtifactRef[] | undefined | null): boolean {
   if (!artifacts?.length) return false;

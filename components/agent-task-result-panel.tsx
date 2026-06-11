@@ -16,10 +16,9 @@ import {
 } from "@/lib/agent-api/client";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { buildFavoriteSnapshotFromArtifacts } from "@/lib/build-favorite-snapshot";
-import { pickPrimaryTaskDataArtifact } from "@/lib/platform-task-artifacts";
+import { listDownloadableTaskArtifacts, pickPrimaryTaskDataArtifact } from "@/lib/platform-task-artifacts";
 import {
   buildTaskResultSheets,
-  downloadTargetForSheet,
   sheetSupportsTableCodeToggle,
   type TaskResultSheet,
 } from "@/lib/task-result-sheets";
@@ -219,29 +218,43 @@ export function AgentTaskResultPanel({
   const showTableCodeToggle = Boolean(activeSheet && sheetSupportsTableCodeToggle(activeSheet));
 
   const bundleDownloadPath = effectiveBundleDownloadPath({ bundleDownloadApi, zipDownloadApi, taskId });
+  const downloadableArtifacts = useMemo(
+    () => listDownloadableTaskArtifacts(artifacts ?? []),
+    [artifacts],
+  );
+
+  /** 多文件打包：编排多步且正在查看某一子任务时只打该任务，否则用整轮 bundle */
+  const multiFileDownloadPath = useMemo(() => {
+    if (subtaskResultTabs && subtaskResultTabs.length > 1 && tid) {
+      return `/api/tasks/${encodeURIComponent(tid)}/download`;
+    }
+    return bundleDownloadPath ?? (tid ? `/api/tasks/${encodeURIComponent(tid)}/download` : null);
+  }, [bundleDownloadPath, subtaskResultTabs, tid]);
 
   const downloadCurrent = useCallback(() => {
     if (!withFreshToken) return;
-    if (useSheetUi && activeSheet) {
-      const target = downloadTargetForSheet(activeSheet, viewMode);
-      if (target) {
-        void withFreshToken(async (token) => {
-          const name = safeFilename(target.original_name, "download");
-          await downloadAuthorizedFile(token, target.download_api, name);
-        });
-        return;
-      }
+
+    if (downloadableArtifacts.length > 1) {
+      if (!multiFileDownloadPath) return;
+      void withFreshToken(async (token) => {
+        const name = (bundleDownloadName ?? "").trim() || `${tid || "task"}.zip`;
+        await downloadAuthorizedFile(token, multiFileDownloadPath, name);
+      });
+      return;
     }
-    if (!useSheetUi && fallbackPrimary) {
+
+    if (downloadableArtifacts.length === 1) {
+      const target = downloadableArtifacts[0]!;
       void withFreshToken(async (token) => {
         await downloadAuthorizedFile(
           token,
-          fallbackPrimary.download_api,
-          safeFilename(fallbackPrimary.original_name, "download"),
+          target.download_api,
+          safeFilename(target.original_name, "download"),
         );
       });
       return;
     }
+
     if (bundleDownloadPath) {
       void withFreshToken(async (token) => {
         const name =
@@ -251,21 +264,17 @@ export function AgentTaskResultPanel({
       });
     }
   }, [
-    activeSheet,
     bundleDownloadName,
     bundleDownloadPath,
-    fallbackPrimary,
+    downloadableArtifacts,
+    multiFileDownloadPath,
     tid,
-    useSheetUi,
-    viewMode,
     withFreshToken,
   ]);
 
   const canDownloadTop = Boolean(
     withFreshToken &&
-      ((useSheetUi && activeSheet && downloadTargetForSheet(activeSheet, viewMode)) ||
-        (!useSheetUi && fallbackPrimary) ||
-        bundleDownloadPath),
+      (downloadableArtifacts.length > 0 || bundleDownloadPath),
   );
 
   const primaryForFavorite = fallbackPrimary;
