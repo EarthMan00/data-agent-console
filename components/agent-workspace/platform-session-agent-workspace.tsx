@@ -1591,7 +1591,14 @@ export function PlatformSessionAgentWorkspace({
                               taskId,
                               bundleTaskIds.length > 0
                                 ? bundleTaskIds
-                                : effectiveOrchestrationAnchor?.bundleTaskIds,
+                                : (() => {
+                                    // 优先使用该消息已加载的 supplemental bundles 中的 taskId 列表
+                                    const supp = supplementalBundlesById[m.id];
+                                    if (supp && supp.length > 0) {
+                                      return supp.map((b) => b.taskId);
+                                    }
+                                    return undefined;
+                                  })(),
                               orchIdMeta ??
                                 effectiveOrchestrationAnchor?.orchestrationId ??
                                 orchestrationAnchor?.orchestrationId,
