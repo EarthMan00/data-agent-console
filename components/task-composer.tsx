@@ -522,14 +522,6 @@ export function TaskComposer({
   const isHeroMinimal = visualStyle === "heroMinimal";
   const hasText = value.trim().length > 0;
   const showStop = submitVariant === "stop";
-  const defaultSendButtonClassName = isHeroMinimal
-    ? hasText
-      ? "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[#37352f] p-0 text-white shadow-none transition hover:bg-[#2f2d28]"
-      : "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[rgba(55,53,47,0.08)] p-0 text-white shadow-none transition hover:bg-[rgba(55,53,47,0.08)]"
-    : hasText
-      ? "h-10 w-10 min-w-0 rounded-full border border-transparent bg-[#111111] p-0 text-white shadow-none transition hover:bg-[#2a2a2a]"
-      : "h-10 w-10 min-w-0 rounded-full border border-transparent bg-[#dededc] p-0 text-white shadow-none transition hover:bg-[#d1d1cf]";
-  const resolvedSendButtonClassName = sendButtonClassName ?? defaultSendButtonClassName;
   const fileInputId = useId();
   const textboxRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -564,6 +556,29 @@ export function TaskComposer({
   const [, setModeOpen] = useState(false);
   const [highlightedToolIndex, setHighlightedToolIndex] = useState(-1);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const canSubmit = hasText || attachments.length > 0;
+  const handleSubmit = () => {
+    if (showStop) {
+      onStop?.();
+      return;
+    }
+    if (!canSubmit) return;
+    onSubmit();
+    setAttachments((current) => {
+      current.forEach((attachment) => {
+        if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+      });
+      return [];
+    });
+  };
+  const defaultSendButtonClassName = isHeroMinimal
+    ? canSubmit
+      ? "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[#37352f] p-0 text-white shadow-none transition hover:bg-[#2f2d28]"
+      : "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[rgba(55,53,47,0.08)] p-0 text-white shadow-none transition hover:bg-[rgba(55,53,47,0.08)]"
+    : canSubmit
+      ? "h-10 w-10 min-w-0 rounded-full border border-transparent bg-[#111111] p-0 text-white shadow-none transition hover:bg-[#2a2a2a]"
+      : "h-10 w-10 min-w-0 rounded-full border border-transparent bg-[#dededc] p-0 text-white shadow-none transition hover:bg-[#d1d1cf]";
+  const resolvedSendButtonClassName = sendButtonClassName ?? defaultSendButtonClassName;
   const [acceptedTemplateToolId, setAcceptedTemplateToolId] = useState<string | null>(null);
   const blurTimeoutRef = useRef<number | null>(null);
 
@@ -1301,8 +1316,8 @@ export function TaskComposer({
                           event.preventDefault();
                           if (showStop && onStop) {
                             onStop();
-                          } else {
-                            onSubmit();
+                          } else if (canSubmit) {
+                            handleSubmit();
                           }
                         }
                       }}
@@ -1708,7 +1723,6 @@ export function TaskComposer({
                     id={fileInputId}
                     type="file"
                     className="sr-only"
-                    accept="image/*,.xlsx,.csv,.pdf,.zip,.json"
                     multiple
                     onChange={(event) => {
                       if (event.target.files?.length) {
@@ -1805,7 +1819,8 @@ export function TaskComposer({
               {showSubmitButton ? (
                 <Button
                   type="button"
-                  onClick={() => (showStop ? onStop?.() : onSubmit())}
+                  onClick={handleSubmit}
+                  disabled={!showStop && !canSubmit}
                   size="icon"
                   aria-label={showStop ? "停止任务" : "发送任务"}
                   data-testid="task-composer-submit"

@@ -81,10 +81,10 @@ export function ChatexcelArtifactPreview({ model }: ChatexcelArtifactPreviewProp
         <p className="text-[12px] text-[#b45309]">{model.parseWarning}</p>
       ) : null}
 
-      {!model.ok && model.error ? (
+      {!model.ok ? (
         <div className="rounded-[8px] border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-800">
           {model.errorType ? <span className="font-mono text-[12px] text-red-600">[{model.errorType}] </span> : null}
-          {model.error}
+          {model.error ?? "工具执行失败"}
         </div>
       ) : null}
 

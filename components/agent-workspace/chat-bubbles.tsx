@@ -13,6 +13,8 @@ import { sanitizeClarificationForUserDisplay, splitClarificationForDisplay } fro
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
 import { composerDraftContainsSuggestion } from "@/lib/composer-prefill";
+import type { UserMessageAttachment } from "@/lib/user-message-attachments";
+import { UserMessageAttachmentCards } from "@/components/user-message-attachment-cards";
 
 function charLen(text: string): number {
   return [...text].length;
@@ -38,16 +40,28 @@ function formatTimeForBubble(iso: string) {
 }
 
 /** 与 app-demo `live-agent-workbench` BubbleLine 对齐：普通对话气泡 */
-export function SimpleUserBubble({ text, datetime }: { text: string; datetime: string }) {
+export function SimpleUserBubble({
+  text,
+  datetime,
+  attachments = [],
+}: {
+  text: string;
+  datetime: string;
+  attachments?: UserMessageAttachment[];
+}) {
+  const visibleText = text.trim();
   return (
     <div className="flex w-full justify-end" data-testid="agent-user-input-card">
-      <div className={cn("group flex flex-col items-end", SIMPLE_CHAT_BUBBLE_MAX)}>
+      <div className={cn("group flex flex-col items-end gap-2", SIMPLE_CHAT_BUBBLE_MAX)}>
         <div className="mb-1 text-[12px] text-[#78716c] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
           {formatTimeForBubble(datetime)}
         </div>
-        <div className="shrink-0 rounded-[16px] bg-[#f0f0ef] px-4 py-3 text-[14px] leading-7 text-[#34322d] shadow-none">
-          <div className="break-words whitespace-pre-wrap">{text}</div>
-        </div>
+        {attachments.length > 0 ? <UserMessageAttachmentCards attachments={attachments} /> : null}
+        {visibleText ? (
+          <div className="shrink-0 rounded-[16px] bg-[#f0f0ef] px-4 py-3 text-[14px] leading-7 text-[#34322d] shadow-none">
+            <div className="break-words whitespace-pre-wrap">{visibleText}</div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

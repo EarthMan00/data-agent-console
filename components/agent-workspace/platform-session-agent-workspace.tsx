@@ -87,6 +87,7 @@ import {
 } from "@/lib/task-status-poll";
 import { cn } from "@/lib/utils";
 
+import { buildUserMessageAttachmentsFromFiles, parseUserMessageAttachments } from "@/lib/user-message-attachments";
 import { readSessionMessageCache, writeSessionMessageCache } from "@/lib/session-message-cache";
 import {
   registerStream,
@@ -1192,7 +1193,8 @@ export function PlatformSessionAgentWorkspace({
 
   const send = useCallback(async () => {
     const text = draft.trim();
-    if (!text || sending) return;
+    const filesToSend = pendingFiles;
+    if ((!text && filesToSend.length === 0) || sending) return;
     const maxChars = getChatMessageMaxChars();
     if (text.length > maxChars) {
       setError(`消息过长（${text.length} 字），请控制在 ${maxChars} 字以内。`);
@@ -1212,13 +1214,14 @@ export function PlatformSessionAgentWorkspace({
     sseAbortRef.current = abortController;
     setSending(true);
     setError("");
+    const optimisticAttachments = buildUserMessageAttachmentsFromFiles(filesToSend);
     const optimistic: SessionMessageItem = {
       id: `optimistic_user_${safeRandomUUID()}`,
       role: "user",
       content: text,
       created_at: new Date().toISOString(),
       message_index: 0,
-      meta: {},
+      meta: optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {},
     };
     const mid = safeRandomUUID();
     const assistantStreamId = `streaming_assistant_${mid}`;
@@ -1227,7 +1230,6 @@ export function PlatformSessionAgentWorkspace({
     contentLenRef.current = 0;
     setMessages((cur) => [...cur, optimistic, createStreamingAssistantMessage(assistantStreamId, nowIso)]);
     setDraft("");
-    const filesToSend = pendingFiles;
     setPendingFiles([]);
     try {
       await platformAgent.withFreshToken(async (token) => {
@@ -1448,7 +1450,13 @@ export function PlatformSessionAgentWorkspace({
                               composerDraft={m.content}
                             />
                           ) : null}
-                          <SimpleUserBubble text={m.content} datetime={m.created_at} />
+                          <SimpleUserBubble
+                            text={m.content}
+                            datetime={m.created_at}
+                            attachments={parseUserMessageAttachments(
+                              m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined,
+                            )}
+                          />
                           {showDeferredTaskSteps ? (
                             <TaskExecutionStepsAssistantBubble
                               steps={mergeTaskStepStatuses(

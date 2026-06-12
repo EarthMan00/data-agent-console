@@ -18,7 +18,8 @@ function matchesOrchestrationStatusContent(content: string): boolean {
   if (/^多步任务已由用户终止/.test(c)) return true;
   if (/^任务已完成，可以在右侧查看/.test(c)) return true;
   if (/^任务执行失败，错误信息已记录在任务结果中/.test(c)) return true;
-  if (c === "（以下为该轮任务的执行步骤记录）") return true;
+  if (c === "已分析请求，将触发工具执行。" || c === "已分析请求，将触发工具执行") return true;
+  if (/^按套餐\s+.+\s*[,，]\s*将执行工具/.test(c)) return true;
   return false;
 }
 
@@ -45,7 +46,14 @@ export function shouldHideAssistantMessageBubble(m: SessionMessageItem): boolean
   }
   if (kind === "model_error" || kind === "blocked_by_plan") return false;
 
+  if (kind === "tool_only_turn") return true;
+
   const content = (m.content || "").trim();
+  if (!content) {
+    if (kind === "task_execution_steps") return false;
+    if (meta?.streaming === true) return false;
+    return true;
+  }
   if (matchesOrchestrationStatusContent(content)) return true;
 
   const hasSteps = Boolean(parseTaskExecutionStepsFromMeta(meta)?.length);

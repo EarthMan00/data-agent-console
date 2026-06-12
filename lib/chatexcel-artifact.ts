@@ -91,6 +91,57 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v);
 }
 
+/** 合并顶层与 result 内的失败语义（status=ERROR / success=false） */
+function resolveChatexcelOutcome(parsed: Record<string, unknown>): {
+  ok: boolean;
+  error?: string;
+  errorType?: string;
+} {
+  const topOk = parsed.ok !== false;
+  const topError = typeof parsed.error === "string" ? parsed.error : undefined;
+  const topErrorType = typeof parsed.error_type === "string" ? parsed.error_type : undefined;
+
+  if (!topOk) {
+    return {
+      ok: false,
+      error: topError ?? "ChatExcel 执行失败",
+      errorType: topErrorType,
+    };
+  }
+
+  const inner = parsed.result;
+  if (!isRecord(inner)) {
+    return { ok: topOk, error: topError, errorType: topErrorType };
+  }
+
+  if (inner.success === false) {
+    const err =
+      (typeof inner.error === "string" && inner.error) ||
+      (typeof inner.message === "string" && inner.message) ||
+      "工具执行失败";
+    const errType =
+      (typeof inner.error_type === "string" && inner.error_type) ||
+      (typeof inner.error === "string" && inner.error) ||
+      undefined;
+    return { ok: false, error: err, errorType: errType };
+  }
+
+  const status = typeof inner.status === "string" ? inner.status.toUpperCase() : "";
+  if (status === "ERROR") {
+    const err =
+      (typeof inner.message === "string" && inner.message) ||
+      (typeof inner.error === "string" && inner.error) ||
+      "工具返回错误";
+    const errType =
+      (typeof inner.error_type === "string" && inner.error_type) ||
+      (typeof inner.error === "string" && inner.error) ||
+      undefined;
+    return { ok: false, error: err, errorType: errType };
+  }
+
+  return { ok: topOk, error: topError, errorType: topErrorType };
+}
+
 function dataframeLikeToTable(obj: Record<string, unknown>): ChatexcelPreviewTable | null {
   if (obj.type !== "DataFrame" && obj.type !== "Series") return null;
   const cols = obj.columns;
@@ -131,10 +182,11 @@ export function parseChatexcelArtifactText(raw: string): ChatexcelPreviewModel {
     };
   }
 
-  const ok = Boolean(parsed.ok);
+  const outcome = resolveChatexcelOutcome(parsed);
+  const ok = outcome.ok;
   const action = typeof parsed.action === "string" ? parsed.action : undefined;
-  const err = typeof parsed.error === "string" ? parsed.error : undefined;
-  const errorType = typeof parsed.error_type === "string" ? parsed.error_type : undefined;
+  const err = outcome.error;
+  const errorType = outcome.errorType;
 
   const inner = parsed.result;
   let table: ChatexcelPreviewTable | null = null;

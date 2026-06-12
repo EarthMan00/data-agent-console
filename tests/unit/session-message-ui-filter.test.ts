@@ -15,7 +15,25 @@ function msg(partial: Partial<SessionMessageItem> & Pick<SessionMessageItem, "co
 }
 
 describe("shouldHideAssistantMessageBubble", () => {
+  it("hides empty assistant bubbles and tool-only turn placeholders", () => {
+    expect(
+      shouldHideAssistantMessageBubble(
+        msg({ content: "", meta: {} }),
+      ),
+    ).toBe(true);
+    expect(
+      shouldHideAssistantMessageBubble(
+        msg({ content: "", meta: { kind: "tool_only_turn" } }),
+      ),
+    ).toBe(true);
+  });
+
   it("hides multi-step plan and completion boilerplate", () => {
+    expect(
+      shouldHideAssistantMessageBubble(
+        msg({ content: "已分析请求，将触发工具执行。" }),
+      ),
+    ).toBe(true);
     expect(
       shouldHideAssistantMessageBubble(
         msg({
