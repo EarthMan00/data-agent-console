@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Download, Ellipsis, Expand, Share2 } from "@/components/ui/tabler-icons";
 
-import { MoreDataShell } from "@/components/more-data-shell";
+import { AliceShell } from "@/components/alice-shell";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceState } from "@/lib/workspace-store";
 
@@ -29,14 +29,14 @@ export function ReportView() {
 
   if (!report || !run) {
     return (
-      <MoreDataShell currentPath="/report" currentRunLabel="未找到报告" mainDecoration={null}>
+      <AliceShell currentPath="/report" currentRunLabel="未找到报告" mainDecoration={null}>
         <div className="p-8 text-sm text-[#747571]">未找到报告。请从运行列表或带 reportId 的链接进入。</div>
-      </MoreDataShell>
+      </AliceShell>
     );
   }
 
   return (
-    <MoreDataShell currentPath="/report" currentRunLabel={run.title}>
+    <AliceShell currentPath="/report" currentRunLabel={run.title}>
       <div className="h-full overflow-auto">
         <div className="flex items-center justify-between border-b border-[#e2e2df] bg-white px-8 py-4">
           <div>
@@ -136,6 +136,6 @@ export function ReportView() {
           )}
         </div>
       </div>
-    </MoreDataShell>
+    </AliceShell>
   );
 }

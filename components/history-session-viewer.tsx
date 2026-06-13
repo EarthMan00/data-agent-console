@@ -25,7 +25,7 @@ import {
   removeFromComposerDraft,
 } from "@/lib/composer-prefill";
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
-import { MoreDataShell, useMoreDataShellState } from "@/components/more-data-shell";
+import { AliceShell, useAliceShellState } from "@/components/alice-shell";
 import { compactText } from "@/components/agent-workspace-view-models";
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
 import { TaskComposer } from "@/components/task-composer";
@@ -43,7 +43,7 @@ import { buildTaskStepsFromDecompositionLabels } from "@/lib/schedule-trial-exec
 import { resolvePostTaskGuidancePresentation } from "@/lib/parse-post-task-guidance";
 import { sessionHasOrchestrationFailure } from "@/lib/orchestration-failure-message";
 import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
-import { sanitizeClarificationForUserDisplay } from "@/lib/linkfox-clarification";
+import { sanitizeClarificationForUserDisplay } from "@/lib/alice-clarification";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import {
@@ -95,7 +95,7 @@ function SimpleSystemBubble({ message }: { message: string }) {
 export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const platformAgent = useOptionalPlatformAgent();
-  const { refreshHistory, refreshHistoryNow } = useMoreDataShellState();
+  const { refreshHistory, refreshHistoryNow } = useAliceShellState();
   const isMounted = useRef(true);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
@@ -221,7 +221,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
     [messages],
   );
 
-  const linkfoxClarificationForSteps = useMemo(() => {
+  const aliceClarificationForSteps = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i]!;
       if (m.role !== "assistant") continue;
@@ -427,7 +427,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
   }, [draft, pendingFiles, platformAgent, reload, refreshHistory, sending, sessionId]);
 
   return (
-    <MoreDataShell
+    <AliceShell
       currentPath={`/history/${sessionId}`}
       currentRunLabel={title}
       contentScrollMode="child"
@@ -506,7 +506,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                   const hideAssistantBubble = shouldHideAssistantMessageBubble(m);
                   const msgKind =
                     meta && typeof meta.kind === "string" ? (meta.kind as string).trim() : "";
-                  const isLinkfoxClarification = msgKind === "linkfox_clarification";
+                  const isAliceClarification = msgKind === "linkfox_clarification";
                   const guidancePresentation =
                     m.role === "assistant" && !showTaskStepsBubble && !hideAssistantBubble
                       ? resolvePostTaskGuidancePresentation(m, meta)
@@ -534,7 +534,7 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                               setPanelVisibility={setPanelVisibilityRecord}
                             />
                             {m.id === latestStepsMessageId &&
-                            linkfoxClarificationForSteps &&
+                            aliceClarificationForSteps &&
                             !messages.some(
                               (item) =>
                                 item.role === "assistant" &&
@@ -543,14 +543,14 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
                                 (item.meta as Record<string, unknown>).kind === "linkfox_clarification",
                             ) ? (
                               <AliceMessageBubble
-                                body={linkfoxClarificationForSteps.message}
+                                body={aliceClarificationForSteps.message}
                                 datetime={m.created_at}
                                 composerDraft={draft}
                                 onSuggestionToggle={toggleGuidanceSuggestion}
                               />
                             ) : null}
                           </>
-                        ) : isLinkfoxClarification ? (
+                        ) : isAliceClarification ? (
                           <AliceMessageBubble
                             body={m.content}
                             datetime={m.created_at}
@@ -691,6 +691,6 @@ export function HistorySessionViewer({ sessionId }: { sessionId: string }) {
           </div>
         </div>
       </div>
-    </MoreDataShell>
+    </AliceShell>
   );
 }

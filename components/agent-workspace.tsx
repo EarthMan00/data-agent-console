@@ -14,8 +14,8 @@ import type {
   PlatformTaskArtifactRef,
 } from "@/lib/agent-events";
 import { AgentRoutePlaceholder } from "@/components/agent-route-placeholder";
-import { MoreDataShell } from "@/components/more-data-shell";
-import { AssistantAttachmentList } from "@/components/assistant-attachment-list";
+import { AliceShell } from "@/components/alice-shell";
+import { EmptyState } from "@/components/empty-state";
 import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
@@ -24,7 +24,6 @@ import { buildAttachmentItems } from "@/components/agent-workspace/attachment-ut
 import {
   AliceMessageBubble,
   ORCHESTRATION_BLOCK_MAX,
-  SIMPLE_CHAT_BUBBLE_MAX,
   SIMPLE_CHAT_COLUMN_MAX,
   SimpleAssistantBubble,
   SimpleSystemBubble,
@@ -149,9 +148,9 @@ export function AgentWorkspace() {
 
   if (awaitingAgentRouteParams) {
     return (
-      <MoreDataShell currentPath="/agent" contentScrollMode="child" currentRunLabel="历史对话" mainDecoration={null}>
+      <AliceShell currentPath="/agent" contentScrollMode="child" currentRunLabel="历史对话" mainDecoration={null}>
         <div className="flex h-full min-h-0 flex-1 items-center justify-center text-sm text-[#71717a]">加载中…</div>
-      </MoreDataShell>
+      </AliceShell>
     );
   }
 
@@ -169,9 +168,23 @@ export function AgentWorkspace() {
 
   if (!run || !report) {
     return (
-      <MoreDataShell currentPath="/agent" contentScrollMode="child" currentRunLabel="未找到任务" mainDecoration={null}>
-        <div className="p-6 text-sm text-slate-600">未在本地状态中找到该任务。请从首页发起研究，或确认 URL 中 runId 有效。</div>
-      </MoreDataShell>
+      <AliceShell currentPath="/agent" contentScrollMode="child" currentRunLabel="未找到任务" mainDecoration={null}>
+        <EmptyState
+          className="m-0 min-h-[calc(100vh-160px)]"
+          message="未找到任务"
+          action={
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-auto px-1 py-0 text-[14px] font-medium text-[#1d2129] hover:bg-transparent hover:text-[#1d2129]"
+              onClick={() => router.replace("/")}
+            >
+              返回首页
+            </Button>
+          }
+        />
+      </AliceShell>
     );
   }
 
@@ -258,14 +271,14 @@ function AgentRunWorkspaceView({
         splitStreamEndedByRound: run.splitStreamEndedByRound,
         splitRevealCompleteByRound: run.splitRevealCompleteByRound,
         postTaskGuidanceByRound: run.postTaskGuidanceByRound,
-        linkfoxClarificationByRound: run.linkfoxClarificationByRound,
+        aliceClarificationByRound: run.aliceClarificationByRound,
         clarificationDialogByRound: run.clarificationDialogByRound,
       }),
     [
       run.chains,
       run.clarificationDialogByRound,
       run.latestRoundId,
-      run.linkfoxClarificationByRound,
+      run.aliceClarificationByRound,
       run.objective,
       run.platformSubtasksByRound,
       run.platformTaskArtifacts,
@@ -606,16 +619,18 @@ function AgentRunWorkspaceView({
     const latestHasGuidance = Boolean(latestRoundModel?.postTaskGuidance);
     const awaitingRound = latestHasGuidance ? undefined : roundModels.find((r) => isRoundAwaitingUserInput(r));
     if (awaitingRound && run.platformSessionId) {
+      const attachments = queuedAttachments[run.id] ?? [];
+      const attachmentFiles = queuedAttachmentFiles[run.id] ?? [];
       const orchId = resolveClarificationOrchestrationId(run, awaitingRound, acceptedToolRef.current.orchestrationId);
-      workspaceActions.appendUserMessageOnRound(run.id, awaitingRound.roundId, value);
+      workspaceActions.appendUserMessageOnRound(run.id, awaitingRound.roundId, value, attachments);
       setDraft("");
       setNotice("");
       await executeRound({
         roundId: awaitingRound.roundId,
         prompt: value,
         selectedCapabilities: selectedSourceIds,
-        attachments: queuedAttachments[run.id] ?? [],
-        attachmentFiles: queuedAttachmentFiles[run.id] ?? [],
+        attachments,
+        attachmentFiles,
         ...(orchId
           ? {
               clarificationResume: {
@@ -623,7 +638,7 @@ function AgentRunWorkspaceView({
                 stepDefs: (awaitingRound.executionSteps ?? []).map((s) => ({ id: s.id, label: s.label })),
                 clarificationStepIndex:
                   awaitingRound.clarificationDialog?.stepIndex ??
-                  awaitingRound.linkfoxClarification?.stepIndex ??
+                  awaitingRound.aliceClarification?.stepIndex ??
                   awaitingRound.executionSteps?.findIndex((s) => s.status === "awaiting_input") ??
                   0,
               },
@@ -729,7 +744,7 @@ function AgentRunWorkspaceView({
   );
 
   return (
-    <MoreDataShell
+    <AliceShell
       currentPath="/agent"
       contentScrollMode="child"
       currentRunLabel={run.title}
@@ -795,7 +810,7 @@ function AgentRunWorkspaceView({
             <div className="space-y-5">
               {isPlatformBackendEnabled() && !run.platformSessionId ? (
                 <p className="text-sm leading-relaxed text-[#92400e]">
-                  当前任务无有效平台会话，消息不会发往 Data Agent Server。请从首页重新发起任务以创建真实会话；勿直接打开 /agent 且无 runId，或仅依赖侧栏中无后端关联的历史项。
+                  当前任务无有效平台会话，消息不会发往 Alice 后端服务。请从首页重新发起任务以创建真实会话；勿直接打开 /agent 且无 runId，或仅依赖侧栏中无后端关联的历史项。
                 </p>
               ) : null}
               {notice ? <p className="text-sm text-[#52525b]">{notice}</p> : null}
@@ -805,7 +820,7 @@ function AgentRunWorkspaceView({
                 const executionExpanded =
                   executionCardExpandedByRound[round.roundId] ??
                   (!round.collapseExecution ||
-                    Boolean(round.linkfoxClarification) ||
+                    Boolean(round.aliceClarification) ||
                     Boolean(round.clarificationDialog && !round.clarificationDialog.answered));
                 const splitRevealDone =
                   round.splitItems.length === 0 ||
@@ -814,27 +829,13 @@ function AgentRunWorkspaceView({
                   Boolean(round.splitRevealComplete);
 
                 return (
-                <div key={round.roundId} className="space-y-3">
-                  {round.userMessage ? (
-                    <SimpleUserBubble text={round.userMessage} datetime={round.createdAt} />
-                  ) : null}
-
-                  {round.attachments.length > 0 ? (
-                    <div
-                      className={cn(
-                        "w-full",
-                        round.uiLayout === "simple_chat" ? "flex justify-end" : "max-w-[780px]",
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          "rounded-[16px] border border-[#e2e2df] bg-white px-3 py-3 shadow-[0_1px_2px_rgba(17,17,17,0.03)]",
-                          round.uiLayout === "simple_chat" && cn("w-full", SIMPLE_CHAT_BUBBLE_MAX),
-                        )}
-                      >
-                        <AssistantAttachmentList attachments={round.attachments} />
-                      </div>
-                    </div>
+                <div key={round.roundId} className="space-y-2">
+                  {round.userMessage || round.attachments.length > 0 ? (
+                    <SimpleUserBubble
+                      text={round.userMessage ?? ""}
+                      datetime={round.createdAt}
+                      attachments={round.attachments}
+                    />
                   ) : null}
 
                   {round.uiLayout === "simple_chat" && !(round.executionSteps?.length) ? (
@@ -931,7 +932,14 @@ function AgentRunWorkspaceView({
 
                       const afterExecution = (
                         <>
-                          {round.errorMessage ? <p className="text-sm text-red-600">{round.errorMessage}</p> : null}
+                          {round.errorMessage ? (
+                            <SimpleAssistantBubble
+                              body={round.errorMessage}
+                              datetime={round.createdAt}
+                              streaming={false}
+                              typewriter={false}
+                            />
+                          ) : null}
                           {showResultCard ? (
                             <>
                               <TaskResultSummaryCard
@@ -961,7 +969,6 @@ function AgentRunWorkspaceView({
                         <AliceMessageBubble
                           body={clarificationDialogBodyForDisplay(
                             round.clarificationDialog.message,
-                            round.clarificationDialog.answered,
                           )}
                           datetime={round.clarificationDialog.datetime}
                           streaming={round.assistantStreaming && !round.clarificationDialog.answered}
@@ -982,6 +989,7 @@ function AgentRunWorkspaceView({
                           key={`${round.roundId}-supplement-${idx}`}
                           text={m.text}
                           datetime={m.createdAt}
+                          attachments={m.attachments}
                         />
                       ));
 
@@ -1128,6 +1136,6 @@ function AgentRunWorkspaceView({
           </div>
         </div>
       </AssistantThreadFrame>
-    </MoreDataShell>
+    </AliceShell>
   );
 }

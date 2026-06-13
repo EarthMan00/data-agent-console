@@ -1,8 +1,8 @@
 import type { ResultPushBlock } from "@/components/schedule-result-push";
 import type { ScheduleKind } from "./schedule-payloads";
 
-const DRAFT_KEY = "linkfox:scheduleCreateDraftV1";
-const TRIAL_META_KEY = "linkfox:scheduleTrialMetaV1";
+const DRAFT_KEY = "alice:scheduleCreateDraftV1";
+const TRIAL_META_KEY = "alice:scheduleTrialMetaV1";
 
 export type ScheduleCreateDraftV1 = {
   v: 1;

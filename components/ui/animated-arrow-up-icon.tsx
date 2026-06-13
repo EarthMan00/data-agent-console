@@ -8,7 +8,7 @@ interface AnimatedArrowUpIconProps extends HTMLAttributes<HTMLDivElement> {
 
 export function AnimatedArrowUpIcon({ className, size = 16, ...props }: AnimatedArrowUpIconProps) {
   return (
-    <div className={cn("mdata-arrow-up-icon inline-flex items-center justify-center", className)} {...props}>
+    <div className={cn("alice-arrow-up-icon inline-flex items-center justify-center", className)} {...props}>
       <svg
         fill="none"
         height={size}
@@ -22,8 +22,8 @@ export function AnimatedArrowUpIcon({ className, size = 16, ...props }: Animated
         aria-hidden="true"
         focusable="false"
       >
-        <path className="mdata-arrow-up-icon__head" d="m5 12 7-7 7 7" />
-        <path className="mdata-arrow-up-icon__stem" d="M12 19V5" />
+        <path className="alice-arrow-up-icon__head" d="m5 12 7-7 7 7" />
+        <path className="alice-arrow-up-icon__stem" d="M12 19V5" />
       </svg>
     </div>
   );

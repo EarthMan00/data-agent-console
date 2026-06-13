@@ -186,7 +186,7 @@ input#history-task-search:focus-visible {
   }
 }
 
-@keyframes mdata-arrow-up-head-loop {
+@keyframes alice-arrow-up-head-loop {
   0%,
   100% {
     transform: translateY(0);
@@ -196,7 +196,7 @@ input#history-task-search:focus-visible {
   }
 }
 
-@keyframes mdata-arrow-up-stem-loop {
+@keyframes alice-arrow-up-stem-loop {
   0%,
   100% {
     transform: scaleY(1);
@@ -206,36 +206,36 @@ input#history-task-search:focus-visible {
   }
 }
 
-.mdata-arrow-up-icon svg {
+.alice-arrow-up-icon svg {
   display: block;
   overflow: visible;
 }
 
-.mdata-arrow-up-icon__head,
-.mdata-arrow-up-icon__stem {
+.alice-arrow-up-icon__head,
+.alice-arrow-up-icon__stem {
   transform-box: view-box;
 }
 
-.mdata-arrow-up-icon__stem {
+.alice-arrow-up-icon__stem {
   transform-origin: 12px 19px;
 }
 
-.group:hover .mdata-arrow-up-icon__head {
-  animation: mdata-arrow-up-head-loop 0.4s ease-in-out infinite;
+.group:hover .alice-arrow-up-icon__head {
+  animation: alice-arrow-up-head-loop 0.4s ease-in-out infinite;
 }
 
-.group:hover .mdata-arrow-up-icon__stem {
-  animation: mdata-arrow-up-stem-loop 0.4s ease-in-out infinite;
+.group:hover .alice-arrow-up-icon__stem {
+  animation: alice-arrow-up-stem-loop 0.4s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .group:hover .mdata-arrow-up-icon__head,
-  .group:hover .mdata-arrow-up-icon__stem {
+  .group:hover .alice-arrow-up-icon__head,
+  .group:hover .alice-arrow-up-icon__stem {
     animation: none;
   }
 }
 
-@keyframes mdata-auth-panel-in {
+@keyframes alice-auth-panel-in {
   0% {
     opacity: 0;
   }
@@ -244,7 +244,7 @@ input#history-task-search:focus-visible {
   }
 }
 
-@keyframes mdata-auth-panel-out {
+@keyframes alice-auth-panel-out {
   0% {
     opacity: 1;
   }
@@ -253,7 +253,7 @@ input#history-task-search:focus-visible {
   }
 }
 
-@keyframes mdata-auth-overlay-in {
+@keyframes alice-auth-overlay-in {
   0% {
     opacity: 0;
   }
@@ -262,37 +262,37 @@ input#history-task-search:focus-visible {
   }
 }
 
-.mdata-auth-overlay[data-state="open"] {
-  animation: mdata-auth-overlay-in 240ms ease-out both;
+.alice-auth-overlay[data-state="open"] {
+  animation: alice-auth-overlay-in 240ms ease-out both;
 }
 
-.mdata-auth-panel,
-.mdata-auth-panel * {
+.alice-auth-panel,
+.alice-auth-panel * {
   font-family: var(--font-app);
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
 }
 
-.mdata-auth-title,
-.mdata-auth-label,
-.mdata-auth-input {
+.alice-auth-title,
+.alice-auth-label,
+.alice-auth-input {
   letter-spacing: 0;
   border-radius: 0 !important;
   appearance: none;
   -webkit-appearance: none;
 }
 
-.mdata-auth-title-muted {
+.alice-auth-title-muted {
   color: rgba(255, 255, 255, 0.42) !important;
 }
 
-.mdata-auth-panel[data-state="open"] {
-  animation: mdata-auth-panel-in 280ms ease-out both;
+.alice-auth-panel[data-state="open"] {
+  animation: alice-auth-panel-in 280ms ease-out both;
 }
 
-.mdata-auth-panel[data-state="closed"] {
-  animation: mdata-auth-panel-out 160ms ease-in both;
+.alice-auth-panel[data-state="closed"] {
+  animation: alice-auth-panel-out 160ms ease-in both;
 }
 
 .animate-ray-sweep-left {
@@ -331,9 +331,9 @@ input#history-task-search:focus-visible {
   .animate-breathe-slow,
   .animate-drift-up,
   .animate-sheen-pass::after,
-  .mdata-auth-overlay[data-state="open"],
-  .mdata-auth-panel[data-state="open"],
-  .mdata-auth-panel[data-state="closed"] {
+  .alice-auth-overlay[data-state="open"],
+  .alice-auth-panel[data-state="open"],
+  .alice-auth-panel[data-state="closed"] {
     animation: none !important;
   }
 }

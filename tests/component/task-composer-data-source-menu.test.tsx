@@ -1,9 +1,13 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskComposer } from "@/components/task-composer";
+
+afterEach(() => {
+  cleanup();
+});
 
 function ComposerHarness({
   onToolSelect = vi.fn(),
@@ -83,6 +87,35 @@ describe("task composer data source menu", () => {
     expect(screen.getByTestId("task-composer-mention-option-pane")).toBeInTheDocument();
     expect(within(mentionMenu).getByRole("button", { name: "Keepa" })).toBeInTheDocument();
     expect(within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ })).toBeInTheDocument();
+  });
+
+  it("keeps keyboard highlight in the bare mention menu and selects the highlighted datasource", async () => {
+    const onToolSelect = vi.fn();
+    render(<ComposerHarness onToolSelect={onToolSelect} />);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    await userEvent.type(editor, "@");
+
+    const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
+    expect(editor).toHaveFocus();
+    fireEvent.keyDown(editor, { key: "ArrowDown" });
+    await waitFor(() => {
+      expect(within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品详情/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ })).toHaveAttribute(
+        "aria-selected",
+        "false",
+      );
+    });
+    expect(onToolSelect).not.toHaveBeenCalled();
+    fireEvent.keyDown(editor, { key: "Enter" });
+
+    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("keepa-product-detail"));
+    expect(mentionMenu).not.toBeInTheDocument();
+    expect(screen.getByLabelText("移除数据源 Keepa-亚马逊-商品详情")).toBeInTheDocument();
   });
 
   it("opens a lightweight filtered mention menu and inserts the selected second-level datasource", async () => {

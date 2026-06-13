@@ -28,6 +28,7 @@ import {
   MessageCircleMore,
   PanelLeft,
   PanelLeftExpand,
+  Pencil,
   Plus,
   Search,
   SparkleHighlight,
@@ -72,7 +73,7 @@ const mockNotificationItems = [
   },
 ];
 
-type MoreDataShellProps = {
+type AliceShellProps = {
   currentPath: string;
   children: ReactNode;
   rightRail?: ReactNode;
@@ -84,7 +85,7 @@ type MoreDataShellProps = {
 };
 
 type ShellMeta = Pick<
-  MoreDataShellProps,
+  AliceShellProps,
   "currentPath" | "rightRail" | "currentRunLabel" | "mainDecoration" | "contentScrollMode" | "showTopHeader" | "mainClassName"
 >;
 
@@ -119,7 +120,30 @@ type HistoryEntry = SessionListItem & {
 };
 
 const HISTORY_PAGE_SIZE = 20;
+const HISTORY_TITLE_OVERRIDES_KEY = "alice.historyTitleOverrides.v1";
 const ACCOUNT_AVATAR_COLORS = ["#2563eb", "#7c3aed", "#db2777", "#dc2626", "#ea580c", "#16a34a", "#0891b2", "#4f46e5"];
+
+function readHistoryTitleOverrides(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(HISTORY_TITLE_OVERRIDES_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .map(([key, value]) => [key, typeof value === "string" ? value.trim() : ""] as const)
+        .filter(([key, value]) => key.trim() && value),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function writeHistoryTitleOverrides(next: Record<string, string>) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(HISTORY_TITLE_OVERRIDES_KEY, JSON.stringify(next));
+}
 
 function historyTimestampMs(entry: HistoryEntry) {
   const times = [entry.last_active_at, entry.firstAt, entry.created_at]
@@ -178,7 +202,7 @@ async function enrichHistoryEntries(
   });
 }
 
-type MoreDataShellStateValue = {
+type AliceShellStateValue = {
   historySessions: HistoryEntry[];
   historyBusy: boolean;
   historyLoadingMore: boolean;
@@ -196,9 +220,9 @@ type MoreDataShellStateValue = {
   setActiveSessionTitle: (title: string) => void;
 };
 
-const MoreDataShellStateContext = createContext<MoreDataShellStateValue | null>(null);
+const AliceShellStateContext = createContext<AliceShellStateValue | null>(null);
 
-export function MoreDataShellStateProvider({ children }: { children: ReactNode }) {
+export function AliceShellStateProvider({ children }: { children: ReactNode }) {
   const platformAgent = useOptionalPlatformAgent();
   const [historySessions, setHistorySessions] = useState<HistoryEntry[]>([]);
   const [historyBusy, setHistoryBusy] = useState(false);
@@ -351,7 +375,7 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
     ],
   );
 
-  return <MoreDataShellStateContext.Provider value={value}>{children}</MoreDataShellStateContext.Provider>;
+  return <AliceShellStateContext.Provider value={value}>{children}</AliceShellStateContext.Provider>;
 }
 
 function SidebarHistorySkeleton() {
@@ -367,15 +391,15 @@ function SidebarHistorySkeleton() {
   );
 }
 
-export function useMoreDataShellState() {
-  const context = useContext(MoreDataShellStateContext);
+export function useAliceShellState() {
+  const context = useContext(AliceShellStateContext);
   if (!context) {
-    throw new Error("useMoreDataShellState must be used within MoreDataShellStateProvider");
+    throw new Error("useAliceShellState must be used within AliceShellStateProvider");
   }
   return context;
 }
 
-export function MoreDataShell({
+export function AliceShell({
   currentPath,
   children,
   rightRail,
@@ -384,7 +408,7 @@ export function MoreDataShell({
   contentScrollMode = "shell",
   showTopHeader = true,
   mainClassName,
-}: MoreDataShellProps) {
+}: AliceShellProps) {
   const setShellMeta = useContext(ShellMetaDispatchContext);
 
   useEffect(() => {
@@ -402,7 +426,7 @@ export function MoreDataShell({
   return <>{children}</>;
 }
 
-export function MoreDataShellRoot({ children }: { children: ReactNode }) {
+export function AliceShellRoot({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const isAdminRoute = pathname?.startsWith("/admin");
   const isShareRoute = pathname?.startsWith("/share");
@@ -414,19 +438,19 @@ export function MoreDataShellRoot({ children }: { children: ReactNode }) {
 
   return (
     <ShellMetaProvider>
-      <MoreDataShellStateProvider>
+      <AliceShellStateProvider>
         <Suspense fallback={<div className="min-h-full flex-1 bg-[#fafafa]" aria-hidden />}>
-          <MoreDataShellInner>{children}</MoreDataShellInner>
+          <AliceShellInner>{children}</AliceShellInner>
         </Suspense>
-      </MoreDataShellStateProvider>
+      </AliceShellStateProvider>
     </ShellMetaProvider>
   );
 }
 
-function MoreDataShellInner({ children }: { children: ReactNode }) {
+function AliceShellInner({ children }: { children: ReactNode }) {
   const { meta } = useShellMetaContext();
   return (
-    <MoreDataShellComponent
+    <AliceShellComponent
       currentPath={meta.currentPath}
       rightRail={meta.rightRail}
       currentRunLabel={meta.currentRunLabel}
@@ -436,11 +460,11 @@ function MoreDataShellInner({ children }: { children: ReactNode }) {
       mainClassName={meta.mainClassName}
     >
       {children}
-    </MoreDataShellComponent>
+    </AliceShellComponent>
   );
 }
 
-function MoreDataShellComponent({
+function AliceShellComponent({
   currentPath,
   children,
   rightRail,
@@ -449,7 +473,7 @@ function MoreDataShellComponent({
   contentScrollMode = "shell",
   showTopHeader = true,
   mainClassName,
-}: MoreDataShellProps) {
+}: AliceShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -469,9 +493,13 @@ function MoreDataShellComponent({
     setSidebarCollapsed,
     setHistoryError,
     activeSessionTitle,
-  } = useMoreDataShellState();
+    setActiveSessionTitle,
+  } = useAliceShellState();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [historyPurgeConfirmId, setHistoryPurgeConfirmId] = useState<string | null>(null);
+  const [renamingHistory, setRenamingHistory] = useState<HistoryEntry | null>(null);
+  const [renameHistoryValue, setRenameHistoryValue] = useState("");
+  const [historyTitleOverrides, setHistoryTitleOverrides] = useState<Record<string, string>>({});
   const [historySearch, setHistorySearch] = useState("");
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -481,6 +509,7 @@ function MoreDataShellComponent({
   const [isResultCompactViewport, setIsResultCompactViewport] = useState(false);
   const [compactChatDrawerOpen, setCompactChatDrawerOpen] = useState(false);
   const historySearchInputRef = useRef<HTMLInputElement | null>(null);
+  const renameHistoryInputRef = useRef<HTMLInputElement | null>(null);
   const historyListScrollRef = useRef<HTMLDivElement | null>(null);
   const historyLoadSentinelRef = useRef<HTMLDivElement | null>(null);
   /** 首屏与服务端 HTML 一致：认证态来自客户端存储，仅在 mount 后再按登录态渲染侧栏，避免 hydration mismatch */
@@ -488,6 +517,12 @@ function MoreDataShellComponent({
   useEffect(() => {
     setClientMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!clientMounted) return;
+    setHistoryTitleOverrides(readHistoryTitleOverrides());
+  }, [clientMounted]);
+
   const childManagedScroll = contentScrollMode === "child";
   const sidebarExpandedWidth = 300;
   const sidebarCollapsedWidth = 68;
@@ -586,17 +621,42 @@ function MoreDataShellComponent({
     };
   }, [historySearchOpen]);
 
+  useEffect(() => {
+    if (!renamingHistory) return;
+    const timer = window.setTimeout(() => {
+      renameHistoryInputRef.current?.focus();
+      renameHistoryInputRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [renamingHistory]);
+
+  const getHistoryDisplayTitle = useCallback(
+    (entry: HistoryEntry) =>
+      historyTitleOverrides[entry.session_id]?.trim() ||
+      entry.firstMessage ||
+      (entry.session_id === effectiveActiveSessionId ? activeSessionTitle : null) ||
+      "新对话",
+    [activeSessionTitle, effectiveActiveSessionId, historyTitleOverrides],
+  );
+
   const filteredHistorySessions = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
     const base = q ? historySessions.filter((s) => {
-      const haystack = [s.firstMessage, s.session_id, s.firstAt, s.created_at]
+      const haystack = [
+        historyTitleOverrides[s.session_id],
+        s.firstMessage,
+        s.session_id === effectiveActiveSessionId ? activeSessionTitle : "",
+        s.session_id,
+        s.firstAt,
+        s.created_at,
+      ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return haystack.includes(q);
     }) : historySessions;
     return sortHistoryEntries(base);
-  }, [historySearch, historySessions]);
+  }, [activeSessionTitle, effectiveActiveSessionId, historySearch, historySessions, historyTitleOverrides]);
 
   const formatShortDate = (iso: string | null | undefined) => {
     if (!iso) return "";
@@ -612,6 +672,34 @@ function MoreDataShellComponent({
     if (Number.isNaN(d.getTime())) return "";
     return d.toLocaleString();
   };
+
+  const closeHistoryRenameDialog = useCallback(() => {
+    setRenamingHistory(null);
+    setRenameHistoryValue("");
+  }, []);
+
+  const submitHistoryRename = useCallback(() => {
+    const target = renamingHistory;
+    const title = renameHistoryValue.trim();
+    if (!target || !title) return;
+
+    const sessionId = target.session_id.trim();
+    if (!sessionId) return;
+    setHistoryTitleOverrides((current) => {
+      const next = { ...current, [sessionId]: title };
+      writeHistoryTitleOverrides(next);
+      return next;
+    });
+
+    runs
+      .filter((run) => ((run.platformSessionId ?? "").trim() === sessionId))
+      .forEach((run) => workspaceActions.renameRun(run.id, title));
+
+    if (sessionId && sessionId === effectiveActiveSessionId) {
+      setActiveSessionTitle(title);
+    }
+    closeHistoryRenameDialog();
+  }, [closeHistoryRenameDialog, effectiveActiveSessionId, renameHistoryValue, renamingHistory, runs, setActiveSessionTitle]);
 
   const executePurgeHistorySession = useCallback(
     async (sessionId: string) => {
@@ -711,7 +799,7 @@ function MoreDataShellComponent({
                   <button
                     type="button"
                     aria-label="展开侧边栏"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#1d2129] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#1d2129]"
                     onClick={() => setSidebarCollapsed(false)}
                   >
                     <PanelLeftExpand className="h-[18px] w-[18px]" strokeWidth={1.8} />
@@ -725,7 +813,7 @@ function MoreDataShellComponent({
                       <button
                         type="button"
                         aria-label="搜索所有任务"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#1d2129] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#1d2129]"
                         onClick={() => {
                           if (historySearchOpen) {
                             setHistorySearch("");
@@ -740,7 +828,7 @@ function MoreDataShellComponent({
                       <button
                         type="button"
                         aria-label="收起侧边栏"
-                        className="hidden h-9 w-9 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d] md:inline-flex"
+                        className="hidden h-9 w-9 items-center justify-center rounded-[10px] text-[#1d2129] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#1d2129] md:inline-flex"
                         onClick={() => setSidebarCollapsed(true)}
                       >
                         <PanelLeft className="h-[18px] w-[18px]" strokeWidth={1.8} />
@@ -748,7 +836,7 @@ function MoreDataShellComponent({
                       <button
                         type="button"
                         aria-label="关闭侧边栏"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d] md:hidden"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#1d2129] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#1d2129] md:hidden"
                         onClick={() => setMobileSidebarOpen(false)}
                       >
                         <X className="h-[18px] w-[18px]" strokeWidth={1.8} />
@@ -783,12 +871,12 @@ function MoreDataShellComponent({
                     }}
                     className={`group flex h-9 items-center rounded-[10px] text-[16px] font-normal leading-6 transition-colors ${
                     active
-                        ? "bg-[rgba(55,53,47,0.06)] text-[#34322d]"
-                        : "text-[#34322d] hover:bg-[rgba(55,53,47,0.06)]"
+                        ? "bg-[rgba(55,53,47,0.06)] text-[#1d2129]"
+                        : "text-[#1d2129] hover:bg-[rgba(55,53,47,0.06)]"
                   } ${effectiveSidebarCollapsed ? "mx-auto w-9 justify-center px-0" : "gap-3 pl-[9px] pr-0.5"}`}
                     title={effectiveSidebarCollapsed ? label : undefined}
                   >
-                    <Icon className="h-[18px] w-[18px] shrink-0 text-[#34322d]" strokeWidth={2} />
+                    <Icon className="h-[18px] w-[18px] shrink-0 text-[#1d2129]" strokeWidth={2} />
                     {!effectiveSidebarCollapsed ? (
                       <>
                         <span className="text-[14px] leading-[21px]">{label}</span>
@@ -802,8 +890,8 @@ function MoreDataShellComponent({
 
             {!effectiveSidebarCollapsed && showAuthSidebar ? (
               <div className="mt-4 flex min-h-0 flex-1 flex-col px-2">
-                <div className="flex h-9 shrink-0 items-center justify-between rounded-[10px] px-[9px] text-[16px] font-normal leading-6 text-[#858481]">
-                  <span className="text-[14px] font-medium leading-[18px] text-[#858481]">所有任务</span>
+                <div className="flex h-9 shrink-0 items-center justify-between rounded-[10px] px-[9px] text-[16px] font-normal leading-6 text-[#4e5969]">
+                  <span className="text-[14px] font-medium leading-[18px] text-[#4e5969]">所有任务</span>
                 </div>
                 <div ref={historyListScrollRef} className="mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain">
                   <div className="space-y-1">
@@ -813,20 +901,21 @@ function MoreDataShellComponent({
                     <div className="px-[9px] py-2 text-[14px] leading-5 text-red-600">加载失败：{historyError}</div>
                   ) : filteredHistorySessions.length === 0 ? (
                     historySearch.trim() ? (
-                      <div className="px-[9px] py-2 text-[14px] leading-5 text-[#858481]">没有匹配的任务</div>
+                      <div className="px-[9px] py-2 text-[14px] leading-5 text-[#4e5969]">没有匹配的任务</div>
                     ) : null
                   ) : (
                     filteredHistorySessions.map((s) => {
                       const historyItemActive =
                         currentPath.startsWith("/agent") && effectiveActiveSessionId === s.session_id;
                       const createdTime = formatHistoryCreatedTime(s);
+                      const displayTitle = getHistoryDisplayTitle(s);
                       return (
                         <div
                           key={s.session_id}
                           className={`group relative flex w-full items-stretch gap-0.5 rounded-[10px] text-[16px] font-normal leading-6 transition-colors ${
                             historyItemActive
-                              ? "bg-[rgba(55,53,47,0.06)] text-[#34322d]"
-                              : "text-[#34322d] hover:bg-[rgba(55,53,47,0.06)]"
+                              ? "bg-[rgba(55,53,47,0.06)] text-[#1d2129]"
+                              : "text-[#1d2129] hover:bg-[rgba(55,53,47,0.06)]"
                           }`}
                         >
                           <button
@@ -840,20 +929,37 @@ function MoreDataShellComponent({
                           >
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-[14px] leading-5">
-                                {s.firstMessage || (s.session_id === effectiveActiveSessionId ? activeSessionTitle : null) || "新对话"}
+                                {displayTitle}
                               </div>
                             </div>
+                            {createdTime ? (
+                              <span
+                                className={cn(
+                                  "ml-auto inline-flex w-0 shrink-0 items-center justify-end overflow-hidden whitespace-nowrap text-right text-[12px] leading-4 text-[#4e5969] opacity-0 transition-[width,opacity] duration-150 group-focus-within:w-[136px] group-focus-within:opacity-100 group-hover:w-[136px] group-hover:opacity-100",
+                                  (historyPurgeConfirmId === s.session_id || renamingHistory?.session_id === s.session_id) &&
+                                    "w-[136px] opacity-100"
+                                )}
+                              >
+                                <span className="block w-full text-right tabular-nums">{createdTime}</span>
+                              </span>
+                            ) : null}
                           </button>
-                          {createdTime ? (
-                            <span
-                              className={cn(
-                                "pointer-events-none inline-flex w-0 shrink-0 items-center justify-end overflow-hidden whitespace-nowrap text-right text-[12px] leading-4 text-[#858481] opacity-0 transition-[width,opacity] duration-150 group-focus-within:w-[136px] group-focus-within:opacity-100 group-hover:w-[136px] group-hover:opacity-100",
-                                historyPurgeConfirmId === s.session_id && "w-[136px] opacity-100"
-                              )}
-                            >
-                              {createdTime}
-                            </span>
-                          ) : null}
+                          <button
+                            type="button"
+                            className={cn(
+                              "inline-flex w-8 shrink-0 items-center justify-center text-[#4e5969] opacity-0 transition hover:bg-transparent hover:text-[#1d2129] group-hover:opacity-100 focus-visible:opacity-100",
+                              renamingHistory?.session_id === s.session_id && "opacity-100",
+                            )}
+                            aria-label="重命名该历史任务"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setHistoryPurgeConfirmId(null);
+                              setRenamingHistory(s);
+                              setRenameHistoryValue(displayTitle);
+                            }}
+                          >
+                            <Pencil className="h-[15px] w-[15px]" aria-hidden />
+                          </button>
                           <Popover
                             open={historyPurgeConfirmId === s.session_id}
                             onOpenChange={(open) => {
@@ -879,7 +985,7 @@ function MoreDataShellComponent({
                               onClick={(e) => e.stopPropagation()}
                               onCloseAutoFocus={(e) => e.preventDefault()}
                             >
-                              <p className="text-[14px] leading-6 text-[#34322d]">
+                              <p className="text-[14px] leading-6 text-[#1d2129]">
                                 确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
                               </p>
                               <div className="mt-4 flex justify-end gap-2">
@@ -887,7 +993,7 @@ function MoreDataShellComponent({
                                   type="button"
                                   variant="outline"
                                   size="sm"
-                                  className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
+                                  className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#4e5969] hover:bg-[rgba(55,53,47,0.06)]"
                                   disabled={deletingId === s.session_id}
                                   onClick={() => setHistoryPurgeConfirmId(null)}
                                 >
@@ -913,7 +1019,7 @@ function MoreDataShellComponent({
                   {historyHasMore ? (
                     <div
                       ref={historyLoadSentinelRef}
-                      className="px-3 py-2 text-center text-[12px] text-[#94a3b8]"
+                      className="px-3 py-2 text-center text-[12px] text-[#4e5969]"
                       aria-hidden={!historyLoadingMore}
                     >
                       {historyLoadingMore ? "加载更多…" : "\u00a0"}
@@ -933,7 +1039,7 @@ function MoreDataShellComponent({
                       <PopoverTrigger asChild>
                         <button
                           type="button"
-                          className="flex h-9 min-w-0 flex-1 items-center gap-3 rounded-[10px] pl-[9px] pr-1 text-left text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
+                          className="flex h-9 min-w-0 flex-1 items-center gap-3 rounded-[10px] pl-[9px] pr-1 text-left text-[#1d2129] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
                           aria-label="用户中心"
                           title={accountDisplayName}
                         >
@@ -953,7 +1059,7 @@ function MoreDataShellComponent({
                         align="start"
                         side="top"
                         sideOffset={8}
-                        className="w-[300px] rounded-[20px] border border-[rgba(0,0,0,0.12)] bg-white p-0 text-[#34322d] shadow-[0_8px_32px_rgba(0,0,0,0.06)]"
+                        className="w-[300px] rounded-[20px] border border-[rgba(0,0,0,0.12)] bg-white p-0 text-[#1d2129] shadow-[0_8px_32px_rgba(0,0,0,0.06)]"
                       >
                         <div className="flex w-full gap-2 px-4 pb-3 pt-5">
                           <span
@@ -964,31 +1070,31 @@ function MoreDataShellComponent({
                             {accountAvatar.initial}
                           </span>
                           <div className="flex min-w-0 flex-1 flex-col justify-center">
-                            <div className="truncate text-[14px] font-medium leading-[22px] text-[#34322d]">{accountDisplayName}</div>
+                            <div className="truncate text-[14px] font-medium leading-[22px] text-[#1d2129]">{accountDisplayName}</div>
                           </div>
                         </div>
 
                         <div className="flex flex-col gap-3 px-3 pb-3">
                           <div className="flex flex-col gap-0.5">
-                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                              <UserRound className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#1d2129]">
+                              <UserRound className="h-5 w-5 text-[#1d2129]" strokeWidth={1.8} />
                               我的账号
                             </div>
-                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                              <BookOpen className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#1d2129]">
+                              <BookOpen className="h-5 w-5 text-[#1d2129]" strokeWidth={1.8} />
                               帮助文档
                             </div>
-                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                              <HelpCircle className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#1d2129]">
+                              <HelpCircle className="h-5 w-5 text-[#1d2129]" strokeWidth={1.8} />
                               联系我们
                             </div>
                             <div className="my-1 h-px bg-[rgba(0,0,0,0.06)]" />
                             <button
                               type="button"
-                              className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-[14px] font-medium leading-5 text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                              className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-[14px] font-medium leading-5 text-[#1d2129] transition hover:bg-[rgba(55,53,47,0.06)]"
                               onClick={() => setLogoutConfirmOpen(true)}
                             >
-                              <LogOut className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                              <LogOut className="h-5 w-5 text-[#1d2129]" strokeWidth={1.8} />
                               退出登录
                             </button>
                           </div>
@@ -998,10 +1104,10 @@ function MoreDataShellComponent({
                   ) : (
                     <button
                       type="button"
-                      className="flex h-9 min-w-0 flex-1 items-center gap-3 rounded-[10px] pl-[9px] pr-1 text-left text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
+                      className="flex h-9 min-w-0 flex-1 items-center gap-3 rounded-[10px] pl-[9px] pr-1 text-left text-[#1d2129] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
                       onClick={() => platformAgent.openLogin()}
                     >
-                      <UserCircle className="h-[18px] w-[18px] shrink-0 text-[#34322d]" strokeWidth={2} />
+                      <UserCircle className="h-[18px] w-[18px] shrink-0 text-[#1d2129]" strokeWidth={2} />
                       <span className="min-w-0 flex-1 truncate text-[14px] font-normal leading-[21px] tracking-normal">
                         账号与设置
                       </span>
@@ -1011,7 +1117,7 @@ function MoreDataShellComponent({
                     type="button"
                     aria-label="通知提醒"
                     title="通知提醒"
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#1d2129] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
                     onClick={openNotifications}
                   >
                     <Bell className="h-[18px] w-[18px]" strokeWidth={1.8} />
@@ -1037,19 +1143,19 @@ function MoreDataShellComponent({
             <div className="pointer-events-none fixed left-1/2 top-1/2 w-[min(680px,calc(100vw_-_32px))] -translate-x-1/2 -translate-y-1/2">
               <div className="pointer-events-auto flex h-[min(440px,calc(100vh_-_40px))] flex-col overflow-hidden rounded-[20px] border border-[rgba(0,0,0,0.06)] bg-[#f8f8f7] shadow-[0_0_1.25px_rgba(0,0,0,0.12),0_5px_16px_rgba(0,0,0,0.12)]">
                 <div className="flex h-[67px] shrink-0 items-center gap-2.5 border-b border-[rgba(0,0,0,0.06)] pb-[18px] pl-6 pr-2 pt-5">
-                  <Search className="h-6 w-6 shrink-0 text-[#5e5e5b]" strokeWidth={1.8} />
+                  <Search className="h-6 w-6 shrink-0 text-[#1d2129]" strokeWidth={1.8} />
                   <input
                     ref={historySearchInputRef}
                     id="history-task-search"
                     value={historySearch}
                     onChange={(e) => setHistorySearch(e.target.value)}
                     placeholder="搜索任务..."
-                    className="h-7 min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-[18px] font-normal leading-7 text-[#34322d] shadow-none outline-none placeholder:text-[#858481] focus-visible:rounded-none focus-visible:[box-shadow:none!important]"
+                    className="h-7 min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-[18px] font-normal leading-7 text-[#1d2129] shadow-none outline-none placeholder:text-[#4e5969] focus-visible:rounded-none focus-visible:[box-shadow:none!important]"
                   />
                   <button
                     type="button"
                     aria-label="关闭搜索"
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#1d2129] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#1d2129]"
                     onClick={() => {
                       setHistorySearch("");
                       setHistorySearchOpen(false);
@@ -1062,7 +1168,7 @@ function MoreDataShellComponent({
                 <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
                   <button
                     type="button"
-                    className="flex h-12 w-full items-center gap-2.5 rounded-lg py-2 pl-2 pr-3 text-left text-sm text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] focus-visible:bg-[rgba(55,53,47,0.06)]"
+                    className="flex h-12 w-full items-center gap-2.5 rounded-lg py-2 pl-2 pr-3 text-left text-sm text-[#1d2129] transition hover:bg-[rgba(55,53,47,0.06)] focus-visible:bg-[rgba(55,53,47,0.06)]"
                     onClick={() => {
                       setHistorySearch("");
                       setHistorySearchOpen(false);
@@ -1073,48 +1179,51 @@ function MoreDataShellComponent({
                       <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[rgba(55,53,47,0.06)] text-[#3f403b]">
                       <Plus className="h-4 w-4" strokeWidth={2} />
                     </span>
-                    <span className="truncate text-sm font-normal leading-5 text-[#34322d]">新建任务</span>
+                    <span className="truncate text-sm font-normal leading-5 text-[#1d2129]">新建任务</span>
                   </button>
 
-                  <div className="mt-2 mb-1 flex px-2.5 pb-1.5 text-xs font-medium leading-4 text-[#858481]">更早的</div>
+                  <div className="mt-2 mb-1 flex px-2.5 pb-1.5 text-xs font-medium leading-4 text-[#4e5969]">更早的</div>
                   <div className="space-y-0">
                     {historyBusy && historySessions.length === 0 ? (
                       <SidebarHistorySkeleton />
                     ) : filteredHistorySessions.length === 0 ? (
                       historySearch.trim() ? (
-                        <div className="px-2 py-3 text-[14px] text-[#8b8c87]">没有匹配的任务</div>
+                        <div className="px-2 py-3 text-[14px] text-[#4e5969]">没有匹配的任务</div>
                       ) : null
                     ) : (
-                      filteredHistorySessions.slice(0, 8).map((s) => (
-                        <button
-                          key={s.session_id}
-                          type="button"
-                          className="flex min-h-[52px] w-full items-center gap-2.5 rounded-lg py-1.5 pl-2 pr-3 text-left text-sm text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
-                          onClick={() => {
-                            setHistorySearch("");
-                            setHistorySearchOpen(false);
-                            platformAgent?.setActivePlatformSession(s.session_id);
-                            router.push(`/agent?sessionId=${encodeURIComponent(s.session_id)}`);
-                          }}
-                        >
-                          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[rgba(55,53,47,0.06)] text-[#666761]">
-                            <MessageCircleMore className="h-4 w-4" strokeWidth={1.9} />
-                          </span>
-                          <span className="min-w-0 flex-1 pr-4">
-                            <span className="block truncate text-sm font-medium leading-5 text-[#34322d]">
-                              {s.firstMessage || (s.session_id === effectiveActiveSessionId ? activeSessionTitle : null) || "新对话"}
+                      filteredHistorySessions.slice(0, 8).map((s) => {
+                        const displayTitle = getHistoryDisplayTitle(s);
+                        return (
+                          <button
+                            key={s.session_id}
+                            type="button"
+                            className="flex min-h-[52px] w-full items-center gap-2.5 rounded-lg py-1.5 pl-2 pr-3 text-left text-sm text-[#1d2129] transition hover:bg-[rgba(55,53,47,0.06)]"
+                            onClick={() => {
+                              setHistorySearch("");
+                              setHistorySearchOpen(false);
+                              platformAgent?.setActivePlatformSession(s.session_id);
+                              router.push(`/agent?sessionId=${encodeURIComponent(s.session_id)}`);
+                            }}
+                          >
+                            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[rgba(55,53,47,0.06)] text-[#666761]">
+                              <MessageCircleMore className="h-4 w-4" strokeWidth={1.9} />
                             </span>
-                            <span className="block truncate text-sm font-normal leading-5 text-[#858481]">
-                              {s.session_id}
+                            <span className="min-w-0 flex-1 pr-4">
+                              <span className="block truncate text-sm font-medium leading-5 text-[#1d2129]">
+                                {displayTitle}
+                              </span>
+                              <span className="block truncate text-sm font-normal leading-5 text-[#4e5969]">
+                                {s.session_id}
+                              </span>
                             </span>
-                          </span>
-                          {s.firstAt ? (
-                            <span className="shrink-0 text-sm font-normal text-[#858481]">
-                              {formatShortDate(s.firstAt)}
-                            </span>
-                          ) : null}
-                        </button>
-                      ))
+                            {s.firstAt ? (
+                              <span className="shrink-0 text-sm font-normal text-[#4e5969]">
+                                {formatShortDate(s.firstAt)}
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -1122,6 +1231,68 @@ function MoreDataShellComponent({
             </div>
           </div>
         ) : null}
+
+        <Dialog
+          open={Boolean(renamingHistory)}
+          onOpenChange={(open) => {
+            if (!open) closeHistoryRenameDialog();
+          }}
+        >
+          <DialogContent
+            hideClose
+            aria-describedby={undefined}
+            className="w-[420px] max-w-[calc(100vw-32px)] rounded-[16px] border-transparent p-0 shadow-[0_20px_56px_rgba(0,0,0,0.16)]"
+            overlayClassName="bg-[rgba(0,0,0,0.38)] backdrop-blur-[1px]"
+          >
+            <form
+              className="flex flex-col px-6 pb-5 pt-5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitHistoryRename();
+              }}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <DialogTitle className="text-[16px] font-semibold leading-6 text-[#1d2129]">重命名任务</DialogTitle>
+                <button
+                  type="button"
+                  aria-label="关闭重命名"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#4e5969] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#1d2129]"
+                  onClick={closeHistoryRenameDialog}
+                >
+                  <X className="h-5 w-5" strokeWidth={1.8} />
+                </button>
+              </div>
+              <label htmlFor="history-rename-title" className="mt-4 text-[14px] leading-5 text-[#4e5969]">
+                名称
+              </label>
+              <input
+                ref={renameHistoryInputRef}
+                id="history-rename-title"
+                value={renameHistoryValue}
+                maxLength={80}
+                onChange={(event) => setRenameHistoryValue(event.target.value)}
+                className="mt-2 h-10 rounded-[10px] border border-[#d8dbe2] bg-white px-3 text-[14px] leading-5 text-[#1d2129] outline-none transition placeholder:text-[#4e5969] focus:border-[#1d2129]"
+              />
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 rounded-[10px] border-[#d8dbe2] bg-white text-[14px] font-medium text-[#4e5969] hover:bg-white hover:text-[#1d2129]"
+                  onClick={closeHistoryRenameDialog}
+                >
+                  取消
+                </Button>
+                <Button
+                  type="submit"
+                  className="h-10 rounded-[10px] bg-[#111111] text-[14px] font-medium text-white hover:bg-[#111111]"
+                  disabled={!renameHistoryValue.trim()}
+                >
+                  确定
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
           <DialogContent
@@ -1131,17 +1302,17 @@ function MoreDataShellComponent({
           >
             <div className="flex h-full flex-col px-6 pb-5 pt-5">
               <div className="flex items-center gap-2.5">
-                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#f4f4f3] text-[#111111]">
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#f4f4f3] text-[#1d2129]">
                   <InfoCircle className="h-5 w-5" strokeWidth={1.9} />
                 </span>
-                <DialogTitle className="text-[16px] font-semibold leading-6 text-[#34322d]">提示</DialogTitle>
+                <DialogTitle className="text-[16px] font-semibold leading-6 text-[#1d2129]">提示</DialogTitle>
               </div>
-              <p className="mt-4 text-[14px] font-normal leading-6 text-[#34322d]">确定要退出登录吗？</p>
+              <p className="mt-4 text-[14px] font-normal leading-6 text-[#1d2129]">确定要退出登录吗？</p>
               <div className="mt-auto grid grid-cols-2 gap-3">
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-10 rounded-[10px] border-[#d8dbe2] bg-white text-[14px] font-medium text-[#676a70] hover:bg-white hover:text-[#34322d]"
+                  className="h-10 rounded-[10px] border-[#d8dbe2] bg-white text-[14px] font-medium text-[#676a70] hover:bg-white hover:text-[#1d2129]"
                   onClick={() => setLogoutConfirmOpen(false)}
                 >
                   取消
@@ -1170,11 +1341,11 @@ function MoreDataShellComponent({
           >
             <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[188px_minmax(0,1fr)] sm:grid-rows-none md:grid-cols-[228px_minmax(0,1fr)]">
               <aside className="min-h-0 border-b border-[rgba(0,0,0,0.04)] bg-white px-[18px] py-4 sm:border-b-0 sm:border-r sm:py-6">
-                <div className="text-[18px] font-normal leading-7 text-[#858481]">消息盒子</div>
+                <div className="text-[18px] font-normal leading-7 text-[#4e5969]">消息盒子</div>
                 <nav className="mt-3 flex gap-2 overflow-x-auto sm:mt-5 sm:block sm:space-y-2 sm:overflow-visible">
                   <button
                     type="button"
-                    className="flex h-[49px] w-auto shrink-0 items-center gap-3 rounded-[10px] bg-[rgba(55,53,47,0.06)] px-4 text-left text-[#111111] sm:w-full sm:px-5"
+                    className="flex h-[49px] w-auto shrink-0 items-center gap-3 rounded-[10px] bg-[rgba(55,53,47,0.06)] px-4 text-left text-[#1d2129] sm:w-full sm:px-5"
                   >
                     <Bell className="h-5 w-5 shrink-0" strokeWidth={2.2} />
                     <span className="text-[14px] font-medium leading-[21px]">通知提醒</span>
@@ -1183,11 +1354,11 @@ function MoreDataShellComponent({
               </aside>
               <section className="relative flex min-h-0 flex-col bg-[#fbfbfb]">
                 <div className="flex h-[56px] shrink-0 items-center justify-between px-5 sm:px-8">
-                  <DialogTitle className="text-[16px] font-semibold leading-6 text-[#111111]">通知提醒</DialogTitle>
+                  <DialogTitle className="text-[16px] font-semibold leading-6 text-[#1d2129]">通知提醒</DialogTitle>
                   <button
                     type="button"
                     aria-label="关闭消息盒子"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#9b9b98] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#9b9b98] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#1d2129]"
                     onClick={() => setNotificationOpen(false)}
                   >
                     <X className="h-6 w-6" strokeWidth={1.6} />
@@ -1206,14 +1377,14 @@ function MoreDataShellComponent({
                             <AlarmFilled className="h-7 w-7" />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[14px] font-semibold leading-[21px] text-[#111111]">
+                            <span className="block truncate text-[14px] font-semibold leading-[21px] text-[#1d2129]">
                               {item.title}
                             </span>
-                            <span className="mt-1 block truncate text-[12px] leading-[18px] text-[#858481]">
+                            <span className="mt-1 block truncate text-[12px] leading-[18px] text-[#4e5969]">
                               {item.description}
                             </span>
                           </span>
-                          <span className="shrink-0 text-[12px] leading-[18px] text-[#858481]">{item.time}</span>
+                          <span className="shrink-0 text-[12px] leading-[18px] text-[#4e5969]">{item.time}</span>
                           {item.unread ? (
                             <span className="absolute right-4 top-4 h-1.5 w-1.5 rounded-full bg-[#ff3b3f]" aria-label="未读" />
                           ) : null}
@@ -1244,17 +1415,17 @@ function MoreDataShellComponent({
               <button
                 type="button"
                 aria-label="打开侧边栏"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-[#1d2129] transition hover:bg-[rgba(55,53,47,0.06)]"
                 onClick={() => setMobileSidebarOpen(true)}
               >
                 <Menu className="h-5 w-5" strokeWidth={2} />
               </button>
-              <div className="min-w-0 text-center text-[16px] font-semibold leading-6 text-[#111111]">Alice</div>
+              <div className="min-w-0 text-center text-[16px] font-semibold leading-6 text-[#1d2129]">Alice</div>
               <button
                 type="button"
                 aria-label="通知提醒"
                 title="通知提醒"
-                className="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                className="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-[#1d2129] transition hover:bg-[rgba(55,53,47,0.06)]"
                 onClick={openNotifications}
               >
                 <Bell className="h-[18px] w-[18px]" strokeWidth={1.8} />
@@ -1263,12 +1434,12 @@ function MoreDataShellComponent({
           ) : null}
 
           {showTopHeader || currentRunLabel ? (
-            <header className="sticky top-0 z-50 flex h-14.5 items-center bg-white px-3 sm:px-4 md:px-6">
+            <header className="sticky top-0 z-50 flex h-14.5 items-center border-b border-[#e2e2df] bg-white px-3 sm:px-4 md:px-6">
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <button
                   type="button"
                   aria-label="打开侧边栏"
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] md:hidden"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#1d2129] transition hover:bg-[rgba(55,53,47,0.06)] md:hidden"
                   onClick={() => setMobileSidebarOpen(true)}
                 >
                   <Menu className="h-5 w-5" strokeWidth={2} />
@@ -1283,7 +1454,7 @@ function MoreDataShellComponent({
                 <button
                   type="button"
                   aria-label="查看对话过程"
-                  className="ml-3 hidden h-9 shrink-0 items-center gap-2 rounded-[10px] px-3 text-[14px] font-medium text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] md:inline-flex xl:hidden"
+                  className="ml-3 hidden h-9 shrink-0 items-center gap-2 rounded-[10px] px-3 text-[14px] font-medium text-[#1d2129] transition hover:bg-[rgba(55,53,47,0.06)] md:inline-flex xl:hidden"
                   onClick={() => setCompactChatDrawerOpen(true)}
                 >
                   <MessageCircleMore className="h-[18px] w-[18px]" strokeWidth={1.9} />
@@ -1360,11 +1531,11 @@ function MoreDataShellComponent({
             )}
           >
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-[#e2e2df] px-4">
-              <div className="truncate text-[16px] font-semibold leading-6 text-[#111111]">对话过程</div>
+              <div className="truncate text-[16px] font-semibold leading-6 text-[#1d2129]">对话过程</div>
               <button
                 type="button"
                 aria-label="关闭对话过程"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#7f817d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#7f817d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#1d2129]"
                 onClick={() => setCompactChatDrawerOpen(false)}
               >
                 <X className="h-5 w-5" strokeWidth={1.8} />

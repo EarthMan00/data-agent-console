@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { MoreDataShell, MoreDataShellRoot } from "@/components/more-data-shell";
+import { AliceShell, AliceShellRoot } from "@/components/alice-shell";
 
 const push = vi.fn();
 const replace = vi.fn();
@@ -42,20 +42,20 @@ function mockMatchMedia(matchesByQuery: Record<string, boolean>) {
 
 function renderShellWithResultPanel() {
   render(
-    <MoreDataShellRoot>
-      <MoreDataShell
+    <AliceShellRoot>
+      <AliceShell
         currentPath="/agent"
         contentScrollMode="child"
         currentRunLabel="测试任务"
         rightRail={<div data-testid="agent-preview-panel">任务执行结果</div>}
       >
         <div data-testid="chat-content">聊天内容</div>
-      </MoreDataShell>
-    </MoreDataShellRoot>,
+      </AliceShell>
+    </AliceShellRoot>,
   );
 }
 
-describe("MoreDataShell right rail layout", () => {
+describe("AliceShell right rail layout", () => {
   afterEach(() => {
     vi.clearAllMocks();
   });

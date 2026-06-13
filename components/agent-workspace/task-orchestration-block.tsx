@@ -44,12 +44,12 @@ export function TaskOrchestrationBlock({
   executionTestId,
 }: TaskOrchestrationBlockProps) {
   return (
-    <div className={cn("w-full space-y-3.5", ORCHESTRATION_BLOCK_MAX)}>
-      <div className="flex w-full min-w-0 items-center justify-between gap-3 text-[14px] font-medium text-[#303734]">
+    <div className={cn("group w-full space-y-3.5", ORCHESTRATION_BLOCK_MAX)}>
+      <div className="flex w-full min-w-0 items-center gap-3 text-[14px] font-medium text-[#1d2129]">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center">
             <Image
-              src="/mdata-logo.png"
+              src="/alice-logo.png"
               alt="Alice"
               width={36}
               height={36}
@@ -58,10 +58,9 @@ export function TaskOrchestrationBlock({
             />
           </div>
           <div>
-            <div className="text-[14px] font-semibold text-[#1f2421]">Alice</div>
+            <div className="text-[14px] font-semibold text-[#1d2129]">Alice</div>
           </div>
         </div>
-        {datetime ? <div className="shrink-0 text-[12px] text-[#858481]">{datetime}</div> : null}
       </div>
 
       {beforeSplit}
@@ -86,6 +85,11 @@ export function TaskOrchestrationBlock({
         >
           {children}
         </TaskExecutionPanel>
+      ) : null}
+      {datetime ? (
+        <div className="!mt-1 text-[12px] font-normal text-[#4e5969] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          {datetime}
+        </div>
       ) : null}
       {afterExecution}
     </div>

@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { TaskExecutionStepsAssistantBubble } from "@/components/task-execution-steps-assistant-bubble";
-import { MoreDataShell } from "@/components/more-data-shell";
+import { AliceShell } from "@/components/alice-shell";
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
 import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
 import { TaskComposer } from "@/components/task-composer";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
-import { useMoreDataShellState } from "@/components/more-data-shell";
+import { useAliceShellState } from "@/components/alice-shell";
 import { compactText } from "@/components/agent-workspace-view-models";
+import { buildAttachmentItems } from "@/components/agent-workspace/attachment-utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -39,7 +40,7 @@ import {
   parseComposerPrefillStorageValue,
   removeFromComposerDraft,
 } from "@/lib/composer-prefill";
-import type { TaskExecutionStep, TaskExecutionStepStatus } from "@/lib/agent-events";
+import type { AgentAttachment, TaskExecutionStep, TaskExecutionStepStatus } from "@/lib/agent-events";
 import { mapServerOrchestrationStepStatus } from "@/lib/agent-runtime/task-mapping";
 import type { ScheduleTrialSendState } from "@/lib/schedule-create-draft";
 import {
@@ -93,7 +94,7 @@ import {
   SimpleSystemBubble,
   SimpleUserBubble,
 } from "./chat-bubbles";
-import { sanitizeClarificationForUserDisplay } from "@/lib/linkfox-clarification";
+import { sanitizeClarificationForUserDisplay } from "@/lib/alice-clarification";
 import { sessionHasOrchestrationFailure } from "@/lib/orchestration-failure-message";
 
 function mergeTaskStepStatuses(
@@ -102,6 +103,38 @@ function mergeTaskStepStatuses(
 ): TaskExecutionStep[] {
   if (!overlay?.length) return steps;
   return steps.map((s, i) => (overlay[i] ? { ...s, status: overlay[i]! } : s));
+}
+
+function attachmentsFromMessageMeta(meta: Record<string, unknown> | undefined): AgentAttachment[] {
+  const raw = Array.isArray(meta?.attachments) ? meta.attachments : [];
+  return raw
+    .map((item, index) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+      const row = item as Record<string, unknown>;
+      const id = typeof row.id === "string"
+        ? row.id
+        : typeof row.attachment_id === "string"
+          ? row.attachment_id
+          : `attachment-${index}`;
+      const name = typeof row.name === "string" ? row.name.trim() : "";
+      if (!name) return null;
+      const extension =
+        typeof row.extension === "string"
+          ? row.extension
+          : name.includes(".")
+            ? name.split(".").pop()?.toLowerCase()
+            : undefined;
+      const attachment: AgentAttachment = {
+        id,
+        name,
+        status: typeof row.status === "string" ? (row.status as AgentAttachment["status"]) : "accepted",
+      };
+      if (typeof row.size === "number") attachment.size = row.size;
+      if (extension) attachment.extension = extension;
+      if (typeof row.fileType === "string") attachment.fileType = row.fileType as AgentAttachment["fileType"];
+      return attachment;
+    })
+    .filter((item): item is AgentAttachment => item !== null);
 }
 
 export function PlatformSessionAgentWorkspace({
@@ -121,7 +154,7 @@ export function PlatformSessionAgentWorkspace({
   fallbackTaskId?: string;
 }) {
   const platformAgent = useOptionalPlatformAgent();
-  const { refreshHistory, refreshHistoryNow, setActiveSessionTitle } = useMoreDataShellState();
+  const { refreshHistoryNow, setActiveSessionTitle } = useAliceShellState();
   const router = useRouter();
   const isMounted = useRef(true);
   const abortPollRef = useRef(false);
@@ -140,6 +173,7 @@ export function PlatformSessionAgentWorkspace({
   const [messages, setMessages] = useState<SessionMessageItem[]>([]);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesInnerRef = useRef<HTMLDivElement>(null);
+  const localUserAttachmentHintsRef = useRef<Array<{ content: string; attachments: AgentAttachment[] }>>([]);
   const [showResultPanel, setShowResultPanel] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [orchestrationBundles, setOrchestrationBundles] = useState<TaskOrchestrationBundleRow[]>([]);
@@ -186,7 +220,25 @@ export function PlatformSessionAgentWorkspace({
     try {
       await platformAgent.withFreshToken(async (token) => {
         const res = await listSessionMessages(token, sessionId, 100);
-        if (isMounted.current) setMessages(res.messages ?? []);
+        const hints = [...localUserAttachmentHintsRef.current];
+        const hydratedMessages = (res.messages ?? []).map((message) => {
+          if (message.role !== "user") return message;
+          const meta = message.meta && typeof message.meta === "object"
+            ? (message.meta as Record<string, unknown>)
+            : undefined;
+          if (attachmentsFromMessageMeta(meta).length > 0) return message;
+          const hintIndex = hints.findIndex((hint) => hint.content.trim() === message.content.trim());
+          if (hintIndex < 0) return message;
+          const [hint] = hints.splice(hintIndex, 1);
+          return {
+            ...message,
+            meta: {
+              ...(meta ?? {}),
+              attachments: hint?.attachments ?? [],
+            },
+          };
+        });
+        if (isMounted.current) setMessages(hydratedMessages);
       });
     } catch (e) {
       if (isMounted.current) setError(formatAgentApiErrorForUser(e));
@@ -401,7 +453,7 @@ export function PlatformSessionAgentWorkspace({
     return clearPoll;
   }, [scheduleTrial, trialTaskId, platformAgent, trialOrchestrationId, trialIsMultiStep, reload]);
 
-  const linkfoxClarificationForSteps = useMemo(() => {
+  const aliceClarificationForSteps = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i]!;
       if (m.role !== "assistant") continue;
@@ -887,6 +939,11 @@ export function PlatformSessionAgentWorkspace({
       platformAgent?.openLogin("请先登录后再发送消息。");
       return;
     }
+    const filesToSend = pendingFiles;
+    const optimisticAttachments = buildAttachmentItems(filesToSend);
+    if (optimisticAttachments.length > 0) {
+      localUserAttachmentHintsRef.current.push({ content: text, attachments: optimisticAttachments });
+    }
     setSending(true);
     setError("");
     const optimistic: SessionMessageItem = {
@@ -895,14 +952,13 @@ export function PlatformSessionAgentWorkspace({
       content: text,
       created_at: new Date().toISOString(),
       message_index: 0,
-      meta: {},
+      meta: optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {},
     };
     const mid = safeRandomUUID();
     const assistantStreamId = `streaming_assistant_${mid}`;
     const nowIso = new Date().toISOString();
     setMessages((cur) => [...cur, optimistic, createStreamingAssistantMessage(assistantStreamId, nowIso)]);
     setDraft("");
-    const filesToSend = pendingFiles;
     setPendingFiles([]);
     try {
       await platformAgent.withFreshToken(async (token) => {
@@ -933,7 +989,7 @@ export function PlatformSessionAgentWorkspace({
     } finally {
       setSending(false);
     }
-  }, [draft, pendingFiles, platformAgent, reload, refreshHistory, sending, sessionId]);
+  }, [draft, pendingFiles, platformAgent, refreshHistoryNow, reload, sending, sessionId]);
 
   return (
     <>
@@ -969,7 +1025,7 @@ export function PlatformSessionAgentWorkspace({
         </DialogContent>
       </Dialog>
     ) : null}
-    <MoreDataShell
+    <AliceShell
       currentPath="/agent/history"
       contentScrollMode="child"
       currentRunLabel={headerLabel}
@@ -1024,6 +1080,7 @@ export function PlatformSessionAgentWorkspace({
               <div className="space-y-3">
                 {messages.map((m, i) => {
                   const meta = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
+                  const messageAttachments = m.role === "user" ? attachmentsFromMessageMeta(meta) : [];
                   const taskStepsFromMessage = parseTaskExecutionStepsFromMeta(meta);
                   const tmeta = loadScheduleTrialMeta();
                   const trialLabels =
@@ -1074,7 +1131,7 @@ export function PlatformSessionAgentWorkspace({
                     Boolean(latestExecutionSteps?.length);
                   const archivedClarifyText =
                     sessionClarificationFlow.archivedClarification ??
-                    linkfoxClarificationForSteps?.message ??
+                    aliceClarificationForSteps?.message ??
                     null;
                   const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
                   const rawBundle = Array.isArray(meta?.orchestration_step_task_ids)
@@ -1099,7 +1156,7 @@ export function PlatformSessionAgentWorkspace({
                   const hideAssistantBubble = shouldHideAssistantMessageBubble(m);
                   const msgKind =
                     meta && typeof meta.kind === "string" ? (meta.kind as string).trim() : "";
-                  const isLinkfoxClarification = msgKind === "linkfox_clarification";
+                  const isAliceClarification = msgKind === "linkfox_clarification";
                   const guidancePresentation =
                     m.role === "assistant" && !showTaskStepsAtThisMessage && !hideAssistantBubble
                       ? resolvePostTaskGuidancePresentation(m, meta)
@@ -1119,7 +1176,7 @@ export function PlatformSessionAgentWorkspace({
                               composerDraft={m.content}
                             />
                           ) : null}
-                          <SimpleUserBubble text={m.content} datetime={m.created_at} />
+                          <SimpleUserBubble text={m.content} datetime={m.created_at} attachments={messageAttachments} />
                           {showDeferredTaskSteps ? (
                             <TaskExecutionStepsAssistantBubble
                               steps={mergeTaskStepStatuses(
@@ -1180,7 +1237,7 @@ export function PlatformSessionAgentWorkspace({
                               setPanelVisibility={setPanelVisibilityRecord}
                             />
                             {(m.id === latestStepsMessageId || isThisOrchestrationTurn) &&
-                            linkfoxClarificationForSteps &&
+                            aliceClarificationForSteps &&
                             !deferStepsToUserId &&
                             !messages.some(
                               (item) =>
@@ -1190,14 +1247,14 @@ export function PlatformSessionAgentWorkspace({
                                 (item.meta as Record<string, unknown>).kind === "linkfox_clarification",
                             ) ? (
                               <AliceMessageBubble
-                                body={linkfoxClarificationForSteps.message}
+                                body={aliceClarificationForSteps.message}
                                 datetime={m.created_at}
                                 composerDraft={draft}
                                 onSuggestionToggle={scheduledRunRecord ? undefined : toggleGuidanceSuggestion}
                               />
                             ) : null}
                           </>
-                        ) : isLinkfoxClarification &&
+                        ) : isAliceClarification &&
                           !shouldSuppressSessionClarificationAt(sessionClarificationFlow, m.id) ? (
                           <AliceMessageBubble
                             body={m.content}
@@ -1398,7 +1455,7 @@ export function PlatformSessionAgentWorkspace({
           </div>
         </div>
       </div>
-    </MoreDataShell>
+    </AliceShell>
     </>
   );
 }

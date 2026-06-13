@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Ellipsis, Menu, Star, X } from "@/components/ui/tabler-icons";
 
+import { AutoToast } from "@/components/auto-toast";
 import { TaskResultSheetBody } from "@/components/task-result-sheet-body";
 import { TaskSingleDataArtifactPreview } from "@/components/task-single-data-preview";
 import { Button } from "@/components/ui/button";
@@ -268,6 +269,7 @@ export function AgentTaskResultPanel({
   const [favoriteId, setFavoriteId] = useState<string | null>(null);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [noticeVariant, setNoticeVariant] = useState<"default" | "error">("default");
 
   const refreshFavoriteState = useCallback(async () => {
     if (!withFreshToken || !tid) return;
@@ -289,6 +291,7 @@ export function AgentTaskResultPanel({
 
   const toggleFavorite = async () => {
     if (!withFreshToken || !tid || !primaryForFavorite) {
+      setNoticeVariant("error");
       setNotice("当前无可收藏的结果文件。");
       return;
     }
@@ -301,6 +304,7 @@ export function AgentTaskResultPanel({
         });
         setFavorited(false);
         setFavoriteId(null);
+        setNoticeVariant("default");
         setNotice("已取消收藏。");
         return;
       }
@@ -316,8 +320,10 @@ export function AgentTaskResultPanel({
         });
       });
       await refreshFavoriteState();
+      setNoticeVariant("default");
       setNotice("已加入收藏夹。");
     } catch (e) {
+      setNoticeVariant("error");
       setNotice(formatAgentApiErrorForUser(e));
     } finally {
       setFavoriteBusy(false);
@@ -417,10 +423,6 @@ export function AgentTaskResultPanel({
         </div>
       </div>
 
-      {notice ? (
-        <div className="border-b border-[#ececec] bg-[#fafaf9] px-3 py-2 text-xs text-[#78716c]">{notice}</div>
-      ) : null}
-
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto px-3 pt-2 sm:px-4">
           {withFreshToken && useSheetUi && activeSheet ? (
@@ -453,6 +455,13 @@ export function AgentTaskResultPanel({
           ) : null}
         </div>
       </div>
+      <AutoToast
+        message={notice || null}
+        variant={noticeVariant}
+        onDismiss={() => {
+          setNotice("");
+        }}
+      />
     </div>
   );
 }

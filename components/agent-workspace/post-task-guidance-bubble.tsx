@@ -37,13 +37,13 @@ export function PostTaskGuidanceBubble({
   if (suggestions.length === 0) return null;
 
   return (
-    <div className={cn("flex w-full justify-start text-left", WRAP, className)}>
+    <div className={cn("group flex w-full justify-start text-left", WRAP, className)}>
       <div className="w-full space-y-3">
-        <div className="flex w-full min-w-0 items-center justify-between gap-3 text-[14px] font-medium text-[#303734]">
+        <div className="flex w-full min-w-0 items-center gap-3 text-[14px] font-medium text-[#1d2129]">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center">
               <Image
-                src="/mdata-logo.png"
+                src="/alice-logo.png"
                 alt="Alice"
                 width={36}
                 height={36}
@@ -52,14 +52,13 @@ export function PostTaskGuidanceBubble({
               />
             </div>
             <div>
-              <div className="text-[14px] font-semibold text-[#1f2421]">Alice</div>
+              <div className="text-[14px] font-semibold text-[#1d2129]">Alice</div>
             </div>
           </div>
-          <div className="shrink-0 text-[12px] text-[#858481]">{formatTime(datetime)}</div>
         </div>
 
         <div className="space-y-1 pl-0">
-          <p className="text-[13px] leading-5 text-[#5c5f5b]">接下来您可以试试：</p>
+          <p className="text-[12px] leading-5 text-[#4e5969]">接下来您可以试试：</p>
           <div
             className="flex flex-row flex-wrap items-start gap-1"
           >
@@ -67,11 +66,11 @@ export function PostTaskGuidanceBubble({
               const selected =
                 interactive && composerDraftContainsSuggestion(composerDraft, item);
               const chipClass = cn(
-                "inline-flex max-w-full rounded-[999px] border px-3.5 py-2 text-left text-[13px] leading-5 transition",
+                "inline-flex max-w-full rounded-[999px] border px-3.5 py-2 text-left text-[14px] leading-5 transition",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15",
                 selected
                   ? "border-[#111111] bg-[#111111] text-white shadow-[0_1px_2px_rgba(17,17,17,0.08)]"
-                  : "border-[#e2e2df] bg-white text-[#34322d] shadow-[0_1px_2px_rgba(17,17,17,0.03)] hover:border-[#c9c9c4] hover:bg-[#fafaf9]",
+                  : "border-[#e2e2df] bg-white text-[#1d2129] shadow-[0_1px_2px_rgba(17,17,17,0.03)] hover:border-[#c9c9c4] hover:bg-[#fafaf9]",
               );
 
               if (interactive) {
@@ -91,13 +90,16 @@ export function PostTaskGuidanceBubble({
               return (
                 <div
                   key={`${index}-${item.slice(0, 24)}`}
-                  className={cn(chipClass, "border-[#e2e2df] bg-[#fafaf9] text-[#5c5f5b]")}
+                  className={cn(chipClass, "border-[#e2e2df] bg-[#fafaf9] text-[#4e5969]")}
                 >
                   <span className="whitespace-pre-wrap break-words">{item}</span>
                 </div>
               );
             })}
           </div>
+        </div>
+        <div className="!mt-1 text-[12px] font-normal text-[#4e5969] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          {formatTime(datetime)}
         </div>
       </div>
     </div>

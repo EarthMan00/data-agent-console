@@ -23,7 +23,7 @@ import {
 
 import { AutoToast } from "@/components/auto-toast";
 import { EmptyState } from "@/components/empty-state";
-import { MoreDataShell } from "@/components/more-data-shell";
+import { AliceShell } from "@/components/alice-shell";
 import { PageLostState } from "@/components/page-lost-state";
 import { ScheduleResultPushSection, validateResultPushBlocks, type ResultPushBlock } from "@/components/schedule-result-push";
 import { TaskComposer } from "@/components/task-composer";
@@ -944,7 +944,7 @@ export function SchedulesWorkspace() {
                       submitOnEnter={false}
                       visualStyle="heroMinimal"
                       containerClassName="relative z-30 w-full rounded-[10px] border border-transparent bg-[#f7f7f7] shadow-none"
-                      textareaClassName="min-h-[84px] max-h-[9em] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1 pr-2 text-sm font-normal leading-6 text-[#34322d] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
+                      textareaClassName="min-h-[84px] max-h-[9em] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1 pr-2 text-sm font-normal leading-6 text-[#1d2129] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
                       sendButtonClassName={cn(
                         "h-8 w-8 min-w-0 rounded-full border border-transparent p-0 text-white shadow-none transition",
                         serializedPrompt ? "bg-[#111111] hover:bg-[#2a2a2a]" : "bg-[#dededc] hover:bg-[#d1d1cf]",
@@ -1236,16 +1236,16 @@ export function SchedulesWorkspace() {
 
   if (!isPlatformBackendEnabled() || !platformAgent) {
     return (
-      <MoreDataShell currentPath="/schedules">
+      <AliceShell currentPath="/schedules">
         <div className="px-8 py-12 text-sm text-[#747571]">当前未启用平台后端，无法管理定时任务。</div>
-      </MoreDataShell>
+      </AliceShell>
     );
   }
 
   const searchPlaceholder = primaryTab === "已定时" ? "搜索定时任务" : "搜索运行记录";
 
   return (
-    <MoreDataShell currentPath="/schedules" showTopHeader={false}>
+    <AliceShell currentPath="/schedules" showTopHeader={false}>
       <AutoToast
         message={toastMessage}
         variant={toastVariant}
@@ -1700,7 +1700,7 @@ export function SchedulesWorkspace() {
           </div>
         </DialogContent>
       </Dialog>
-    </MoreDataShell>
+    </AliceShell>
   );
 }
 

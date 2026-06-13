@@ -17,7 +17,7 @@ import {
   X,
 } from "@/components/ui/tabler-icons";
 import { EmptyState } from "@/components/empty-state";
-import { MoreDataShell } from "@/components/more-data-shell";
+import { AliceShell } from "@/components/alice-shell";
 import { PageLostState } from "@/components/page-lost-state";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
@@ -75,7 +75,7 @@ const TYPE_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: "pdf", label: "PDF" },
   { value: "file", label: "文件" },
   { value: "chatexcel", label: "表格处理" },
-  { value: "linkfox", label: "数据采集" },
+  { value: "alice", label: "数据采集" },
 ];
 
 function FavoritesEmptyIllustration() {
@@ -109,7 +109,7 @@ export function FavoritesWorkspace() {
   const [renameTarget, setRenameTarget] = useState<UserFavoriteListItemDto | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [moveItem, setMoveItem] = useState<UserFavoriteListItemDto | null>(null);
-  const [unfavoriteTarget, setUnfavoriteTarget] = useState<UserFavoriteListItemDto | null>(null);
+  const [unfavoritingId, setUnfavoritingId] = useState<string | null>(null);
 
   const defaultFolderId = useMemo(
     () => folders.find((f) => f.name === "默认")?.id ?? null,
@@ -197,17 +197,20 @@ export function FavoritesWorkspace() {
     });
   };
 
-  const confirmUnfavorite = async () => {
-    if (!unfavoriteTarget || !platformAgent?.withFreshToken) return;
-    const id = unfavoriteTarget.id;
+  const unfavoriteItem = async (item: UserFavoriteListItemDto) => {
+    if (!platformAgent?.withFreshToken || unfavoritingId) return;
+    const id = item.id;
+    setUnfavoritingId(id);
+    setError("");
     try {
       await platformAgent.withFreshToken(async (token) => {
         await deleteUserFavorite(token, id);
       });
-      setUnfavoriteTarget(null);
-      await reload();
+      setItems((prev) => prev.filter((it) => it.id !== id));
     } catch (e) {
       setError(formatAgentApiErrorForUser(e));
+    } finally {
+      setUnfavoritingId(null);
     }
   };
 
@@ -322,7 +325,7 @@ export function FavoritesWorkspace() {
   };
 
   return (
-    <MoreDataShell currentPath="/artifacts" showTopHeader={false}>
+    <AliceShell currentPath="/artifacts" showTopHeader={false}>
       <div className="px-8 pb-14 pt-5">
         <div className="mx-auto max-w-[1040px]">
           <div>
@@ -499,88 +502,52 @@ export function FavoritesWorkspace() {
                     </CardContent>
                   </Button>
                   <CardContent className="flex items-center justify-end gap-2 border-t border-[#e2e2df] px-4 py-3">
-                    <Popover
-                      open={unfavoriteTarget?.id === item.id}
-                      onOpenChange={(open) => setUnfavoriteTarget(open ? item : null)}
-                    >
-                      <DropdownMenu>
-                        <PopoverAnchor asChild>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="iconSm"
-                              className="shrink-0"
-                              aria-label="更多操作"
-                            >
-                              <EllipsisVertical />
-                            </Button>
-                          </DropdownMenuTrigger>
-                        </PopoverAnchor>
-                        <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuGroup>
-                            <DropdownMenuItem
-                              onSelect={() => {
-                                setRenameTarget(item);
-                                setRenameValue(item.title);
-                              }}
-                            >
-                              <Pencil className="h-4 w-4 shrink-0" />
-                              重命名
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => setMoveItem(item)}>
-                              <FolderInput className="h-4 w-4 shrink-0" />
-                              移动到
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-red-700 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-700"
-                              onSelect={(event) => {
-                                event.preventDefault();
-                                setUnfavoriteTarget(item);
-                              }}
-                            >
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="iconSm"
+                          className="shrink-0"
+                          aria-label="更多操作"
+                        >
+                          <EllipsisVertical />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuGroup>
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              setRenameTarget(item);
+                              setRenameValue(item.title);
+                            }}
+                          >
+                            <Pencil className="h-4 w-4 shrink-0" />
+                            重命名
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setMoveItem(item)}>
+                            <FolderInput className="h-4 w-4 shrink-0" />
+                            移动到
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={unfavoritingId === item.id}
+                            className="text-red-700 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-700"
+                            onSelect={() => void unfavoriteItem(item)}
+                          >
+                            {unfavoritingId === item.id ? (
+                              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                            ) : (
                               <StarOff className="h-4 w-4 shrink-0" />
-                              取消收藏
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => onDownload(item.id, item.title)}>
-                              <Download className="h-4 w-4 shrink-0" />
-                              下载报告
-                            </DropdownMenuItem>
-                          </DropdownMenuGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <PopoverContent
-                        side="bottom"
-                        align="end"
-                        sideOffset={8}
-                        className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
-                        onCloseAutoFocus={(e) => e.preventDefault()}
-                      >
-                        <p className="text-[14px] leading-6 text-[#34322d]">
-                          确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
-                        </p>
-                        <div className="mt-4 flex justify-end gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
-                            onClick={() => setUnfavoriteTarget(null)}
-                          >
-                            取消
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
-                            onClick={() => void confirmUnfavorite()}
-                          >
-                            确定删除
-                          </Button>
-                        </div>
-                      </PopoverContent>
-                    </Popover>
+                            )}
+                            取消收藏
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => onDownload(item.id, item.title)}>
+                            <Download className="h-4 w-4 shrink-0" />
+                            下载报告
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </CardContent>
                 </Card>
               ))
@@ -739,6 +706,6 @@ export function FavoritesWorkspace() {
 
         </div>
       </div>
-    </MoreDataShell>
+    </AliceShell>
   );
 }

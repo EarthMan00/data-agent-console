@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type WheelEvent,
+} from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatedArrowUpIcon } from "@/components/ui/animated-arrow-up-icon";
@@ -15,7 +22,7 @@ import {
 } from "@/lib/home-capability-items";
 import { AgentWorkspace } from "@/components/agent-workspace";
 import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
-import { MoreDataShell } from "@/components/more-data-shell";
+import { AliceShell } from "@/components/alice-shell";
 import { PlatformLogo } from "@/components/platform-logo";
 import { sanitizeObjective } from "@/lib/agent-attachments";
 import { parseComposerPrefillStorageValue, parseDatasourceMentions } from "@/lib/composer-prefill";
@@ -30,7 +37,7 @@ import {
 import { cn } from "@/lib/utils";
 import { TaskComposer } from "@/components/task-composer";
 
-const PENDING_HOME_TASK_STORAGE_KEY = "mdata:pending-home-task-after-login";
+const PENDING_HOME_TASK_STORAGE_KEY = "alice:pending-home-task-after-login";
 const PENDING_HOME_TASK_MAX_AGE_MS = 30 * 60 * 1000;
 
 type PendingHomeTask = {
@@ -63,17 +70,28 @@ function mapHomePromptCards(rows: Awaited<ReturnType<typeof fetchHomePromptRecom
   }));
 }
 
+function getHomePromptCardFilterKey(capabilityIds: string[]) {
+  return capabilityIds.length > 0 ? capabilityIds.slice().sort().join(",") : "all";
+}
+
+function filterHomePromptCardsByCapability(cards: HomePromptCard[], capabilityIds: string[]) {
+  if (capabilityIds.length === 0) return cards;
+  const filterSet = new Set(capabilityIds);
+  return cards.filter((card) => card.capabilityIds.some((id) => filterSet.has(id)));
+}
+
 function getCachedHomePromptCards(cacheKey: string) {
   return homePromptCardCache.get(cacheKey)?.cards ?? null;
 }
 
-function loadHomePromptCardsOnce(cacheKey: string) {
+function loadHomePromptCardsOnce(cacheKey: string, capabilityIds: string[]) {
   const cached = homePromptCardCache.get(cacheKey);
   if (cached?.cards) return Promise.resolve(cached.cards);
   if (cached?.promise) return cached.promise;
 
-  const promise = fetchHomePromptRecommendations()
+  const promise = fetchHomePromptRecommendations({ capabilityIds })
     .then(mapHomePromptCards)
+    .then((cards) => filterHomePromptCardsByCapability(cards, capabilityIds))
     .then((cards) => {
       homePromptCardCache.set(cacheKey, { cards, promise: null });
       return cards;
@@ -118,14 +136,21 @@ function consumePendingHomeTaskAfterLogin(): PendingHomeTask | null {
   }
 }
 
-export function MoreDataHomePage() {
+export function AliceHomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
-  const homePromptCacheKey = platformAgent?.auth?.userId ?? (platformAgent?.authHydrated ? HOME_PROMPT_ANONYMOUS_CACHE_KEY : null);
+  const [activeCapabilityId, setActiveCapabilityId] = useState("scenarios");
+  const activeCapabilityFilterIds = useMemo(
+    () => getHomeCapabilityFilterIds(activeCapabilityId),
+    [activeCapabilityId],
+  );
+  const homePromptCacheBaseKey = platformAgent?.auth?.userId ?? (platformAgent?.authHydrated ? HOME_PROMPT_ANONYMOUS_CACHE_KEY : null);
+  const homePromptCacheKey = homePromptCacheBaseKey
+    ? `${homePromptCacheBaseKey}:${getHomePromptCardFilterKey(activeCapabilityFilterIds)}`
+    : null;
   const cachedPromptCards = homePromptCacheKey ? getCachedHomePromptCards(homePromptCacheKey) : null;
   const [query, setQuery] = useState("");
-  const [activeCapabilityId, setActiveCapabilityId] = useState("scenarios");
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [composerMode, setComposerMode] = useState<"普通模式" | "深度模式">("深度模式");
   const [pendingHomeFiles, setPendingHomeFiles] = useState<File[]>([]);
@@ -135,6 +160,7 @@ export function MoreDataHomePage() {
   const [composerPulse, setComposerPulse] = useState(false);
   const [remotePromptCards, setRemotePromptCards] = useState<HomePromptCard[]>(() => cachedPromptCards ?? []);
   const [promptCardsLoading, setPromptCardsLoading] = useState(() => !cachedPromptCards);
+  const promptGridScrollRef = useRef<HTMLDivElement | null>(null);
   const activeRunId = searchParams.get("runId");
 
   useEffect(() => {
@@ -160,7 +186,7 @@ export function MoreDataHomePage() {
 
     let cancelled = false;
     setPromptCardsLoading(true);
-    void loadHomePromptCardsOnce(homePromptCacheKey)
+    void loadHomePromptCardsOnce(homePromptCacheKey, activeCapabilityFilterIds)
       .then((cards) => {
         if (cancelled) return;
         setRemotePromptCards(cards);
@@ -176,15 +202,18 @@ export function MoreDataHomePage() {
     return () => {
       cancelled = true;
     };
-  }, [homePromptCacheKey]);
+  }, [activeCapabilityFilterIds, homePromptCacheKey]);
 
-  const cards = useMemo(() => {
-    const source = remotePromptCards;
-    const filterIds = getHomeCapabilityFilterIds(activeCapabilityId);
-    if (filterIds.length === 0) return source;
-    const filtered = source.filter((card) => card.capabilityIds.some((id) => filterIds.includes(id)));
-    return filtered.length > 0 ? filtered : source;
-  }, [activeCapabilityId, remotePromptCards]);
+  const cards = remotePromptCards;
+  const selectedCapabilityGroupIds = useMemo(
+    () =>
+      new Set(
+        selectedSourceIds
+          .map((id) => getHomeCapabilityGroup(id)?.id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    [selectedSourceIds],
+  );
   const composerCanSubmit = sanitizeObjective(query).length > 0 && !launching;
 
   const launchAgent = useCallback(async (seed?: string, pending?: PendingHomeTask) => {
@@ -234,7 +263,7 @@ export function MoreDataHomePage() {
           pendingFiles: pending?.pendingFiles ?? pendingHomeFiles,
         });
         setPendingHomeFiles([]);
-        setNotice("已连接 Data Agent Server，正在执行任务。");
+        setNotice("已连接 Alice 后端服务，正在执行任务。");
         router.replace(`/?runId=${runId}`);
       } finally {
         setLaunching(false);
@@ -317,7 +346,6 @@ export function MoreDataHomePage() {
     const selectedIds = Array.from(new Set([...card.capabilityIds, ...prefill.selectedSourceIds]));
     setQuery(prefill.text);
     setSelectedSourceIds(selectedIds);
-    setActiveCapabilityId(selectedIds[0] ?? "scenarios");
     setNotice(`已载入示例任务「${card.title}」，可继续补充要求后发送。`);
   };
 
@@ -331,22 +359,57 @@ export function MoreDataHomePage() {
     window.setTimeout(() => setComposerPulse(false), 520);
     window.requestAnimationFrame(() => {
       const composerRoot = document.getElementById("sym:TaskComposer");
-      composerRoot?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      if (typeof composerRoot?.scrollIntoView === "function") {
+        composerRoot.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
       composerRoot?.querySelector<HTMLElement>('[data-testid="task-composer-editor"]')?.focus();
     });
   };
+
+  const handleHomeWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+    const grid = promptGridScrollRef.current;
+    if (!grid || event.deltaY === 0) return;
+
+    const target = event.target;
+    if (target instanceof Node && grid.contains(target)) return;
+
+    let current = target instanceof Element ? target : null;
+    while (current && current !== event.currentTarget) {
+      const style = window.getComputedStyle(current);
+      const canScrollY =
+        (style.overflowY === "auto" || style.overflowY === "scroll") &&
+        current.scrollHeight > current.clientHeight;
+      if (canScrollY) return;
+      current = current.parentElement;
+    }
+
+    const maxScrollTop = grid.scrollHeight - grid.clientHeight;
+    if (maxScrollTop <= 0) return;
+
+    const deltaY =
+      event.deltaMode === 1
+        ? event.deltaY * 16
+        : event.deltaMode === 2
+          ? event.deltaY * grid.clientHeight
+          : event.deltaY;
+    const nextScrollTop = Math.max(0, Math.min(maxScrollTop, grid.scrollTop + deltaY));
+    if (nextScrollTop === grid.scrollTop) return;
+
+    event.preventDefault();
+    grid.scrollTop = nextScrollTop;
+  }, []);
 
   if (activeRunId) {
     return <AgentWorkspace />;
   }
 
   return (
-    <MoreDataShell currentPath="/" showTopHeader={false} mainClassName="bg-transparent">
-      <div className="flex min-h-screen flex-col bg-[#f7f7f7] pb-10 sm:pb-14">
-        <section className="mx-auto w-full max-w-[1040px] px-4 pt-[180px] sm:px-6 lg:px-8">
+    <AliceShell currentPath="/" showTopHeader={false} contentScrollMode="child" mainClassName="bg-transparent">
+      <div className="h-full overflow-hidden bg-[#f7f7f7]" onWheel={handleHomeWheel}>
+        <section className="mx-auto flex h-full w-full max-w-[1040px] flex-col px-4 pt-[180px] pb-10 sm:px-6 sm:pb-14 lg:px-8">
           <div className="flex items-center gap-3 sm:gap-5">
             <Image
-              src="/mdata-logo.png"
+              src="/alice-logo.png"
               alt="Alice"
               width={76}
               height={76}
@@ -388,7 +451,9 @@ export function MoreDataHomePage() {
                     "relative z-30 w-full rounded-[20px] border border-[#e2e2df] bg-white shadow-[0_18px_44px_rgba(17,17,17,0.05)] transition-[border-color,box-shadow,transform] duration-300 sm:rounded-[24px]",
                     composerPulse && "border-[#111111]/25 shadow-[0_20px_52px_rgba(17,17,17,0.1)]",
                   )}
-                  textareaClassName="min-h-[112px] max-h-[10em] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-[14px] font-normal leading-8 text-[#34322d] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 sm:min-h-[136px]"
+                  editorRowClassName="min-h-[112px] items-start sm:min-h-[136px]"
+                  textareaClassName="min-h-[112px] max-h-[10em] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-[14px] font-normal leading-[22px] text-[#1d2129] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 sm:min-h-[136px]"
+                  placeholderClassName="top-[6px] text-[14px] leading-[22px] text-[#86909c]"
                   sendButtonClassName={cn(
                     "h-10 w-10 min-w-0 rounded-full border border-transparent p-0 text-white shadow-none transition",
                     composerCanSubmit ? "bg-[#111111] hover:bg-[#2a2a2a]" : "bg-[#dededc] hover:bg-[#d1d1cf]",
@@ -407,7 +472,10 @@ export function MoreDataHomePage() {
           >
             {homeCapabilityCategories.map((item) => {
               const activeGroup = getHomeCapabilityGroup(activeCapabilityId);
-              const active = item.id === activeCapabilityId || activeGroup?.id === item.id;
+              const active =
+                item.id === activeCapabilityId ||
+                activeGroup?.id === item.id ||
+                selectedCapabilityGroupIds.has(item.id);
               return (
                 <button
                   key={item.id}
@@ -429,8 +497,11 @@ export function MoreDataHomePage() {
             })}
           </div>
 
-          <div className="pt-5 sm:pt-7">
-            <div className="grid gap-3 pb-6 sm:gap-5 md:grid-cols-2 xl:grid-cols-3">
+          <div className="min-h-0 flex-1 pt-5 sm:pt-7">
+            <div
+              ref={promptGridScrollRef}
+              className="grid h-full content-start gap-3 overflow-y-auto pr-1 pb-6 scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 sm:gap-5 md:grid-cols-2 xl:grid-cols-3"
+            >
               {promptCardsLoading ? (
                 Array.from({ length: 6 }).map((_, index) => (
                   <div
@@ -448,6 +519,10 @@ export function MoreDataHomePage() {
                     </div>
                   </div>
                 ))
+              ) : cards.length === 0 ? (
+                <div className="col-span-full flex min-h-[132px] items-center justify-center rounded-[18px] border border-dashed border-[#dededc] bg-white/60 px-5 text-center text-[14px] leading-6 text-[#8b8c87]">
+                  当前分类暂无示例任务。
+                </div>
               ) : cards.map((card) => {
                 const capability =
                   card.capabilityIds.map((id) => getHomeCapabilityItem(id)).find(Boolean) ??
@@ -505,6 +580,6 @@ export function MoreDataHomePage() {
         </section>
       </div>
 
-    </MoreDataShell>
+    </AliceShell>
   );
 }

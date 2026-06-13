@@ -19,7 +19,7 @@ import {
 
 import { AutoToast } from "@/components/auto-toast";
 import { EmptyState } from "@/components/empty-state";
-import { MoreDataShell } from "@/components/more-data-shell";
+import { AliceShell } from "@/components/alice-shell";
 import { PageLostState } from "@/components/page-lost-state";
 import { RequiredAsterisk } from "@/components/required-mark";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
@@ -392,7 +392,7 @@ export function PromptLibraryWorkspace() {
   };
 
   return (
-    <MoreDataShell currentPath="/prompt-library" showTopHeader={false}>
+    <AliceShell currentPath="/prompt-library" showTopHeader={false}>
       <AutoToast
         message={toastMessage}
         variant={toastVariant}
@@ -870,7 +870,7 @@ export function PromptLibraryWorkspace() {
         </DialogContent>
       </Dialog>
 
-    </MoreDataShell>
+    </AliceShell>
   );
 }
 

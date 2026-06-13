@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { FavoritesWorkspace } from "@/components/favorites-workspace";
 
-vi.mock("@/components/more-data-shell", () => ({
-  MoreDataShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+vi.mock("@/components/alice-shell", () => ({
+  AliceShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock("@/components/platform-agent-provider", () => ({

@@ -10,7 +10,7 @@ export function BrandLogo({ compact = false, className }: BrandLogoProps) {
     <div className={className}>
       <div className="flex items-center gap-2">
         <Image
-          src="/mdata-logo.png"
+          src="/alice-logo.png"
           alt="Alice"
           width={24}
           height={24}

@@ -4,6 +4,6 @@ import "server-only";
 export function setupConsoleFileLogging(): void {
   const nodeRequire = eval("require") as NodeRequire;
   const pathMod = nodeRequire("path") as typeof import("path");
-  const runtimePath = pathMod.join(process.cwd(), "lib", "mdata-server-logger-runtime.cjs");
-  nodeRequire(runtimePath).initMdataConsoleFileLogging();
+  const runtimePath = pathMod.join(process.cwd(), "lib", "alice-server-logger-runtime.cjs");
+  nodeRequire(runtimePath).initAliceConsoleFileLogging();
 }

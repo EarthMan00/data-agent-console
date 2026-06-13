@@ -13,7 +13,7 @@ export function EmptyState({ message, action, className }: EmptyStateProps) {
   return (
     <div className={cn("mt-8 flex min-h-[calc(100vh-300px)] flex-col items-center justify-center px-4 text-center", className)}>
       <Image
-        src="/mdata-logo.png"
+        src="/alice-logo.png"
         alt=""
         width={48}
         height={48}

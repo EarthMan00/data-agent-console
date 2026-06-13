@@ -3,7 +3,7 @@ import type { UserScheduledTaskItemApi } from "@/lib/agent-api/types";
 import { loadScheduleCreateDraft } from "@/lib/schedule-create-draft";
 import { resultPushBlocksFromApiConfig } from "@/lib/schedule-result-push-api";
 
-const STORAGE_KEY = "linkfox:scheduleResultPushByTaskV1";
+const STORAGE_KEY = "alice:scheduleResultPushByTaskV1";
 
 type Stored = { v: 1; byTaskId: Record<string, ResultPushBlock[]> };
 

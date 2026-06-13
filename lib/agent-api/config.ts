@@ -1,5 +1,5 @@
 /**
- * 与 Data Agent Server 联调（NEXT_PUBLIC_* 在构建时内联）。
+ * 与 Alice 后端服务 联调（NEXT_PUBLIC_* 在构建时内联）。
  *
  * 局域网内其他设备访问时，勿把 API 指到 127.0.0.1（会指向访客本机）。
  * 可设 NEXT_PUBLIC_AGENT_API_USE_PROXY=1，HTTP 经 Next 同源路径 /agent-platform 转发到本机 8000。

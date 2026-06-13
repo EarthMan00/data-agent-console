@@ -13,12 +13,11 @@ import type { PlatformSubtaskSnapshot, TaskExecutionStep } from "@/lib/agent-eve
 
 /** 平台多步编排：按时间顺序「步骤 N 执行卡片 → 步骤 N 执行结果 → 步骤 N+1 执行卡片 → …」 */
 export type PlatformStepTimelineItem =
-  | { kind: "executing"; step: TaskExecutionStep; stepIndex: number; total: number }
+  | { kind: "executing"; step: TaskExecutionStep; stepIndex: number }
   | { kind: "result"; snap: PlatformSubtaskSnapshot }
   | {
       kind: "result_pending";
       stepIndex: number;
-      total: number;
       label: string;
       status: "done" | "error";
     };
@@ -45,25 +44,16 @@ export function buildPlatformStepTimeline(
         items.push({
           kind: "result_pending",
           stepIndex: i,
-          total: n,
           label: step.label,
           status: step.status,
         });
       }
     } else {
-      items.push({ kind: "executing", step, stepIndex: i, total: n });
+      items.push({ kind: "executing", step, stepIndex: i });
       break;
     }
   }
   return items;
-}
-
-function executionSubtitle(status: TaskExecutionStep["status"]): string {
-  if (status === "running") return "执行中";
-  if (status === "awaiting_input") return "待您补充信息";
-  if (status === "pending") return "等待执行";
-  if (status === "done") return "已完成";
-  return "执行失败";
 }
 
 function formatElapsed(seconds: number): string {
@@ -109,7 +99,7 @@ function RunningStepRuntimeHint({ step }: { step: TaskExecutionStep }) {
   if (!text.trim()) return null;
 
   return (
-    <p className="mt-2 pl-10 text-[12px] leading-5 text-[#6b7280]">
+    <p className="mt-2 pl-10 text-[12px] leading-5 text-[#4e5969]">
       {text}
     </p>
   );
@@ -119,11 +109,9 @@ function RunningStepRuntimeHint({ step }: { step: TaskExecutionStep }) {
 export function ExecutionStepCard({
   step,
   stepIndex,
-  total,
 }: {
   step: TaskExecutionStep;
   stepIndex: number;
-  total: number;
 }) {
   const stepNo = stepIndex + 1;
   const showStatusIcon = step.status !== "pending";
@@ -135,13 +123,13 @@ export function ExecutionStepCard({
           ? "text-red-600"
           : step.status === "awaiting_input"
             ? "text-amber-700"
-            : "text-[#374151]",
+            : "text-[#4e5969]",
       )}
       data-testid="execution-step-card"
       data-step-index={stepIndex}
     >
-      <div className="mb-2 text-[12px] font-medium uppercase tracking-wide text-[#9aa39e]">
-        步骤 {stepNo} / {total} · {executionSubtitle(step.status)}
+      <div className="mb-2 text-[12px] font-medium uppercase tracking-wide text-[#4e5969]">
+        步骤 {stepNo}
       </div>
       <div className={cn("flex", showStatusIcon ? "gap-3" : "gap-0")}>
         {showStatusIcon ? (
@@ -176,12 +164,10 @@ export function ExecutionStepCard({
 /** 步骤已终态但尚未拉到结果快照时的占位（与执行结果卡片版式一致，不可点右侧） */
 export function StepResultPendingCard({
   stepIndex,
-  total,
   label,
   status,
 }: {
   stepIndex: number;
-  total: number;
   label: string;
   status: "done" | "error";
 }) {
@@ -189,27 +175,17 @@ export function StepResultPendingCard({
   const ok = status === "done";
   return (
     <div
-      className={cn(
-        "px-0 py-1.5",
-        ok ? "text-[#374151]" : "text-red-600",
-      )}
+      className="w-full rounded-[16px] border border-[#eceef1] bg-white px-4 py-3 text-left text-[#4e5969] shadow-none"
       data-testid="step-result-pending-card"
       data-step-index={stepIndex}
     >
-      <div className="text-[12px] font-medium uppercase tracking-wide text-[#9aa39e]">步骤 {stepNo} / {total} · 执行结果</div>
-      <div className="mt-1 flex items-start justify-between gap-2">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[14px] font-semibold text-[#1f2421]">步骤 {stepNo}</p>
-          <p className="mt-1 break-words text-[12px] leading-5.5 [overflow-wrap:anywhere] text-[#4f5753]">{humanizeStepLabelForUi(label)}</p>
+          <p className="text-[14px] font-semibold text-[#1d2129]">步骤 {stepNo}</p>
+          <p className="mt-1 break-words text-[12px] leading-5.5 text-[#4e5969] [overflow-wrap:anywhere]">
+            {humanizeStepLabelForUi(label)}
+          </p>
         </div>
-        <span
-          className={cn(
-            "shrink-0 rounded-full px-2 py-0.5 text-[12px] font-medium",
-            ok ? "bg-[#dcfce7] text-[#166534]" : "bg-[#fee2e2] text-[#991b1b]",
-          )}
-        >
-          {ok ? "已完成" : "失败"}
-        </span>
       </div>
       {ok ? (
         <Button
@@ -241,11 +217,10 @@ export function StepResultPendingCard({
  */
 export function ExecutionStepsHistoryList({ steps }: { steps: TaskExecutionStep[] }) {
   const ordered = [...steps].sort((a, b) => a.order - b.order);
-  const total = ordered.length;
   return (
     <div className="space-y-3">
       {ordered.map((step, stepIndex) => (
-        <ExecutionStepCard key={step.id} step={step} stepIndex={stepIndex} total={total} />
+        <ExecutionStepCard key={step.id} step={step} stepIndex={stepIndex} />
       ))}
     </div>
   );
@@ -259,7 +234,7 @@ export function ExecutionStepsMonitor({ steps }: { steps: TaskExecutionStep[] })
       {items.map((item) => {
         if (item.kind === "executing") {
           return (
-            <ExecutionStepCard key={`e-${item.step.id}`} step={item.step} stepIndex={item.stepIndex} total={item.total} />
+            <ExecutionStepCard key={`e-${item.step.id}`} step={item.step} stepIndex={item.stepIndex} />
           );
         }
         if (item.kind === "result_pending") {
@@ -267,7 +242,6 @@ export function ExecutionStepsMonitor({ steps }: { steps: TaskExecutionStep[] })
             <StepResultPendingCard
               key={`rp-${item.stepIndex}`}
               stepIndex={item.stepIndex}
-              total={item.total}
               label={item.label}
               status={item.status}
             />

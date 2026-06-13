@@ -106,11 +106,11 @@ export function TaskSplitSection({
 
   return (
     <div className={cn("space-y-2 px-1", ORCHESTRATION_BLOCK_MAX)} data-testid={testId}>
-      <div className="text-[14px] font-semibold text-[#202124]">任务拆分</div>
-      <div className="space-y-2.5 text-[14px] leading-6.5 text-[#4f5753]">
+      <div className="text-[14px] font-semibold text-[#1d2129]">任务拆分</div>
+      <div className="space-y-2.5 text-[14px] leading-6.5 text-[#4e5969]">
         {displayRows.map((row) => (
           <div key={`${row.num}-${row.text}`} className="flex items-start gap-2.5">
-            <span className="shrink-0 pt-[1px] text-[#9aa39e]">{row.num}.</span>
+            <span className="shrink-0 pt-[1px] text-[#4e5969]">{row.num}.</span>
             <p className="min-w-0 flex-1 break-words whitespace-pre-wrap [overflow-wrap:anywhere]">
               {row.text}
               {showCursor && row.num === displayRows[displayRows.length - 1]?.num ? (

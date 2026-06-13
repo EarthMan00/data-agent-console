@@ -7,7 +7,7 @@ describe("humanizeStepLabelForUi", () => {
     const raw = JSON.stringify({
       action: "read_excel_metadata",
       file_path:
-        "C:\\Users\\EDY\\AppData\\Local\\MData\\Jobs\\session_attachments\\a\\b\\uuid_linkfox_agent_cards.xlsx",
+        "C:\\Users\\EDY\\AppData\\Local\\Alice\\Jobs\\session_attachments\\a\\b\\uuid_linkfox_agent_cards.xlsx",
     });
     const out = humanizeStepLabelForUi(raw);
     expect(out).toContain("linkfox_agent_cards.xlsx");
@@ -16,7 +16,7 @@ describe("humanizeStepLabelForUi", () => {
 
   it("strips windows path from prose instruction", () => {
     const out = humanizeStepLabelForUi(
-      "分析文件 C:\\Users\\EDY\\AppData\\Local\\MData\\Jobs\\session_attachments\\a\\b\\uuid_demo.xlsx",
+      "分析文件 C:\\Users\\EDY\\AppData\\Local\\Alice\\Jobs\\session_attachments\\a\\b\\uuid_demo.xlsx",
     );
     expect(out).toContain("demo.xlsx");
     expect(out).not.toContain("C:\\Users");

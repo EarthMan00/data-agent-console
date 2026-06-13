@@ -1,7 +1,7 @@
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 
-/** LinkFox 文本汇总（右侧 sheet 不展示，仅用于其它逻辑兼容） */
-export const LINKFOX_RESULT_RE = /^linkfox_result\.txt$/i;
+/** Alice 内部文本汇总（右侧 sheet 不展示，仅用于其它逻辑兼容） */
+export const ALICE_INTERNAL_RESULT_RE = /^linkfox_result\.txt$/i;
 /** ChatExcel 主日志文件 */
 export const CHATEXCEL_RESULT_RE = /^chatexcel_result\.txt$/i;
 /** 所有工具输出的 *_result.txt：不在结果 sheet 中展示 */

@@ -21,18 +21,13 @@ function PlatformSubtaskResultCard({
   snap,
   isActive,
   onSelect,
-  totalSteps,
 }: {
   snap: PlatformSubtaskSnapshot;
   isActive: boolean;
   onSelect: () => void;
-  /** 与执行卡片对齐的步骤总数，用于「步骤 N / M」 */
-  totalSteps?: number;
 }) {
   const stepNo = snap.stepIndex + 1;
   const hasPreviewFiles = hasTabularTaskResultFiles(snap.artifacts);
-  const header =
-    totalSteps != null ? `步骤 ${stepNo} / ${totalSteps} · 执行结果` : `步骤 ${stepNo} · 执行结果`;
   return (
     <button
       type="button"
@@ -48,11 +43,10 @@ function PlatformSubtaskResultCard({
           : "cursor-default opacity-95",
       )}
     >
-      <div className="text-[12px] font-medium uppercase tracking-wide text-[#9aa39e]">{header}</div>
-      <div className="mt-2 flex items-start justify-between gap-2">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold text-[#1f2421]">步骤 {stepNo}</div>
-          <p className="mt-1 text-[12px] leading-5.5 text-[#4f5753]">{compactText(snap.label, 200)}</p>
+          <div className="text-[14px] font-semibold text-[#1d2129]">步骤 {stepNo}</div>
+          <p className="mt-1 text-[12px] leading-5.5 text-[#4e5969]">{compactText(snap.label, 200)}</p>
         </div>
       </div>
       {snap.errorMessage ? (
@@ -81,8 +75,6 @@ export function PlatformRoundStepTimeline({
   setPanelVisibility: Dispatch<SetStateAction<Record<string, boolean>>>;
 }) {
   const items = buildPlatformStepTimeline(executionSteps, platformSubtasks);
-  const total = executionSteps.length;
-
   return (
     <div className="space-y-3" data-testid="agent-step-timeline">
       {items.map((item) => {
@@ -92,7 +84,6 @@ export function PlatformRoundStepTimeline({
               key={`exec-${item.step.id}-${item.stepIndex}`}
               step={item.step}
               stepIndex={item.stepIndex}
-              total={item.total}
             />
           );
         }
@@ -101,7 +92,6 @@ export function PlatformRoundStepTimeline({
             <StepResultPendingCard
               key={`rp-${item.stepIndex}`}
               stepIndex={item.stepIndex}
-              total={item.total}
               label={item.label}
               status={item.status}
             />
@@ -114,7 +104,6 @@ export function PlatformRoundStepTimeline({
             key={snap.taskId}
             snap={snap}
             isActive={active}
-            totalSteps={total}
             onSelect={() => {
               setPanelSubtaskFocus({ taskId: snap.taskId, artifacts: snap.artifacts });
               setPanelVisibility((c) => ({ ...c, [runId]: true }));

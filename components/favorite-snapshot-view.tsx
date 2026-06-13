@@ -119,7 +119,7 @@ export function FavoriteSnapshotView({
     );
   }
 
-  if (kind === "linkfox" && content_text) {
+  if (kind === "alice" && content_text) {
     return (
       <pre className="min-h-0 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-[#e5e7eb] bg-[#f8fafc] p-3 text-[12px] leading-relaxed text-[#31405a]">
         {content_text}

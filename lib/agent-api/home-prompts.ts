@@ -2,10 +2,22 @@ import { AgentApiError, readErrorResponseBody } from "@/lib/agent-api/client";
 import { getAgentHttpApiBase } from "@/lib/agent-api/config";
 import type { HomePromptRecommendationDto } from "@/lib/agent-api/types";
 
+type FetchHomePromptRecommendationsOptions = {
+  capabilityIds?: string[];
+};
+
 /** 拉取首页推荐提示词；失败时抛出，由调用方展示错误。 */
-export async function fetchHomePromptRecommendations(): Promise<HomePromptRecommendationDto[]> {
+export async function fetchHomePromptRecommendations(
+  options: FetchHomePromptRecommendationsOptions = {},
+): Promise<HomePromptRecommendationDto[]> {
   const base = getAgentHttpApiBase();
-  const res = await fetch(`${base}/api/home-prompt-recommendations`);
+  const params = new URLSearchParams();
+  for (const id of options.capabilityIds ?? []) {
+    const trimmed = id.trim();
+    if (trimmed) params.append("capability_id", trimmed);
+  }
+  const query = params.toString();
+  const res = await fetch(`${base}/api/home-prompt-recommendations${query ? `?${query}` : ""}`);
   const data = await readErrorResponseBody(res);
   if (!res.ok) {
     const detail =

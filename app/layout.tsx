@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { CSSProperties, ReactNode } from "react";
 import "./globals.css";
 import { PlatformAgentProvider } from "@/components/platform-agent-provider";
-import { MoreDataShellRoot } from "@/components/more-data-shell";
+import { AliceShellRoot } from "@/components/alice-shell";
 import { SuppressNextDevOverlay } from "@/components/suppress-next-dev-overlay";
 
 export const metadata: Metadata = {
@@ -30,7 +30,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <SuppressNextDevOverlay />
         <PlatformAgentProvider>
-          <MoreDataShellRoot>{children}</MoreDataShellRoot>
+          <AliceShellRoot>{children}</AliceShellRoot>
         </PlatformAgentProvider>
       </body>
     </html>

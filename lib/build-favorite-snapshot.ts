@@ -1,6 +1,6 @@
 import { fetchAuthorizedText } from "@/lib/agent-api/client";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
-import { CHATEXCEL_RESULT_RE, LINKFOX_RESULT_RE } from "@/lib/platform-task-artifacts";
+import { CHATEXCEL_RESULT_RE, ALICE_INTERNAL_RESULT_RE } from "@/lib/platform-task-artifacts";
 import { buildTaskResultSheets } from "@/lib/task-result-sheets";
 
 const MAX_INLINE_CHARS = 1_500_000;
@@ -48,7 +48,7 @@ function primaryKindFromFilename(name: string): string {
   if (ext === "html" || ext === "htm") return "html";
   const base = (name ?? "").trim();
   if (CHATEXCEL_RESULT_RE.test(base)) return "chatexcel";
-  if (LINKFOX_RESULT_RE.test(base)) return "linkfox";
+  if (ALICE_INTERNAL_RESULT_RE.test(base)) return "alice";
   return "text";
 }
 

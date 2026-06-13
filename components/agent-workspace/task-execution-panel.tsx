@@ -24,9 +24,9 @@ export function TaskExecutionPanel({
 }: TaskExecutionPanelProps) {
   const header = (
     <>
-      <span className="text-[16px] font-semibold text-[#1f2421]">{title}</span>
+      <span className="text-[16px] font-semibold text-[#1d2129]">{title}</span>
       {collapsible ? (
-        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#34322d] transition-colors group-hover:bg-[rgba(55,53,47,0.06)]">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#1d2129] transition-colors group-hover:bg-[rgba(55,53,47,0.06)]">
           <ChevronDown
             className={cn(
               "h-5 w-5 transition-transform",

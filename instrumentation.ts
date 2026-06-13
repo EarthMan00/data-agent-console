@@ -4,6 +4,6 @@ export async function register(): Promise<void> {
     const { setupConsoleFileLogging } = await import("@/lib/instrumentation-console-log");
     setupConsoleFileLogging();
   } catch (err) {
-    console.warn("[mdata] console file logging disabled:", err);
+    console.warn("[alice] console file logging disabled:", err);
   }
 }

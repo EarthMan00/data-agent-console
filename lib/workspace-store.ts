@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 浏览器内工作区运行态（runs / reports 等），由首页与 Data Agent API 写入；本文件不是「mock 推理」数据源。
+ * 浏览器内工作区运行态（runs / reports 等），由首页与 Alice API 写入；本文件不是「mock 推理」数据源。
  */
 
 import { useSyncExternalStore } from "react";
@@ -21,10 +21,11 @@ import { DEFAULT_RESULT_PREVIEW_KEY } from "@/lib/report-defaults";
 import { homeCapabilityItems } from "@/lib/home-capability-items";
 import { DEFAULT_RESULT_SUMMARY_TITLE, WORKSPACE_DISPLAY_NAME } from "@/lib/workspace-constants";
 import { stashRoundAttachmentFiles } from "@/lib/round-attachment-files";
+import { inferAttachmentType } from "@/lib/agent-attachments";
 import {
   looksLikeClarificationPrompt,
   sanitizeClarificationForUserDisplay,
-} from "@/lib/linkfox-clarification";
+} from "@/lib/alice-clarification";
 import { safeRandomUUID } from "@/lib/random-uuid";
 import type { FavoriteItem, PromptCard, ResultPreview, RunRecord, ScheduleItem } from "@/lib/workspace-domain-types";
 
@@ -38,7 +39,7 @@ export type TaskDraft = {
 
 export type TaskRun = {
   id: string;
-  /** 联调 Data Agent Server 时的聊天会话 id（与本地 run.id 分离） */
+  /** 联调 Alice 后端服务 时的聊天会话 id（与本地 run.id 分离） */
   platformSessionId?: string;
   taskDraftId: string;
   reportId: string;
@@ -74,7 +75,7 @@ export type TaskRun = {
   platformSubtasksByRound?: Record<string, PlatformSubtaskSnapshot[]>;
   /** 任务完成后引导文案（按 round，与历史会话 PostTaskGuidanceBubble 一致） */
   postTaskGuidanceByRound?: Record<string, string>;
-  linkfoxClarificationByRound?: Record<
+  aliceClarificationByRound?: Record<
     string,
     { message: string; shareUrl: string | null; stepIndex: number | null; orchestrationId?: string | null }
   >;
@@ -142,8 +143,6 @@ export type QueueFollowupInput = {
   attachments: AgentAttachment[];
 };
 
-const capabilityLabelMap = new Map(homeCapabilityItems.map((item) => [item.id, item.label]));
-
 function createId(prefix: string) {
   return `${prefix}-${safeRandomUUID()}`;
 }
@@ -177,10 +176,6 @@ function toCapabilityIds(objective: string) {
     .filter((item) => lower.includes(item.label.toLowerCase()) || lower.includes(item.id))
     .slice(0, 3)
     .map((item) => item.id);
-}
-
-function getSourceLabel(sourceId: string) {
-  return capabilityLabelMap.get(sourceId) ?? sourceId;
 }
 
 function clonePreviewByKey(previewKey: string) {
@@ -217,6 +212,17 @@ function createAttachmentNode(roundId: string, attachments: AgentAttachment[], c
     kind: "attachment_group",
     attachments,
   });
+}
+
+function buildInitialAttachmentItems(files: File[]): AgentAttachment[] {
+  return files.map((file, index) => ({
+    id: `${file.name}-${index}`,
+    name: file.name,
+    size: file.size,
+    fileType: inferAttachmentType(file.name),
+    extension: file.name.split(".").pop()?.toLowerCase(),
+    status: "queued",
+  }));
 }
 
 function buildReport(runId: string, objective: string, previewKey = DEFAULT_RESULT_PREVIEW_KEY): Report {
@@ -599,13 +605,13 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
     return { run: nextRun, report: nextReport };
   }
 
-  if (event.type === "linkfox_clarification_pending") {
+  if (event.type === "alice_clarification_pending") {
     const message = sanitizeClarificationForUserDisplay(event.message ?? "").trim();
     const orchId = (event.orchestrationId ?? "").trim();
     const now = formatDate();
     if (message) {
-      nextRun.linkfoxClarificationByRound = {
-        ...(nextRun.linkfoxClarificationByRound ?? {}),
+      nextRun.aliceClarificationByRound = {
+        ...(nextRun.aliceClarificationByRound ?? {}),
         [event.roundId]: {
           message,
           shareUrl: null,
@@ -644,11 +650,11 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
     return { run: nextRun, report: nextReport };
   }
 
-  if (event.type === "linkfox_clarification_cleared") {
-    if (nextRun.linkfoxClarificationByRound?.[event.roundId]) {
-      const nextMap = { ...nextRun.linkfoxClarificationByRound };
+  if (event.type === "alice_clarification_cleared") {
+    if (nextRun.aliceClarificationByRound?.[event.roundId]) {
+      const nextMap = { ...nextRun.aliceClarificationByRound };
       delete nextMap[event.roundId];
-      nextRun.linkfoxClarificationByRound = nextMap;
+      nextRun.aliceClarificationByRound = nextMap;
     }
     const dialog = nextRun.clarificationDialogByRound?.[event.roundId];
     if (dialog && !dialog.answered) {
@@ -718,13 +724,13 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
       })();
       if (clarifyCandidate) {
         const existing = nextRun.clarificationDialogByRound?.[event.roundId];
-        const linkfox = nextRun.linkfoxClarificationByRound?.[event.roundId];
+        const aliceClarification = nextRun.aliceClarificationByRound?.[event.roundId];
         nextRun.clarificationDialogByRound = {
           ...(nextRun.clarificationDialogByRound ?? {}),
           [event.roundId]: {
             message: clarifyCandidate,
-            stepIndex: existing?.stepIndex ?? linkfox?.stepIndex ?? null,
-            orchestrationId: existing?.orchestrationId ?? linkfox?.orchestrationId ?? null,
+            stepIndex: existing?.stepIndex ?? aliceClarification?.stepIndex ?? null,
+            orchestrationId: existing?.orchestrationId ?? aliceClarification?.orchestrationId ?? null,
             answered: existing?.answered ?? false,
             createdAt: existing?.createdAt ?? formatDate(),
             answeredAt: existing?.answeredAt,
@@ -939,6 +945,7 @@ export const workspaceActions = {
     if (input.pendingFiles?.length) {
       stashRoundAttachmentFiles(roundId, input.pendingFiles);
     }
+    const initialAttachments = input.pendingFiles?.length ? buildInitialAttachmentItems(input.pendingFiles) : [];
     const title = toRunTitle(objective);
     const report = buildReport(runId, objective);
     const run: TaskRun = {
@@ -960,7 +967,10 @@ export const workspaceActions = {
       saved: false,
       starred: false,
       latestRoundId: roundId,
-      timeline: [createUserNode(roundId, objective, startedAt)],
+      timeline: [
+        createUserNode(roundId, objective, startedAt),
+        ...(initialAttachments.length > 0 ? [createAttachmentNode(roundId, initialAttachments, startedAt)] : []),
+      ],
       chains: [],
     };
     const taskDraft: TaskDraft = {
@@ -1007,30 +1017,35 @@ export const workspaceActions = {
     return roundId;
   },
 
-  appendUserMessageOnRound(runId: string, roundId: string, text: string) {
+  appendUserMessageOnRound(
+    runId: string,
+    roundId: string,
+    text: string,
+    attachments: AgentAttachment[] = [],
+  ) {
     const createdAt = formatDate();
     updateState((current) => ({
       ...current,
       runs: current.runs.map((run) => {
         if (run.id !== runId) return run;
-        const linkfoxClarify = run.linkfoxClarificationByRound?.[roundId];
+        const aliceClarify = run.aliceClarificationByRound?.[roundId];
         const existingDialog = run.clarificationDialogByRound?.[roundId];
         const clarifyMessage = (
           existingDialog?.message ??
-          linkfoxClarify?.message ??
+          aliceClarify?.message ??
           ""
         ).trim();
-        const nextLinkfox = { ...(run.linkfoxClarificationByRound ?? {}) };
-        delete nextLinkfox[roundId];
+        const nextAlice = { ...(run.aliceClarificationByRound ?? {}) };
+        delete nextAlice[roundId];
         const nextDialog =
           clarifyMessage || existingDialog
             ? {
                 ...(run.clarificationDialogByRound ?? {}),
                 [roundId]: {
                   message: clarifyMessage || existingDialog!.message,
-                  stepIndex: existingDialog?.stepIndex ?? linkfoxClarify?.stepIndex ?? null,
+                  stepIndex: existingDialog?.stepIndex ?? aliceClarify?.stepIndex ?? null,
                   orchestrationId:
-                    existingDialog?.orchestrationId ?? linkfoxClarify?.orchestrationId ?? null,
+                    existingDialog?.orchestrationId ?? aliceClarify?.orchestrationId ?? null,
                   answered: true,
                   createdAt: existingDialog?.createdAt ?? createdAt,
                   answeredAt: createdAt,
@@ -1046,12 +1061,16 @@ export const workspaceActions = {
         return {
           ...run,
           status: "running",
-          linkfoxClarificationByRound: Object.keys(nextLinkfox).length ? nextLinkfox : undefined,
+          aliceClarificationByRound: Object.keys(nextAlice).length ? nextAlice : undefined,
           clarificationDialogByRound: nextDialog,
           taskExecutionStepsByRound: nextSteps
             ? { ...(run.taskExecutionStepsByRound ?? {}), [roundId]: nextSteps }
             : run.taskExecutionStepsByRound,
-          timeline: [...run.timeline, createUserNode(roundId, text, createdAt)],
+          timeline: [
+            ...run.timeline,
+            createUserNode(roundId, text, createdAt),
+            ...(attachments.length > 0 ? [createAttachmentNode(roundId, attachments, createdAt)] : []),
+          ],
         };
       }),
     }));
@@ -1073,6 +1092,18 @@ export const workspaceActions = {
 
   setCurrentRun(runId: string) {
     updateState((current) => ({ ...current, currentRunId: runId }));
+  },
+
+  renameRun(runId: string, title: string) {
+    const nextTitle = title.trim();
+    if (!nextTitle) return;
+    updateState((current) => ({
+      ...current,
+      runs: current.runs.map((run) => (run.id === runId ? { ...run, title: nextTitle } : run)),
+      runRecords: current.runRecords.map((record) =>
+        record.runId === runId ? { ...record, title: nextTitle } : record,
+      ),
+    }));
   },
 
   /** 服务端会话删除后，移除本地与之关联的 run（含报告、收藏条目等） */

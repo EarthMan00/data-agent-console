@@ -47,12 +47,18 @@ const LOGIN_INTRO_TEXT = "我是 Alice，欢迎回来。";
 const LOGIN_RETURNING_TEXT = "我是 Alice，欢迎回来。";
 const REGISTER_INTRO_TEXT = "欢迎注册，我是 Alice，你的跨境运营助手";
 const REGISTER_CODE_TITLE = "请输入发送给您邮箱的验证码";
-const LOGIN_RETURNING_STORAGE_KEY = "mdata:alice-has-logged-in";
-const PENDING_HOME_TASK_STORAGE_KEY = "mdata:pending-home-task-after-login";
+const LOGIN_INTRO_CHAR_INTERVAL_MS = 34;
+const LOGIN_RETURNING_STORAGE_KEY = "alice:has-logged-in";
+const PENDING_HOME_TASK_STORAGE_KEY = "alice:pending-home-task-after-login";
 const REGISTER_CODE_LENGTH = 6;
 type AuthMode = "login" | "register";
 type RegisterStep = "email" | "code" | "password";
 type LoginContinuation = () => void | Promise<void>;
+type AuthTitleAnimationState = {
+  done: boolean;
+  key: string;
+  text: string;
+};
 
 const REGISTER_STEP_META: Record<
   RegisterStep,
@@ -225,6 +231,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [loginIntroFullText, setLoginIntroFullText] = useState(LOGIN_INTRO_TEXT);
+  const [loginTitleAnimation, setLoginTitleAnimation] =
+    useState<AuthTitleAnimationState>({ done: true, key: "", text: LOGIN_INTRO_TEXT });
   const [loginTitleOverride, setLoginTitleOverride] = useState("");
   const [loginTitleReplayId, setLoginTitleReplayId] = useState(0);
   const [registerStep, setRegisterStep] = useState<RegisterStep>("email");
@@ -279,8 +287,10 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     activeLoginTitleText,
   ].join(":");
   const isLoginTitleError = Boolean(loginTitleOverride);
-  const activeTitleTypingDone = true;
-  const visibleLoginIntroText = activeLoginTitleText;
+  const activeTitleTypingDone =
+    loginTitleAnimation.key === activeLoginTitleKey && loginTitleAnimation.done;
+  const visibleLoginIntroText =
+    loginTitleAnimation.key === activeLoginTitleKey ? loginTitleAnimation.text : "";
 
   useEffect(() => {
     const snap = loadAgentSession();
@@ -327,6 +337,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       hasLoggedInOnThisDevice() ? LOGIN_RETURNING_TEXT : LOGIN_INTRO_TEXT,
     );
     setLoginTitleOverride("");
+    setLoginTitleAnimation({ done: false, key: "", text: "" });
     setLoginOpen(true);
   }, [resetRegisterForm]);
 
@@ -345,6 +356,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     loginContinuationRef.current = null;
     setLoginStep("account");
     setLoginTitleOverride("");
+    setLoginTitleAnimation({ done: true, key: "", text: "" });
     setLoginOpen(false);
   }, [resetRegisterForm]);
 
@@ -360,6 +372,48 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     },
     [replayAuthTitle],
   );
+
+  useEffect(() => {
+    if (!loginOpen) return;
+
+    let cancelled = false;
+    let timer: number | undefined;
+    let index = 1;
+    const chars = [...activeLoginTitleText];
+    const key = activeLoginTitleKey;
+    const firstText = chars.slice(0, index).join("");
+
+    setLoginTitleAnimation({
+      done: chars.length <= index,
+      key,
+      text: firstText,
+    });
+
+    const tick = () => {
+      if (cancelled) return;
+      index += 1;
+      const done = index >= chars.length;
+      setLoginTitleAnimation({
+        done,
+        key,
+        text: chars.slice(0, index).join(""),
+      });
+      if (!done) {
+        timer = window.setTimeout(tick, LOGIN_INTRO_CHAR_INTERVAL_MS);
+      }
+    };
+
+    if (chars.length > index) {
+      timer = window.setTimeout(tick, LOGIN_INTRO_CHAR_INTERVAL_MS);
+    }
+
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [activeLoginTitleKey, activeLoginTitleText, loginOpen]);
 
   useEffect(() => {
     if (!loginOpen || !activeTitleTypingDone) return;
@@ -920,12 +974,12 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     <PlatformAgentContext.Provider value={value}>
       {children}
       {loginOpen ? (
-        <div className="mdata-auth-overlay fixed inset-0 z-50 bg-[#b9b8b5]">
+        <div className="alice-auth-overlay fixed inset-0 z-50 bg-[#b9b8b5]">
           <div
             role="dialog"
             aria-modal="true"
-            aria-labelledby="mdata-login-title"
-            className="mdata-auth-panel fixed left-1/2 top-1/2 h-[calc(100vh-40px)] w-[calc(100vw-40px)] max-w-none -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[24px] border-0 bg-[#141414] p-0 text-white shadow-none sm:rounded-[24px]"
+            aria-labelledby="alice-login-title"
+            className="alice-auth-panel fixed left-1/2 top-1/2 h-[calc(100vh-40px)] w-[calc(100vw-40px)] max-w-none -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[24px] border-0 bg-[#141414] p-0 text-white shadow-none sm:rounded-[24px]"
           >
             <div className="relative h-full w-full overflow-hidden">
               <button
@@ -960,7 +1014,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     }
                   >
                     <Image
-                      src="/mdata-logo.png"
+                      src="/alice-logo.png"
                       alt="Alice"
                       width={52}
                       height={52}
@@ -974,21 +1028,27 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     />
                     <div className="min-w-0 flex-1">
                       <h2
-                        id="mdata-login-title"
+                        id="alice-login-title"
                         aria-label={activeLoginTitleText}
                         className={
                           isRegisterCodeStep
-                            ? "mdata-auth-title min-h-8 max-w-none text-left text-[24px] font-semibold leading-8 tracking-normal text-white transition-colors duration-300"
-                            : `mdata-auth-title min-h-[46px] max-w-[640px] text-left text-[30px] font-medium leading-[45px] tracking-normal transition-colors duration-300 ${
+                            ? "alice-auth-title min-h-8 max-w-none text-left text-[24px] font-semibold leading-8 tracking-normal text-white transition-colors duration-300"
+                            : `alice-auth-title min-h-[46px] max-w-[640px] text-left text-[30px] font-medium leading-[45px] tracking-normal transition-colors duration-300 ${
                                 isLoginTitleError
                                   ? "text-white"
                                   : activeTitleTypingDone
-                                    ? "mdata-auth-title-muted"
+                                    ? "alice-auth-title-muted"
                                     : "text-white"
                               }`
                         }
                       >
                         {visibleLoginIntroText}
+                        {!activeTitleTypingDone ? (
+                          <span
+                            className="ml-1 inline-block h-[1em] w-[2px] translate-y-[4px] animate-pulse bg-white/80"
+                            aria-hidden
+                          />
+                        ) : null}
                       </h2>
                     </div>
                   </div>
@@ -1010,13 +1070,13 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                       }
                     }}
                   >
-                    <label className="sr-only" htmlFor="mdata-login-account">
+                    <label className="sr-only" htmlFor="alice-login-account">
                       账号
                     </label>
-                    <label className="sr-only" htmlFor="mdata-login-password">
+                    <label className="sr-only" htmlFor="alice-login-password">
                       密码
                     </label>
-                    <label className="sr-only" htmlFor="mdata-register-input">
+                    <label className="sr-only" htmlFor="alice-register-input">
                       注册信息
                     </label>
                     {isRegisterCodeStep ? (
@@ -1062,7 +1122,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     ) : (
                       <div className="flex h-[45px] w-[min(400px,100%)] items-center">
                         <input
-                          id="mdata-login-account"
+                          id="alice-login-account"
                           ref={accountInputRef}
                           name="username"
                           aria-label="账号"
@@ -1073,7 +1133,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                           }
                           aria-describedby={
                             loginStep === "account" && loginError
-                              ? "mdata-login-error"
+                              ? "alice-login-error"
                               : undefined
                           }
                           value={account}
@@ -1085,14 +1145,14 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                           disabled={!activeTitleTypingDone}
                           className={
                             authMode === "login" && loginStep === "account"
-                              ? "mdata-auth-input h-[42px] min-w-0 flex-1 !rounded-none [border-radius:0!important] appearance-none bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                              ? "alice-auth-input h-[42px] min-w-0 flex-1 !rounded-none [border-radius:0!important] appearance-none bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
                               : "hidden"
                           }
                           autoComplete="username"
                           placeholder="请在此处输入用户名或邮箱"
                         />
                         <input
-                          id="mdata-login-password"
+                          id="alice-login-password"
                           ref={passwordInputRef}
                           name="password"
                           aria-label="密码"
@@ -1103,7 +1163,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                           }
                           aria-describedby={
                             loginStep === "password" && loginError
-                              ? "mdata-login-error"
+                              ? "alice-login-error"
                               : undefined
                           }
                           type="password"
@@ -1116,14 +1176,14 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                           disabled={!activeTitleTypingDone}
                           className={
                             authMode === "login" && loginStep === "password"
-                              ? "mdata-auth-input h-[42px] min-w-0 flex-1 !rounded-none [border-radius:0!important] appearance-none bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                              ? "alice-auth-input h-[42px] min-w-0 flex-1 !rounded-none [border-radius:0!important] appearance-none bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
                               : "hidden"
                           }
                           autoComplete="current-password"
                           placeholder="请在此处输入密码"
                         />
                         <input
-                          id="mdata-register-input"
+                          id="alice-register-input"
                           ref={registerInputRef}
                           name={registerStep}
                           aria-label={registerStepMeta.label}
@@ -1134,7 +1194,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                           }
                           aria-describedby={
                             authMode === "register" && loginError
-                              ? "mdata-login-error"
+                              ? "alice-login-error"
                               : undefined
                           }
                           type={registerStepMeta.type ?? "text"}
@@ -1153,7 +1213,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                           disabled={!activeTitleTypingDone || loginBusy}
                           className={
                             authMode === "register"
-                              ? "mdata-auth-input h-[42px] min-w-0 flex-1 !rounded-none [border-radius:0!important] appearance-none bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                              ? "alice-auth-input h-[42px] min-w-0 flex-1 !rounded-none [border-radius:0!important] appearance-none bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
                               : "hidden"
                           }
                           autoComplete={registerStepMeta.autoComplete}
@@ -1182,7 +1242,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
 
                     {loginError ? (
                       <p
-                        id="mdata-login-error"
+                        id="alice-login-error"
                         role="alert"
                         className={
                           isLoginTitleError
