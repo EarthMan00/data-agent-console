@@ -264,4 +264,115 @@ describe("task composer data source menu", () => {
       expect(editor.querySelectorAll("[data-template-slot='true']")).toHaveLength(1);
     });
   }, 10000);
+
+  it("pastes clipboard images as composer attachments", async () => {
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:composer-preview"),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
+
+    const onAttachmentsChange = vi.fn();
+    const onFilesSelected = vi.fn();
+
+    try {
+      render(
+        <TaskComposer
+          value=""
+          onValueChange={vi.fn()}
+          placeholder="输入任务"
+          mode="普通模式"
+          onModeChange={vi.fn()}
+          selectedSourceIds={[]}
+          onToolSelect={vi.fn()}
+          onSourceRemove={vi.fn()}
+          onFilesSelected={onFilesSelected}
+          onAttachmentsChange={onAttachmentsChange}
+          onSubmit={vi.fn()}
+        />,
+      );
+      onAttachmentsChange.mockClear();
+
+      const editor = screen.getByTestId("task-composer-editor");
+      const image = new File(["image-bytes"], "", { type: "image/png" });
+      fireEvent.paste(editor, {
+        clipboardData: {
+          getData: vi.fn(() => ""),
+          items: [{ kind: "file", type: "image/png", getAsFile: () => image }],
+          files: [],
+        },
+      });
+
+      await waitFor(() => {
+        expect(onAttachmentsChange).toHaveBeenLastCalledWith([
+          expect.objectContaining({ name: "pasted-image-1.png", type: "image/png" }),
+        ]);
+      });
+      expect(onFilesSelected).not.toHaveBeenCalled();
+      expect(screen.getByText("pasted-image-1.png")).toBeInTheDocument();
+      expect(screen.getByLabelText("图片预览 pasted-image-1.png")).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(URL, "createObjectURL", {
+        configurable: true,
+        value: originalCreateObjectURL,
+      });
+      Object.defineProperty(URL, "revokeObjectURL", {
+        configurable: true,
+        value: originalRevokeObjectURL,
+      });
+    }
+  });
+
+  it("uses the native undoable edit command for pasted text", () => {
+    const originalExecCommand = document.execCommand;
+    const onValueChange = vi.fn();
+
+    render(
+      <TaskComposer
+        value=""
+        onValueChange={onValueChange}
+        placeholder="输入任务"
+        mode="普通模式"
+        onModeChange={vi.fn()}
+        selectedSourceIds={[]}
+        onToolSelect={vi.fn()}
+        onSourceRemove={vi.fn()}
+        onFilesSelected={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    const editor = screen.getByTestId("task-composer-editor");
+    const execCommand = vi.fn((_command: string, _showUi?: boolean, value?: string) => {
+      editor.textContent = value ?? "";
+      return true;
+    });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: execCommand,
+    });
+
+    try {
+      fireEvent.paste(editor, {
+        clipboardData: {
+          getData: (type: string) => (type === "text/plain" ? "需要分析库存" : ""),
+          items: [],
+          files: [],
+        },
+      });
+
+      expect(execCommand).toHaveBeenCalledWith("insertText", false, "需要分析库存");
+      expect(onValueChange).toHaveBeenLastCalledWith("需要分析库存");
+    } finally {
+      Object.defineProperty(document, "execCommand", {
+        configurable: true,
+        value: originalExecCommand,
+      });
+    }
+  });
 });

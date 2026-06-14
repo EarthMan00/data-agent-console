@@ -70,6 +70,19 @@ const IMAGE_ATTACHMENT_EXTENSIONS = new Set([
   "webp",
 ]);
 
+const CLIPBOARD_IMAGE_EXTENSION_BY_TYPE: Record<string, string> = {
+  "image/avif": "avif",
+  "image/bmp": "bmp",
+  "image/gif": "gif",
+  "image/heic": "heic",
+  "image/heif": "heif",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/svg+xml": "svg",
+  "image/tiff": "tif",
+  "image/webp": "webp",
+};
+
 const DATA_SOURCE_MENU_NAVIGATION_KEYS = new Set([
   "ArrowDown",
   "ArrowRight",
@@ -364,11 +377,52 @@ function insertPlainTextAtSelection(text: string) {
   selection.addRange(range);
 }
 
-function handleEditorPaste(event: React.ClipboardEvent<HTMLElement>, syncValue: () => string) {
+function insertPlainTextAtSelectionWithUndo(text: string) {
+  if (typeof document.execCommand === "function" && document.execCommand("insertText", false, text)) return;
+  insertPlainTextAtSelection(text);
+}
+
+function normalizeClipboardImageFile(file: File, index: number) {
+  if (file.name.trim()) return file;
+  const extension = CLIPBOARD_IMAGE_EXTENSION_BY_TYPE[file.type] ?? file.type.split("/")[1]?.split("+")[0] ?? "png";
+  return new File([file], `pasted-image-${index + 1}.${extension}`, {
+    type: file.type || "image/png",
+    lastModified: file.lastModified || Date.now(),
+  });
+}
+
+function getClipboardImageFiles(data: DataTransfer) {
+  const addImageFiles = (files: File[]) =>
+    files
+      .filter((file) => isImageAttachment(file, getAttachmentExtension(file.name)))
+      .map(normalizeClipboardImageFile);
+
+  const itemFiles = Array.from(data.items ?? [])
+    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file));
+
+  if (itemFiles.length > 0) return addImageFiles(itemFiles);
+  return addImageFiles(Array.from(data.files ?? []));
+}
+
+function handleEditorPaste(
+  event: React.ClipboardEvent<HTMLElement>,
+  syncValue: () => string,
+  appendImageFiles?: (files: File[]) => void,
+) {
+  const imageFiles = appendImageFiles ? getClipboardImageFiles(event.clipboardData) : [];
+  if (imageFiles.length > 0) {
+    event.preventDefault();
+    appendImageFiles?.(imageFiles);
+    syncValue();
+    return;
+  }
+
   event.preventDefault();
   const plain = event.clipboardData.getData("text/plain");
   if (!plain) return;
-  insertPlainTextAtSelection(plain);
+  insertPlainTextAtSelectionWithUndo(plain);
   syncValue();
 }
 
@@ -850,6 +904,14 @@ export function TaskComposer({
       return current.filter((attachment) => attachment.id !== id);
     });
   }, [setAttachments]);
+
+  const appendAttachmentFiles = useCallback((files: File[]) => {
+    if (files.length === 0) return;
+    setAttachments((current) => [
+      ...current,
+      ...files.map((file, index) => createComposerAttachment(file, current.length + index)),
+    ]);
+  }, []);
 
   useEffect(() => {
     if (!mentionOpen) return;
@@ -1756,7 +1818,7 @@ export function TaskComposer({
                         normalizeSelectionOutsideToolToken(event.currentTarget);
                       }}
                       onPaste={(event) => {
-                        handleEditorPaste(event, syncEditorValue);
+                        handleEditorPaste(event, syncEditorValue, showAttachmentButton ? appendAttachmentFiles : undefined);
                       }}
                       onInput={(event) => {
                         syncEditorInteractionState(event.currentTarget);
@@ -2255,10 +2317,7 @@ export function TaskComposer({
                     onChange={(event) => {
                       if (event.target.files?.length) {
                         const selectedFiles = Array.from(event.target.files);
-                        setAttachments((current) => [
-                          ...current,
-                          ...selectedFiles.map((file, index) => createComposerAttachment(file, current.length + index)),
-                        ]);
+                        appendAttachmentFiles(selectedFiles);
                         onFilesSelected(event.target.files);
                       }
                       event.target.value = "";
