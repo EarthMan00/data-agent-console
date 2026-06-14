@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 
 import { MoreDataHomePage } from "@/components/more-data-home-page";
+import { MoreDataShellStateProvider } from "@/components/more-data-shell";
 
 const replace = vi.fn();
 
@@ -31,9 +32,13 @@ vi.mock("next/link", () => ({
 
 describe("home flow", () => {
   it("keeps prompt cards stable when selecting datasource tokens", async () => {
-    render(<MoreDataHomePage />);
+    render(
+      <MoreDataShellStateProvider>
+        <MoreDataHomePage />
+      </MoreDataShellStateProvider>,
+    );
 
-    const initialCount = screen.getAllByLabelText(/^打开示例任务 /).length;
+    const initialCount = screen.getAllByLabelText(/^使用示例任务 /).length;
     const editor = screen.getByTestId("task-composer-editor");
     editor.textContent = "@";
     fireEvent.input(editor);
@@ -45,13 +50,17 @@ describe("home flow", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("移除数据源 Keepa")).toBeInTheDocument();
     });
-    expect(screen.getAllByLabelText(/^打开示例任务 /)).toHaveLength(initialCount);
+    expect(screen.getAllByLabelText(/^使用示例任务 /)).toHaveLength(initialCount);
   });
 
   it("opens the sample task dialog with replay and use actions", async () => {
-    render(<MoreDataHomePage />);
+    render(
+      <MoreDataShellStateProvider>
+        <MoreDataHomePage />
+      </MoreDataShellStateProvider>,
+    );
 
-    fireEvent.click(screen.getAllByLabelText(/^打开示例任务 /)[0]);
+    fireEvent.click(screen.getAllByLabelText(/^使用示例任务 /)[0]);
 
     await waitFor(() => {
       expect(screen.getByText("提示词(Prompt)")).toBeInTheDocument();

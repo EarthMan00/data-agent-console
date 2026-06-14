@@ -625,12 +625,12 @@ export function MoreDataHomePage() {
                       }
                     }}
                     className={cn(
-                      "active-scale-quiet group relative overflow-visible rounded-card border border-border-subtle bg-bg-surface/75 text-left shadow-surface outline-none transition-all duration-200 hover:z-20 hover:bg-bg-surface hover:shadow-card-hover focus-visible:z-20 focus-visible:bg-bg-surface focus-visible:shadow-card-hover sm:rounded-popover",
+                      "active-scale-quiet group relative h-full overflow-visible rounded-card border border-border-subtle bg-bg-surface/75 text-left shadow-surface outline-none transition-all duration-200 hover:z-20 hover:bg-bg-surface hover:shadow-card-hover focus-visible:z-20 focus-visible:bg-bg-surface focus-visible:shadow-card-hover sm:rounded-popover",
                       appliedPromptId === card.id &&
                         "scale-card-selected border-primary/20 bg-bg-surface shadow-card-active",
                     )}
                   >
-                    <div className="flex min-h-28 flex-col px-4 py-4 sm:min-h-33 sm:px-5 sm:py-4">
+                    <div className="flex h-full min-h-28 flex-col px-4 py-4 sm:min-h-33 sm:px-5 sm:py-4">
                       <div className="flex items-start gap-2.5">
                         <span className="mt-1 inline-flex h-4 w-4 shrink-0 items-center justify-center">
                           <PlatformLogo
