@@ -292,7 +292,7 @@ export function SchedulesWorkspace() {
   const [resultPushFormKey, setResultPushFormKey] = useState(0);
   const fromRestore = useRef(false);
   const editFormHydratedForId = useRef<string | null>(null);
-  /** 进入编辑时从服务器装填的提示词，用于判断「保存」前是否需先试跑 */
+  /** 进入编辑时从服务器装填的提示词，用于判断「保存」前是否需先立即运行 */
   const editPromptBaselineRef = useRef<string | null>(null);
   const resultPushRef = useRef<ResultPushBlock[]>([]);
 
@@ -323,7 +323,7 @@ export function SchedulesWorkspace() {
     return () => window.clearTimeout(timer);
   }, [searchDialogOpen]);
 
-  /** 从试跑「上一步」回配置：带 restore=1 时从 sessionStorage 还原表单。其它进入创建页时若仅保留内存/草稿（例如上次未保存就离开），则恢复为干净默认态。 */
+  /** 带 restore=1 时从 sessionStorage 还原表单。其它进入创建页时若仅保留内存/草稿（例如上次未保存就离开），则恢复为干净默认态。 */
   useEffect(() => {
     if (!createMode) {
       fromRestore.current = false;
@@ -369,7 +369,7 @@ export function SchedulesWorkspace() {
     setTimeHhmm(defaultNearestHalfHourHhmm(HALF_HOUR_TIME_OPTIONS));
   }, [createMode, restoreParam, createGroupIdQ, router, searchParams, applyResultPushBlocks]);
 
-  /** 放弃/重新进入空新建：清空 memory 与 session 草稿。试跑上一步会带 restore=1 且由上方 effect 还原，不调用此项。 */
+  /** 放弃/重新进入空新建：清空 memory 与 session 草稿。restore=1 会由上方 effect 还原，不调用此项。 */
   const resetCreateFormToDefaults = useCallback(() => {
     setTitle("");
     setPrompt("");
@@ -501,7 +501,7 @@ export function SchedulesWorkspace() {
     setFormGroupId(q || null);
   }, [createMode, createGroupIdQ, editId, restoreParam]);
 
-  /** 与 `scheduled_task_schedule.initial_next_run` 对齐的首次执行判定（用于本页提示与试跑前拦截） */
+  /** 与 `scheduled_task_schedule.initial_next_run` 对齐的首次执行判定（用于本页提示与立即运行前拦截） */
   const scheduleBodiesForNext = useMemo(
     () => buildCreatePayloads("·", "·", null, true, scheduleKind, timeHhmm, selectedWeekdays, selectedMonthDays, runOnceDate),
     [scheduleKind, timeHhmm, selectedWeekdays, selectedMonthDays, runOnceDate],
@@ -526,7 +526,8 @@ export function SchedulesWorkspace() {
     setScheduleSourceIds((current) => current.filter((id) => id !== capabilityId));
   }, []);
   const requiredFieldsMissing = !title.trim() || !serializedPrompt.trim();
-  const formSubmitDisabled = busy || requiredFieldsMissing || tryRunSubmitBlocked;
+  const promptTooLong = serializedPrompt.length > SCHEDULE_PROMPT_MAX_LENGTH;
+  const formSubmitDisabled = busy || requiredFieldsMissing || tryRunSubmitBlocked || promptTooLong;
 
   const refreshGroupsAndTasks = useCallback(async () => {
     if (!platformAgent?.auth) return;
@@ -673,6 +674,10 @@ export function SchedulesWorkspace() {
       setNotice("请先补全标题和提示词。");
       return;
     }
+    if (serializedPrompt.length > SCHEDULE_PROMPT_MAX_LENGTH) {
+      setNotice(`提示词不能超过 ${SCHEDULE_PROMPT_MAX_LENGTH} 字。`);
+      return;
+    }
     if (scheduleKind === "每周" && selectedWeekdays.size === 0) {
       setNotice("请选择星期。");
       return;
@@ -696,7 +701,7 @@ export function SchedulesWorkspace() {
       return;
     }
     if (!isPlatformBackendEnabled() || !platformAgent) {
-      setNotice("试跑需启用平台并登录。当前无法连接会话服务。");
+      setNotice("立即运行需启用平台并登录。当前无法连接会话服务。");
       return;
     }
     setBusy(true);
@@ -718,15 +723,15 @@ export function SchedulesWorkspace() {
       });
       const sid = await platformAgent.beginNewHomeTaskSession();
       if (!sid) {
-        setNotice("无法创建试跑会话，请登录后重试。");
+        setNotice("无法创建立即运行会话，请登录后重试。");
         return;
       }
-      /** 首条消息在 agent 试跑页内发送，避免在定时页阻塞 2–3s 后已进入对话的割裂感 */
+      /** 首条消息在 agent 立即运行页内发送，避免在定时页阻塞 2–3s 后已进入对话的割裂感 */
       saveScheduleTrialMeta({ v: 1, sessionId: sid, taskId: null, sendKind: "pending" });
       platformAgent.setActivePlatformSession(sid);
       router.push(`/agent?sessionId=${encodeURIComponent(sid)}&scheduleTrial=1`);
     } catch (e) {
-      setNotice(formatAgentApiErrorForUser(e) || "试跑发起失败。");
+      setNotice(formatAgentApiErrorForUser(e) || "立即运行发起失败。");
     } finally {
       setBusy(false);
     }
@@ -747,12 +752,98 @@ export function SchedulesWorkspace() {
     editId,
   ]);
 
+  const saveNewScheduleOnly = useCallback(async () => {
+    if (editId) return;
+    if (!title.trim() || !serializedPrompt.trim()) {
+      setNotice("请先补全标题和提示词。");
+      return;
+    }
+    if (serializedPrompt.length > SCHEDULE_PROMPT_MAX_LENGTH) {
+      setNotice(`提示词不能超过 ${SCHEDULE_PROMPT_MAX_LENGTH} 字。`);
+      return;
+    }
+    if (scheduleKind === "每周" && selectedWeekdays.size === 0) {
+      setNotice("请选择星期。");
+      return;
+    }
+    if (scheduleKind === "每月" && selectedMonthDays.size === 0) {
+      setNotice("请选择日期。");
+      return;
+    }
+    if (scheduleKind === "单次" && !runOnceDate.trim()) {
+      setNotice("请选择执行日期。");
+      return;
+    }
+    if (taskEnabled && !hasValidNextExecution) {
+      setNotice("无法排程，请检查周期、星期/日期或时间。");
+      return;
+    }
+    const pushErr = validateResultPushBlocks(resultPushRef.current);
+    if (pushErr) {
+      setNotice(pushErr);
+      return;
+    }
+    if (!platformAgent) {
+      setNotice("请登录后保存。");
+      return;
+    }
+    setBusy(true);
+    setNotice("");
+    try {
+      saveScheduleCreateDraft({
+        title: title.trim(),
+        prompt: serializedPrompt,
+        taskEnabled,
+        scheduleKind,
+        timeHhmm,
+        selectedWeekdayValues: Array.from(selectedWeekdays).sort((a, b) => a - b),
+        selectedMonthDayValues: Array.from(selectedMonthDays).sort((a, b) => a - b),
+        runOnceDate,
+        groupId: formGroupId,
+        resultPushBlocks: resultPushRef.current,
+        createGroupIdFromUrl: createGroupIdQ,
+        editingTaskId: null,
+      });
+      const saved = await saveScheduleTasksWithDraft(platformAgent.withFreshToken, { requireEnabledNext: true });
+      await refreshGroupsAndTasks();
+      resetCreateFormToDefaults();
+      router.push("/schedules");
+      setToastMessage(saved.count > 1 ? `已保存 ${saved.count} 个定时任务` : "定时任务已保存");
+      setToastVariant("default");
+    } catch (e) {
+      setNotice(formatAgentApiErrorForUser(e) || "保存失败");
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    editId,
+    title,
+    serializedPrompt,
+    taskEnabled,
+    scheduleKind,
+    timeHhmm,
+    selectedWeekdays,
+    selectedMonthDays,
+    runOnceDate,
+    formGroupId,
+    createGroupIdQ,
+    platformAgent,
+    hasValidNextExecution,
+    refreshGroupsAndTasks,
+    resetCreateFormToDefaults,
+    router,
+  ]);
+
   const saveEditedSchedule = useCallback(async () => {
     if (!editId) {
       return;
     }
     if (!title.trim() || !serializedPrompt.trim()) {
       setNotice("请先补全标题和提示词。");
+      return;
+    }
+    if (serializedPrompt.length > SCHEDULE_PROMPT_MAX_LENGTH) {
+      setNotice(`提示词不能超过 ${SCHEDULE_PROMPT_MAX_LENGTH} 字。`);
       return;
     }
     if (scheduleKind === "每周" && selectedWeekdays.size === 0) {
@@ -938,7 +1029,7 @@ export function SchedulesWorkspace() {
                     <TaskComposer
                       key={editId ?? "create"}
                       value={prompt}
-                      onValueChange={(value) => setPrompt(value.slice(0, SCHEDULE_PROMPT_MAX_LENGTH))}
+                      onValueChange={setPrompt}
                       placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
                       mode={scheduleComposerMode}
                       onModeChange={setScheduleComposerMode}
@@ -952,7 +1043,8 @@ export function SchedulesWorkspace() {
                       submitOnEnter={false}
                       visualStyle="heroMinimal"
                       containerClassName="relative z-30 w-full rounded-control border border-transparent bg-fill-hover shadow-none"
-                      textareaClassName="min-h-composer max-h-composer-compact min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1 pr-2 text-sm font-normal leading-6 text-foreground outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
+                      textareaClassName="min-h-composer max-h-composer-compact min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-1 py-2 pr-2 text-body font-normal leading-6 text-foreground caret-foreground outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
+                      placeholderClassName="left-1 top-2 text-body leading-6 text-text-tertiary"
                       sendButtonClassName={cn(
                         "h-8 w-8 min-w-0 rounded-full border border-transparent p-0 text-primary-foreground shadow-none transition",
                         serializedPrompt ? "bg-primary hover:bg-link-hover" : "bg-fill-active hover:bg-fill-active",
@@ -1193,7 +1285,7 @@ export function SchedulesWorkspace() {
                   >
                     <p className="text-sm font-semibold text-foreground">提示词已修改</p>
                     <p className="mt-2 text-xs leading-relaxed text-text-tertiary">
-                      修改提示词后需要重新试运行才能保存
+                      修改提示词后需要立即运行验证，才能保存
                     </p>
                     <div className="mt-4 flex justify-end gap-2">
                       <Button
@@ -1215,25 +1307,41 @@ export function SchedulesWorkspace() {
                           void startScheduleTrial();
                         }}
                       >
-                        试运行
+                        立即运行
                       </Button>
                     </div>
                   </PopoverContent>
                 </Popover>
               ) : (
-                <Button
-                  type="button"
-                  className="h-9 shrink-0 rounded-control bg-primary px-4 text-sm text-primary-foreground hover:bg-link-hover"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (formSubmitDisabled) return;
-                    void startScheduleTrial();
-                  }}
-                  disabled={formSubmitDisabled}
-                >
-                  试运行
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 shrink-0 rounded-control border-border px-4 text-sm"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (formSubmitDisabled) return;
+                      void saveNewScheduleOnly();
+                    }}
+                    disabled={formSubmitDisabled}
+                  >
+                    仅保存
+                  </Button>
+                  <Button
+                    type="button"
+                    className="h-9 shrink-0 rounded-control bg-primary px-4 text-sm text-primary-foreground hover:bg-link-hover"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (formSubmitDisabled) return;
+                      void startScheduleTrial();
+                    }}
+                    disabled={formSubmitDisabled}
+                  >
+                    立即运行
+                  </Button>
+                </>
               )}
             </div>
           </div>

@@ -27,7 +27,7 @@ export async function saveScheduleTasksWithDraft(
 ): Promise<{ count: number }> {
   const d = loadScheduleCreateDraft();
   if (!d) {
-    throw new Error("无定时任务配置草稿，请从定时任务页重新填写或试跑。");
+    throw new Error("无定时任务配置草稿，请从定时任务页重新填写或立即运行。");
   }
   const err = validateResultPushBlocks(d.resultPushBlocks);
   if (err) {

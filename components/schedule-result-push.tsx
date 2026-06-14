@@ -79,12 +79,12 @@ const emptyDing = (): DingTalkBlock => ({
 const emptyFei = (): FeishuBlock => ({ id: newId(), type: "feishu", webhook: "", signSecret: "" });
 
 type ScheduleResultPushProps = {
-  /** 从「试跑-上一步」等场景还原时的初始块 */
+  /** 从草稿还原时的初始块 */
   defaultBlocks?: ResultPushBlock[] | null;
   /** 弹窗表单内使用：标题与「添加提醒」放在同一行 */
   headerLabel?: string;
   inlineAddTrigger?: boolean;
-  /** 配置变更时回传当前 blocks（试跑草稿等） */
+  /** 配置变更时回传当前 blocks（定时任务草稿等） */
   onConfigSnapshot?: (payload: { blocks: ResultPushBlock[] }) => void;
 };
 

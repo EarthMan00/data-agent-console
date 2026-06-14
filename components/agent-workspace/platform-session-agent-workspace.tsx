@@ -134,7 +134,7 @@ export function PlatformSessionAgentWorkspace({
   fallbackTaskId,
 }: {
   sessionId: string;
-  /** 从定时任务「试跑」进入：隐藏输入框，展示上一步/保存/终止。 */
+  /** 从定时任务立即运行进入：隐藏输入框，展示保存/终止。 */
   scheduleTrial?: boolean;
   /** 从定时任务「运行记录-查看过程」进入：只读回放，样式与正常对话一致，不可追问。 */
   scheduledRunRecord?: boolean;
@@ -469,7 +469,7 @@ export function PlatformSessionAgentWorkspace({
     };
   }, [sessionId, reload]);
 
-  /** 试跑首条在会话页发送：进入页面后再发，避免在定时页等接口导致进页时对话已过半。 */
+  /** 立即运行首条在会话页发送：进入页面后再发，避免在定时页等接口导致进页时对话已过半。 */
   useEffect(() => {
     if (!scheduleTrial || !platformAgent?.auth) return;
     if (!tryClaimScheduleTrialFirstSend(sessionId)) return;
@@ -716,12 +716,11 @@ export function PlatformSessionAgentWorkspace({
   }, [firstUserMessageTitle, setActiveSessionTitle]);
 
   const headerLabel = scheduleTrial
-    ? (loadScheduleCreateDraft()?.title?.trim() || "试跑")
+    ? (loadScheduleCreateDraft()?.title?.trim() || "立即运行")
     : scheduledRunRecord
       ? (runLabel?.trim() || "定时任务记录")
       : firstUserMessageTitle || "历史对话";
-  const scheduleControlsLocked = scheduleTrial && (busy || trialRunInFlight || saveBusy);
-  /** 试跑须执行结束且会话已有内容后，才允许人工确认保存（不会试跑结束自动落库） */
+  /** 立即运行须执行结束且会话已有内容后，才允许人工确认保存（不会运行结束自动落库） */
   const trialSaveReady =
     scheduleTrial &&
     !busy &&
@@ -729,19 +728,8 @@ export function PlatformSessionAgentWorkspace({
     !trialRunInFlight &&
     !saveBusy &&
     messages.length > 0;
-  /** 试跑页：除保存提交中外都允许点「终止」并回到配置，避免 404/轮询异常时无法离开 */
+  /** 立即运行页：除保存提交中外都允许点「终止」，避免 404/轮询异常时无法离开 */
   const terminateEnabled = scheduleTrial && !saveBusy;
-
-  const goBackToSchedule = useCallback(() => {
-    const d = loadScheduleCreateDraft();
-    const gq = d?.createGroupIdFromUrl?.trim()
-      ? `&groupId=${encodeURIComponent(d.createGroupIdFromUrl.trim())}`
-      : "";
-    const editQ = d?.editingTaskId?.trim()
-      ? `&edit=${encodeURIComponent(d.editingTaskId.trim())}`
-      : "";
-    router.push(`/schedules?create=1&restore=1${editQ}${gq}`);
-  }, [router]);
 
   const onSaveSchedules = useCallback(async () => {
     if (!platformAgent) return;
@@ -771,8 +759,8 @@ export function PlatformSessionAgentWorkspace({
     }
     setTrialRunInFlight(false);
     setLastTaskSnapshot(null);
-    goBackToSchedule();
-  }, [platformAgent, trialTaskId, goBackToSchedule]);
+    router.push("/schedules");
+  }, [platformAgent, router, trialTaskId]);
 
   useChatStickToBottom(messagesScrollRef, messagesInnerRef, [busy, error, messages, sending], {
     resetKey: sessionId,
@@ -1424,7 +1412,7 @@ export function PlatformSessionAgentWorkspace({
         <DialogContent className="max-w-md rounded-panel">
           <DialogTitle>保存定时任务？</DialogTitle>
           <DialogDescription className="text-sm leading-relaxed text-text-tertiary">
-            试跑结束后不会自动写入定时任务列表。请确认试跑结果符合预期后再保存。
+            立即运行结束后不会自动写入定时任务列表。请确认运行结果符合预期后再保存。
           </DialogDescription>
           <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button
@@ -1843,21 +1831,11 @@ export function PlatformSessionAgentWorkspace({
             ) : scheduleTrial ? (
               <div className="flex flex-col gap-3">
                 {trialRunInFlight ? (
-                  <p className="text-center text-xs text-text-disabled">试跑进行中，完成后可手动保存（不会自动写入定时任务）</p>
+                  <p className="text-center text-xs text-text-disabled">立即运行中，完成后可手动保存（不会自动写入定时任务）</p>
                 ) : trialSaveReady ? (
-                  <p className="text-center text-xs text-text-tertiary">试跑已结束，请确认结果后点击「保存」</p>
+                  <p className="text-center text-xs text-text-tertiary">立即运行已结束，请确认结果后点击「保存」</p>
                 ) : null}
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-11 w-full min-w-0 rounded-control sm:w-auto"
-                  disabled={scheduleControlsLocked}
-                  onClick={goBackToSchedule}
-                >
-                  上一步
-                </Button>
-                <div className="flex w-full min-w-0 items-center justify-end gap-2 sm:max-w-sm">
+                <div className="flex w-full min-w-0 items-center justify-end gap-2">
                   <Button
                     type="button"
                     variant="ghost"
@@ -1875,7 +1853,6 @@ export function PlatformSessionAgentWorkspace({
                   >
                     保存
                   </Button>
-                </div>
                 </div>
               </div>
             ) : (

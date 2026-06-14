@@ -11,6 +11,7 @@ const scheduledTaskMocks = vi.hoisted(() => ({
   fetchAllUserScheduledTaskGroups: vi.fn(),
   fetchAllUserScheduledTasks: vi.fn(),
   fetchAllScheduledTaskRuns: vi.fn(),
+  createUserScheduledTask: vi.fn(),
 }));
 
 const platformAgentMock = vi.hoisted(() => ({
@@ -84,6 +85,7 @@ describe("schedules flow", () => {
     platformAgentMock.withFreshToken.mockClear();
     platformAgentMock.beginNewHomeTaskSession.mockReset();
     platformAgentMock.setActivePlatformSession.mockReset();
+    scheduledTaskMocks.createUserScheduledTask.mockReset();
     searchParamsValue.current = "workflowId=wf-1";
     scheduledTaskMocks.fetchAllUserScheduledTaskGroups.mockResolvedValue([
       { id: "g1", name: "默认", created_at: "2026-06-01T00:00:00Z", updated_at: "2026-06-01T00:00:00Z" },
@@ -129,7 +131,8 @@ describe("schedules flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "高级设置" }));
     expect(screen.getByText("结果推送")).toBeInTheDocument();
 
-    const submit = screen.getByRole("button", { name: "试运行" });
+    expect(screen.getByRole("button", { name: "仅保存" })).toBeInTheDocument();
+    const submit = screen.getByRole("button", { name: "立即运行" });
     await waitFor(() => expect(submit).not.toBeDisabled());
     fireEvent.click(submit);
 
@@ -138,5 +141,53 @@ describe("schedules flow", () => {
       expect(within(dialog).getByRole("alert")).toHaveTextContent("请填写飞书的 Webhook 地址。");
     });
     expect(screen.getAllByText("请填写飞书的 Webhook 地址。")).toHaveLength(1);
+  });
+
+  it("saves a new schedule without starting an immediate run", async () => {
+    searchParamsValue.current = "create=1";
+    scheduledTaskMocks.createUserScheduledTask.mockResolvedValue({
+      id: "task-new",
+      group_id: null,
+      group_name: "默认",
+      title: "每日任务",
+      prompt_text: "生成报告",
+      enabled: true,
+      recurrence: "daily",
+      time_hhmm: "04:00",
+      weekday: null,
+      day_of_month: null,
+      run_once_date: null,
+      next_run_at: "2026-06-15T04:00:00Z",
+      last_run_at: null,
+      result_push_config: null,
+      created_at: "2026-06-01T00:00:00Z",
+      updated_at: "2026-06-01T00:00:00Z",
+    });
+    render(<SchedulesWorkspace />);
+
+    fireEvent.change(screen.getByPlaceholderText("请输入任务名称"), { target: { value: "每日任务" } });
+    fireEvent.change(screen.getByLabelText("提示词"), { target: { value: "生成报告" } });
+    const saveOnly = screen.getByRole("button", { name: "仅保存" });
+    await waitFor(() => expect(saveOnly).not.toBeDisabled());
+    fireEvent.click(saveOnly);
+
+    await waitFor(() => {
+      expect(scheduledTaskMocks.createUserScheduledTask).toHaveBeenCalledTimes(1);
+    });
+    expect(platformAgentMock.beginNewHomeTaskSession).not.toHaveBeenCalled();
+    expect(push).toHaveBeenCalledWith("/schedules");
+  });
+
+  it("keeps the schedule prompt editable when it exceeds the submit limit", async () => {
+    searchParamsValue.current = "create=1";
+    render(<SchedulesWorkspace />);
+
+    const longPrompt = "a".repeat(8001);
+    fireEvent.change(screen.getByLabelText("提示词"), { target: { value: longPrompt } });
+
+    expect(screen.getByLabelText("提示词")).toHaveValue(longPrompt);
+    expect(screen.getByText(`${longPrompt.length}/8000`)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "仅保存" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "立即运行" })).toBeDisabled();
   });
 });
