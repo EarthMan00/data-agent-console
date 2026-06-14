@@ -94,6 +94,7 @@ export function FavoritesWorkspace() {
   const [renameTarget, setRenameTarget] = useState<UserFavoriteListItemDto | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [moveItem, setMoveItem] = useState<UserFavoriteListItemDto | null>(null);
+  const [unfavoriteConfirmItem, setUnfavoriteConfirmItem] = useState<UserFavoriteListItemDto | null>(null);
   const [removingFavoriteId, setRemovingFavoriteId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -191,6 +192,7 @@ export function FavoritesWorkspace() {
         await deleteUserFavorite(token, id);
       });
       setItems((current) => current.filter((entry) => entry.id !== id));
+      setUnfavoriteConfirmItem((current) => (current?.id === id ? null : current));
       setToastMessage("已取消收藏");
       await reload();
     } catch (e) {
@@ -295,6 +297,7 @@ export function FavoritesWorkspace() {
   };
 
   const chipFolders = useMemo(() => folders.filter((f) => f.name !== "默认"), [folders]);
+  const unfavoriteConfirmBusy = Boolean(unfavoriteConfirmItem && removingFavoriteId === unfavoriteConfirmItem.id);
 
   const iconFor = (kind: string | null | undefined) => {
     const k = (kind ?? "").toLowerCase();
@@ -509,7 +512,7 @@ export function FavoritesWorkspace() {
                           <DropdownMenuItem
                             disabled={removingFavoriteId === item.id}
                             className="text-danger data-[highlighted]:bg-danger-bg data-[highlighted]:text-danger"
-                            onSelect={() => void unfavoriteItem(item)}
+                            onSelect={() => setUnfavoriteConfirmItem(item)}
                           >
                             {removingFavoriteId === item.id ? (
                               <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
@@ -581,6 +584,53 @@ export function FavoritesWorkspace() {
                 </Button>
                 <Button type="button" onClick={() => void submitRename()}>
                   保存
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={Boolean(unfavoriteConfirmItem)}
+            onOpenChange={(open) => {
+              if (unfavoriteConfirmBusy) return;
+              if (!open) setUnfavoriteConfirmItem(null);
+            }}
+          >
+            <DialogContent hideClose className="max-w-sm rounded-panel p-5" aria-describedby={undefined}>
+              <DialogTitle className="sr-only">取消收藏确认</DialogTitle>
+              <p className="text-body leading-6 text-foreground">确定取消收藏该报告吗？</p>
+              {unfavoriteConfirmItem?.title ? (
+                <p className="line-clamp-2 text-sm leading-5 text-text-tertiary">{unfavoriteConfirmItem.title}</p>
+              ) : null}
+              <div className="mt-2 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 rounded-control border-border bg-bg-surface px-4 text-body text-text-tertiary hover:bg-fill-hover"
+                  disabled={unfavoriteConfirmBusy}
+                  onClick={() => setUnfavoriteConfirmItem(null)}
+                >
+                  取消
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="h-9 rounded-control bg-danger px-4 text-body text-primary-foreground hover:bg-danger-hover"
+                  disabled={!unfavoriteConfirmItem || unfavoriteConfirmBusy}
+                  onClick={() => {
+                    if (unfavoriteConfirmItem) void unfavoriteItem(unfavoriteConfirmItem);
+                  }}
+                >
+                  {unfavoriteConfirmBusy ? (
+                    <>
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                      取消中…
+                    </>
+                  ) : (
+                    "确认取消收藏"
+                  )}
                 </Button>
               </div>
             </DialogContent>
