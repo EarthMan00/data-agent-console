@@ -909,7 +909,14 @@ export function SchedulesWorkspace() {
           </DialogDescription>
         </div>
         <div className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto px-6 pb-3">
-            {notice ? <p className="mt-3 text-sm text-text-secondary">{notice}</p> : null}
+            {notice ? (
+              <div
+                className="mt-3 rounded-control bg-danger-bg px-3 py-2 text-sm font-medium leading-5 text-danger"
+                role="alert"
+              >
+                {notice}
+              </div>
+            ) : null}
 
             <div className="mt-4 space-y-4">
                 <Field label="标题" required>
@@ -1474,7 +1481,7 @@ export function SchedulesWorkspace() {
             )}
           </div>
 
-          {notice ? <p className="mt-4 text-sm text-text-secondary">{notice}</p> : null}
+          {!createMode && notice ? <p className="mt-4 text-sm text-text-secondary">{notice}</p> : null}
           {busy && primaryTab === "已定时" && tasks.length === 0 ? <p className="mt-6 text-sm text-text-tertiary">加载中…</p> : null}
           {busy && primaryTab === "运行记录" && runs.length === 0 ? <p className="mt-6 text-sm text-text-tertiary">加载中…</p> : null}
 
