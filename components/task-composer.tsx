@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ArrowUp, ChevronDown, CornerDownLeft, Paperclip, X } from "@/components/ui/tabler-icons";
 
@@ -16,6 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 
 type ComposerMode = "普通模式" | "深度模式";
+type MentionMenuKeyboardEvent = ReactKeyboardEvent<HTMLElement> | globalThis.KeyboardEvent;
 
 type TaskComposerProps = {
   value: string;
@@ -397,6 +398,12 @@ function normalizeEditorContent(container: HTMLElement) {
   });
 }
 
+function removeTemplateGhostNodes(container: HTMLElement) {
+  container.querySelectorAll("[data-template-ghost='true']").forEach((node) => node.remove());
+  delete container.dataset.templateGhostToolId;
+  delete container.dataset.templateGhostRenderKey;
+}
+
 function insertPlainTextAtSelection(text: string) {
   const selection = window.getSelection();
   if (!selection?.rangeCount) return;
@@ -451,6 +458,7 @@ function handleEditorPaste(
   }
 
   event.preventDefault();
+  removeTemplateGhostNodes(event.currentTarget);
   const plain = event.clipboardData.getData("text/plain");
   if (!plain) return;
   insertPlainTextAtSelectionWithUndo(plain);
@@ -650,6 +658,9 @@ export function TaskComposer({
   const toolListRef = useRef<HTMLDivElement | null>(null);
   const mentionOptionPaneRef = useRef<HTMLDivElement | null>(null);
   const highlightedToolIndexRef = useRef(-1);
+  const pendingMentionItemFocusRef = useRef<number | null>(null);
+  const handleMentionMenuKeyDownRef = useRef<(event: MentionMenuKeyboardEvent) => void>(() => {});
+  const selectDataSourceRef = useRef<(capabilityId: string, origin: "button" | "mention") => void>(() => {});
   const mentionRangeRef = useRef<{ start: number; end: number } | null>(null);
   const suppressExternalSyncRef = useRef(false);
   const pendingEditorEndPlacementRef = useRef(false);
@@ -953,11 +964,20 @@ export function TaskComposer({
     if (!mentionOpen) return;
     const container = isMentionSearchMode ? toolListRef.current : mentionOptionPaneRef.current;
     const item = toolItemRefs.current[highlightedToolIndex];
-    if (!container || !item || highlightedToolIndex < 0) return;
+    if (!container || !item || highlightedToolIndex < 0) {
+      pendingMentionItemFocusRef.current = null;
+      return;
+    }
 
-    requestAnimationFrame(() => {
+    const frame = requestAnimationFrame(() => {
       scrollItemIntoPane(item, container);
+      if (pendingMentionItemFocusRef.current === highlightedToolIndex) {
+        preserveMentionFocusRef.current = true;
+        item.focus({ preventScroll: true });
+        pendingMentionItemFocusRef.current = null;
+      }
     });
+    return () => cancelAnimationFrame(frame);
   }, [highlightedToolIndex, isMentionSearchMode, mentionOpen]);
 
   useEffect(() => {
@@ -1047,12 +1067,19 @@ export function TaskComposer({
   const updateHighlightedToolIndex = (nextIndex: number, focusItem = false) => {
     highlightedToolIndexRef.current = nextIndex;
     setHighlightedToolIndex(nextIndex);
-    if (!focusItem || nextIndex < 0) return;
+    if (!focusItem || nextIndex < 0) {
+      pendingMentionItemFocusRef.current = null;
+      return;
+    }
+    pendingMentionItemFocusRef.current = nextIndex;
     preserveMentionFocusRef.current = true;
     toolItemRefs.current[nextIndex]?.focus({ preventScroll: true });
     requestAnimationFrame(() => {
       toolItemRefs.current[nextIndex]?.focus({ preventScroll: true });
     });
+    window.setTimeout(() => {
+      toolItemRefs.current[nextIndex]?.focus({ preventScroll: true });
+    }, 0);
   };
 
   const getSafeSourceButtonIndex = (index: number) => {
@@ -1105,7 +1132,7 @@ export function TaskComposer({
     if (focusTarget === "category") focusSourceButtonCategory(safeGroupIndex);
   };
 
-  const handleMentionMenuKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+  const handleMentionMenuKeyDown = (event: MentionMenuKeyboardEvent) => {
     if (event.key === "Escape") {
       event.preventDefault();
       closeMentionMenu();
@@ -1198,6 +1225,16 @@ export function TaskComposer({
       }
 
       if (!activeOption && eventFromEditor) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 1));
+          return;
+        }
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 1));
+          return;
+        }
         if (event.key === "ArrowRight") {
           event.preventDefault();
           updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 1));
@@ -1205,7 +1242,7 @@ export function TaskComposer({
         }
         if (event.key === "ArrowLeft") {
           event.preventDefault();
-          updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 1));
+          updateMentionGroupHighlight(safeCurrentGroupIndex, "category");
           return;
         }
         if (event.key === "Home") {
@@ -1318,10 +1355,14 @@ export function TaskComposer({
     if (event.key === "Enter" || event.key === " " || event.key === "Tab") {
       event.preventDefault();
       const selectedTool = mentionTools[getSafeMentionIndex(currentIndex)];
-      if (selectedTool) selectDataSource(selectedTool.id, "mention");
+      if (selectedTool) selectDataSourceRef.current(selectedTool.id, "mention");
       return;
     }
   };
+
+  useEffect(() => {
+    handleMentionMenuKeyDownRef.current = handleMentionMenuKeyDown;
+  });
 
   const updateMentionMenuPosition = useCallback((anchorTop: number, compact: boolean) => {
     const textbox = textboxRef.current;
@@ -1645,6 +1686,31 @@ export function TaskComposer({
     }
   };
 
+  useEffect(() => {
+    selectDataSourceRef.current = selectDataSource;
+  });
+
+  useEffect(() => {
+    if (!mentionOpen) return;
+
+    const handleNativeEditorMentionKeyDown = (event: globalThis.KeyboardEvent) => {
+      const editor = editorRef.current;
+      if (!editor || document.activeElement !== editor) return;
+      if (!DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) return;
+
+      handleMentionMenuKeyDownRef.current(event);
+      if (event.defaultPrevented) {
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      }
+    };
+
+    document.addEventListener("keydown", handleNativeEditorMentionKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", handleNativeEditorMentionKeyDown, true);
+    };
+  }, [mentionOpen]);
+
   const acceptTemplateSuggestion = () => {
     if (!templateGhostRender) return false;
     setAcceptedTemplateToolId(templateGhostRender.toolId);
@@ -1674,7 +1740,7 @@ export function TaskComposer({
     });
   };
 
-  const handleSourceButtonMenuKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+  const handleSourceButtonMenuKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
       setSourceButtonOpen(false);
@@ -1870,11 +1936,13 @@ export function TaskComposer({
                       suppressContentEditableWarning
                       onKeyDownCapture={(event) => {
                         if (!mentionOpen || !DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) return;
+                        if (document.activeElement === event.currentTarget) return;
                         handleMentionMenuKeyDown(event);
                         event.stopPropagation();
                       }}
                       onBeforeInput={(event) => {
                         normalizeSelectionOutsideToolToken(event.currentTarget);
+                        removeTemplateGhostNodes(event.currentTarget);
                       }}
                       onPaste={(event) => {
                         handleEditorPaste(event, syncEditorValue, showAttachmentButton ? appendAttachmentFiles : undefined);

@@ -113,7 +113,12 @@ describe("task composer data source menu", () => {
     const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
     expect(editor).toHaveFocus();
 
+    const mentionOptions = within(mentionMenu).getAllByRole("option");
+    expect(mentionOptions.length).toBeGreaterThan(1);
     fireEvent.keyDown(editor, { key: "ArrowDown" });
+    await waitFor(() => expect(mentionOptions[1]!).toHaveAttribute("aria-selected", "true"));
+
+    fireEvent.keyDown(editor, { key: "ArrowLeft" });
     const keepaCategory = within(mentionMenu).getByRole("button", { name: "Keepa" });
     await waitFor(() => expect(keepaCategory).toHaveFocus());
 
@@ -138,6 +143,72 @@ describe("task composer data source menu", () => {
     await waitFor(() => expect(amazonSearch).toHaveFocus());
     fireEvent.keyDown(amazonSearch, { key: "Enter" });
     await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("amazon"));
+    expect(screen.queryByTestId("task-composer-mention-menu")).not.toBeInTheDocument();
+  });
+
+  it("moves to the next bare mention datasource card with ArrowDown from the editor", async () => {
+    render(<ComposerHarness />);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    await userEvent.type(editor, "@");
+
+    const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
+    const options = within(mentionMenu).getAllByRole("option");
+    expect(options.length).toBeGreaterThan(1);
+    const secondOption = options[1]!;
+    fireEvent.keyDown(editor, { key: "ArrowDown" });
+    await waitFor(() => expect(secondOption).toHaveAttribute("aria-selected", "true"));
+  });
+
+  it("wraps to the previous bare mention datasource card with ArrowUp from the editor", async () => {
+    render(<ComposerHarness />);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    await userEvent.type(editor, "@");
+
+    const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
+    const options = within(mentionMenu).getAllByRole("option");
+    expect(options.length).toBeGreaterThan(0);
+    const lastOption = options[options.length - 1]!;
+    fireEvent.keyDown(editor, { key: "ArrowUp" });
+    await waitFor(() => expect(lastOption).toHaveAttribute("aria-selected", "true"));
+  });
+
+  it("supports keyboard navigation after selecting a datasource and reopening mention", async () => {
+    const onToolSelect = vi.fn();
+    render(<ComposerHarness onToolSelect={onToolSelect} />);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    await userEvent.type(editor, "@");
+    await screen.findByTestId("task-composer-mention-menu");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("keepa"));
+    expect(screen.queryByTestId("task-composer-mention-menu")).not.toBeInTheDocument();
+
+    await waitFor(() => expect(editor.querySelector("[data-template-ghost='true']")).toBeInTheDocument());
+    editor.querySelectorAll("[data-template-ghost='true']").forEach((node) => node.remove());
+    editor.appendChild(document.createTextNode("@"));
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    fireEvent.input(editor);
+
+    const reopenedMenu = await screen.findByTestId("task-composer-mention-menu");
+    const reopenedOptions = within(reopenedMenu).getAllByRole("option");
+    expect(reopenedOptions.length).toBeGreaterThan(1);
+
+    await userEvent.keyboard("{ArrowDown}");
+    await waitFor(() => expect(reopenedOptions[1]!).toHaveAttribute("aria-selected", "true"));
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("keepa-product-detail"));
     expect(screen.queryByTestId("task-composer-mention-menu")).not.toBeInTheDocument();
   });
 
