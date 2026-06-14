@@ -60,7 +60,7 @@ function ingestRows(
 
 /** 侧栏：列宽上限 300；表头单行 …；单元格 line-clamp 放在内层，避免 td 设 -webkit-box 破坏表格列布局 */
 const headerClamp =
-  "max-w-panel-sm min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-top";
+  "h-12 max-w-panel-sm min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-middle px-3 pb-3 pt-3";
 const bodyCellSidePanelTd = "max-w-panel-sm min-w-0 align-top p-0";
 const bodyCellSidePanelInner =
   "block min-w-0 max-w-full whitespace-normal break-words px-3 py-2 text-xs leading-snug line-clamp-3";

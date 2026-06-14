@@ -148,7 +148,7 @@ export function SimpleAssistantBubble({
               </div>
             </div>
           )}
-          <div className="mt-1 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <div className="mt-1 text-left text-caption text-text-tertiary">
             {formatTimeForBubble(datetime)}
           </div>
         </div>
@@ -206,40 +206,31 @@ export function AliceMessageBubble({
 
   return (
     <div className="flex w-full justify-start">
-      <div className={cn("group w-full space-y-3", SIMPLE_CHAT_BUBBLE_MAX)}>
-        <div className="flex w-full min-w-0 items-center justify-between gap-3 text-body font-medium text-foreground">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center">
-              <Image
-                src="/mdata-logo.png"
-                alt="Alice"
-                width={36}
-                height={36}
-                className="h-9 w-9 shrink-0 object-contain"
-                draggable={false}
-              />
+      <div className={cn("group flex items-start gap-3", SIMPLE_CHAT_BUBBLE_MAX)}>
+        <Image
+          src="/mdata-logo.png"
+          alt="Alice"
+          width={36}
+          height={36}
+          className="mt-1 h-9 w-9 shrink-0 object-contain"
+          draggable={false}
+        />
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="text-body font-semibold text-foreground">Alice</div>
+          {targetNorm ? (
+            <div className="shrink-0 rounded-panel border border-border bg-bg-surface px-4 py-3 text-foreground shadow-none">
+              <div className="min-w-0 text-body leading-7">
+                <ChatMarkdown>{shown}</ChatMarkdown>
+                {showCursor ? (
+                  <span className="ml-0.5 inline-block animate-pulse text-text-tertiary" aria-hidden>
+                    ▌
+                  </span>
+                ) : null}
+              </div>
             </div>
-            <div className="text-body font-semibold text-foreground">Alice</div>
-          </div>
-          <div className="shrink-0 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-            {formatTimeForBubble(datetime)}
-          </div>
-        </div>
-        {targetNorm ? (
-          <div className="shrink-0 rounded-panel border border-border bg-bg-surface px-4 py-3 text-foreground shadow-none">
-            <div className="min-w-0 text-body leading-7">
-              <ChatMarkdown>{shown}</ChatMarkdown>
-              {showCursor ? (
-                <span className="ml-0.5 inline-block animate-pulse text-text-tertiary" aria-hidden>
-                  ▌
-                </span>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-        {visibleSuggestions.length > 0 ? (
-          <div className="space-y-2.5 pl-0 sm:pl-12">
-            <div className="flex flex-row flex-wrap items-start gap-2" role={interactive ? "list" : undefined}>
+          ) : null}
+          {visibleSuggestions.length > 0 ? (
+            <div className="flex flex-row flex-wrap items-start gap-2">
               {visibleSuggestions.map((item, index) => {
                 const selected = composerDraftContainsSuggestion(composerDraft, item);
                 const chipClass = cn(
@@ -254,7 +245,6 @@ export function AliceMessageBubble({
                     <button
                       key={`${index}-${item.slice(0, 24)}`}
                       type="button"
-                      role="listitem"
                       aria-pressed={selected}
                       className={cn(chipClass, "active-scale-chip")}
                       onClick={() => onSuggestionToggle(item)}
@@ -264,14 +254,17 @@ export function AliceMessageBubble({
                   );
                 }
                 return (
-                  <div key={`${index}-${item.slice(0, 24)}`} role="listitem" className={chipClass}>
+                  <div key={`${index}-${item.slice(0, 24)}`} className={chipClass}>
                     <span className="whitespace-pre-wrap break-words">{item}</span>
                   </div>
                 );
               })}
             </div>
+          ) : null}
+          <div className="mt-1 text-left text-caption text-text-tertiary">
+            {formatTimeForBubble(datetime)}
           </div>
-        ) : null}
+        </div>
       </div>
     </div>
   );
@@ -342,18 +335,11 @@ export function ConversationBubble({
               </p>
             ))}
           </div>
-          {role === "user" ? (
-            <div className="mt-3 text-right text-caption text-text-disabled">
-              {datetime}
-            </div>
-          ) : null}
         </div>
-        {role === "assistant" ? (
-          <div className="mb-2 mt-2 flex items-center gap-2 text-caption justify-start text-text-tertiary">
-            <span className="font-medium text-foreground">{title}</span>
-            <span>{datetime}</span>
-          </div>
-        ) : null}
+        <div className={cn("mt-2 text-caption text-text-tertiary", role === "user" ? "text-right" : "text-left")}>
+          {role === "assistant" ? <span className="mr-2 font-medium text-foreground">{title}</span> : null}
+          <span>{datetime}</span>
+        </div>
       </div>
     </div>
   );
@@ -461,73 +447,67 @@ export function AliceErrorBubble({
 
   return (
     <div className="flex w-full justify-start">
-      <div className={cn("group w-full space-y-3", SIMPLE_CHAT_BUBBLE_MAX)}>
-        {/* Alice 身份头 */}
-        <div className="flex w-full min-w-0 items-center justify-between gap-3 text-body font-medium text-foreground">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center">
-              <Image
-                src="/mdata-logo.png"
-                alt="Alice"
-                width={36}
-                height={36}
-                className="h-9 w-9 shrink-0 object-contain"
-                draggable={false}
-              />
+      <div className={cn("group flex items-start gap-3", SIMPLE_CHAT_BUBBLE_MAX)}>
+        <Image
+          src="/mdata-logo.png"
+          alt="Alice"
+          width={36}
+          height={36}
+          className="mt-1 h-9 w-9 shrink-0 object-contain"
+          draggable={false}
+        />
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="text-body font-semibold text-foreground">Alice</div>
+
+          {/* 错误原因 */}
+          {displayCause ? (
+            <div className="shrink-0 rounded-panel border border-danger-border bg-danger-bg px-4 py-3">
+              <div className="whitespace-pre-wrap text-body leading-7 text-danger">
+                {displayCause}
+              </div>
             </div>
-            <div className="text-body font-semibold text-foreground">Alice</div>
-          </div>
-          <div className="shrink-0 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          ) : null}
+
+          {/* 补救措施（可点击气泡） */}
+          {uniqueSuggestions.length > 0 ? (
+            <div className="space-y-2.5">
+              <p className="text-caption font-medium text-text-tertiary">可尝试以下操作：</p>
+              <div className="flex flex-row flex-wrap items-start gap-2">
+                {uniqueSuggestions.map((item, index) => {
+                  const selected = composerDraftContainsSuggestion(composerDraft, item);
+                  const chipClass = cn(
+                    "inline-flex max-w-full rounded-pill border px-3.5 py-2 text-left text-body leading-5 transition",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/15",
+                    selected
+                      ? "border-primary bg-primary text-primary-foreground shadow-surface-strong"
+                      : "border-border bg-bg-surface text-foreground shadow-surface hover:border-border-strong hover:bg-bg-page",
+                  );
+                  if (interactive) {
+                    return (
+                      <button
+                        key={`err-sug-${index}-${item.slice(0, 24)}`}
+                        type="button"
+                        aria-pressed={selected}
+                        className={cn(chipClass, "active-scale-chip")}
+                        onClick={() => onSuggestionToggle(item)}
+                      >
+                        <span className="whitespace-pre-wrap break-words">{item}</span>
+                      </button>
+                    );
+                  }
+                  return (
+                    <div key={`err-sug-${index}-${item.slice(0, 24)}`} className={chipClass}>
+                      <span className="whitespace-pre-wrap break-words">{item}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+          <div className="mt-1 text-left text-caption text-text-tertiary">
             {formatTimeForBubble(datetime)}
           </div>
         </div>
-
-        {/* 错误原因 */}
-        {displayCause ? (
-          <div className="shrink-0 rounded-panel border border-danger-border bg-danger-bg px-4 py-3">
-            <div className="whitespace-pre-wrap text-body leading-7 text-danger">
-              {displayCause}
-            </div>
-          </div>
-        ) : null}
-
-        {/* 补救措施（可点击气泡） */}
-        {uniqueSuggestions.length > 0 ? (
-          <div className="space-y-2.5 pl-0 sm:pl-12">
-            <p className="text-caption font-medium text-text-tertiary">可尝试以下操作：</p>
-            <div className="flex flex-row flex-wrap items-start gap-2" role={interactive ? "list" : undefined}>
-              {uniqueSuggestions.map((item, index) => {
-                const selected = composerDraftContainsSuggestion(composerDraft, item);
-                const chipClass = cn(
-                  "inline-flex max-w-full rounded-pill border px-3.5 py-2 text-left text-body leading-5 transition",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/15",
-                  selected
-                    ? "border-primary bg-primary text-primary-foreground shadow-surface-strong"
-                    : "border-border bg-bg-surface text-foreground shadow-surface hover:border-border-strong hover:bg-bg-page",
-                );
-                if (interactive) {
-                  return (
-                    <button
-                      key={`err-sug-${index}-${item.slice(0, 24)}`}
-                      type="button"
-                      role="listitem"
-                      aria-pressed={selected}
-                      className={cn(chipClass, "active-scale-chip")}
-                      onClick={() => onSuggestionToggle(item)}
-                    >
-                      <span className="whitespace-pre-wrap break-words">{item}</span>
-                    </button>
-                  );
-                }
-                return (
-                  <div key={`err-sug-${index}-${item.slice(0, 24)}`} role="listitem" className={chipClass}>
-                    <span className="whitespace-pre-wrap break-words">{item}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );

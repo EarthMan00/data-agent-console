@@ -42,4 +42,16 @@ describe("linkfox-clarification", () => {
     expect(leading).toContain("请确认关键词");
     expect(suggestions).toEqual(["insulated tumbler", "vacuum flask"]);
   });
+
+  it("splits inline numbered clarification options", () => {
+    const raw =
+      "执行前需要确认一个筛选条件：是否只保留 FBA 且评分高于 4.3 的商品？ 1. 只保留 FBA 且评分高于 4.3 2. 保留全部配送方式，先按销量排序 3. 额外加入价格区间分组";
+    const { leading, suggestions } = splitClarificationForDisplay(raw);
+    expect(leading).toBe("执行前需要确认一个筛选条件：是否只保留 FBA 且评分高于 4.3 的商品？");
+    expect(suggestions).toEqual([
+      "只保留 FBA 且评分高于 4.3",
+      "保留全部配送方式，先按销量排序",
+      "额外加入价格区间分组",
+    ]);
+  });
 });

@@ -38,27 +38,17 @@ export function PostTaskGuidanceBubble({
 
   return (
     <div className={cn("flex w-full justify-start text-left", WRAP, className)}>
-      <div className="w-full space-y-3">
-        <div className="flex w-full min-w-0 items-center justify-between gap-3 text-body font-medium text-foreground">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center">
-              <Image
-                src="/mdata-logo.png"
-                alt="Alice"
-                width={36}
-                height={36}
-                className="h-9 w-9 shrink-0 object-contain"
-                draggable={false}
-              />
-            </div>
-            <div>
-              <div className="text-body font-semibold text-foreground">Alice</div>
-            </div>
-          </div>
-          <div className="shrink-0 text-caption text-text-tertiary">{formatTime(datetime)}</div>
-        </div>
-
-        <div className="space-y-1 pl-0">
+      <div className="flex w-full items-start gap-3">
+        <Image
+          src="/mdata-logo.png"
+          alt="Alice"
+          width={36}
+          height={36}
+          className="mt-1 h-9 w-9 shrink-0 object-contain"
+          draggable={false}
+        />
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="text-body font-semibold text-foreground">Alice</div>
           <p className="text-body leading-5 text-text-secondary">接下来您可以试试：</p>
           <div
             className="flex flex-row flex-wrap items-start gap-1"
@@ -98,6 +88,7 @@ export function PostTaskGuidanceBubble({
               );
             })}
           </div>
+          <div className="mt-1 text-left text-caption text-text-tertiary">{formatTime(datetime)}</div>
         </div>
       </div>
     </div>

@@ -12,7 +12,7 @@ import { parseJsonToTableData } from "@/lib/json-to-table";
 import { shouldRenderTableCellAsImage } from "@/lib/table-image-url-cell";
 
 const jsonHeaderClamp =
-  "max-w-panel-sm min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-top";
+  "h-12 max-w-panel-sm min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-middle px-3 pb-3 pt-3";
 const jsonBodyCellTd = "max-w-panel-sm min-w-0 align-top p-0";
 const jsonBodyCellInner =
   "block min-w-0 max-w-full whitespace-normal break-words px-3 py-2 text-xs leading-snug line-clamp-3";

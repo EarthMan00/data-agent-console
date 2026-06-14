@@ -73,7 +73,10 @@ export function splitClarificationForDisplay(content: string): {
   leading: string;
   suggestions: string[];
 } {
-  const text = sanitizeClarificationForUserDisplay(content);
+  const text = sanitizeClarificationForUserDisplay(content).replace(
+    /([^\n])\s+(\d+[.、)\]]\s+)/g,
+    "$1\n$2",
+  );
   if (!text) return { leading: "", suggestions: [] };
 
   const lines = text

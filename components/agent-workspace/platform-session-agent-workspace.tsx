@@ -1591,6 +1591,7 @@ export function PlatformSessionAgentWorkspace({
                                   ?.created_at ?? m.created_at
                               }
                               composerDraft={m.content}
+                              onSuggestionToggle={scheduledRunRecord ? undefined : toggleGuidanceSuggestion}
                             />
                           ) : null}
                           <SimpleUserBubble
@@ -1779,6 +1780,7 @@ export function PlatformSessionAgentWorkspace({
                       {taskId && meta?.has_artifacts === true ? (
                         <TaskResultSummaryCard
                           title="任务结果"
+                          className="ml-12 w-[calc(100%-3rem)]"
                           summary={
                             meta?.task_status === "FAILED" && typeof meta?.error_message === "string"
                               ? `任务执行失败：${humanizeTaskErrorMessage(meta!.error_message as string)}`

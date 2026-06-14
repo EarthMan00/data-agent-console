@@ -138,6 +138,7 @@ export function getFrontendMockSessionMessages(): SessionMessageItem[] {
             name: "reference-image.png",
             size: 284912,
             extension: "png",
+            previewUrl: "/mdata-logo.png",
           },
         ],
       },

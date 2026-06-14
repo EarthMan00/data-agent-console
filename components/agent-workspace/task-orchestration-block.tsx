@@ -46,7 +46,7 @@ export function TaskOrchestrationBlock({
 }: TaskOrchestrationBlockProps) {
   return (
     <div className={cn("w-full space-y-3.5", ORCHESTRATION_BLOCK_MAX)}>
-      <div className="flex w-full min-w-0 items-center justify-between gap-3 text-body font-medium text-foreground">
+      <div className="flex w-full min-w-0 items-center gap-3 text-body font-medium text-foreground">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center">
             <Image
@@ -62,24 +62,26 @@ export function TaskOrchestrationBlock({
             <div className="text-body font-semibold text-foreground">Alice</div>
           </div>
         </div>
-        {datetime ? <div className="shrink-0 text-caption text-text-tertiary">{datetime}</div> : null}
       </div>
 
-      {beforeSplit}
+      <div className="ml-12 w-[calc(100%-3rem)] space-y-3.5">
+        {beforeSplit}
 
-      {showExecutionPanel ? (
-        <TaskExecutionPanel
-          expanded={executionExpanded}
-          onExpandedChange={onExecutionExpandedChange}
-          collapsible={executionCollapsible}
-          contentClassName={executionContentClassName}
-          testId={executionTestId}
-          titleTag={executionTitleTag}
-        >
-          {children}
-        </TaskExecutionPanel>
-      ) : null}
-      {afterExecution}
+        {showExecutionPanel ? (
+          <TaskExecutionPanel
+            expanded={executionExpanded}
+            onExpandedChange={onExecutionExpandedChange}
+            collapsible={executionCollapsible}
+            contentClassName={executionContentClassName}
+            testId={executionTestId}
+            titleTag={executionTitleTag}
+          >
+            {children}
+          </TaskExecutionPanel>
+        ) : null}
+        {afterExecution}
+        {datetime ? <div className="mt-1 text-left text-caption text-text-tertiary">{datetime}</div> : null}
+      </div>
     </div>
   );
 }

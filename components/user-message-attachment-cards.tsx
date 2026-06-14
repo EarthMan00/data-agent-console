@@ -1,10 +1,13 @@
 "use client";
 
-import { FileSpreadsheet, FileText } from "@/components/ui/tabler-icons";
+import { useEffect, useState } from "react";
+
+import { FileSpreadsheet, FileText, ImageIcon } from "@/components/ui/tabler-icons";
 
 import {
   attachmentIconTone,
   formatUserAttachmentSize,
+  isImageAttachmentExtension,
   type UserMessageAttachment,
 } from "@/lib/user-message-attachments";
 import { cn } from "@/lib/utils";
@@ -32,6 +35,52 @@ function AttachmentIcon({ extension }: { extension?: string }) {
   );
 }
 
+function ImageAttachmentIcon({ extension }: { extension?: string }) {
+  const label = (extension || "FILE").toUpperCase().slice(0, 4);
+  return (
+    <span
+      aria-label={`图片文件 ${label}`}
+      className="size-attachment-thumb flex shrink-0 items-center justify-center rounded-control bg-info-bg text-link"
+    >
+      <ImageIcon className="h-5 w-5" aria-hidden />
+    </span>
+  );
+}
+
+function ImageAttachmentPreview({
+  attachment,
+}: {
+  attachment: UserMessageAttachment;
+}) {
+  const [failedPreviewUrl, setFailedPreviewUrl] = useState<string | null>(null);
+  const previewUrl = attachment.previewUrl;
+  const canPreview = Boolean(previewUrl && failedPreviewUrl !== previewUrl);
+
+  useEffect(() => {
+    if (!previewUrl || typeof window === "undefined") return;
+
+    let cancelled = false;
+    const probe = new window.Image();
+    probe.onerror = () => {
+      if (!cancelled) setFailedPreviewUrl(previewUrl);
+    };
+    probe.src = previewUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [previewUrl]);
+
+  if (!previewUrl || !canPreview) return <ImageAttachmentIcon extension={attachment.extension} />;
+
+  return (
+    <span
+      aria-label={`图片预览 ${attachment.name}`}
+      className="size-attachment-thumb flex shrink-0 overflow-hidden rounded-control border border-border-subtle bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: `url(${previewUrl})` }}
+    />
+  );
+}
+
 export function UserMessageAttachmentCards({ attachments, className }: UserMessageAttachmentCardsProps) {
   if (attachments.length === 0) return null;
 
@@ -40,12 +89,17 @@ export function UserMessageAttachmentCards({ attachments, className }: UserMessa
       {attachments.map((attachment) => {
         const typeLabel = attachment.extension ? attachment.extension.toUpperCase() : "FILE";
         const sizeLabel = formatUserAttachmentSize(attachment.size);
+        const isImageAttachment = isImageAttachmentExtension(attachment.extension);
         return (
           <div
             key={`${attachment.name}-${attachment.size}`}
             className="flex min-w-sidebar-admin max-w-72 items-center gap-3 rounded-card border border-border bg-bg-surface px-3 py-2.5 shadow-surface"
           >
-            <AttachmentIcon extension={attachment.extension} />
+            {isImageAttachment ? (
+              <ImageAttachmentPreview attachment={attachment} />
+            ) : (
+              <AttachmentIcon extension={attachment.extension} />
+            )}
             <span className="min-w-0">
               <span className="block truncate text-body font-medium leading-5 text-foreground">
                 {attachment.name}

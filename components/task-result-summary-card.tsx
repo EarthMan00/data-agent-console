@@ -11,6 +11,7 @@ type TaskResultSummaryCardProps = {
   hasResult?: boolean;
   expanded: boolean;
   onToggle: () => void;
+  className?: string;
 };
 
 function formatResultTime(iso?: string) {
@@ -27,11 +28,12 @@ export function TaskResultSummaryCard({
   hasResult = true,
   expanded,
   onToggle,
+  className,
 }: TaskResultSummaryCardProps) {
   const displayTime = formatResultTime(completedAt);
 
   return (
-    <div className="space-y-3" data-testid="agent-result-section">
+    <div className={cn("space-y-3", className)} data-testid="agent-result-section">
       <div className="rounded-popover border border-border bg-bg-surface px-4 py-4 shadow-surface">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="flex min-w-0 items-center gap-4">

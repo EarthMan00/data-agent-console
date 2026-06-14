@@ -18,7 +18,7 @@ function ChatexcelTable({ columns, rows }: { columns: string[]; rows: string[][]
                 {columns.map((c, i) => (
                   <TableHead
                     key={`cx-${i}`}
-                    className="max-w-72 min-w-0 !whitespace-nowrap !break-normal text-left text-caption font-semibold text-success"
+                    className="h-12 max-w-72 min-w-0 !whitespace-nowrap !break-normal align-middle px-3 pb-3 pt-3 text-left text-caption font-semibold text-success"
                     title={c}
                   >
                     {c || `列 ${i + 1}`}

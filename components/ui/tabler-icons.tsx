@@ -38,6 +38,7 @@ export {
   IconHome as Home,
   IconInfoCircle as InfoCircle,
   IconLayersIntersect as Layers,
+  IconPhoto as ImageIcon,
   IconLayoutDashboard as Layout,
   IconLayoutGrid as LayoutGrid,
   IconList as List,
