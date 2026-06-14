@@ -2,6 +2,11 @@
   "name": "data-agent-console",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@10.8.2",
+  "engines": {
+    "node": ">=20.9.0",
+    "npm": ">=10"
+  },
   "scripts": {
     "dev": "next dev",
     "dev:webpack": "next dev --webpack",
