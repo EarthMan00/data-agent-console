@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatedArrowUpIcon } from "@/components/ui/animated-arrow-up-icon";
@@ -12,7 +12,10 @@ import {
 import type { HomePromptCard } from "@/lib/workspace-domain-types";
 import {
   getHomeCapabilityItem,
+  homeCapabilityGroups,
   homeDataSourceItems,
+  type HomeCapabilityGroup,
+  type HomeCapabilityItem,
 } from "@/lib/home-capability-items";
 import { AgentWorkspace } from "@/components/agent-workspace";
 import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
@@ -88,6 +91,87 @@ function loadHomePromptCardsOnce(cacheKey: string, categoryId: string, capabilit
   return promise;
 }
 
+function capabilityLabelFromId(capabilityId: string) {
+  return capabilityId.trim().replace(/^@+/, "");
+}
+
+function staticCapabilityMeta(categoryName: string, capabilityLabel: string) {
+  const staticItem = homeDataSourceItems.find(
+    (item) => item.id === capabilityLabel || item.label === capabilityLabel,
+  );
+  const staticGroup = homeCapabilityGroups.find((group) => group.label === categoryName);
+  return {
+    icon: staticItem?.icon ?? staticGroup?.icon ?? "grid",
+    accent: staticItem?.accent ?? staticGroup?.accent ?? "var(--color-accent-neutral)",
+  };
+}
+
+function buildDataSourceGroupsFromPromptCards(
+  categories: PublicPromptCategory[],
+  cardsByCategoryId: Record<string, HomePromptCard[]>,
+): HomeCapabilityGroup[] {
+  const groupsByCategoryId = new Map<string, HomeCapabilityGroup>();
+  const itemsByCapabilityId = new Map<string, HomeCapabilityItem>();
+  const promptsByCapabilityId = new Map<string, Set<string>>();
+
+  categories.filter((category) => category.name !== "应用场景").forEach((category) => {
+    const cards = cardsByCategoryId[category.id] ?? [];
+
+    for (const card of cards) {
+      const prompt = card.prompt.trim();
+      for (const rawId of card.capabilityIds) {
+        const capabilityId = rawId.trim();
+        const label = capabilityLabelFromId(capabilityId);
+        if (!capabilityId || !label) continue;
+
+        let item = itemsByCapabilityId.get(capabilityId);
+        if (!item) {
+          const meta = staticCapabilityMeta(category.name, label);
+          const groupMeta = staticCapabilityMeta(category.name, "");
+          let group = groupsByCategoryId.get(category.id);
+          if (!group) {
+            group = {
+              id: category.id,
+              label: category.name,
+              accent: groupMeta.accent,
+              icon: groupMeta.icon,
+              items: [],
+            };
+            groupsByCategoryId.set(category.id, group);
+          }
+
+          item = {
+            id: capabilityId,
+            label,
+            promptHint: category.name,
+            parentId: category.id,
+            parentLabel: category.name,
+            accent: meta.accent,
+            icon: meta.icon,
+            promptTemplates: [],
+          };
+          itemsByCapabilityId.set(capabilityId, item);
+          group.items.push(item);
+        }
+
+        if (prompt) {
+          const existingPrompts = promptsByCapabilityId.get(capabilityId) ?? new Set<string>();
+          if (!existingPrompts.has(prompt)) {
+            existingPrompts.add(prompt);
+            promptsByCapabilityId.set(capabilityId, existingPrompts);
+            item.promptTemplates = [...(item.promptTemplates ?? []), prompt];
+            item.promptTemplate ??= prompt;
+          }
+        }
+      }
+    }
+  });
+
+  return categories
+    .map((category) => groupsByCategoryId.get(category.id))
+    .filter((group): group is HomeCapabilityGroup => Boolean(group && group.items.length > 0));
+}
+
 function savePendingHomeTaskAfterLogin(task: Omit<PendingHomeTask, "createdAt">) {
   try {
     sessionStorage.setItem(
@@ -123,12 +207,22 @@ export function MoreDataHomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
-  const { refreshHistoryNow, setActiveSessionTitle } = useMoreDataShellState();
+  const {
+    refreshHistoryNow,
+    setActiveSessionTitle,
+    upsertOptimisticHistorySession,
+  } = useMoreDataShellState();
   const [query, setQuery] = useState("");
   const [activeCapabilityId, setActiveCapabilityId] = useState("scenarios");
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [promptCategories, setPromptCategories] = useState<PublicPromptCategory[]>([]);
-  const userCachePrefix = platformAgent?.auth?.userId ?? (platformAgent?.authHydrated ? HOME_PROMPT_ANONYMOUS_CACHE_KEY : null);
+  const [canPersonalizeGreeting, setCanPersonalizeGreeting] = useState(false);
+  const hydratedAuth = canPersonalizeGreeting && platformAgent?.authHydrated ? platformAgent.auth : null;
+  const userCachePrefix = hydratedAuth?.userId ?? (platformAgent?.authHydrated ? HOME_PROMPT_ANONYMOUS_CACHE_KEY : null);
+  const greetingName = hydratedAuth
+    ? (hydratedAuth.displayName || hydratedAuth.userId || "Boss 👋").trim()
+    : "Boss 👋";
+  const greetingTitle = `你好，${greetingName}`;
   const homePromptCacheKey = userCachePrefix && activeCategoryId ? `${userCachePrefix}:cat:${activeCategoryId}` : null;
   const cachedPromptCards = homePromptCacheKey ? getCachedHomePromptCards(homePromptCacheKey) : null;
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
@@ -140,6 +234,11 @@ export function MoreDataHomePage() {
   const [composerPulse, setComposerPulse] = useState(false);
   const [remotePromptCards, setRemotePromptCards] = useState<HomePromptCard[]>(() => cachedPromptCards ?? []);
   const [promptCardsLoading, setPromptCardsLoading] = useState(() => !cachedPromptCards);
+  const [dynamicDataSourceGroups, setDynamicDataSourceGroups] = useState<HomeCapabilityGroup[]>([]);
+
+  useEffect(() => {
+    setCanPersonalizeGreeting(true);
+  }, []);
   const activeRunId = searchParams.get("runId");
 
   useEffect(() => {
@@ -203,7 +302,35 @@ export function MoreDataHomePage() {
     };
   }, [userCachePrefix, activeCategoryId]);
 
+  useEffect(() => {
+    if (promptCategories.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      promptCategories.map(async (category) => {
+        const cards = await loadHomePromptCardsOnce(`source-menu:cat:${category.id}`, category.id);
+        return [category.id, cards] as const;
+      }),
+    )
+      .then((entries) => {
+        if (cancelled) return;
+        const cardsByCategoryId = Object.fromEntries(entries);
+        setDynamicDataSourceGroups(buildDataSourceGroupsFromPromptCards(promptCategories, cardsByCategoryId));
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) console.warn("[source-menu-capabilities]", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [promptCategories]);
+
   const cards = remotePromptCards;
+  const dynamicDataSourceItems = useMemo(
+    () => dynamicDataSourceGroups.flatMap((group) => group.items),
+    [dynamicDataSourceGroups],
+  );
+  const composerDataSourceGroups = dynamicDataSourceGroups.length > 0 ? dynamicDataSourceGroups : homeCapabilityGroups;
+  const composerDataSourceItems = dynamicDataSourceItems.length > 0 ? dynamicDataSourceItems : homeDataSourceItems;
   const composerCanSubmit = sanitizeObjective(query).length > 0 && !launching;
 
   const launchAgent = useCallback(async (seed?: string, pending?: PendingHomeTask) => {
@@ -245,6 +372,8 @@ export function MoreDataHomePage() {
       try {
         const sid = await platformAgent.beginNewHomeTaskSession();
         if (!sid) return;
+        upsertOptimisticHistorySession(sid);
+        platformAgent.setActivePlatformSession(sid);
         setActiveSessionTitle(nextQuery);
         void refreshHistoryNow();
         const runId = workspaceActions.startPlatformTask({
@@ -279,7 +408,18 @@ export function MoreDataHomePage() {
     } finally {
       setLaunching(false);
     }
-  }, [activeCapabilityId, composerMode, pendingHomeFiles, platformAgent, query, router, selectedSourceIds]);
+  }, [
+    activeCapabilityId,
+    composerMode,
+    pendingHomeFiles,
+    platformAgent,
+    query,
+    refreshHistoryNow,
+    router,
+    selectedSourceIds,
+    setActiveSessionTitle,
+    upsertOptimisticHistorySession,
+  ]);
 
   useEffect(() => {
     if (!platformAgent?.auth || launching || activeRunId) return;
@@ -293,7 +433,7 @@ export function MoreDataHomePage() {
   }, [activeRunId, launching, launchAgent, platformAgent?.auth]);
 
   const applyComposerTool = (capabilityId: string) => {
-    const item = getHomeCapabilityItem(capabilityId);
+    const item = composerDataSourceItems.find((source) => source.id === capabilityId);
     if (!item || item.id === "scenarios") return;
     setSelectedSourceIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
     setNotice(`已选择数据源「${item.label}」，可以继续补充要求后直接发送。`);
@@ -327,7 +467,7 @@ export function MoreDataHomePage() {
   };
 
   const applyPromptCard = (card: HomePromptCard) => {
-    const prefill = parseDatasourceMentions(card.prompt);
+    const prefill = parseDatasourceMentions(card.prompt, composerDataSourceItems);
     const selectedIds = Array.from(new Set([...card.capabilityIds, ...prefill.selectedSourceIds]));
     setQuery(prefill.text);
     setSelectedSourceIds(selectedIds);
@@ -356,23 +496,23 @@ export function MoreDataHomePage() {
 
   return (
     <MoreDataShell currentPath="/" showTopHeader={false} mainClassName="bg-transparent">
-      <div className="flex min-h-screen flex-col bg-[#f7f7f7] pb-10 sm:pb-14">
-        <section className="mx-auto w-full max-w-[1040px] px-4 pt-[180px] sm:px-6 lg:px-8">
+      <div className="flex min-h-screen flex-col bg-background pb-10 sm:pb-14">
+        <section className="mx-auto w-full max-w-page-content px-4 pt-44 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 sm:gap-5">
             <Image
               src="/mdata-logo.png"
               alt="Alice"
               width={76}
               height={76}
-              className="h-12 w-12 shrink-0 object-contain sm:h-[76px] sm:w-[76px]"
+              className="h-12 w-12 shrink-0 object-contain sm:h-20 sm:w-20"
               draggable={false}
               priority
             />
-            <div className="min-w-0">
-              <h1 className="text-[32px] font-semibold leading-10 text-[#111111] sm:text-[38px] sm:leading-[46px]">
-                Alice
+            <div className="flex min-w-0 flex-col gap-2">
+              <h1 className="mdata-home-title m-0 truncate font-semibold text-foreground">
+                {greetingTitle}
               </h1>
-              <div className="mt-0.5 text-[14px] font-normal leading-6 text-[#34322d] sm:mt-1 sm:text-[18px] sm:leading-7">
+              <div className="text-title-2 font-normal text-text-secondary">
                 💬 你的跨境运营助理，24h随时在线
               </div>
             </div>
@@ -388,6 +528,8 @@ export function MoreDataHomePage() {
                   mode={composerMode}
                   onModeChange={setComposerMode}
                   selectedSourceIds={selectedSourceIds}
+                  dataSourceGroups={composerDataSourceGroups}
+                  dataSourceItems={composerDataSourceItems}
                   onToolSelect={applyComposerTool}
                   onSourceRemove={removeComposerTool}
                   onFilesSelected={handleFilesSelected}
@@ -399,13 +541,14 @@ export function MoreDataHomePage() {
                   }}
                   visualStyle="heroMinimal"
                   containerClassName={cn(
-                    "relative z-30 w-full rounded-[20px] border border-[#e2e2df] bg-white shadow-[0_18px_44px_rgba(17,17,17,0.05)] transition-[border-color,box-shadow,transform] duration-300 sm:rounded-[24px]",
-                    composerPulse && "border-[#111111]/25 shadow-[0_20px_52px_rgba(17,17,17,0.1)]",
+                    "relative z-30 w-full rounded-composer border border-border bg-bg-surface shadow-popover transition-all duration-300 sm:rounded-hero",
+                    composerPulse && "border-primary/25 shadow-popover-strong",
                   )}
-                  textareaClassName="min-h-[112px] max-h-[10em] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-[14px] font-normal leading-8 text-[#34322d] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 sm:min-h-[136px]"
+                  textareaClassName="min-h-28 max-h-composer-home min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-body font-normal leading-6 text-foreground outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 sm:min-h-34"
+                  placeholderClassName="top-1.5 text-body leading-6 text-text-tertiary"
                   sendButtonClassName={cn(
-                    "h-10 w-10 min-w-0 rounded-full border border-transparent p-0 text-white shadow-none transition",
-                    composerCanSubmit ? "bg-[#111111] hover:bg-[#2a2a2a]" : "bg-[#dededc] hover:bg-[#d1d1cf]",
+                    "h-10 w-10 min-w-0 rounded-full border border-transparent p-0 text-primary-foreground shadow-none transition",
+                    composerCanSubmit ? "bg-primary hover:bg-primary/85" : "bg-fill-active hover:bg-fill-active",
                   )}
                 />
               </AssistantThreadFrame>
@@ -417,7 +560,7 @@ export function MoreDataHomePage() {
 
           <div
             id="sym:homeCapabilityItems"
-            className="mt-7 flex w-full flex-wrap items-center gap-x-4 gap-y-2 text-[14px] leading-5 sm:mt-10 sm:gap-x-6 sm:gap-y-3 sm:text-[16px] sm:leading-6"
+            className="mt-7 flex w-full flex-wrap items-center gap-x-4 gap-y-2 text-body leading-5 sm:mt-10 sm:gap-x-6 sm:gap-y-3 sm:text-title-1 sm:leading-6"
           >
             {/* 数据库中的 Prompt 分类 */}
             {promptCategories.map((cat) => (
@@ -427,13 +570,13 @@ export function MoreDataHomePage() {
                 onClick={() => setActiveCategoryId(cat.id)}
                 className={cn(
                   "inline-flex items-center gap-2 p-1 font-medium transition",
-                  activeCategoryId === cat.id ? "text-[#111111]" : "text-[#8b8c87] hover:text-[#34322d]",
+                  activeCategoryId === cat.id ? "text-foreground" : "text-text-tertiary hover:text-text-secondary",
                 )}
               >
                 <PlatformLogo
                   name="grid"
-                  color={activeCategoryId === cat.id ? "#111111" : "#8b9bb0"}
-                  className="h-[15px] w-[15px] shrink-0"
+                  color={activeCategoryId === cat.id ? "rgb(var(--primary-6))" : "rgb(var(--gray-6))"}
+                  className="h-4 w-4 shrink-0"
                 />
                 {cat.name}
               </button>
@@ -446,23 +589,24 @@ export function MoreDataHomePage() {
                 Array.from({ length: 6 }).map((_, index) => (
                   <div
                     key={index}
-                    className="min-h-[112px] rounded-[14px] border border-white/70 bg-white/72 px-4 py-4 shadow-[0_1px_2px_rgba(17,17,17,0.03)] sm:min-h-[132px] sm:rounded-[18px] sm:px-5 sm:py-[18px]"
+                    className="min-h-28 rounded-card border border-border-subtle bg-bg-surface/75 px-4 py-4 shadow-surface sm:min-h-33 sm:rounded-popover sm:px-5 sm:py-4"
                     aria-hidden="true"
                   >
                     <div className="flex items-start gap-2.5">
-                      <div className="mt-1 h-4 w-4 shrink-0 animate-pulse rounded-full bg-[#e8e8e5]" />
+                      <div className="mt-1 h-4 w-4 shrink-0 animate-pulse rounded-full bg-fill-active" />
                       <div className="min-w-0 flex-1">
-                        <div className="h-5 w-[76%] animate-pulse rounded-full bg-[#e9e9e6]" />
-                        <div className="mt-4 h-4 w-full animate-pulse rounded-full bg-[#f0f0ee]" />
-                        <div className="mt-2 h-4 w-[68%] animate-pulse rounded-full bg-[#f0f0ee]" />
+                        <div className="h-5 w-skeleton-mid animate-pulse rounded-full bg-fill-active" />
+                        <div className="mt-4 h-4 w-full animate-pulse rounded-full bg-bg-subtle" />
+                        <div className="mt-2 h-4 w-skeleton-compact animate-pulse rounded-full bg-bg-subtle" />
                       </div>
                     </div>
                   </div>
                 ))
               ) : cards.map((card) => {
                 const capability =
-                  card.capabilityIds.map((id) => getHomeCapabilityItem(id)).find(Boolean) ??
-                  homeDataSourceItems.find((item) => card.capabilityIds.includes(item.parentId));
+                  card.capabilityIds.map((id) => composerDataSourceItems.find((item) => item.id === id)).find(Boolean) ??
+                  composerDataSourceItems.find((item) => card.capabilityIds.includes(item.parentId)) ??
+                  card.capabilityIds.map((id) => getHomeCapabilityItem(capabilityLabelFromId(id))).find(Boolean);
                 return (
                   <div
                     key={card.id}
@@ -481,31 +625,31 @@ export function MoreDataHomePage() {
                       }
                     }}
                     className={cn(
-                      "group relative overflow-visible rounded-[14px] border border-white/70 bg-white/72 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)] outline-none transition-[transform,background-color,border-color,box-shadow] duration-200 hover:z-20 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)] focus-visible:z-20 focus-visible:bg-white focus-visible:shadow-[0_10px_24px_rgba(17,17,17,0.06)] active:scale-[0.985] sm:rounded-[18px]",
+                      "active-scale-quiet group relative overflow-visible rounded-card border border-border-subtle bg-bg-surface/75 text-left shadow-surface outline-none transition-all duration-200 hover:z-20 hover:bg-bg-surface hover:shadow-card-hover focus-visible:z-20 focus-visible:bg-bg-surface focus-visible:shadow-card-hover sm:rounded-popover",
                       appliedPromptId === card.id &&
-                        "scale-[0.985] border-[#111111]/20 bg-white shadow-[0_14px_28px_rgba(17,17,17,0.08)]",
+                        "scale-card-selected border-primary/20 bg-bg-surface shadow-card-active",
                     )}
                   >
-                    <div className="flex min-h-[112px] flex-col px-4 py-4 sm:min-h-[132px] sm:px-5 sm:py-[18px]">
+                    <div className="flex min-h-28 flex-col px-4 py-4 sm:min-h-33 sm:px-5 sm:py-4">
                       <div className="flex items-start gap-2.5">
                         <span className="mt-1 inline-flex h-4 w-4 shrink-0 items-center justify-center">
                           <PlatformLogo
                             name={capability?.icon ?? "grid"}
-                            color={capability?.accent ?? "#8b9bb0"}
+                            color={capability?.accent ?? "var(--color-accent-neutral)"}
                             className="h-4 w-4"
                           />
                         </span>
                         <div className="min-w-0">
-                          <div className="line-clamp-1 text-[16px] font-semibold leading-6 text-[#111111]">
+                          <div className="line-clamp-1 text-title-1 font-semibold leading-6 text-foreground">
                             {card.title}
                           </div>
-                          <div className="mt-2 line-clamp-3 text-[14px] font-normal leading-6 text-[#747571]">
+                          <div className="mt-2 line-clamp-3 text-body font-normal leading-6 text-text-tertiary">
                             {card.body.length > 78 ? `${card.body.slice(0, 78)}…` : card.body}
                           </div>
                         </div>
                       </div>
                       <div className="mt-auto flex items-end justify-end pt-3">
-                        <AnimatedArrowUpIcon className="shrink-0 text-[#b1b2ae]" size={16} />
+                        <AnimatedArrowUpIcon className="shrink-0 text-text-disabled" size={16} />
                       </div>
                     </div>
                   </div>

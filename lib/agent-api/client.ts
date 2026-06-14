@@ -1,6 +1,11 @@
 import { consumeChatSendStream, type ChatStreamHandlers } from "@/lib/agent-api/chat-stream";
 import { getAgentHttpApiBase, getAgentWsOrigin } from "@/lib/agent-api/config";
 import type { TaskExecutionStepStatus } from "@/lib/agent-events";
+import {
+  createFrontendMockArtifactBlob,
+  getFrontendMockArtifactText,
+  openFrontendMockUtf8TextReader,
+} from "@/lib/frontend-mock-artifacts";
 import type {
   AdminUserRow,
   ChatSendResult,
@@ -32,6 +37,18 @@ function apiUrl(path: string): string {
   const base = getAgentHttpApiBase();
   const p = path.startsWith("/") ? path : `/${path}`;
   return `${base}${p}`;
+}
+
+function triggerBrowserDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /** 读取响应体并解析 JSON；非 JSON（如代理返回 Internal Server Error 纯文本）时返回 `{ _nonJsonBody }`。 */
@@ -742,6 +759,11 @@ export async function downloadAuthorizedFile(
   downloadPath: string,
   fallbackFilename: string,
 ): Promise<void> {
+  const mock = createFrontendMockArtifactBlob(downloadPath, fallbackFilename);
+  if (mock) {
+    triggerBrowserDownload(mock.blob, mock.filename || fallbackFilename);
+    return;
+  }
   const path = downloadPath.startsWith("/") ? downloadPath : `/${downloadPath}`;
   const res = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
@@ -759,19 +781,13 @@ export async function downloadAuthorizedFile(
       filename = m[1].trim();
     }
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  triggerBrowserDownload(blob, filename);
 }
 
 /** 带 Bearer 拉取文本（用于预览 CSV/JSON 等）。 */
 export async function fetchAuthorizedText(accessToken: string, downloadPath: string): Promise<string> {
+  const mock = getFrontendMockArtifactText(downloadPath);
+  if (mock !== null) return mock;
   const path = downloadPath.startsWith("/") ? downloadPath : `/${downloadPath}`;
   const res = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
@@ -920,6 +936,8 @@ export async function openAuthorizedUtf8TextStream(
   accessToken: string,
   downloadPath: string,
 ): Promise<ReadableStreamDefaultReader<string>> {
+  const mockReader = openFrontendMockUtf8TextReader(downloadPath);
+  if (mockReader) return mockReader;
   const path = downloadPath.startsWith("/") ? downloadPath : `/${downloadPath}`;
   const res = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {

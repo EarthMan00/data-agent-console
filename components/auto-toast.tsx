@@ -47,23 +47,23 @@ export function AutoToast({
   const node = (
     <div
       className={cn(
-        "pointer-events-none fixed left-1/2 z-[10000] flex w-[min(100%,24rem)] -translate-x-1/2 justify-center px-4",
+        "pointer-events-none fixed left-1/2 z-toast flex w-toast -translate-x-1/2 justify-center px-4",
         // 顶栏高度 + 间距（勿用 top-6：会叠在 sticky header 下方但仍被 z-50 压住）
-        "top-[max(1rem,calc(env(safe-area-inset-top,0px)+4.375rem))]",
+        "top-safe-toast",
         className,
       )}
       role="status"
       aria-live="polite"
     >
-      <div className="pointer-events-auto flex max-w-full items-center gap-2.5 rounded-[12px] border border-[#e8e8ea] bg-white px-4 py-3 shadow-[0_12px_40px_rgba(15,23,42,0.12)]">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#18181b] text-white">
+      <div className="pointer-events-auto flex max-w-full items-center gap-2.5 rounded-field border border-border bg-bg-surface px-4 py-3 shadow-popover-strong">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
           {variant === "error" ? (
             <AlertCircle className="h-4 w-4" strokeWidth={2.5} aria-hidden />
           ) : (
             <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
           )}
         </span>
-        <span className="text-[14px] font-medium leading-tight text-[#18181b]">{message}</span>
+        <span className="text-body font-medium leading-tight text-foreground">{message}</span>
       </div>
     </div>
   );

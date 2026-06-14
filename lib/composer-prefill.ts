@@ -1,4 +1,4 @@
-import { homeDataSourceItems } from "@/lib/home-capability-items";
+import { homeDataSourceItems, type HomeCapabilityItem } from "@/lib/home-capability-items";
 
 export type ComposerPrefill = {
   text: string;
@@ -26,8 +26,11 @@ function mentionPatternFor(label: string) {
   return new RegExp(`${prefix}@${escapeRegExp(label)}${suffix}`, "g");
 }
 
-export function parseDatasourceMentions(text: string): ComposerPrefill {
-  const tools = homeDataSourceItems
+export function parseDatasourceMentions(
+  text: string,
+  dataSourceItems: HomeCapabilityItem[] = homeDataSourceItems,
+): ComposerPrefill {
+  const tools = dataSourceItems
     .flatMap((item) => [
       { id: item.id, label: item.label },
       { id: item.id, label: item.parentLabel },

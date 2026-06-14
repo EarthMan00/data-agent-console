@@ -7,7 +7,7 @@ import { composerDraftContainsSuggestion } from "@/lib/composer-prefill";
 import { parsePostTaskGuidanceSuggestions } from "@/lib/parse-post-task-guidance";
 import { cn } from "@/lib/utils";
 
-const WRAP = "w-full max-w-[min(100%,780px)]";
+const WRAP = "w-full max-w-simple-row";
 
 function formatTime(iso: string) {
   const d = new Date(iso);
@@ -39,7 +39,7 @@ export function PostTaskGuidanceBubble({
   return (
     <div className={cn("flex w-full justify-start text-left", WRAP, className)}>
       <div className="w-full space-y-3">
-        <div className="flex w-full min-w-0 items-center justify-between gap-3 text-[14px] font-medium text-[#303734]">
+        <div className="flex w-full min-w-0 items-center justify-between gap-3 text-body font-medium text-foreground">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center">
               <Image
@@ -52,14 +52,14 @@ export function PostTaskGuidanceBubble({
               />
             </div>
             <div>
-              <div className="text-[14px] font-semibold text-[#1f2421]">Alice</div>
+              <div className="text-body font-semibold text-foreground">Alice</div>
             </div>
           </div>
-          <div className="shrink-0 text-[12px] text-[#858481]">{formatTime(datetime)}</div>
+          <div className="shrink-0 text-caption text-text-tertiary">{formatTime(datetime)}</div>
         </div>
 
         <div className="space-y-1 pl-0">
-          <p className="text-[13px] leading-5 text-[#5c5f5b]">接下来您可以试试：</p>
+          <p className="text-body leading-5 text-text-secondary">接下来您可以试试：</p>
           <div
             className="flex flex-row flex-wrap items-start gap-1"
           >
@@ -67,11 +67,11 @@ export function PostTaskGuidanceBubble({
               const selected =
                 interactive && composerDraftContainsSuggestion(composerDraft, item);
               const chipClass = cn(
-                "inline-flex max-w-full rounded-[999px] border px-3.5 py-2 text-left text-[13px] leading-5 transition",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15",
+                "inline-flex max-w-full rounded-pill border px-3.5 py-2 text-left text-body leading-5 transition",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/15",
                 selected
-                  ? "border-[#111111] bg-[#111111] text-white shadow-[0_1px_2px_rgba(17,17,17,0.08)]"
-                  : "border-[#e2e2df] bg-white text-[#34322d] shadow-[0_1px_2px_rgba(17,17,17,0.03)] hover:border-[#c9c9c4] hover:bg-[#fafaf9]",
+                  ? "border-primary bg-primary text-primary-foreground shadow-surface-strong"
+                  : "border-border bg-bg-surface text-foreground shadow-surface hover:border-border-strong hover:bg-bg-page",
               );
 
               if (interactive) {
@@ -80,7 +80,7 @@ export function PostTaskGuidanceBubble({
                     key={`${index}-${item.slice(0, 24)}`}
                     type="button"
                     aria-pressed={selected}
-                    className={cn(chipClass, "active:scale-[0.98]")}
+                    className={cn(chipClass, "active-scale-chip")}
                     onClick={() => onSuggestionToggle(item)}
                   >
                     <span className="whitespace-pre-wrap break-words">{item}</span>
@@ -91,7 +91,7 @@ export function PostTaskGuidanceBubble({
               return (
                 <div
                   key={`${index}-${item.slice(0, 24)}`}
-                  className={cn(chipClass, "border-[#e2e2df] bg-[#fafaf9] text-[#5c5f5b]")}
+                  className={cn(chipClass, "border-border bg-bg-page text-text-secondary")}
                 >
                   <span className="whitespace-pre-wrap break-words">{item}</span>
                 </div>

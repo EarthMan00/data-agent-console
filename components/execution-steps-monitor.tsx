@@ -82,12 +82,18 @@ function runtimeHintWithElapsed(runtimeHint: string | undefined, elapsedSeconds:
   return `${hint} · ${elapsedText}`;
 }
 
-function RunningStepRuntimeHint({ step }: { step: TaskExecutionStep }) {
-  const startedAtMs = useMemo(() => {
-    if (!step.runtimeStartedAt) return null;
-    const parsed = new Date(step.runtimeStartedAt).getTime();
-    return Number.isFinite(parsed) ? parsed : null;
-  }, [step.runtimeStartedAt]);
+export function ExecutionRuntimeTag({ steps }: { steps: TaskExecutionStep[] | undefined }) {
+  const step = useMemo(() => {
+    return [...(steps ?? [])]
+      .sort((a, b) => a.order - b.order)
+      .find((item) => item.status === "running" && (item.runtimeHint || item.runtimeStartedAt));
+  }, [steps]);
+  const startedAtMs = step?.runtimeStartedAt
+    ? (() => {
+        const parsed = new Date(step.runtimeStartedAt).getTime();
+        return Number.isFinite(parsed) ? parsed : null;
+      })()
+    : null;
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -98,7 +104,7 @@ function RunningStepRuntimeHint({ step }: { step: TaskExecutionStep }) {
     return () => window.clearInterval(timer);
   }, [startedAtMs]);
 
-  if (!step.runtimeHint && !startedAtMs) return null;
+  if (!step || (!step.runtimeHint && !startedAtMs)) return null;
 
   const text =
     startedAtMs === null
@@ -108,9 +114,13 @@ function RunningStepRuntimeHint({ step }: { step: TaskExecutionStep }) {
   if (!text.trim()) return null;
 
   return (
-    <p className="mt-2 pl-10 text-[12px] leading-5 text-[#6b7280]">
-      {text}
-    </p>
+    <span
+      className="inline-flex min-w-0 max-w-full shrink items-center rounded-full bg-bg-subtle px-2 py-0.5 text-caption font-medium leading-5 text-text-secondary"
+      data-testid="execution-runtime-tag"
+      title={text}
+    >
+      <span className="min-w-0 truncate">{text}</span>
+    </span>
   );
 }
 
@@ -131,15 +141,15 @@ export function ExecutionStepCard({
       className={cn(
         "px-0 py-1.5",
         step.status === "error"
-          ? "text-red-600"
+          ? "text-danger"
           : step.status === "awaiting_input"
-            ? "text-amber-700"
-            : "text-[#374151]",
+            ? "text-warning"
+            : "text-foreground",
       )}
       data-testid="execution-step-card"
       data-step-index={stepIndex}
     >
-      <div className="mb-2 text-[12px] font-medium uppercase tracking-wide text-[#9aa39e]">
+      <div className="mb-2 text-caption font-medium uppercase tracking-wide text-text-disabled">
         步骤 {stepNo} / {total} · {executionSubtitle(step.status)}
       </div>
       <div className={cn("flex", showStatusIcon ? "gap-3" : "gap-0")}>
@@ -148,26 +158,25 @@ export function ExecutionStepCard({
             {step.status === "running" ? (
               <DotmSquare11
                 ariaLabel="步骤执行中"
-                color="#111111"
+                color="var(--color-primary)"
                 dotShape="square"
                 dotSize={2}
                 size={18}
                 speed={1.15}
               />
             ) : step.status === "awaiting_input" ? (
-              <AlertCircle className="h-5 w-5 text-amber-600" />
+              <AlertCircle className="h-5 w-5 text-warning" />
             ) : step.status === "done" ? (
-              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+              <CheckCircle2 className="h-5 w-5 text-success" />
             ) : (
-              <XCircle className="h-5 w-5 text-red-500" />
+              <XCircle className="h-5 w-5 text-danger" />
             )}
           </div>
         ) : null}
-        <p className="min-w-0 flex-1 break-words text-[14px] leading-6.5 [overflow-wrap:anywhere]">
+        <p className="min-w-0 flex-1 break-words overflow-wrap-anywhere text-body leading-6.5">
           {humanizeStepLabelForUi(step.label)}
         </p>
       </div>
-      {step.status === "running" ? <RunningStepRuntimeHint step={step} /> : null}
     </div>
   );
 }
@@ -190,21 +199,21 @@ export function StepResultPendingCard({
     <div
       className={cn(
         "px-0 py-1.5",
-        ok ? "text-[#374151]" : "text-red-600",
+        ok ? "text-foreground" : "text-danger",
       )}
       data-testid="step-result-pending-card"
       data-step-index={stepIndex}
     >
-      <div className="text-[12px] font-medium uppercase tracking-wide text-[#9aa39e]">步骤 {stepNo} / {total} · 执行结果</div>
+      <div className="text-caption font-medium uppercase tracking-wide text-text-disabled">步骤 {stepNo} / {total} · 执行结果</div>
       <div className="mt-1 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[14px] font-semibold text-[#1f2421]">步骤 {stepNo}</p>
-          <p className="mt-1 break-words text-[12px] leading-5.5 [overflow-wrap:anywhere] text-[#4f5753]">{humanizeStepLabelForUi(label)}</p>
+          <p className="text-body font-semibold text-foreground">步骤 {stepNo}</p>
+          <p className="mt-1 break-words overflow-wrap-anywhere text-caption leading-5.5 text-text-secondary">{humanizeStepLabelForUi(label)}</p>
         </div>
         <span
           className={cn(
-            "shrink-0 rounded-full px-2 py-0.5 text-[12px] font-medium",
-            ok ? "bg-[#dcfce7] text-[#166534]" : "bg-[#fee2e2] text-[#991b1b]",
+            "shrink-0 rounded-full px-2 py-0.5 text-caption font-medium",
+            ok ? "bg-success-bg text-success" : "bg-danger-bg text-danger",
           )}
         >
           {ok ? "已完成" : "失败"}
@@ -216,12 +225,12 @@ export function StepResultPendingCard({
           variant="outline"
           size="sm"
           disabled
-          className="mt-3 h-8 cursor-not-allowed rounded-[10px] px-3 text-xs"
+          className="mt-3 h-8 cursor-not-allowed rounded-control px-3 text-xs"
         >
           <DotmSquare11
             ariaLabel="结果加载中"
             className="mr-1.5 shrink-0"
-            color="#111111"
+            color="var(--color-primary)"
             dotShape="square"
             dotSize={1.6}
             size={14}

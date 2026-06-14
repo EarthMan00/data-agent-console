@@ -21,7 +21,7 @@ export function BrandLogo({ compact = false, className }: BrandLogoProps) {
           null
         ) : (
           <div className="min-w-0">
-            <div className="truncate text-[18px] font-medium leading-6 text-[#1f1f1d]">Alice</div>
+            <div className="truncate text-lg font-medium leading-6 text-foreground">Alice</div>
           </div>
         )}
       </div>

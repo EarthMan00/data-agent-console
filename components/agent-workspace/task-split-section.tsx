@@ -106,15 +106,15 @@ export function TaskSplitSection({
 
   return (
     <div className={cn("space-y-2 px-1", ORCHESTRATION_BLOCK_MAX)} data-testid={testId}>
-      <div className="text-[14px] font-semibold text-[#202124]">任务拆分</div>
-      <div className="space-y-2.5 text-[14px] leading-6.5 text-[#4f5753]">
+      <div className="text-body font-semibold text-foreground">任务拆分</div>
+      <div className="space-y-2.5 text-body leading-6.5 text-text-secondary">
         {displayRows.map((row) => (
           <div key={`${row.num}-${row.text}`} className="flex items-start gap-2.5">
-            <span className="shrink-0 pt-[1px] text-[#9aa39e]">{row.num}.</span>
-            <p className="min-w-0 flex-1 break-words whitespace-pre-wrap [overflow-wrap:anywhere]">
+            <span className="shrink-0 pt-px text-text-disabled">{row.num}.</span>
+            <p className="min-w-0 flex-1 break-words overflow-wrap-anywhere whitespace-pre-wrap">
               {row.text}
               {showCursor && row.num === displayRows[displayRows.length - 1]?.num ? (
-                <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-pulse bg-[#94a3b8]" />
+                <span className="ml-0.5 inline-block h-caret w-0.5 translate-y-0.5 animate-pulse bg-text-disabled" />
               ) : null}
             </p>
           </div>

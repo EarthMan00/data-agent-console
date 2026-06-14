@@ -47,7 +47,7 @@ export function HtmlArtifactIframe({ html, title = "HTML 预览", className }: H
       title={title}
       sandbox={HTML_ARTIFACT_IFRAME_SANDBOX}
       className={cn(
-        "min-h-[min(72vh,960px)] w-full flex-1 rounded-[10px] border border-[#e5e7eb] bg-white",
+        "min-h-html-artifact w-full flex-1 rounded-control border border-border bg-bg-surface",
         className,
       )}
       srcDoc={html}

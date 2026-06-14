@@ -33,7 +33,7 @@ export function ReportPreviewPanel({
   if (!preview) {
     return (
       <div
-        className="flex h-full min-h-0 flex-col items-center justify-center gap-4 bg-white p-8 text-[#64748b]"
+        className="flex h-full min-h-0 flex-col items-center justify-center gap-4 bg-bg-surface p-8 text-text-secondary"
         data-testid={dataTestId === false ? undefined : dataTestId}
       >
         <p className="text-sm">无匹配的预览内容</p>
@@ -46,17 +46,17 @@ export function ReportPreviewPanel({
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col bg-white text-[#31405a]"
+      className="flex h-full min-h-0 flex-col bg-bg-surface text-foreground"
       data-testid={dataTestId === false ? undefined : dataTestId}
     >
-      <div className="flex items-center justify-between border-b border-[#e5e7eb] bg-[linear-gradient(180deg,#fafafa,#f4f4f5)] px-5 py-3.5">
+      <div className="flex items-center justify-between border-b border-border bg-surface-gradient px-5 py-3.5">
         <div className="min-w-0">
-          <div className="text-[14px] font-semibold text-[#1f2421]">
+          <div className="text-body font-semibold text-foreground">
             {reportTitle ?? preview.title}
           </div>
-          <div className="mt-1 text-[12px] text-[#8b9490]">{preview.subtitle}</div>
+          <div className="mt-1 text-caption text-text-tertiary">{preview.subtitle}</div>
         </div>
-        <div className="flex items-center gap-2 text-[#7b8797]">
+        <div className="flex items-center gap-2 text-text-tertiary">
           <Button aria-label="下载预览结果" variant="ghost" size="iconSm" onClick={() => setActionNotice("导出能力待接入。")}>
             <Download className="h-4 w-4" />
           </Button>
@@ -72,27 +72,27 @@ export function ReportPreviewPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto bg-white">
+      <div className="min-h-0 flex-1 overflow-auto bg-bg-surface">
         {actionNotice ? (
-          <div className="border-b border-[#ececec] bg-[#fafaf9] px-5 py-2 text-xs text-[#78716c]">
+          <div className="border-b border-border-subtle bg-bg-page px-5 py-2 text-xs text-text-tertiary">
             {actionNotice}
           </div>
         ) : null}
         {preview.mode === "sheet" ? (
-          <div className="min-w-[760px]">
-            <div className="grid grid-cols-5 border-b border-[#ececec] bg-[linear-gradient(90deg,#18181b,#27272a)] text-center text-white">
-              <div className="col-span-5 px-6 py-7 text-[18px] font-semibold">{reportTitle ?? "任务执行结果"}</div>
+          <div className="min-w-source-menu">
+            <div className="grid grid-cols-5 border-b border-border-subtle bg-report-heading-gradient text-center text-primary-foreground">
+              <div className="col-span-5 px-6 py-7 text-lg font-semibold">{reportTitle ?? "任务执行结果"}</div>
             </div>
 
-            <table className="w-full border-collapse text-left text-[14px]">
+            <table className="w-full border-collapse text-left text-body">
               <tbody>
                 {preview.sheetRows.map((row, rowIndex) => (
-                  <tr key={`${preview.id}-${rowIndex}`} className="border-b border-[#e5eaf2]">
+                  <tr key={`${preview.id}-${rowIndex}`} className="border-b border-border">
                     {row.map((cell, cellIndex) => (
                       <td
                         key={`${preview.id}-${rowIndex}-${cellIndex}`}
-                        className={`border-r border-[#e5eaf2] px-4 py-4 align-top ${
-                          rowIndex === 0 ? "bg-[#f8fafc] font-medium text-[#313734]" : "bg-white text-[#6d7c91]"
+                        className={`border-r border-border px-4 py-4 align-top ${
+                          rowIndex === 0 ? "bg-bg-subtle font-medium text-foreground" : "bg-bg-surface text-text-tertiary"
                         }`}
                       >
                         {cell}
@@ -103,7 +103,7 @@ export function ReportPreviewPanel({
               </tbody>
             </table>
 
-            <div className="space-y-3 px-6 py-7 text-sm leading-7 text-[#708096]">
+            <div className="space-y-3 px-6 py-7 text-sm leading-7 text-text-tertiary">
               {preview.summary.map((line) => (
                 <p key={line}>{line}</p>
               ))}
@@ -111,19 +111,19 @@ export function ReportPreviewPanel({
           </div>
         ) : (
           <div className="px-6 py-6">
-            <div className="rounded-[18px] border border-[#e5e7eb] bg-[linear-gradient(180deg,#ffffff,#fafafa)] p-6">
+            <div className="rounded-popover border border-border bg-report-card-gradient p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-[24px] font-semibold text-[#22314a]">
+                  <div className="text-title-3 font-semibold text-foreground">
                     {preview.title}
                   </div>
-                  <div className="mt-2 text-sm text-[#7f8b99]">{preview.subtitle}</div>
+                  <div className="mt-2 text-sm text-text-tertiary">{preview.subtitle}</div>
                 </div>
-                <Minimize2 className="h-4 w-4 text-[#8f96a3]" />
+                <Minimize2 className="h-4 w-4 text-text-tertiary" />
               </div>
-              <div className="mt-6 space-y-4 text-sm leading-7 text-[#73839a]">
-                <div className="rounded-[14px] border border-[#e2e7ef] bg-[#f8faff] px-4 py-4">
-                  <div className="mb-2 text-xs uppercase tracking-[0.18em] text-[#7c8ca1]">
+              <div className="mt-6 space-y-4 text-sm leading-7 text-text-tertiary">
+                <div className="rounded-card border border-border bg-info-bg px-4 py-4">
+                  <div className="mb-2 text-xs uppercase tracking-label-wide text-text-tertiary">
                     {preview.sheetTabs.find((tab) => tab.id === activeTab)?.label ?? "结果摘要"}
                   </div>
                   {preview.summary[preview.sheetTabs.findIndex((tab) => tab.id === activeTab)] ??
@@ -135,7 +135,7 @@ export function ReportPreviewPanel({
         )}
       </div>
 
-      <div className="flex items-center gap-1 border-t border-[#e5e7eb] bg-white px-4 py-2">
+      <div className="flex items-center gap-1 border-t border-border bg-bg-surface px-4 py-2">
         {preview.sheetTabs.map((tab) => (
           <button
             key={tab.id}
@@ -145,10 +145,10 @@ export function ReportPreviewPanel({
                 [preview.id]: tab.id,
               }))
             }
-            className={`rounded-[8px] px-3 py-2 text-sm ${
+            className={`rounded-md px-3 py-2 text-sm ${
               activeTab === tab.id
-                ? "bg-[#f4f4f5] text-[#18181b]"
-                : "text-[#7e8692] hover:bg-[rgba(55,53,47,0.06)]"
+                ? "bg-fill-active text-foreground"
+                : "text-text-tertiary hover:bg-fill-hover"
             }`}
           >
             {tab.label}

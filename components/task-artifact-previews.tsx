@@ -43,15 +43,15 @@ function tryFormatJson(text: string): string {
 function ArtifactJsonTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
   const colCount = Math.max(1, columns.length);
   return (
-    <div className="mt-3 max-h-[320px] overflow-auto rounded-[10px] border border-[#e5e7eb] bg-white">
-      <table className="w-full min-w-[320px] border-collapse text-left text-[12px]">
+    <div className="mt-3 max-h-80 overflow-auto rounded-control border border-border bg-bg-surface">
+      <table className="w-full min-w-80 border-collapse text-left text-caption">
         {columns.length > 0 ? (
           <thead>
-            <tr className="border-b border-[#e5e7eb]">
+            <tr className="border-b border-border">
               {columns.map((c) => (
                 <th
                   key={c}
-                  className="max-w-[220px] whitespace-pre-wrap break-words border-r border-[#e5e7eb] bg-[#f8fafc] px-2 py-2 text-left font-medium text-[#334155]"
+                  className="max-w-sidebar-admin whitespace-pre-wrap break-words border-r border-border bg-bg-subtle px-2 py-2 text-left font-medium text-text-secondary"
                 >
                   {c}
                 </th>
@@ -62,17 +62,17 @@ function ArtifactJsonTable({ columns, rows }: { columns: string[]; rows: string[
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={colCount} className="px-2 py-3 text-[#64748b]">
+              <td colSpan={colCount} className="px-2 py-3 text-text-secondary">
                 （无数据行）
               </td>
             </tr>
           ) : (
             rows.map((row, ri) => (
-              <tr key={`jr-${ri}`} className="border-b border-[#f1f5f9]">
+              <tr key={`jr-${ri}`} className="border-b border-border-subtle">
                 {columns.map((_, ci) => (
                   <td
                     key={`jc-${ri}-${ci}`}
-                    className="max-w-[220px] whitespace-pre-wrap break-words border-r border-[#f1f5f9] px-2 py-1.5 align-top text-[#475569]"
+                    className="max-w-sidebar-admin whitespace-pre-wrap break-words border-r border-border-subtle px-2 py-1.5 align-top text-text-secondary"
                   >
                     {row[ci] ?? ""}
                   </td>
@@ -154,59 +154,59 @@ function ArtifactCard({
   }, [mode, text]);
 
   return (
-    <div className="rounded-[14px] border border-[#e5e7eb] bg-[#fafafa] p-4">
+    <div className="rounded-card border border-border bg-bg-subtle p-4">
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {mode === "csv" ? (
-            <Table className="h-4 w-4 shrink-0 text-[#2563eb]" aria-hidden />
+            <Table className="h-4 w-4 shrink-0 text-link" aria-hidden />
           ) : mode === "chatexcel" ? (
-            <Table className="h-4 w-4 shrink-0 text-[#15803d]" aria-hidden />
+            <Table className="h-4 w-4 shrink-0 text-success" aria-hidden />
           ) : mode === "json" ? (
-            <FileJson className="h-4 w-4 shrink-0 text-[#7c3aed]" aria-hidden />
+            <FileJson className="h-4 w-4 shrink-0 text-link" aria-hidden />
           ) : mode === "text" ? (
-            <FileJson className="h-4 w-4 shrink-0 text-[#0f766e]" aria-hidden />
+            <FileJson className="h-4 w-4 shrink-0 text-success" aria-hidden />
           ) : (
-            <FileJson className="h-4 w-4 shrink-0 text-[#64748b]" aria-hidden />
+            <FileJson className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden />
           )}
           <div className="min-w-0">
-            <div className="truncate text-[14px] font-semibold text-[#1f2421]">{artifact.original_name}</div>
-            <div className="text-[12px] text-[#8b9490]">{artifact.artifact_type}</div>
+            <div className="truncate text-body font-semibold text-foreground">{artifact.original_name}</div>
+            <div className="text-caption text-text-tertiary">{artifact.artifact_type}</div>
           </div>
         </div>
       </div>
 
       {!withFreshToken ? (
-        <p className="mt-3 text-[12px] text-[#6b7280]">未登录时无法拉取平台文件内容。</p>
+        <p className="mt-3 text-caption text-text-tertiary">未登录时无法拉取平台文件内容。</p>
       ) : mode === "csv" ? (
         <LazyCsvArtifactTable downloadApi={artifact.download_api} withFreshToken={withFreshToken!} />
       ) : loading ? (
-        <p className="mt-3 text-[12px] text-[#6b7280]">正在读取文件内容…</p>
+        <p className="mt-3 text-caption text-text-tertiary">正在读取文件内容…</p>
       ) : error ? (
-        <p className="mt-3 text-[12px] text-[#b91c1c]">{error}</p>
+        <p className="mt-3 text-caption text-danger">{error}</p>
       ) : mode === "chatexcel" && chatexcelModel ? (
-        <div className="mt-3 min-h-[200px]">
+        <div className="mt-3 min-h-50">
           <ChatexcelArtifactPreview model={chatexcelModel} />
         </div>
       ) : mode === "json" && jsonTable ? (
         <ArtifactJsonTable columns={jsonTable.columns} rows={jsonTable.rows} />
       ) : mode === "json" && jsonFallback != null ? (
-        <pre className="mt-3 max-h-[320px] overflow-auto rounded-[10px] border border-[#e5e7eb] bg-[#0f172a] p-3 text-[12px] leading-5 text-[#e2e8f0]">
+        <pre className="mt-3 max-h-80 overflow-auto rounded-control border border-border bg-code-bg p-3 text-caption leading-5 text-code-text">
           {jsonFallback}
         </pre>
       ) : mode === "binary" ? (
-        <p className="mt-3 text-[12px] text-[#6b7280]">该文件类型不在页面内预览；若有 CSV 可使用侧栏底部「下载 CSV」。</p>
+        <p className="mt-3 text-caption text-text-tertiary">该文件类型不在页面内预览；若有 CSV 可使用侧栏底部「下载 CSV」。</p>
       ) : mode === "text" && text != null && text.length > 0 ? (
-        <pre className="mt-3 max-h-[320px] overflow-auto rounded-[10px] border border-[#e5e7eb] bg-white p-3 text-[12px] leading-5 text-[#475569]">
+        <pre className="mt-3 max-h-80 overflow-auto rounded-control border border-border bg-bg-surface p-3 text-caption leading-5 text-text-secondary">
           {text.slice(0, 120_000)}
           {text.length > 120_000 ? "\n…（内容过长已截断）" : ""}
         </pre>
       ) : text != null && text.length > 0 ? (
-        <pre className="mt-3 max-h-[240px] overflow-auto rounded-[10px] border border-[#e5e7eb] bg-white p-3 text-[12px] leading-5 text-[#475569]">
+        <pre className="mt-3 max-h-60 overflow-auto rounded-control border border-border bg-bg-surface p-3 text-caption leading-5 text-text-secondary">
           {text.slice(0, 120_000)}
           {text.length > 120_000 ? "\n…（内容过长已截断）" : ""}
         </pre>
       ) : (
-        <p className="mt-3 text-[12px] text-[#6b7280]">文件为空或无法解析为表格/JSON。</p>
+        <p className="mt-3 text-caption text-text-tertiary">文件为空或无法解析为表格/JSON。</p>
       )}
     </div>
   );
@@ -216,8 +216,8 @@ export function TaskArtifactPreviews({ artifacts, withFreshToken }: TaskArtifact
   if (!artifacts.length) return null;
 
   return (
-    <div className="shrink-0 space-y-3 border-b border-[#e5e7eb] bg-[linear-gradient(180deg,#fafafa,#ffffff)] px-5 py-4">
-      <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#64748b]">任务产出文件</div>
+    <div className="shrink-0 space-y-3 border-b border-border bg-artifact-gradient px-5 py-4">
+      <div className="text-caption font-semibold uppercase tracking-label text-text-secondary">任务产出文件</div>
       <div className="space-y-3">
         {artifacts.map((a) => (
           <ArtifactCard key={a.artifact_id} artifact={a} withFreshToken={withFreshToken} />

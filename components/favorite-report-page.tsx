@@ -69,8 +69,8 @@ export function FavoriteReportPage({ favoriteId }: { favoriteId: string }) {
 
   return (
     <RequirePlatformLogin>
-      <div className="flex min-h-screen flex-col bg-[#f8fafc]">
-        <header className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-[#e5e7eb] bg-white px-4 py-3 shadow-sm sm:px-6">
+      <div className="flex min-h-screen flex-col bg-bg-subtle">
+        <header className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-border bg-bg-surface px-4 py-3 shadow-sm sm:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <Button type="button" variant="ghost" size="icon" asChild>
               <Link href="/artifacts" aria-label="返回收藏夹">
@@ -78,13 +78,13 @@ export function FavoriteReportPage({ favoriteId }: { favoriteId: string }) {
               </Link>
             </Button>
             <div className="flex min-w-0 items-center gap-2">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#16a34a] text-white">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-success text-primary-foreground">
                 <FileSpreadsheet className="h-4 w-4" aria-hidden />
               </span>
               <div className="min-w-0">
-                <div className="truncate text-[14px] font-semibold text-[#0f172a]">{title || "任务执行结果"}</div>
+                <div className="truncate text-body font-semibold text-foreground">{title || "任务执行结果"}</div>
                 {dateLine ? (
-                  <div className="mt-0.5 text-[12px] text-[#64748b]">最后生成时间：{dateLine}</div>
+                  <div className="mt-0.5 text-caption text-text-secondary">最后生成时间：{dateLine}</div>
                 ) : null}
               </div>
             </div>
@@ -94,30 +94,30 @@ export function FavoriteReportPage({ favoriteId }: { favoriteId: string }) {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-9 w-9 rounded-[10px]"
+              className="h-9 w-9 rounded-control"
               aria-label="下载"
               onClick={() => onDownload()}
               disabled={!snapshot || busy}
             >
-              <Download className="h-4 w-4 text-[#475569]" />
+              <Download className="h-4 w-4 text-text-secondary" />
             </Button>
           </div>
         </header>
 
-        <main className="mx-auto min-h-0 w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6">
+        <main className="mx-auto min-h-0 w-full max-w-report-content flex-1 px-4 py-6 sm:px-6">
           {busy ? (
-            <div className="flex items-center gap-2 py-16 text-[#64748b]">
+            <div className="flex items-center gap-2 py-16 text-text-secondary">
               <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
               加载中…
             </div>
           ) : error ? (
-            <p className="py-8 text-sm text-red-600">{error}</p>
+            <p className="py-8 text-sm text-danger">{error}</p>
           ) : snapshot ? (
-            <div className="flex min-h-[480px] flex-1 flex-col overflow-hidden rounded-[12px] border border-[#e5e7eb] bg-white shadow-sm">
+            <div className="flex min-h-120 flex-1 flex-col overflow-hidden rounded-field border border-border bg-bg-surface shadow-sm">
               <FavoriteSheetsResultView snapshot={snapshot} title={title} />
             </div>
           ) : (
-            <p className="py-8 text-sm text-[#64748b]">暂无内容</p>
+            <p className="py-8 text-sm text-text-secondary">暂无内容</p>
           )}
         </main>
       </div>

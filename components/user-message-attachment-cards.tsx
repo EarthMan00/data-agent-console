@@ -19,8 +19,8 @@ function AttachmentIcon({ extension }: { extension?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px]",
-        tone === "spreadsheet" ? "bg-[#e8f5ec] text-[#1f8f4a]" : "bg-[#edf3ff] text-[#2f6fed]",
+        "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-control",
+        tone === "spreadsheet" ? "bg-success-bg text-success" : "bg-info-bg text-link",
       )}
     >
       {tone === "spreadsheet" ? (
@@ -43,14 +43,14 @@ export function UserMessageAttachmentCards({ attachments, className }: UserMessa
         return (
           <div
             key={`${attachment.name}-${attachment.size}`}
-            className="flex min-w-[220px] max-w-[280px] items-center gap-3 rounded-[14px] border border-[#e7e7ea] bg-white px-3 py-2.5 shadow-[0_4px_12px_rgba(15,23,42,0.03)]"
+            className="flex min-w-sidebar-admin max-w-72 items-center gap-3 rounded-card border border-border bg-bg-surface px-3 py-2.5 shadow-surface"
           >
             <AttachmentIcon extension={attachment.extension} />
             <span className="min-w-0">
-              <span className="block truncate text-[14px] font-medium leading-5 text-[#202124]">
+              <span className="block truncate text-body font-medium leading-5 text-foreground">
                 {attachment.name}
               </span>
-              <span className="mt-0.5 block text-[12px] leading-4 text-[#9a9ea6]">
+              <span className="mt-0.5 block text-caption leading-4 text-text-disabled">
                 {[typeLabel, sizeLabel].filter(Boolean).join(" ")}
               </span>
             </span>

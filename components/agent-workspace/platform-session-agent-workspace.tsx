@@ -79,6 +79,12 @@ import {
   type ResultPanelContext,
   type TaskOrchestrationBundleRow,
 } from "@/lib/merge-orchestration-task-artifacts";
+import {
+  getFrontendMockOrchestrationBundles,
+  getFrontendMockResultPanelData,
+  getFrontendMockSessionMessages,
+  isFrontendMockSessionId,
+} from "@/lib/frontend-mock-session";
 import { pollPlatformTaskUntilSettled } from "@/lib/poll-task-until-settled";
 import {
   isTaskInFlight,
@@ -137,8 +143,9 @@ export function PlatformSessionAgentWorkspace({
   fallbackTaskId?: string;
 }) {
   const platformAgent = useOptionalPlatformAgent();
-  const { refreshHistory, refreshHistoryNow, setActiveSessionTitle } = useMoreDataShellState();
+  const { refreshHistoryNow, setActiveSessionTitle } = useMoreDataShellState();
   const router = useRouter();
+  const frontendMockSession = isFrontendMockSessionId(sessionId);
   const isMounted = useRef(true);
   const abortPollRef = useRef(false);
   const sseAbortRef = useRef<AbortController | null>(null);
@@ -146,6 +153,7 @@ export function PlatformSessionAgentWorkspace({
   /** manager 订阅已推送到 UI 的字符数（用于 chunk 兜底追赶起点） */
   const contentLenRef = useRef(0);
   const [busy, setBusy] = useState(false);
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState("");
@@ -191,7 +199,7 @@ export function PlatformSessionAgentWorkspace({
   const [liveOrchStepStatuses, setLiveOrchStepStatuses] = useState<TaskExecutionStepStatus[] | null>(null);
   const trialTaskId = scheduleTrial ? loadScheduleTrialMeta()?.taskId : null;
 
-  const _processStreamingMessages = (msgs: SessionMessageItem[]): SessionMessageItem[] => {
+  const processStreamingMessages = useCallback((msgs: SessionMessageItem[]): SessionMessageItem[] => {
     const streamState = getStreamState(sessionId);
     return msgs.map((m) => {
       if (
@@ -211,14 +219,30 @@ export function PlatformSessionAgentWorkspace({
       }
       return m;
     });
-  };
+  }, [sessionId]);
 
   const reload = useCallback(async () => {
+    if (frontendMockSession) {
+      setMessagesLoaded(false);
+      const cached = readSessionMessageCache(sessionId);
+      const baseMessages = getFrontendMockSessionMessages();
+      const source = cached && cached.length >= baseMessages.length ? cached : baseMessages;
+      const fresh = processStreamingMessages(source);
+      writeSessionMessageCache(sessionId, fresh);
+      setMessages(fresh);
+      setOrchestrationBundles(getFrontendMockOrchestrationBundles());
+      setBusy(false);
+      setError("");
+      setMessagesLoaded(true);
+      return;
+    }
+
     if (!platformAgent?.auth) return;
 
+    setMessagesLoaded(false);
     const cached = readSessionMessageCache(sessionId);
     if (cached) {
-      setMessages(_processStreamingMessages(cached));
+      setMessages(processStreamingMessages(cached));
       setBusy(false);
       setError("");
     } else {
@@ -229,7 +253,7 @@ export function PlatformSessionAgentWorkspace({
     try {
       await platformAgent.withFreshToken(async (token) => {
         const res = await listSessionMessages(token, sessionId, 100);
-        const fresh = _processStreamingMessages(res.messages ?? []);
+        const fresh = processStreamingMessages(res.messages ?? []);
         writeSessionMessageCache(sessionId, fresh);
         // 合并进行中的流式消息，避免 reload 冲掉 manager 推送的增量内容
         setMessages((cur) => {
@@ -258,13 +282,15 @@ export function PlatformSessionAgentWorkspace({
       }
     } finally {
       setBusy(false);
+      setMessagesLoaded(true);
     }
-  }, [platformAgent, sessionId]);
+  }, [frontendMockSession, platformAgent, processStreamingMessages, sessionId]);
 
   // Resolve stale task_execution_steps in the background every time messages
   // are loaded, without blocking render or the session-list refresh.
   const resolveStaleRef = useRef<Set<string>>(new Set());
   useEffect(() => {
+    if (frontendMockSession) return;
     if (busy || messages.length === 0 || !platformAgent?.auth) return;
     let cancelled = false;
 
@@ -311,7 +337,7 @@ export function PlatformSessionAgentWorkspace({
                   ? meta.orchestration_id.trim()
                   : null;
               try {
-                await patchTaskExecutionSteps(token, sessionId, m.id as any, {
+                await patchTaskExecutionSteps(token, sessionId, m.id, {
                   round_id: (meta.round_id as string) || "",
                   task_id: tid,
                   steps: resolved.map((s) => ({
@@ -357,7 +383,7 @@ export function PlatformSessionAgentWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [busy, messages, platformAgent, sessionId]);
+  }, [busy, frontendMockSession, messages, platformAgent, sessionId]);
 
   useEffect(() => {
     resolveStaleRef.current = new Set();
@@ -375,6 +401,11 @@ export function PlatformSessionAgentWorkspace({
   }, [sessionId]);
 
   useEffect(() => {
+    if (frontendMockSession) {
+      platformAgent?.setActivePlatformSession(sessionId);
+      void reload();
+      return;
+    }
     if (!platformAgent) return;
     if (!platformAgent.auth) return;
     platformAgent.setActivePlatformSession(sessionId);
@@ -382,7 +413,7 @@ export function PlatformSessionAgentWorkspace({
       return;
     }
     void reload();
-  }, [platformAgent, reload, sessionId, scheduleTrial]);
+  }, [frontendMockSession, platformAgent, reload, sessionId, scheduleTrial]);
 
   // 订阅 stream manager 更新：始终建立订阅（不因挂载时无流而跳过），
   // 有活跃流时立即 flush 同步首屏内容；后续 onDelta 写 manager 时自动推送。
@@ -750,13 +781,23 @@ export function PlatformSessionAgentWorkspace({
   useEffect(() => {
     // 在 reset effect 中同步检查缓存：缓存命中则立即展示，不依赖后续 effect 调用时序
     const cached = readSessionMessageCache(sessionId);
-    setMessages(cached ?? []);
+    if (frontendMockSession) {
+      const baseMessages = getFrontendMockSessionMessages();
+      const mockMessages = cached && cached.length >= baseMessages.length ? cached : baseMessages;
+      setMessages(processStreamingMessages(mockMessages));
+      setMessagesLoaded(true);
+      setBusy(false);
+      setError("");
+    } else {
+      setMessages(cached ?? []);
+      setMessagesLoaded(false);
+    }
     setLiveOrchStepStatuses(null);
 
     setShowResultPanel(false);
     setFocusedTaskId(null);
     setResultPanelContext(null);
-    setOrchestrationBundles([]);
+    setOrchestrationBundles(frontendMockSession ? getFrontendMockOrchestrationBundles() : []);
     setTrialOrchestrationDone(null);
     trialAutoOpenedPanelRef.current = false;
     scheduledRunAutoOpenedPanelRef.current = false;
@@ -765,7 +806,7 @@ export function PlatformSessionAgentWorkspace({
     trialClarificationReloadedRef.current = false;
     setLiveOrchClarification(null);
     setSupplementalBundlesById({});
-  }, [sessionId]);
+  }, [frontendMockSession, processStreamingMessages, sessionId]);
 
   // 防御性守卫：只要 messages 非空，busy 就必须是 false
   // 避免 guard 阻止 reload() 后 busy 永远停留在 true
@@ -774,6 +815,26 @@ export function PlatformSessionAgentWorkspace({
       setBusy(false);
     }
   }, [messages]);
+
+  useEffect(() => {
+    if (scheduleTrial || scheduledRunRecord) return;
+    if (frontendMockSession) return;
+    if (!messagesLoaded || busy || sending || error) return;
+    if (messages.length > 0) return;
+    platformAgent?.clearActivePlatformSession();
+    router.replace("/");
+  }, [
+    busy,
+    error,
+    messages.length,
+    messagesLoaded,
+    platformAgent,
+    router,
+    scheduleTrial,
+    scheduledRunRecord,
+    sending,
+    frontendMockSession,
+  ]);
 
   const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
 
@@ -803,6 +864,11 @@ export function PlatformSessionAgentWorkspace({
   }, [orchestrationAnchor, scheduleTrial, trialMeta, sessionId, scheduledRunRecord, fallbackTaskId]);
 
   useEffect(() => {
+    if (frontendMockSession) {
+      setLiveOrchClarification(null);
+      setLiveOrchStepStatuses(null);
+      return;
+    }
     const orchId = effectiveOrchestrationAnchor?.orchestrationId?.trim();
     if (!orchId || !platformAgent?.auth) {
       setLiveOrchClarification(null);
@@ -836,9 +902,15 @@ export function PlatformSessionAgentWorkspace({
       stop = true;
       clearInterval(id);
     };
-  }, [effectiveOrchestrationAnchor?.orchestrationId, platformAgent, scheduleTrial]);
+  }, [effectiveOrchestrationAnchor?.orchestrationId, frontendMockSession, platformAgent, scheduleTrial]);
 
   useEffect(() => {
+    if (frontendMockSession) {
+      if (effectiveOrchestrationAnchor && !showResultPanel) {
+        setOrchestrationBundles(getFrontendMockOrchestrationBundles());
+      }
+      return;
+    }
     if (!effectiveOrchestrationAnchor || !platformAgent?.auth || showResultPanel) {
       return;
     }
@@ -861,10 +933,10 @@ export function PlatformSessionAgentWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [effectiveOrchestrationAnchor, platformAgent, showResultPanel, scheduleTrial, trialRunInFlight]);
+  }, [effectiveOrchestrationAnchor, frontendMockSession, platformAgent, showResultPanel, scheduleTrial, trialRunInFlight]);
 
   const loadSupplementalBundlesForMessage = useCallback((messageId: string, meta: Record<string, unknown> | undefined) => {
-    if (!platformAgent?.auth) return;
+    if (!frontendMockSession && !platformAgent?.auth) return;
     if (supplementalBundlesById[messageId] || fetchedSupplementalRef.current.has(messageId)) return;
     const anchor = resolveOrchestrationAnchorFromMessageMeta(meta);
     if (!anchor) {
@@ -872,6 +944,14 @@ export function PlatformSessionAgentWorkspace({
       return;
     }
     fetchedSupplementalRef.current.add(messageId);
+    if (frontendMockSession) {
+      setSupplementalBundlesById((prev) => ({
+        ...prev,
+        [messageId]: getFrontendMockOrchestrationBundles(),
+      }));
+      return;
+    }
+    if (!platformAgent?.auth) return;
     void platformAgent.withFreshToken(async (token) => {
       try {
         const data = await fetchTaskOrchestrationForResultPanel(
@@ -885,7 +965,7 @@ export function PlatformSessionAgentWorkspace({
         // task/orchestration may have been deleted
       }
     });
-  }, [platformAgent, supplementalBundlesById]);
+  }, [frontendMockSession, platformAgent, supplementalBundlesById]);
 
   useEffect(() => {
     fetchedSupplementalRef.current = new Set();
@@ -1113,6 +1193,11 @@ export function PlatformSessionAgentWorkspace({
       messageId: string | null = null,
       options?: { focusedSubtaskId?: string | null },
     ) => {
+      if (frontendMockSession) {
+        setError("");
+        applyPanelFetchToContext(messageId, anchor, getFrontendMockResultPanelData(), options?.focusedSubtaskId);
+        return;
+      }
       if (!platformAgent?.auth) {
         platformAgent?.openLogin("请先登录后再查看任务结果。");
         return;
@@ -1135,7 +1220,7 @@ export function PlatformSessionAgentWorkspace({
         setError(formatAgentApiErrorForUser(e));
       }
     },
-    [applyPanelFetchToContext, platformAgent],
+    [applyPanelFetchToContext, frontendMockSession, platformAgent],
   );
 
   const openResultPanelForMessage = useCallback(
@@ -1149,6 +1234,18 @@ export function PlatformSessionAgentWorkspace({
       await openResultPanelFromAnchor(anchor, messageId, options);
     },
     [openResultPanelFromAnchor],
+  );
+
+  const withFreshTokenForResultPanel = useCallback(
+    async (run: (token: string) => Promise<void>) => {
+      if (frontendMockSession) {
+        await run("__frontend_mock_token__");
+        return;
+      }
+      if (!platformAgent?.withFreshToken) return;
+      await platformAgent.withFreshToken(run);
+    },
+    [frontendMockSession, platformAgent],
   );
 
   useEffect(() => {
@@ -1191,13 +1288,44 @@ export function PlatformSessionAgentWorkspace({
     openResultPanelFromAnchor,
   ]);
 
-  const send = useCallback(async () => {
-    const text = draft.trim();
-    const filesToSend = pendingFiles;
+  const send = useCallback(async (textOverride?: string) => {
+    const text = (textOverride ?? draft).trim();
+    const filesToSend = textOverride === undefined ? pendingFiles : [];
     if ((!text && filesToSend.length === 0) || sending) return;
     const maxChars = getChatMessageMaxChars();
     if (text.length > maxChars) {
       setError(`消息过长（${text.length} 字），请控制在 ${maxChars} 字以内。`);
+      return;
+    }
+    if (frontendMockSession) {
+      const now = new Date().toISOString();
+      const optimisticAttachments = buildUserMessageAttachmentsFromFiles(filesToSend);
+      const userMessage: SessionMessageItem = {
+        id: `mock_user_${safeRandomUUID()}`,
+        role: "user",
+        content: text,
+        created_at: now,
+        message_index: messages.length,
+        meta: optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {},
+      };
+      const assistantMessage: SessionMessageItem = {
+        id: `mock_assistant_${safeRandomUUID()}`,
+        role: "assistant",
+        content:
+          `已收到你的本地 mock 追问：${text}\n\n` +
+          "这里不会请求后端，用于检查发送按钮、输入框清空、附件展示、消息气泡、滚动定位和后续追问交互。",
+        created_at: now,
+        message_index: messages.length + 1,
+        meta: {},
+      };
+      const nextMessages = processStreamingMessages([...messages, userMessage, assistantMessage]);
+      writeSessionMessageCache(sessionId, nextMessages);
+      setMessages(nextMessages);
+      setDraft("");
+      setPendingFiles([]);
+      setError("");
+      setBusy(false);
+      setMessagesLoaded(true);
       return;
     }
     if (!platformAgent?.auth) {
@@ -1272,22 +1400,37 @@ export function PlatformSessionAgentWorkspace({
         setSending(false);
       }
     }
-  }, [draft, pendingFiles, platformAgent, reload, refreshHistoryNow, sending, sessionId]);
+  }, [
+    draft,
+    frontendMockSession,
+    messages,
+    pendingFiles,
+    platformAgent,
+    processStreamingMessages,
+    reload,
+    refreshHistoryNow,
+    sending,
+    sessionId,
+  ]);
+
+  const submitGuidanceSuggestion = useCallback((item: string) => {
+    void send(item);
+  }, [send]);
 
   return (
     <>
     {scheduleTrial ? (
       <Dialog open={saveConfirmOpen} onOpenChange={setSaveConfirmOpen}>
-        <DialogContent className="max-w-[400px] rounded-[16px]">
+        <DialogContent className="max-w-md rounded-panel">
           <DialogTitle>保存定时任务？</DialogTitle>
-          <DialogDescription className="text-sm leading-relaxed text-[#71717a]">
+          <DialogDescription className="text-sm leading-relaxed text-text-tertiary">
             试跑结束后不会自动写入定时任务列表。请确认试跑结果符合预期后再保存。
           </DialogDescription>
           <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button
               type="button"
               variant="outline"
-              className="rounded-[10px]"
+              className="rounded-control"
               disabled={saveBusy}
               onClick={() => setSaveConfirmOpen(false)}
             >
@@ -1295,7 +1438,7 @@ export function PlatformSessionAgentWorkspace({
             </Button>
             <Button
               type="button"
-              className="rounded-[10px] bg-[#111111] text-white hover:bg-[#2a2a2a]"
+              className="rounded-control bg-primary text-primary-foreground hover:bg-link-hover"
               disabled={saveBusy}
               onClick={() => {
                 setSaveConfirmOpen(false);
@@ -1313,10 +1456,10 @@ export function PlatformSessionAgentWorkspace({
       contentScrollMode="child"
       currentRunLabel={headerLabel}
       rightRail={
-        showResultPanel && platformAgent?.withFreshToken && resultPanelContext ? (
+        showResultPanel && resultPanelContext && (frontendMockSession || platformAgent?.withFreshToken) ? (
           <AgentTaskResultPanel
             artifacts={artifactsForTaskPanel}
-            withFreshToken={platformAgent.withFreshToken}
+            withFreshToken={withFreshTokenForResultPanel}
             bundleDownloadApi={resultPanelContext.bundleDownloadApi}
             bundleDownloadName={resultPanelContext.bundleDownloadName}
             taskId={resolvedPanelSubtaskId ?? resultPanelContext.primaryTaskId}
@@ -1345,17 +1488,17 @@ export function PlatformSessionAgentWorkspace({
         ) : undefined
       }
     >
-      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
+      <div className="flex h-platform-session-main min-h-0 flex-1 flex-col overflow-hidden bg-bg-surface">
         <div
           ref={messagesScrollRef}
           className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-4 pt-6 sm:px-6"
         >
           <div ref={messagesInnerRef} className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
             <div className="space-y-5">
-              {error ? <p className="text-sm text-red-600">加载/发送失败：{error}</p> : null}
-              {busy ? <p className="text-sm text-[#71717a]">加载中…</p> : null}
+              {error ? <p className="text-sm text-danger">加载/发送失败：{error}</p> : null}
+              {busy ? <p className="text-sm text-text-tertiary">加载中…</p> : null}
               {!busy && !sending && messages.length === 0 && !scheduleTrial ? (
-                <p className="text-sm text-[#71717a]">该会话暂无消息</p>
+                <p className="text-sm text-text-tertiary">该会话暂无消息</p>
               ) : null}
               <div className="space-y-3">
                 {messages.map((m, i) => {
@@ -1594,7 +1737,7 @@ export function PlatformSessionAgentWorkspace({
                               datetime={m.created_at}
                               composerDraft={draft}
                               onSuggestionToggle={
-                                scheduledRunRecord ? undefined : toggleGuidanceSuggestion
+                                scheduledRunRecord ? undefined : submitGuidanceSuggestion
                               }
                             />
                           </div>
@@ -1672,7 +1815,7 @@ export function PlatformSessionAgentWorkspace({
                             datetime={m.created_at}
                             composerDraft={draft}
                             onSuggestionToggle={
-                              scheduledRunRecord ? undefined : toggleGuidanceSuggestion
+                              scheduledRunRecord ? undefined : submitGuidanceSuggestion
                             }
                           />
                         </div>
@@ -1691,32 +1834,32 @@ export function PlatformSessionAgentWorkspace({
           </div>
         </div>
 
-        <div className="bg-transparent px-4 py-4 sm:px-6">
+        <div className="shrink-0 bg-transparent px-4 py-4 sm:px-6">
           <div className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
             {scheduledRunRecord ? (
-              <p className="py-1 text-center text-xs text-[#a1a1aa]">此为定时任务执行记录，不支持继续追问。</p>
+              <p className="py-1 text-center text-xs text-text-disabled">此为定时任务执行记录，不支持继续追问。</p>
             ) : scheduleTrial ? (
               <div className="flex flex-col gap-3">
                 {trialRunInFlight ? (
-                  <p className="text-center text-xs text-[#a1a1aa]">试跑进行中，完成后可手动保存（不会自动写入定时任务）</p>
+                  <p className="text-center text-xs text-text-disabled">试跑进行中，完成后可手动保存（不会自动写入定时任务）</p>
                 ) : trialSaveReady ? (
-                  <p className="text-center text-xs text-[#71717a]">试跑已结束，请确认结果后点击「保存」</p>
+                  <p className="text-center text-xs text-text-tertiary">试跑已结束，请确认结果后点击「保存」</p>
                 ) : null}
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-11 w-full min-w-0 rounded-[10px] sm:w-auto"
+                  className="h-11 w-full min-w-0 rounded-control sm:w-auto"
                   disabled={scheduleControlsLocked}
                   onClick={goBackToSchedule}
                 >
                   上一步
                 </Button>
-                <div className="flex w-full min-w-0 items-center justify-end gap-2 sm:max-w-[360px]">
+                <div className="flex w-full min-w-0 items-center justify-end gap-2 sm:max-w-sm">
                   <Button
                     type="button"
                     variant="ghost"
-                    className="h-11 flex-1 rounded-[10px] text-[#a1a1aa] sm:flex-initial"
+                    className="h-11 flex-1 rounded-control text-text-disabled sm:flex-initial"
                     disabled={!terminateEnabled}
                     onClick={() => void onTerminateTrial()}
                   >
@@ -1724,7 +1867,7 @@ export function PlatformSessionAgentWorkspace({
                   </Button>
                   <Button
                     type="button"
-                    className="h-11 min-w-[88px] flex-1 rounded-[10px] bg-[#111111] text-white hover:bg-[#2a2a2a] sm:flex-initial"
+                    className="h-11 min-w-22 flex-1 rounded-control bg-primary text-primary-foreground hover:bg-link-hover sm:flex-initial"
                     disabled={!trialSaveReady}
                     onClick={() => setSaveConfirmOpen(true)}
                   >
@@ -1764,9 +1907,9 @@ export function PlatformSessionAgentWorkspace({
                 }}
                 onSubmit={() => void send()}
                 visualStyle="default"
-                containerClassName="overflow-visible rounded-[18px] border border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]"
-                textareaClassName="min-h-[84px] max-h-[12em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-[14px] leading-6 text-[#34322d] caret-[#34322d] outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-visible:[box-shadow:none!important]"
-                placeholderClassName="top-[8px] text-[14px] text-[#858481]"
+                containerClassName="overflow-visible rounded-popover border border-border bg-bg-surface shadow-surface"
+                textareaClassName="min-h-composer max-h-composer-chat min-w-44 flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-body leading-6 text-foreground caret-foreground outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-ring-none-important"
+                placeholderClassName="top-2 text-body text-text-tertiary"
               />
             )}
           </div>

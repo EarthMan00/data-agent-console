@@ -60,12 +60,12 @@ function ingestRows(
 
 /** 侧栏：列宽上限 300；表头单行 …；单元格 line-clamp 放在内层，避免 td 设 -webkit-box 破坏表格列布局 */
 const headerClamp =
-  "max-w-[300px] min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-top";
-const bodyCellSidePanelTd = "max-w-[300px] min-w-0 align-top p-0";
+  "max-w-panel-sm min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-top";
+const bodyCellSidePanelTd = "max-w-panel-sm min-w-0 align-top p-0";
 const bodyCellSidePanelInner =
   "block min-w-0 max-w-full whitespace-normal break-words px-3 py-2 text-xs leading-snug line-clamp-3";
 const bodyCellDefault =
-  "max-w-[300px] min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-top";
+  "max-w-panel-sm min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-top";
 
 export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Text, sidePanel }: LazyCsvArtifactTableProps) {
   const [header, setHeader] = useState<string[] | null>(null);
@@ -289,12 +289,12 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Te
   const colCount = Math.max(1, header?.length ?? (dataRows[0]?.length ?? 1));
 
   if (error) {
-    return <p className={cn("text-[12px] text-[#b91c1c]", !sidePanel && "mt-3")}>{error}</p>;
+    return <p className={cn("text-caption text-danger", !sidePanel && "mt-3")}>{error}</p>;
   }
 
   if (initLoading) {
     return (
-      <div className={cn("flex items-center gap-2 text-[12px] text-[#64748b]", !sidePanel && "mt-3")}>
+      <div className={cn("flex items-center gap-2 text-caption text-text-secondary", !sidePanel && "mt-3")}>
         <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
         正在加载 CSV（首屏懒加载）…
       </div>
@@ -302,15 +302,15 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Te
   }
 
   if (!header && dataRows.length === 0) {
-    return <p className={cn("text-[12px] text-[#6b7280]", !sidePanel && "mt-3")}>CSV 为空或无法解析表头。</p>;
+    return <p className={cn("text-caption text-text-tertiary", !sidePanel && "mt-3")}>CSV 为空或无法解析表头。</p>;
   }
 
-  const outerMaxH = sidePanel ? "min-h-0 flex-1 max-h-full" : "max-h-[min(70vh,560px)]";
+  const outerMaxH = sidePanel ? "min-h-0 flex-1 max-h-full" : "max-h-artifact-table";
 
   return (
     <div
       className={cn(
-        "flex w-full min-w-0 flex-col rounded-[10px] border border-[#e5e7eb] bg-white",
+        "flex w-full min-w-0 flex-col rounded-control border border-border bg-bg-surface",
         outerMaxH,
         !sidePanel && "mt-3",
       )}
@@ -318,8 +318,8 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Te
       <div ref={scrollRootRef} className="min-h-0 min-w-0 flex-1 overflow-auto">
         <Table data-testid="lazy-csv-table" className="w-max min-w-full max-w-full table-auto">
           {header ? (
-            <TableHeader className="sticky top-0 z-[1] bg-[#f8fafc] shadow-[0_1px_0_#e5e7eb]">
-              <TableRow className="border-[#e5e7eb] hover:bg-transparent">
+            <TableHeader className="sticky top-0 z-layer-base bg-bg-subtle shadow-hairline">
+              <TableRow className="border-border hover:bg-transparent">
                 {header.map((h, i) => (
                   <TableHead key={`h-${i}`} className={headerClamp} title={h}>
                     {h}
@@ -330,7 +330,7 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Te
           ) : null}
           <TableBody>
             {dataRows.map((row, ri) => (
-              <TableRow key={`r-${ri}`} className="hover:bg-[#fafafa]">
+              <TableRow key={`r-${ri}`} className="hover:bg-bg-subtle">
                 {Array.from({ length: colCount }, (_, ci) => {
                   const cell = row[ci] ?? "";
                   const columnHeader = header?.[ci];
@@ -356,7 +356,7 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Te
                 <TableCell
                   ref={sentinelRef}
                   colSpan={colCount}
-                  className="h-10 border-0 py-2 text-center text-[12px] text-[#94a3b8]"
+                  className="h-10 border-0 py-2 text-center text-caption text-text-disabled"
                 >
                   {loadingMore ? (
                     <span className="inline-flex items-center justify-center gap-2">
@@ -375,8 +375,8 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Te
       {!sidePanel && (hitCap || streamDone) && dataRows.length > 0 ? (
         <div
           className={cn(
-            "shrink-0 border-t border-[#e5e7eb] px-3 py-2 text-[12px] text-[#64748b]",
-            hitCap && "bg-amber-50 text-amber-950",
+            "shrink-0 border-t border-border px-3 py-2 text-caption text-text-secondary",
+            hitCap && "bg-warning-bg text-warning",
           )}
         >
           {hitCap

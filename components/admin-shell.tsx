@@ -32,11 +32,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }, [router]);
 
   return (
-    <div className="flex h-screen bg-[#fafaf9]">
+    <div className="flex h-screen bg-bg-page">
       {/* Sidebar */}
-      <aside className="flex w-[220px] shrink-0 flex-col border-r border-[#e5e7eb] bg-white">
-        <div className="flex h-14 items-center gap-2 border-b border-[#f0f0ef] px-4">
-          <span className="text-sm font-semibold text-[#18181b]">管理后台</span>
+      <aside className="flex w-sidebar-admin shrink-0 flex-col border-r border-border bg-bg-surface">
+        <div className="flex h-14 items-center gap-2 border-b border-border-subtle px-4">
+          <span className="text-sm font-semibold text-foreground">管理后台</span>
         </div>
         <nav className="flex-1 space-y-0.5 p-2">
           {navItems.map((item) => {
@@ -46,10 +46,10 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-[10px] px-3 py-2 text-sm transition-colors",
+                  "flex items-center gap-2.5 rounded-control px-3 py-2 text-sm transition-colors",
                   isActive
-                    ? "bg-[#f0f0ef] font-medium text-[#18181b]"
-                    : "text-[#71717a] hover:bg-[#f7f7f7] hover:text-[#18181b]",
+                    ? "bg-fill-hover font-medium text-foreground"
+                    : "text-text-tertiary hover:bg-fill-hover hover:text-foreground",
                 )}
               >
                 <item.icon className="h-4 w-4" />
@@ -58,11 +58,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
-        <div className="border-t border-[#f0f0ef] p-3">
+        <div className="border-t border-border-subtle p-3">
           <button
             type="button"
             onClick={handleLogout}
-            className="flex w-full items-center gap-2.5 rounded-[10px] px-3 py-2 text-sm text-[#71717a] transition-colors hover:bg-[#f7f7f7] hover:text-[#ef4444]"
+            className="flex w-full items-center gap-2.5 rounded-control px-3 py-2 text-sm text-text-tertiary transition-colors hover:bg-fill-hover hover:text-danger"
           >
             <LogOut className="h-4 w-4" />
             退出登录
@@ -72,7 +72,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
       {/* Content */}
       <main className="flex-1 overflow-auto">
-        <div className="mx-auto max-w-[1180px] px-8 pb-12 pt-8">
+        <div className="mx-auto max-w-admin-content px-8 pb-12 pt-8">
           {children}
         </div>
       </main>

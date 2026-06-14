@@ -23,6 +23,7 @@ type TaskOrchestrationBlockProps = {
   executionCollapsible?: boolean;
   executionContentClassName?: string;
   executionTestId?: string;
+  executionTitleTag?: ReactNode;
 };
 
 export function TaskOrchestrationBlock({
@@ -41,10 +42,11 @@ export function TaskOrchestrationBlock({
   executionCollapsible = true,
   executionContentClassName,
   executionTestId,
+  executionTitleTag,
 }: TaskOrchestrationBlockProps) {
   return (
     <div className={cn("w-full space-y-3.5", ORCHESTRATION_BLOCK_MAX)}>
-      <div className="flex w-full min-w-0 items-center justify-between gap-3 text-[14px] font-medium text-[#303734]">
+      <div className="flex w-full min-w-0 items-center justify-between gap-3 text-body font-medium text-foreground">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center">
             <Image
@@ -57,10 +59,10 @@ export function TaskOrchestrationBlock({
             />
           </div>
           <div>
-            <div className="text-[14px] font-semibold text-[#1f2421]">Alice</div>
+            <div className="text-body font-semibold text-foreground">Alice</div>
           </div>
         </div>
-        {datetime ? <div className="shrink-0 text-[12px] text-[#858481]">{datetime}</div> : null}
+        {datetime ? <div className="shrink-0 text-caption text-text-tertiary">{datetime}</div> : null}
       </div>
 
       {beforeSplit}
@@ -72,6 +74,7 @@ export function TaskOrchestrationBlock({
           collapsible={executionCollapsible}
           contentClassName={executionContentClassName}
           testId={executionTestId}
+          titleTag={executionTitleTag}
         >
           {children}
         </TaskExecutionPanel>

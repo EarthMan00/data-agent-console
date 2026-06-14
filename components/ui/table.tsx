@@ -27,7 +27,7 @@ const TableRow = React.forwardRef<HTMLTableRowElement, React.HTMLAttributes<HTML
   ({ className, ...props }, ref) => (
     <tr
       ref={ref}
-      className={cn("border-b border-[#e5e7eb] transition-colors hover:bg-[#f8fafc]/80 data-[state=selected]:bg-[#f1f5f9]", className)}
+      className={cn("border-b border-border transition-colors hover:bg-fill-hover data-[state=selected]:bg-bg-subtle", className)}
       {...props}
     />
   ),
@@ -39,7 +39,7 @@ const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<
     <th
       ref={ref}
       className={cn(
-        "h-10 max-w-[min(280px,28vw)] whitespace-pre-wrap break-words px-3 py-2 text-left align-top text-xs font-medium text-[#334155] [&:has([role=checkbox])]:pr-0",
+        "h-10 max-w-table-cell-fluid whitespace-pre-wrap break-words px-3 py-2 text-left align-top text-xs font-medium text-text-secondary [&:has([role=checkbox])]:pr-0",
         className,
       )}
       {...props}
@@ -53,7 +53,7 @@ const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<
     <td
       ref={ref}
       className={cn(
-        "max-w-[min(280px,28vw)] whitespace-pre-wrap break-words border-r border-[#f1f5f9] px-3 py-2 align-top text-xs text-[#475569] last:border-r-0 [&:has([role=checkbox])]:pr-0",
+        "max-w-table-cell-fluid whitespace-pre-wrap break-words border-r border-border-subtle px-3 py-2 align-top text-xs text-text-secondary last:border-r-0 [&:has([role=checkbox])]:pr-0",
         className,
       )}
       {...props}

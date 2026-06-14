@@ -32,7 +32,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   createFavoriteFolder,
@@ -47,10 +46,9 @@ import {
 } from "@/lib/agent-api/client";
 import type { FavoriteFolderDto, UserFavoriteListItemDto } from "@/lib/agent-api/types";
 import { cn } from "@/lib/utils";
+import { AutoToast } from "@/components/auto-toast";
 
 type ChipFilter = "全部" | string;
-
-const TYPE_FILTER_ALL = "__all__";
 
 function sortFoldersForDisplay(folders: FavoriteFolderDto[]) {
   return folders
@@ -65,18 +63,6 @@ function sortFoldersForDisplay(folders: FavoriteFolderDto[]) {
     })
     .map(({ folder }) => folder);
 }
-
-const TYPE_FILTER_OPTIONS: { value: string; label: string }[] = [
-  { value: TYPE_FILTER_ALL, label: "全部类型" },
-  { value: "csv", label: "CSV" },
-  { value: "json", label: "JSON" },
-  { value: "md", label: "Markdown" },
-  { value: "html", label: "HTML" },
-  { value: "pdf", label: "PDF" },
-  { value: "file", label: "文件" },
-  { value: "chatexcel", label: "表格处理" },
-  { value: "linkfox", label: "数据采集" },
-];
 
 function FavoritesEmptyIllustration() {
   return <EmptyState message="暂无数据" />;
@@ -94,7 +80,6 @@ export function FavoritesWorkspace() {
   const [search, setSearch] = useState("");
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
   const searchDialogInputRef = useRef<HTMLInputElement | null>(null);
-  const [typeFilter, setTypeFilter] = useState(TYPE_FILTER_ALL);
   const [activeChip, setActiveChip] = useState<ChipFilter>("全部");
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -109,7 +94,8 @@ export function FavoritesWorkspace() {
   const [renameTarget, setRenameTarget] = useState<UserFavoriteListItemDto | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [moveItem, setMoveItem] = useState<UserFavoriteListItemDto | null>(null);
-  const [unfavoriteTarget, setUnfavoriteTarget] = useState<UserFavoriteListItemDto | null>(null);
+  const [removingFavoriteId, setRemovingFavoriteId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const defaultFolderId = useMemo(
     () => folders.find((f) => f.name === "默认")?.id ?? null,
@@ -166,21 +152,15 @@ export function FavoritesWorkspace() {
     router.replace(`/favorite/report/${encodeURIComponent(favoriteIdFromUrl)}`);
   }, [favoriteIdFromUrl, router]);
 
-  const typeFilteredItems = useMemo(() => {
-    if (typeFilter === TYPE_FILTER_ALL) return items;
-    const want = typeFilter.toLowerCase();
-    return items.filter((it) => (it.result_kind ?? "").toLowerCase() === want);
-  }, [items, typeFilter]);
-
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return typeFilteredItems;
-    return typeFilteredItems.filter(
+    if (!q) return items;
+    return items.filter(
       (it) =>
         it.title.toLowerCase().includes(q) ||
         (it.card_preview ?? "").toLowerCase().includes(q),
     );
-  }, [typeFilteredItems, search]);
+  }, [items, search]);
   const showLoadError = Boolean(loadError && !busy && folders.length === 0 && items.length === 0);
 
   const formatCardTime = (iso: string) => {
@@ -201,17 +181,22 @@ export function FavoritesWorkspace() {
     });
   };
 
-  const confirmUnfavorite = async () => {
-    if (!unfavoriteTarget || !platformAgent?.withFreshToken) return;
-    const id = unfavoriteTarget.id;
+  const unfavoriteItem = async (item: UserFavoriteListItemDto) => {
+    if (!platformAgent?.withFreshToken || removingFavoriteId) return;
+    const id = item.id;
+    setRemovingFavoriteId(id);
+    setError("");
     try {
       await platformAgent.withFreshToken(async (token) => {
         await deleteUserFavorite(token, id);
       });
-      setUnfavoriteTarget(null);
+      setItems((current) => current.filter((entry) => entry.id !== id));
+      setToastMessage("已取消收藏");
       await reload();
     } catch (e) {
       setError(formatAgentApiErrorForUser(e));
+    } finally {
+      setRemovingFavoriteId(null);
     }
   };
 
@@ -314,28 +299,33 @@ export function FavoritesWorkspace() {
   const iconFor = (kind: string | null | undefined) => {
     const k = (kind ?? "").toLowerCase();
     if (k === "csv" || k === "json") {
-      return <FileSpreadsheet className="h-4 w-4 text-white" />;
+      return <FileSpreadsheet className="h-4 w-4 text-primary-foreground" />;
     }
-    return <FileText className="h-4 w-4 text-white" />;
+    return <FileText className="h-4 w-4 text-primary-foreground" />;
   };
 
   const iconBgFor = (kind: string | null | undefined) => {
     const k = (kind ?? "").toLowerCase();
-    if (k === "csv" || k === "json" || k === "chatexcel") return "bg-[#34322d]";
-    return "bg-[#747571]";
+    if (k === "csv" || k === "json" || k === "chatexcel") return "bg-primary";
+    return "bg-text-tertiary";
   };
 
   return (
     <MoreDataShell currentPath="/artifacts" showTopHeader={false}>
-      <div className="px-8 pb-14 pt-5">
-        <div className="mx-auto max-w-[1040px]">
+      <AutoToast
+        message={toastMessage}
+        onDismiss={() => setToastMessage(null)}
+        durationMs={2000}
+      />
+      <div className="px-4 pb-14 pt-5 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-page-content">
           <div>
             <div className="flex items-center">
-              <h1 className="shrink-0 whitespace-nowrap text-[24px] font-semibold leading-8 text-[#111111]">我的收藏夹</h1>
+              <h1 className="shrink-0 whitespace-nowrap text-title-3 font-semibold leading-8 text-foreground">我的收藏夹</h1>
             </div>
 
-            <div className="mt-5 flex min-h-[40px] flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <div className="mt-5 flex min-h-10 w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 lg:flex-none">
                 <Tabs value={activeChip} onValueChange={setActiveChip}>
                   <TabsList className="flex-wrap justify-start">
                     <TabsTrigger value="全部">全部</TabsTrigger>
@@ -343,9 +333,9 @@ export function FavoritesWorkspace() {
                     {chipFolders.map((folder) => {
                       const name = folder.name || "未命名";
                       return (
-                        <div key={folder.id} className="group/chip relative inline-flex items-center rounded-[8px]">
+                        <div key={folder.id} className="group/chip relative inline-flex items-center rounded-md">
                           <TabsTrigger value={name}>
-                            <span className="max-w-[160px] truncate">{name}</span>
+                            <span className="max-w-40 truncate">{name}</span>
                           </TabsTrigger>
                           <Popover
                             open={deleteFolderId === folder.id}
@@ -357,7 +347,7 @@ export function FavoritesWorkspace() {
                                 variant="ghost"
                                 aria-label={`删除文件夹 ${name}`}
                                 aria-expanded={deleteFolderId === folder.id}
-                                className="pointer-events-auto absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-[#71717a] opacity-0 transition hover:bg-transparent hover:text-red-600 focus-visible:opacity-100 group-hover/chip:opacity-100 data-[state=open]:opacity-100"
+                                className="pointer-events-auto absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-text-tertiary opacity-0 transition hover:bg-transparent hover:text-danger focus-visible:opacity-100 group-hover/chip:opacity-100 data-[state=open]:opacity-100"
                                 onMouseDown={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -375,10 +365,10 @@ export function FavoritesWorkspace() {
                               side="bottom"
                               align="end"
                               sideOffset={8}
-                              className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
+                              className="w-responsive-popover-sm rounded-panel border border-border bg-bg-surface p-4 shadow-popover-strong"
                               onCloseAutoFocus={(e) => e.preventDefault()}
                             >
-                              <p className="text-[14px] leading-6 text-[#34322d]">
+                              <p className="text-body leading-6 text-foreground">
                                 确定删除该分组吗？该分组下的文件将移回默认分组
                               </p>
                               <div className="mt-4 flex justify-end gap-2">
@@ -386,7 +376,7 @@ export function FavoritesWorkspace() {
                                   type="button"
                                   variant="outline"
                                   size="sm"
-                                  className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
+                                  className="h-9 rounded-control border-border bg-bg-surface px-4 text-body text-text-tertiary hover:bg-fill-hover"
                                   onClick={() => setDeleteFolderId(null)}
                                 >
                                   取消
@@ -395,7 +385,7 @@ export function FavoritesWorkspace() {
                                   type="button"
                                   variant="destructive"
                                   size="sm"
-                                  className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
+                                  className="h-9 rounded-control bg-danger px-4 text-body text-primary-foreground hover:bg-danger-hover"
                                   disabled={deletingFolderId === folder.id}
                                   onClick={() => void deleteFolderAndMoveFilesToDefault(folder.id, name)}
                                 >
@@ -421,14 +411,14 @@ export function FavoritesWorkspace() {
                   <PlusThin />
                 </Button>
               </div>
-              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 lg:w-auto lg:shrink-0">
-                <div className="relative w-full min-w-0 max-[960px]:hidden sm:w-[220px]">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+              <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 lg:w-auto lg:shrink-0 lg:flex-nowrap lg:justify-end">
+                <div className="relative w-full min-w-0 max-lg:hidden sm:w-sidebar-admin">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
                   <Input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="搜索收藏"
-                    className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
+                    className="h-9 w-full rounded-control border-border pl-9"
                   />
                 </div>
                 <Button
@@ -436,31 +426,17 @@ export function FavoritesWorkspace() {
                   variant="outline"
                   size="icon"
                   aria-label="搜索收藏"
-                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[rgba(55,53,47,0.06)] max-[960px]:inline-flex"
+                  className="hidden h-9 w-9 shrink-0 rounded-control border-border bg-bg-surface text-foreground hover:bg-fill-hover max-lg:inline-flex"
                   onClick={() => setSearchDialogOpen(true)}
                 >
                   <Search className="h-4 w-4" />
                 </Button>
-                <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger className="h-9 w-[128px] rounded-[10px] border-[#e2e2df]">
-                    <SelectValue placeholder="全部类型" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {TYPE_FILTER_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
               </div>
             </div>
           </div>
 
-          {error && !showLoadError ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
-          {busy ? <p className="mt-8 text-sm text-[#71717a]">加载中…</p> : null}
+          {error && !showLoadError ? <p className="mt-4 text-sm text-danger">{error}</p> : null}
+          {busy ? <p className="mt-8 text-sm text-text-tertiary">加载中…</p> : null}
 
           <div
             className={cn(
@@ -474,7 +450,7 @@ export function FavoritesWorkspace() {
               filteredItems.map((item) => (
                 <Card
                   key={item.id}
-                  className="group relative overflow-hidden rounded-[18px] border border-white/70 bg-white/72 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition duration-200 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)]"
+                  className="group relative overflow-hidden rounded-popover border border-border-subtle bg-bg-surface/75 text-left shadow-surface transition duration-200 hover:bg-bg-surface hover:shadow-card-hover"
                 >
                   <Button
                     type="button"
@@ -482,109 +458,73 @@ export function FavoritesWorkspace() {
                     onClick={() => openFavoriteReport(item.id)}
                     className="block h-auto w-full whitespace-normal rounded-none p-0 text-left font-normal hover:bg-transparent"
                   >
-                    <CardContent className="flex min-h-[178px] flex-col px-5 py-[18px]">
+                    <CardContent className="flex min-h-44 flex-col px-5 py-4">
                       <div className="flex min-w-0 items-start gap-3">
                         <div
                           className={cn(
-                            "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]",
+                            "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-control",
                             iconBgFor(item.result_kind),
                           )}
                         >
                           {iconFor(item.result_kind)}
                         </div>
                         <div className="min-w-0">
-                          <div className="line-clamp-1 text-[16px] font-semibold leading-6 text-[#111111]">{item.title}</div>
-                          <div className="mt-1 text-xs text-[#8b8c87]">{formatCardTime(item.updated_at)}</div>
+                          <div className="line-clamp-1 text-title-1 font-semibold leading-6 text-foreground">{item.title}</div>
+                          <div className="mt-1 text-xs text-text-tertiary">{formatCardTime(item.updated_at)}</div>
                         </div>
                       </div>
-                      <p className="mt-3 line-clamp-4 text-[14px] leading-6 text-[#747571]">
+                      <p className="mt-3 line-clamp-4 text-body leading-6 text-text-tertiary">
                         {(item.card_preview ?? "").slice(0, 600) || "（无预览摘要）"}
                       </p>
                     </CardContent>
                   </Button>
-                  <CardContent className="flex items-center justify-end gap-2 border-t border-[#e2e2df] px-4 py-3">
-                    <Popover
-                      open={unfavoriteTarget?.id === item.id}
-                      onOpenChange={(open) => setUnfavoriteTarget(open ? item : null)}
-                    >
-                      <DropdownMenu>
-                        <PopoverAnchor asChild>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="iconSm"
-                              className="shrink-0"
-                              aria-label="更多操作"
-                            >
-                              <EllipsisVertical />
-                            </Button>
-                          </DropdownMenuTrigger>
-                        </PopoverAnchor>
-                        <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuGroup>
-                            <DropdownMenuItem
-                              onSelect={() => {
-                                setRenameTarget(item);
-                                setRenameValue(item.title);
-                              }}
-                            >
-                              <Pencil className="h-4 w-4 shrink-0" />
-                              重命名
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => setMoveItem(item)}>
-                              <FolderInput className="h-4 w-4 shrink-0" />
-                              移动到
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-red-700 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-700"
-                              onSelect={(event) => {
-                                event.preventDefault();
-                                setUnfavoriteTarget(item);
-                              }}
-                            >
+                  <CardContent className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="iconSm"
+                          className="shrink-0"
+                          aria-label="更多操作"
+                        >
+                          <EllipsisVertical />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuGroup>
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              setRenameTarget(item);
+                              setRenameValue(item.title);
+                            }}
+                          >
+                            <Pencil className="h-4 w-4 shrink-0" />
+                            重命名
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setMoveItem(item)}>
+                            <FolderInput className="h-4 w-4 shrink-0" />
+                            移动到
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={removingFavoriteId === item.id}
+                            className="text-danger data-[highlighted]:bg-danger-bg data-[highlighted]:text-danger"
+                            onSelect={() => void unfavoriteItem(item)}
+                          >
+                            {removingFavoriteId === item.id ? (
+                              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                            ) : (
                               <StarOff className="h-4 w-4 shrink-0" />
-                              取消收藏
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => onDownload(item.id, item.title)}>
-                              <Download className="h-4 w-4 shrink-0" />
-                              下载报告
-                            </DropdownMenuItem>
-                          </DropdownMenuGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <PopoverContent
-                        side="bottom"
-                        align="end"
-                        sideOffset={8}
-                        className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
-                        onCloseAutoFocus={(e) => e.preventDefault()}
-                      >
-                        <p className="text-[14px] leading-6 text-[#34322d]">
-                          确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
-                        </p>
-                        <div className="mt-4 flex justify-end gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
-                            onClick={() => setUnfavoriteTarget(null)}
-                          >
-                            取消
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
-                            onClick={() => void confirmUnfavorite()}
-                          >
-                            确定删除
-                          </Button>
-                        </div>
-                      </PopoverContent>
-                    </Popover>
+                            )}
+                            {removingFavoriteId === item.id ? "取消中…" : "取消收藏"}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => onDownload(item.id, item.title)}>
+                            <Download className="h-4 w-4 shrink-0" />
+                            下载报告
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </CardContent>
                 </Card>
               ))
@@ -594,10 +534,10 @@ export function FavoritesWorkspace() {
           </div>
 
           <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
-            <DialogContent className="max-w-[420px] rounded-[16px] p-5">
-              <DialogTitle className="text-[16px] font-semibold text-[#111111]">搜索收藏</DialogTitle>
+            <DialogContent className="max-w-confirm-dialog rounded-panel p-5">
+              <DialogTitle className="text-title-1 font-semibold text-foreground">搜索收藏</DialogTitle>
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
                 <Input
                   ref={searchDialogInputRef}
                   value={search}
@@ -606,7 +546,7 @@ export function FavoritesWorkspace() {
                     if (e.key === "Enter") setSearchDialogOpen(false);
                   }}
                   placeholder="搜索收藏"
-                  className="h-10 w-full rounded-[12px] border-[#e2e2df] pl-9"
+                  className="h-10 w-full rounded-field border-border pl-9"
                 />
               </div>
               <div className="flex justify-end gap-2">
@@ -614,7 +554,7 @@ export function FavoritesWorkspace() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-9 rounded-[10px] border-[#e2e2df] px-3 text-[14px]"
+                    className="h-9 rounded-control border-border px-3 text-body"
                     onClick={() => setSearch("")}
                   >
                     清空
@@ -622,7 +562,7 @@ export function FavoritesWorkspace() {
                 ) : null}
                 <Button
                   type="button"
-                  className="h-9 rounded-[10px] bg-[#111111] px-4 text-[14px] text-white hover:bg-[#2a2a2a]"
+                  className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-link-hover"
                   onClick={() => setSearchDialogOpen(false)}
                 >
                   完成
@@ -634,7 +574,7 @@ export function FavoritesWorkspace() {
           <Dialog open={Boolean(renameTarget)} onOpenChange={(o) => !o && setRenameTarget(null)}>
             <DialogContent>
               <DialogTitle>重命名</DialogTitle>
-              <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} className="rounded-[10px]" />
+              <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} className="rounded-control" />
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="outline" onClick={() => setRenameTarget(null)}>
                   取消
@@ -702,14 +642,14 @@ export function FavoritesWorkspace() {
                   }
                 }}
                 placeholder="文件夹名称"
-                className={`rounded-[10px] ${
+                className={`rounded-control ${
                   newFolderNameConflict
-                    ? "!border-red-500 focus-visible:!ring-red-500/20"
+                    ? "!border-danger focus-visible:!ring-danger/20"
                     : ""
                 }`}
               />
               {newFolderNameConflict ? (
-                <p className="flex items-center gap-1.5 text-[14px] leading-5 text-red-600">
+                <p className="flex items-center gap-1.5 text-body leading-5 text-danger">
                   <InfoCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
                   名称已存在
                 </p>

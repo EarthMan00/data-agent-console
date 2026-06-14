@@ -39,7 +39,7 @@ export function TableDataCellContent({
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          className="max-h-20 max-w-[140px] rounded border border-[#e5e7eb] bg-white object-contain"
+          className="max-h-20 max-w-36 rounded border border-border bg-bg-surface object-contain"
           onError={() => setImgError(true)}
         />
       </a>

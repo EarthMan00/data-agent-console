@@ -82,22 +82,22 @@ export default function AdminLoginPage() {
 
   if (checkingAuth) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#fafaf9]">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#d4d4d4] border-t-[#18181b]" />
+      <div className="flex h-screen items-center justify-center bg-bg-page">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-primary" />
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen items-center justify-center bg-[#fafaf9]">
-      <div className="w-full max-w-[360px] rounded-[16px] border border-[#e5e7eb] bg-white p-8 shadow-sm">
+    <div className="flex h-screen items-center justify-center bg-bg-page">
+      <div className="w-full max-w-sm rounded-panel border border-border bg-bg-surface p-8 shadow-sm">
         <div className="mb-8 text-center">
-          <h1 className="text-xl font-semibold text-[#18181b]">管理平台</h1>
-          <p className="mt-1.5 text-sm text-[#71717a]">管理员登录</p>
+          <h1 className="text-xl font-semibold text-foreground">管理平台</h1>
+          <p className="mt-1.5 text-sm text-text-tertiary">管理员登录</p>
         </div>
 
         {error ? (
-          <div className="mb-5 rounded-[10px] border border-[#fecaca] bg-[#fef2f2] px-3.5 py-2.5 text-[13px] leading-5 text-[#b91c1c]">
+          <div className="mb-5 rounded-control border border-danger-border bg-danger-bg px-3.5 py-2.5 text-body leading-5 text-danger">
             {error}
           </div>
         ) : null}
@@ -106,7 +106,7 @@ export default function AdminLoginPage() {
           <div>
             <label
               htmlFor="admin-login-account"
-              className="block text-[13px] font-medium text-[#18181b]"
+              className="block text-body font-medium text-foreground"
             >
               账号
             </label>
@@ -120,7 +120,7 @@ export default function AdminLoginPage() {
               }}
               disabled={loading}
               autoComplete="username"
-              className="mt-1.5 block w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#18181b] outline-none transition-colors placeholder:text-[#a1a1aa] focus:border-[#18181b] focus:ring-1 focus:ring-[#18181b] disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-1.5 block w-full rounded-control border border-border bg-bg-surface px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-text-disabled focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
               placeholder="用户名或邮箱"
             />
           </div>
@@ -128,7 +128,7 @@ export default function AdminLoginPage() {
           <div>
             <label
               htmlFor="admin-login-password"
-              className="block text-[13px] font-medium text-[#18181b]"
+              className="block text-body font-medium text-foreground"
             >
               密码
             </label>
@@ -142,7 +142,7 @@ export default function AdminLoginPage() {
               }}
               disabled={loading}
               autoComplete="current-password"
-              className="mt-1.5 block w-full rounded-[10px] border border-[#e5e7eb] bg-white px-3 py-2 text-sm text-[#18181b] outline-none transition-colors placeholder:text-[#a1a1aa] focus:border-[#18181b] focus:ring-1 focus:ring-[#18181b] disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-1.5 block w-full rounded-control border border-border bg-bg-surface px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-text-disabled focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
               placeholder="输入密码"
             />
           </div>
@@ -150,7 +150,7 @@ export default function AdminLoginPage() {
           <button
             type="submit"
             disabled={loading || !account.trim() || !password.trim()}
-            className="mt-2 w-full rounded-[10px] bg-[#18181b] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#27272a] disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-2 w-full rounded-control bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-40"
           >
             {loading ? "登录中..." : "登录"}
           </button>

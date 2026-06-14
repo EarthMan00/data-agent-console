@@ -19,14 +19,14 @@ export function ChatMarkdown({ className, children }: ChatMarkdownProps) {
   }
 
   return (
-    <div className={cn("chat-md text-[14px] leading-7 text-inherit [&_a]:break-all", className)}>
+    <div className={cn("chat-md text-body leading-7 text-inherit [&_a]:break-all", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
           p: ({ children: c }) => <p className="mb-2 last:mb-0">{c}</p>,
-          h1: ({ children: c }) => <h3 className="mb-2 mt-3 text-[1.05em] font-semibold first:mt-0">{c}</h3>,
-          h2: ({ children: c }) => <h3 className="mb-2 mt-3 text-[1.05em] font-semibold first:mt-0">{c}</h3>,
-          h3: ({ children: c }) => <h4 className="mb-1.5 mt-2 text-[1em] font-semibold first:mt-0">{c}</h4>,
+          h1: ({ children: c }) => <h3 className="mb-2 mt-3 text-title-1 font-semibold first:mt-0">{c}</h3>,
+          h2: ({ children: c }) => <h3 className="mb-2 mt-3 text-title-1 font-semibold first:mt-0">{c}</h3>,
+          h3: ({ children: c }) => <h4 className="mb-1.5 mt-2 text-body font-semibold first:mt-0">{c}</h4>,
           ul: ({ children: c }) => <ul className="my-2 list-disc space-y-1 pl-5">{c}</ul>,
           ol: ({ children: c }) => <ol className="my-2 list-decimal space-y-1 pl-5">{c}</ol>,
           li: ({ children: c }) => <li className="leading-7 [&>p]:mb-0">{c}</li>,
@@ -35,7 +35,7 @@ export function ChatMarkdown({ className, children }: ChatMarkdownProps) {
           a: ({ href, children: c }) => (
             <a
               href={href}
-              className="font-medium text-[#1d4ed8] underline underline-offset-2 hover:text-[#1e40af]"
+              className="font-medium text-link underline underline-offset-2 hover:text-link"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -43,33 +43,33 @@ export function ChatMarkdown({ className, children }: ChatMarkdownProps) {
             </a>
           ),
           pre: ({ children: c }) => (
-            <pre className="my-2 overflow-x-auto rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-3 py-2 text-[14px]">
+            <pre className="my-2 overflow-x-auto rounded-lg border border-border bg-bg-subtle px-3 py-2 text-body">
               {c}
             </pre>
           ),
           code: ({ className, children: c }) => {
             const isBlock = typeof className === "string" && className.includes("language-");
             if (isBlock) {
-              return <code className="font-mono text-[14px] text-[#334155]">{c}</code>;
+              return <code className="font-mono text-body text-text-secondary">{c}</code>;
             }
             return (
-              <code className="rounded bg-[#f1f5f9] px-1 py-0.5 font-mono text-[0.9em] text-[#334155]">{c}</code>
+              <code className="rounded bg-bg-subtle px-1 py-0.5 font-mono text-caption text-text-secondary">{c}</code>
             );
           },
           blockquote: ({ children: c }) => (
-            <blockquote className="my-2 border-l-[3px] border-[#cbd5e1] pl-3 text-[#64748b]">{c}</blockquote>
+            <blockquote className="my-2 border-l-4 border-border-strong pl-3 text-text-secondary">{c}</blockquote>
           ),
-          hr: () => <hr className="my-3 border-[#e2e8f0]" />,
+          hr: () => <hr className="my-3 border-border" />,
           table: ({ children: c }) => (
             <div className="my-2 overflow-x-auto">
-              <table className="min-w-full border-collapse border border-[#e2e8f0] text-sm">{c}</table>
+              <table className="min-w-full border-collapse border border-border text-sm">{c}</table>
             </div>
           ),
-          thead: ({ children: c }) => <thead className="bg-[#f8fafc]">{c}</thead>,
+          thead: ({ children: c }) => <thead className="bg-bg-subtle">{c}</thead>,
           th: ({ children: c }) => (
-            <th className="border border-[#e2e8f0] px-2 py-1.5 text-left font-semibold">{c}</th>
+            <th className="border border-border px-2 py-1.5 text-left font-semibold">{c}</th>
           ),
-          td: ({ children: c }) => <td className="border border-[#e2e8f0] px-2 py-1.5">{c}</td>,
+          td: ({ children: c }) => <td className="border border-border px-2 py-1.5">{c}</td>,
         }}
       >
         {text}

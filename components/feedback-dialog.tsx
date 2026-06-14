@@ -89,42 +89,42 @@ export function FeedbackDialog({
 
   return (
     <Dialog key={dialogKey} open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[580px] rounded-[24px] border-[#ececec] p-0 shadow-[0_28px_80px_rgba(15,23,42,0.14)]">
+      <DialogContent className="max-w-feedback-dialog rounded-hero border-border-subtle p-0 shadow-modal">
         <div className="px-7 pb-7 pt-6">
-          <div className="inline-flex items-center rounded-full border border-[#ececec] bg-[#fafaf9] px-3 py-1 text-xs font-medium tracking-[0.14em] text-[#52525b]">
+          <div className="inline-flex items-center rounded-full border border-border-subtle bg-bg-page px-3 py-1 text-xs font-medium tracking-label-mid text-text-secondary">
             Alice
           </div>
-          <DialogTitle className="mt-4 text-[24px] font-semibold tracking-[-0.03em] text-[#18181b]">
+          <DialogTitle className="mt-4 text-title-3 font-semibold tracking-normal text-foreground">
             问题反馈
           </DialogTitle>
-          <DialogDescription className="mt-2 text-sm leading-6 text-[#71717a]">
+          <DialogDescription className="mt-2 text-sm leading-6 text-text-tertiary">
             你的反馈会直接进入 Alice 的反馈表，方便后续排查与迭代。
           </DialogDescription>
 
-          <div className="mt-5 grid gap-3 text-sm text-[#52525b]">
-            <div className="rounded-[12px] border border-[#e5e7eb] bg-[#fafafa] px-4 py-3">
-              <div className="text-xs uppercase tracking-[0.12em] text-[#a1a1aa]">当前页面</div>
-              <div className="mt-1 text-[#18181b]">{pagePath}</div>
+          <div className="mt-5 grid gap-3 text-sm text-text-secondary">
+            <div className="rounded-field border border-border bg-bg-subtle px-4 py-3">
+              <div className="text-xs uppercase tracking-label text-text-disabled">当前页面</div>
+              <div className="mt-1 text-foreground">{pagePath}</div>
             </div>
-            <div className="rounded-[12px] border border-[#e5e7eb] bg-[#fafafa] px-4 py-3">
-              <div className="text-xs uppercase tracking-[0.12em] text-[#a1a1aa]">当前上下文</div>
-              <div className="mt-1 text-[#18181b]">{contextLabel}</div>
+            <div className="rounded-field border border-border bg-bg-subtle px-4 py-3">
+              <div className="text-xs uppercase tracking-label text-text-disabled">当前上下文</div>
+              <div className="mt-1 text-foreground">{contextLabel}</div>
             </div>
           </div>
 
           <div className="mt-5">
-            <label className="mb-2 block text-sm font-medium text-[#3f3f46]">
+            <label className="mb-2 block text-sm font-medium text-foreground">
               反馈内容 <RequiredAsterisk />
             </label>
             <Textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               placeholder="请描述你遇到的问题、期望行为或需要优化的地方。"
-              className="min-h-[180px] rounded-[16px] border-[#e5e7eb] bg-[#fcfcfb] px-4 py-3 focus-visible:ring-[rgba(24,24,27,0.15)]"
+              className="min-h-confirm-dialog rounded-panel border-border bg-bg-surface px-4 py-3 focus-visible:ring-primary/15"
             />
           </div>
 
-          {notice ? <p className="mt-4 text-sm text-red-600">{notice}</p> : null}
+          {notice ? <p className="mt-4 text-sm text-danger">{notice}</p> : null}
 
           <div className="mt-6 flex justify-end gap-3">
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>

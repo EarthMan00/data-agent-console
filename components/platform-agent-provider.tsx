@@ -205,6 +205,63 @@ function markLoggedInOnThisDevice() {
   }
 }
 
+function AuthTypewriterText({
+  text,
+  enabled,
+  intervalMs = 28,
+  onDone,
+}: {
+  text: string;
+  enabled: boolean;
+  intervalMs?: number;
+  onDone: () => void;
+}) {
+  const shouldType = enabled && text.length > 0;
+  const [visibleText, setVisibleText] = useState(() => (shouldType ? "" : text));
+  const [done, setDone] = useState(() => !shouldType);
+  const onDoneRef = useRef(onDone);
+
+  useEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
+
+  useEffect(() => {
+    const chars = [...text];
+    if (!shouldType || chars.length === 0) {
+      onDoneRef.current();
+      return;
+    }
+
+    let index = 0;
+    let timer: number | undefined;
+
+    const tick = () => {
+      index += 1;
+      setVisibleText(chars.slice(0, index).join(""));
+      if (index >= chars.length) {
+        setDone(true);
+        onDoneRef.current();
+        return;
+      }
+      timer = window.setTimeout(tick, intervalMs);
+    };
+
+    timer = window.setTimeout(tick, 80);
+    return () => {
+      if (timer != null) window.clearTimeout(timer);
+    };
+  }, [intervalMs, shouldType, text]);
+
+  return (
+    <>
+      {visibleText}
+      {enabled && !done ? (
+        <span className="mdata-auth-type-caret" aria-hidden="true" />
+      ) : null}
+    </>
+  );
+}
+
 export function useOptionalPlatformAgent(): PlatformAgentContextValue | null {
   return useContext(PlatformAgentContext);
 }
@@ -227,6 +284,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const [loginIntroFullText, setLoginIntroFullText] = useState(LOGIN_INTRO_TEXT);
   const [loginTitleOverride, setLoginTitleOverride] = useState("");
   const [loginTitleReplayId, setLoginTitleReplayId] = useState(0);
+  const [authTitleDoneKey, setAuthTitleDoneKey] = useState("");
   const [registerStep, setRegisterStep] = useState<RegisterStep>("email");
   const [registerEmail, setRegisterEmail] = useState("");
   const [registerUsername, setRegisterUsername] = useState("");
@@ -279,8 +337,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     activeLoginTitleText,
   ].join(":");
   const isLoginTitleError = Boolean(loginTitleOverride);
-  const activeTitleTypingDone = true;
-  const visibleLoginIntroText = activeLoginTitleText;
+  const activeTitleTypingDone = !loginOpen || authTitleDoneKey === activeLoginTitleKey;
 
   useEffect(() => {
     const snap = loadAgentSession();
@@ -327,6 +384,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       hasLoggedInOnThisDevice() ? LOGIN_RETURNING_TEXT : LOGIN_INTRO_TEXT,
     );
     setLoginTitleOverride("");
+    setLoginTitleReplayId((id) => id + 1);
     setLoginOpen(true);
   }, [resetRegisterForm]);
 
@@ -921,17 +979,17 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     <PlatformAgentContext.Provider value={value}>
       {children}
       {loginOpen ? (
-        <div className="mdata-auth-overlay fixed inset-0 z-50 bg-[#b9b8b5]">
+        <div className="mdata-auth-overlay fixed inset-0 z-auth-overlay bg-fill-active" data-state="open">
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="mdata-login-title"
-            className="mdata-auth-panel fixed left-1/2 top-1/2 h-[calc(100vh-40px)] w-[calc(100vw-40px)] max-w-none -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[24px] border-0 bg-[#141414] p-0 text-white shadow-none sm:rounded-[24px]"
+            className="mdata-auth-panel fixed left-1/2 top-1/2 h-auth-panel w-auth-panel max-w-none -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-hero border-0 bg-primary p-0 text-primary-foreground shadow-none sm:rounded-hero"
           >
             <div className="relative h-full w-full overflow-hidden">
               <button
                 type="button"
-                className="absolute right-8 top-7 z-20 inline-flex h-[42px] w-[42px] items-center justify-center rounded-full text-white/58 transition-[color,background-color,opacity] duration-300 hover:bg-white/[0.04] hover:text-white/82"
+                className="absolute right-8 top-7 z-20 inline-flex h-attachment-thumb w-attachment-thumb items-center justify-center rounded-full text-primary-foreground/58 transition-colors duration-300 hover:bg-bg-surface/5 hover:text-primary-foreground/80"
                 aria-label="关闭登录"
                 onPointerDown={(e) => {
                   e.stopPropagation();
@@ -949,8 +1007,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                 <div
                   className={
                     isRegisterCodeStep
-                      ? "h-[250px] w-[min(650px,calc(100vw-120px))]"
-                      : "h-[250px] w-[min(730px,calc(100vw-120px))]"
+                      ? "h-64 w-auth-visual-sm"
+                      : "h-64 w-auth-visual-lg"
                   }
                 >
                   <div
@@ -968,7 +1026,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                       className={
                         isRegisterCodeStep
                           ? "mt-0.5 h-12 w-12 shrink-0 object-contain"
-                          : "mt-0.5 h-[52px] w-[52px] shrink-0 object-contain"
+                          : "mt-0.5 h-13 w-13 shrink-0 object-contain"
                       }
                       draggable={false}
                       priority
@@ -979,23 +1037,29 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                         aria-label={activeLoginTitleText}
                         className={
                           isRegisterCodeStep
-                            ? "mdata-auth-title min-h-8 max-w-none text-left text-[24px] font-semibold leading-8 tracking-normal text-white transition-colors duration-300"
-                            : `mdata-auth-title min-h-[46px] max-w-[640px] text-left text-[30px] font-medium leading-[45px] tracking-normal transition-colors duration-300 ${
+                            ? "mdata-auth-title min-h-8 max-w-none text-left text-title-3 font-semibold leading-8 tracking-normal text-primary-foreground transition-colors duration-300"
+                            : `mdata-auth-title min-h-source-row max-w-2xl text-left text-display font-medium leading-12 tracking-normal transition-colors duration-300 ${
                                 isLoginTitleError
-                                  ? "text-white"
+                                  ? "text-primary-foreground"
                                   : activeTitleTypingDone
                                     ? "mdata-auth-title-muted"
-                                    : "text-white"
+                                    : "text-primary-foreground"
                               }`
                         }
                       >
-                        {visibleLoginIntroText}
+                        <AuthTypewriterText
+                          key={activeLoginTitleKey}
+                          text={activeLoginTitleText}
+                          enabled={loginOpen}
+                          intervalMs={isRegisterCodeStep ? 20 : 30}
+                          onDone={() => setAuthTitleDoneKey(activeLoginTitleKey)}
+                        />
                       </h2>
                     </div>
                   </div>
 	                  <form
 	                    key={activeLoginTitleKey}
-	                    className={`${isRegisterCodeStep ? "ml-16 mt-4 h-auto" : "ml-[72px] mt-8 h-[121px]"} transition-[opacity,transform] ${
+	                    className={`${isRegisterCodeStep ? "ml-16 mt-4 h-auto" : "ml-18 mt-8 h-30"} transition-all ${
                       activeTitleTypingDone
                         ? "translate-y-0 opacity-100 duration-500"
                         : "pointer-events-none translate-y-2 opacity-0 duration-0"
@@ -1022,10 +1086,10 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     </label>
                     {isRegisterCodeStep ? (
                       <div className="flex w-full flex-col">
-                        <p className="max-w-full text-left text-[14px] font-medium leading-5 text-white/24">
+                        <p className="max-w-full text-left text-body font-medium leading-5 text-primary-foreground/24">
                           验证码已经发送至您的邮箱{registerEmail.trim()}，如果没有收到，请检查垃圾邮件。
                         </p>
-                        <div className="mt-[18px] flex items-center justify-center gap-3" role="group" aria-label="验证码">
+                        <div className="mt-4 flex items-center justify-center gap-3" role="group" aria-label="验证码">
                           {registerCodeDigits.map((digit, index) => (
                             <input
                               key={index}
@@ -1043,14 +1107,14 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                               onKeyDown={(e) => handleRegisterCodeDigitKeyDown(index, e)}
                               onPaste={handleRegisterCodePaste}
                               onFocus={(e) => e.currentTarget.select()}
-                              className="h-[46px] w-[46px] rounded-[8px] border border-white/18 bg-transparent text-center text-[24px] font-semibold leading-none text-white caret-white outline-none transition-[border-color,background-color] duration-200 focus:border-white/64 focus:bg-white/[0.03] disabled:cursor-not-allowed disabled:opacity-45"
+                              className="h-source-row w-12 rounded-md border border-border-subtle/18 bg-transparent text-center text-title-3 font-semibold leading-none text-primary-foreground caret-white outline-none transition-colors duration-200 focus:border-border-subtle/64 focus:bg-bg-surface/5 disabled:cursor-not-allowed disabled:opacity-45"
                             />
                           ))}
                         </div>
                         <button
                           type="button"
                           disabled={loginBusy || !activeTitleTypingDone || registerRetrySeconds > 0}
-                          className="mt-7 inline-flex h-6 items-center justify-center text-[13px] font-semibold leading-5 text-white/26 transition-colors duration-300 hover:text-white/54 disabled:cursor-not-allowed disabled:text-white/20"
+                          className="mt-7 inline-flex h-6 items-center justify-center text-body font-semibold leading-5 text-primary-foreground/26 transition-colors duration-300 hover:text-primary-foreground/54 disabled:cursor-not-allowed disabled:text-primary-foreground/20"
                           onClick={() => {
                             void sendRegisterCode();
                           }}
@@ -1061,7 +1125,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                         </button>
                       </div>
                     ) : (
-                      <div className="flex h-[45px] w-[min(400px,100%)] items-center">
+                      <div className="flex h-11 w-auth-input items-center">
                         <input
                           id="mdata-login-account"
                           ref={accountInputRef}
@@ -1086,7 +1150,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                           disabled={!activeTitleTypingDone}
                           className={
                             authMode === "login" && loginStep === "account"
-                              ? "mdata-auth-input h-[42px] min-w-0 flex-1 !rounded-none [border-radius:0!important] appearance-none bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                              ? "mdata-auth-input h-attachment-thumb min-w-0 flex-1 appearance-none bg-transparent text-display font-extrabold leading-none text-primary-foreground caret-white outline-none placeholder:text-text-secondary"
                               : "hidden"
                           }
                           autoComplete="username"
@@ -1117,7 +1181,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                           disabled={!activeTitleTypingDone}
                           className={
                             authMode === "login" && loginStep === "password"
-                              ? "mdata-auth-input h-[42px] min-w-0 flex-1 !rounded-none [border-radius:0!important] appearance-none bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                              ? "mdata-auth-input h-attachment-thumb min-w-0 flex-1 appearance-none bg-transparent text-display font-extrabold leading-none text-primary-foreground caret-white outline-none placeholder:text-text-secondary"
                               : "hidden"
                           }
                           autoComplete="current-password"
@@ -1154,7 +1218,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                           disabled={!activeTitleTypingDone || loginBusy}
                           className={
                             authMode === "register"
-                              ? "mdata-auth-input h-[42px] min-w-0 flex-1 !rounded-none [border-radius:0!important] appearance-none bg-transparent text-[30px] font-extrabold leading-none text-white caret-white outline-none placeholder:text-[#4d4d4d]"
+                              ? "mdata-auth-input h-attachment-thumb min-w-0 flex-1 appearance-none bg-transparent text-display font-extrabold leading-none text-primary-foreground caret-white outline-none placeholder:text-text-secondary"
                               : "hidden"
                           }
                           autoComplete={registerStepMeta.autoComplete}
@@ -1165,7 +1229,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                             type="button"
                             aria-label={submitAuthLabel}
                             disabled={loginBusy || !activeTitleTypingDone}
-                            className="ml-2 inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-white transition-[color,background-color,opacity] duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
+                            className="ml-2 inline-flex h-attachment-thumb w-attachment-thumb shrink-0 items-center justify-center rounded-full text-primary-foreground transition-colors duration-300 hover:bg-bg-surface/5 disabled:cursor-not-allowed disabled:opacity-45"
                             onClick={() => {
                               if (!activeTitleTypingDone) return;
                               if (authMode === "register") {
@@ -1188,7 +1252,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                         className={
                           isLoginTitleError
                             ? "sr-only"
-                            : "mt-4 max-w-[640px] text-[14px] font-medium leading-6 text-[#ff7a7a]"
+                            : "mt-4 max-w-2xl text-body font-medium leading-6 text-danger"
                         }
                       >
                         {loginError}
@@ -1209,7 +1273,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                   <button
                     type="button"
                     disabled={loginBusy || !activeTitleTypingDone}
-                    className="inline-flex h-16 items-center justify-start rounded-full px-0 text-[14px] font-medium leading-5 text-white/42 transition-[color,opacity] duration-300 hover:text-white/70 disabled:cursor-not-allowed disabled:text-white/24"
+                    className="inline-flex h-16 items-center justify-start rounded-full px-0 text-body font-medium leading-5 text-primary-foreground/42 transition-colors duration-300 hover:text-primary-foreground/70 disabled:cursor-not-allowed disabled:text-primary-foreground/25"
                     onClick={
                       authMode === "register" ? switchToLogin : switchToRegister
                     }
@@ -1232,7 +1296,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                       authMode === "register" ? "返回上一步" : "返回账号"
                     }
                     disabled={loginBusy || !activeTitleTypingDone}
-                    className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-full text-white transition-[color,background-color,opacity] duration-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-45"
+                    className="inline-flex h-attachment-thumb w-attachment-thumb items-center justify-center rounded-full text-primary-foreground transition-colors duration-300 hover:bg-bg-surface/5 disabled:cursor-not-allowed disabled:opacity-45"
                     onClick={
                       authMode === "register"
                         ? returnRegisterStep

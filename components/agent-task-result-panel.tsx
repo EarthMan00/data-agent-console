@@ -100,28 +100,28 @@ function ExcelStyleSheetTabBar({
   if (tabs.length <= 1) return null;
 
   return (
-    <div className="flex min-w-0 shrink-0 items-stretch border-t border-[#dadce0] bg-[#f1f3f4]">
+    <div className="flex min-w-0 shrink-0 items-stretch border-t border-border bg-fill-hover">
       <Popover open={sheetMenuOpen} onOpenChange={setSheetMenuOpen}>
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="flex h-9 w-9 shrink-0 items-center justify-center border-r border-[#dadce0] text-[#5f6368] transition hover:bg-[rgba(55,53,47,0.06)]"
+            className="flex h-9 w-9 shrink-0 items-center justify-center border-r border-border text-text-secondary transition hover:bg-fill-hover"
             aria-label="全部工作表"
           >
             <Menu className="h-4 w-4" strokeWidth={2} />
           </button>
         </PopoverTrigger>
-        <PopoverContent side="top" align="start" className="w-[min(100vw-2rem,17rem)] p-1">
-          <div className="max-h-[min(60vh,320px)] overflow-y-auto">
+        <PopoverContent side="top" align="start" className="w-responsive-popover-md p-1">
+          <div className="max-h-agent-result overflow-y-auto">
             {tabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 className={cn(
-                  "flex w-full rounded-md px-2 py-2 text-left text-[14px] transition",
+                  "flex w-full rounded-md px-2 py-2 text-left text-body transition",
                   activeId === t.id
-                    ? "bg-[#e6f4ea] font-medium text-[#15803d]"
-                    : "text-[#3c4043] hover:bg-[rgba(55,53,47,0.06)]",
+                    ? "bg-success-bg font-medium text-success"
+                    : "text-foreground hover:bg-fill-hover",
                 )}
                 onClick={() => {
                   onSelect(t.id);
@@ -150,14 +150,14 @@ function ExcelStyleSheetTabBar({
               onClick={() => onSelect(t.id)}
               className={cn(
                 "relative shrink-0 px-3 pb-2 pt-1.5 text-left leading-tight transition",
-                dense ? "text-[12px]" : "text-[14px]",
-                active ? "font-medium text-[#15803d]" : "text-[#5f6368] hover:bg-[rgba(55,53,47,0.06)]",
+                dense ? "text-caption" : "text-body",
+                active ? "font-medium text-success" : "text-text-secondary hover:bg-fill-hover",
               )}
             >
-              <span className="line-clamp-1 max-w-[min(220px,52vw)]">{t.label}</span>
+              <span className="line-clamp-1 max-w-task-label-fluid">{t.label}</span>
               {active ? (
                 <span
-                  className="absolute bottom-0 left-2 right-2 h-[3px] rounded-t-[2px] bg-[#15803d]"
+                  className="absolute bottom-0 left-2 right-2 h-1 rounded-t-xs bg-success"
                   aria-hidden
                 />
               ) : null}
@@ -349,25 +349,25 @@ export function AgentTaskResultPanel({
   const showSubtaskSheetBar = Boolean(subtaskResultTabs && subtaskResultTabs.length > 1 && onSubtaskSelect);
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col bg-white" data-testid="agent-preview-panel">
-      <div className="flex shrink-0 flex-col gap-1 border-b border-[#e2e2df] bg-white px-3 py-2 sm:px-4">
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-bg-surface" data-testid="agent-preview-panel">
+      <div className="flex shrink-0 flex-col gap-1 border-b border-border bg-bg-surface px-3 py-2 sm:px-4">
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <div className="text-[14px] font-medium text-[#1f2421]">任务执行结果</div>
+            <div className="text-body font-medium text-foreground">任务执行结果</div>
             {dateLine ? (
-              <div className="mt-0.5 text-[12px] text-[#8b8c87]">最后生成时间：{dateLine}</div>
+              <div className="mt-0.5 text-caption text-text-tertiary">最后生成时间：{dateLine}</div>
             ) : null}
           </div>
-          <div className="flex max-w-[55%] shrink-0 flex-wrap items-center justify-end gap-1 sm:max-w-none">
+          <div className="flex max-w-agent-panel-controls shrink-0 flex-wrap items-center justify-end gap-1 sm:max-w-none">
             {showTableCodeToggle ? (
-              <div className="mr-1 flex rounded-[10px] border border-[#e2e2df] bg-[#f0f0ef] p-0.5">
+              <div className="mr-1 flex rounded-control border border-border bg-fill-hover p-0.5">
                 <button
                   type="button"
                   className={cn(
-                    "rounded-[8px] px-2.5 py-1 text-xs font-medium transition",
+                    "rounded-md px-2.5 py-1 text-xs font-medium transition",
                     viewMode === "table"
-                      ? "bg-white text-[#111111] shadow-none"
-                      : "text-[#747571] hover:text-[#34322d]",
+                      ? "bg-bg-surface text-foreground shadow-none"
+                      : "text-text-tertiary hover:text-foreground",
                   )}
                   onClick={() => setViewMode("table")}
                 >
@@ -376,10 +376,10 @@ export function AgentTaskResultPanel({
                 <button
                   type="button"
                   className={cn(
-                    "rounded-[8px] px-2.5 py-1 text-xs font-medium transition",
+                    "rounded-md px-2.5 py-1 text-xs font-medium transition",
                     viewMode === "code"
-                      ? "bg-white text-[#111111] shadow-none"
-                      : "text-[#747571] hover:text-[#34322d]",
+                      ? "bg-bg-surface text-foreground shadow-none"
+                      : "text-text-tertiary hover:text-foreground",
                   )}
                   onClick={() => setViewMode("code")}
                 >
@@ -393,7 +393,7 @@ export function AgentTaskResultPanel({
                 aria-label="下载当前结果"
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 rounded-[10px] text-[#747571]"
+                className="h-8 w-8 rounded-control text-text-tertiary"
                 onClick={() => downloadCurrent()}
               >
                 <Download className="h-4 w-4" />
@@ -406,7 +406,7 @@ export function AgentTaskResultPanel({
                   aria-label="更多"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-[10px] text-[#747571]"
+                  className="h-8 w-8 rounded-control text-text-tertiary"
                 >
                   <Ellipsis className="h-4 w-4" />
                 </Button>
@@ -415,10 +415,10 @@ export function AgentTaskResultPanel({
                 <button
                   type="button"
                   disabled={favoriteBusy || !tid}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[rgba(55,53,47,0.06)] disabled:opacity-50"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-fill-hover disabled:opacity-50"
                   onClick={() => void toggleFavorite()}
                 >
-                  <Star className={`h-4 w-4 shrink-0 ${favorited ? "fill-amber-400 text-amber-500" : ""}`} />
+                  <Star className={`h-4 w-4 shrink-0 ${favorited ? "fill-warning text-warning" : ""}`} />
                   {favorited ? "取消收藏" : "收藏报告"}
                 </button>
               </PopoverContent>
@@ -428,7 +428,7 @@ export function AgentTaskResultPanel({
               aria-label="关闭任务结果"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-[10px] text-[#747571]"
+              className="h-8 w-8 rounded-control text-text-tertiary"
               onClick={onClose}
             >
               <X className="h-4 w-4" />
@@ -438,16 +438,16 @@ export function AgentTaskResultPanel({
       </div>
 
       {notice ? (
-        <div className="border-b border-[#ececec] bg-[#fafaf9] px-3 py-2 text-xs text-[#78716c]">{notice}</div>
+        <div className="border-b border-border-subtle bg-bg-page px-3 py-2 text-xs text-text-tertiary">{notice}</div>
       ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {(taskStatus === "FAILED" && displayErrorMessage) ? (
-          <div className="shrink-0 border-b border-[#fecaca] bg-[#fef2f2] px-3 py-3 sm:px-4">
+          <div className="shrink-0 border-b border-danger-border bg-danger-bg px-3 py-3 sm:px-4">
             <div className="flex items-start gap-2">
-              <span className="mt-0.5 shrink-0 text-sm font-semibold text-[#dc2626]">执行失败</span>
+              <span className="mt-0.5 shrink-0 text-sm font-semibold text-danger">执行失败</span>
             </div>
-            <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-[#7f1d1d]">
+            <p className="mt-1.5 whitespace-pre-wrap text-body leading-relaxed text-danger">
               {displayErrorMessage}
             </p>
           </div>
@@ -458,18 +458,18 @@ export function AgentTaskResultPanel({
           ) : withFreshToken && !useSheetUi && fallbackPrimary ? (
             <TaskSingleDataArtifactPreview artifact={fallbackPrimary} withFreshToken={withFreshToken} />
           ) : taskStatus === "FAILED" ? (
-            <p className="text-[13px] leading-6 text-[#64748b]">
+            <p className="text-body leading-6 text-text-secondary">
               任务未产生可展示的数据文件（CSV/JSON 等），详情请查看上方错误信息。
             </p>
           ) : (
-            <p className="text-[14px] leading-6 text-[#64748b]">
+            <p className="text-body leading-6 text-text-secondary">
               暂无数据或报告类结果文件（CSV/JSON/Markdown/HTML/PDF 等）可展示。
             </p>
           )}
         </div>
 
         {/* Excel 式底部 sheet：截图同款浅灰条 + 绿色激活下划线；多子任务时栏在最底，其上方可为同任务多文件 */}
-        <div className="flex shrink-0 flex-col shadow-[0_-1px_0_#dadce0]">
+        <div className="flex shrink-0 flex-col shadow-hairline">
           {useSheetUi && sheets.length > 1 ? (
             <ExcelStyleSheetTabBar
               tabs={sheets.map((s) => ({ id: s.id, label: s.label }))}

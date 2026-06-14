@@ -53,16 +53,16 @@ const STATUS_NORM = (s: string) => s.trim().toLowerCase().replace(/-/g, "_");
 export function runStatusDisplay(status: string) {
   const k = STATUS_NORM(status);
   if (k === "success")
-    return { text: "运行成功", className: "bg-[#e8f5e9] text-[#1b5e20] border border-[#c8e6c9]/90" };
+    return { text: "运行成功", className: "bg-success-bg text-success border border-success-border/90" };
   if (k === "running" || k === "pending")
     return { text: "运行中", className: "bg-sky-50 text-sky-800 border border-sky-200/80" };
   if (k === "failed" || k === "blocked_by_plan")
-    return { text: "运行异常", className: "bg-rose-50 text-red-600 border border-rose-100" };
+    return { text: "运行异常", className: "bg-rose-50 text-danger border border-rose-100" };
   if (k === "timeout" || k === "time_out")
-    return { text: "运行超时", className: "bg-amber-50 text-amber-800 border border-amber-100" };
+    return { text: "运行超时", className: "bg-warning-bg text-warning border border-warning-border" };
   if (k === "cancelled")
-    return { text: "已取消", className: "bg-zinc-100 text-zinc-600 border border-zinc-200/80" };
-  return { text: status, className: "bg-slate-100 text-slate-600 border border-slate-200/60" };
+    return { text: "已取消", className: "bg-bg-subtle text-text-tertiary border border-border-subtle" };
+  return { text: status, className: "bg-bg-subtle text-text-secondary border border-border-subtle" };
 }
 
 /** 将 ISO-8601（UTC）显示为当前环境的本地时间（如中国为东八区）。 */

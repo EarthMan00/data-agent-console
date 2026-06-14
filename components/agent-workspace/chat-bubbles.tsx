@@ -28,8 +28,8 @@ function splitMessageLines(text: string) {
 }
 
 /** 普通对话：与消息列表同列宽，用户气泡贴右、助手气泡贴左，最大宽度一致 */
-export const SIMPLE_CHAT_COLUMN_MAX = "max-w-[min(100%,920px)]";
-export const SIMPLE_CHAT_BUBBLE_MAX = "max-w-[min(100%,720px)]";
+export const SIMPLE_CHAT_COLUMN_MAX = "max-w-simple-column";
+export const SIMPLE_CHAT_BUBBLE_MAX = "max-w-simple-bubble";
 /** 任务拆分 / 任务执行卡片：占满会话列宽，长附件名可换行 */
 export const ORCHESTRATION_BLOCK_MAX = "w-full min-w-0";
 
@@ -53,12 +53,12 @@ export function SimpleUserBubble({
   return (
     <div className="flex w-full justify-end" data-testid="agent-user-input-card">
       <div className={cn("group flex flex-col items-end gap-2", SIMPLE_CHAT_BUBBLE_MAX)}>
-        <div className="mb-1 text-[12px] text-[#78716c] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        <div className="mb-1 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
           {formatTimeForBubble(datetime)}
         </div>
         {attachments.length > 0 ? <UserMessageAttachmentCards attachments={attachments} /> : null}
         {visibleText ? (
-          <div className="shrink-0 rounded-[16px] bg-[#f0f0ef] px-4 py-3 text-[14px] leading-7 text-[#34322d] shadow-none">
+          <div className="shrink-0 rounded-panel bg-fill-hover px-4 py-3 text-body leading-7 text-foreground shadow-none">
             <div className="break-words whitespace-pre-wrap">{visibleText}</div>
           </div>
         ) : null}
@@ -123,32 +123,32 @@ export function SimpleAssistantBubble({
         />
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex items-center gap-3">
-            <div className="text-[14px] font-semibold text-[#1f2421]">Alice</div>
+            <div className="text-body font-semibold text-foreground">Alice</div>
           </div>
           {waitingForContent ? (
-            <div className="min-w-0 text-[#34322d]">
+            <div className="min-w-0 text-foreground">
               <div
-                className="flex items-center gap-3 py-0.5 text-[14px] leading-7 text-[#747571]"
+                className="flex items-center gap-3 py-0.5 text-body leading-7 text-text-tertiary"
                 role="status"
                 aria-live="polite"
               >
-                <DotmSquare11 size={22} dotSize={3} speed={1.15} className="shrink-0 text-[#111111]" aria-hidden />
+                <DotmSquare11 size={22} dotSize={3} speed={1.15} className="shrink-0 text-foreground" aria-hidden />
                 <span>我正在思考，请等我一下～</span>
               </div>
             </div>
           ) : (
-            <div className="shrink-0 rounded-[16px] border border-[#e2e2df] bg-white px-4 py-3 text-[#34322d] shadow-none">
+            <div className="shrink-0 rounded-panel border border-border bg-bg-surface px-4 py-3 text-foreground shadow-none">
               <div className="min-w-0">
                 <ChatMarkdown>{shown}</ChatMarkdown>
                 {showCursor ? (
-                  <span className="ml-0.5 inline-block animate-pulse text-[#747571]" aria-hidden>
+                  <span className="ml-0.5 inline-block animate-pulse text-text-tertiary" aria-hidden>
                     ▌
                   </span>
                 ) : null}
               </div>
             </div>
           )}
-          <div className="mt-1 text-[12px] text-[#858481] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <div className="mt-1 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
             {formatTimeForBubble(datetime)}
           </div>
         </div>
@@ -207,7 +207,7 @@ export function AliceMessageBubble({
   return (
     <div className="flex w-full justify-start">
       <div className={cn("group w-full space-y-3", SIMPLE_CHAT_BUBBLE_MAX)}>
-        <div className="flex w-full min-w-0 items-center justify-between gap-3 text-[14px] font-medium text-[#303734]">
+        <div className="flex w-full min-w-0 items-center justify-between gap-3 text-body font-medium text-foreground">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center">
               <Image
@@ -219,18 +219,18 @@ export function AliceMessageBubble({
                 draggable={false}
               />
             </div>
-            <div className="text-[14px] font-semibold text-[#1f2421]">Alice</div>
+            <div className="text-body font-semibold text-foreground">Alice</div>
           </div>
-          <div className="shrink-0 text-[12px] text-[#858481] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <div className="shrink-0 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
             {formatTimeForBubble(datetime)}
           </div>
         </div>
         {targetNorm ? (
-          <div className="shrink-0 rounded-[16px] border border-[#e2e2df] bg-white px-4 py-3 text-[#34322d] shadow-none">
-            <div className="min-w-0 text-[14px] leading-7">
+          <div className="shrink-0 rounded-panel border border-border bg-bg-surface px-4 py-3 text-foreground shadow-none">
+            <div className="min-w-0 text-body leading-7">
               <ChatMarkdown>{shown}</ChatMarkdown>
               {showCursor ? (
-                <span className="ml-0.5 inline-block animate-pulse text-[#747571]" aria-hidden>
+                <span className="ml-0.5 inline-block animate-pulse text-text-tertiary" aria-hidden>
                   ▌
                 </span>
               ) : null}
@@ -243,11 +243,11 @@ export function AliceMessageBubble({
               {visibleSuggestions.map((item, index) => {
                 const selected = composerDraftContainsSuggestion(composerDraft, item);
                 const chipClass = cn(
-                  "inline-flex max-w-full rounded-[999px] border px-3.5 py-2 text-left text-[13px] leading-5 transition",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15",
+                  "inline-flex max-w-full rounded-pill border px-3.5 py-2 text-left text-body leading-5 transition",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/15",
                   selected
-                    ? "border-[#111111] bg-[#111111] text-white shadow-[0_1px_2px_rgba(17,17,17,0.08)]"
-                    : "border-[#e2e2df] bg-white text-[#34322d] shadow-[0_1px_2px_rgba(17,17,17,0.03)] hover:border-[#c9c9c4] hover:bg-[#fafaf9]",
+                    ? "border-primary bg-primary text-primary-foreground shadow-surface-strong"
+                    : "border-border bg-bg-surface text-foreground shadow-surface hover:border-border-strong hover:bg-bg-page",
                 );
                 if (interactive) {
                   return (
@@ -256,7 +256,7 @@ export function AliceMessageBubble({
                       type="button"
                       role="listitem"
                       aria-pressed={selected}
-                      className={cn(chipClass, "active:scale-[0.98]")}
+                      className={cn(chipClass, "active-scale-chip")}
                       onClick={() => onSuggestionToggle(item)}
                     >
                       <span className="whitespace-pre-wrap break-words">{item}</span>
@@ -296,11 +296,11 @@ export function SimpleSystemBubble({ message }: { message: string }) {
     <div className="flex w-full justify-start">
       <div
         className={cn(
-          "shrink-0 rounded-[16px] border border-[#e2e2df] bg-white px-4 py-3 text-[14px] leading-7 text-[#52524f] shadow-[0_1px_2px_rgba(17,17,17,0.03)]",
+          "shrink-0 rounded-panel border border-border bg-bg-surface px-4 py-3 text-body leading-7 text-text-secondary shadow-surface",
           SIMPLE_CHAT_BUBBLE_MAX,
         )}
       >
-        <div className="text-[12px] font-medium uppercase tracking-wide opacity-70">系统</div>
+        <div className="text-caption font-medium uppercase tracking-wide opacity-70">系统</div>
         <p className="mt-1 whitespace-pre-wrap break-words">{message}</p>
       </div>
     </div>
@@ -324,18 +324,18 @@ export function ConversationBubble({
 
   return (
     <div className={cn("flex", role === "user" ? "justify-end" : "justify-start")}>
-      <div className={cn("w-full max-w-[780px]", role === "user" ? "items-end" : "items-start")}>
+      <div className={cn("w-full max-w-3xl", role === "user" ? "items-end" : "items-start")}>
         <div
           className={cn(
             "px-5 py-4",
             role === "user"
-              ? "rounded-none bg-transparent px-0 py-0 text-[#202124] shadow-none"
+              ? "rounded-none bg-transparent px-0 py-0 text-foreground shadow-none"
               : tone === "status"
-                ? "rounded-[16px] border border-[#e2e2df] bg-white text-[#52524f] shadow-none"
-                : "border border-[#e2e2df] bg-white text-[#34322d]",
+                ? "rounded-panel border border-border bg-bg-surface text-text-secondary shadow-none"
+                : "border border-border bg-bg-surface text-foreground",
           )}
         >
-          <div className="space-y-2 text-[14px] leading-7">
+          <div className="space-y-2 text-body leading-7">
             {lines.map((line) => (
               <p key={line} className="whitespace-pre-wrap break-words">
                 {line}
@@ -343,14 +343,14 @@ export function ConversationBubble({
             ))}
           </div>
           {role === "user" ? (
-            <div className="mt-3 text-right text-[12px] text-[#b0b4b8]">
+            <div className="mt-3 text-right text-caption text-text-disabled">
               {datetime}
             </div>
           ) : null}
         </div>
         {role === "assistant" ? (
-          <div className="mb-2 mt-2 flex items-center gap-2 text-[12px] justify-start text-[#7a8380]">
-            <span className="font-medium text-[#1f2421]">{title}</span>
+          <div className="mb-2 mt-2 flex items-center gap-2 text-caption justify-start text-text-tertiary">
+            <span className="font-medium text-foreground">{title}</span>
             <span>{datetime}</span>
           </div>
         ) : null}
@@ -374,11 +374,11 @@ export function CollapsedStatusRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-between rounded-[16px] border border-[#e2e2df] bg-white px-4 py-3.5 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)]"
+      className="flex w-full items-center justify-between rounded-panel border border-border bg-bg-surface px-4 py-3.5 text-left shadow-surface"
       data-testid={testId}
     >
-      <div className="text-[14px] font-semibold text-[#1f2421]">{title}</div>
-      <ChevronDown className={cn("h-4 w-4 text-[#8f9692]", expanded ? "rotate-180" : "-rotate-90")} />
+      <div className="text-body font-semibold text-foreground">{title}</div>
+      <ChevronDown className={cn("h-4 w-4 text-text-tertiary", expanded ? "rotate-180" : "-rotate-90")} />
     </button>
   );
 }
@@ -399,20 +399,20 @@ export function ToolCard({
   return (
     <div
       className={cn(
-        "rounded-[16px] border px-4 py-3 shadow-[0_1px_2px_rgba(17,17,17,0.03)]",
+        "rounded-panel border px-4 py-3 shadow-surface",
         tone === "error"
-          ? "border-[#fecaca] bg-[#fef2f2]"
-          : "border-[#e2e2df] bg-white",
+          ? "border-danger-border bg-danger-bg"
+          : "border-border bg-bg-surface",
       )}
     >
       <div className="flex items-center justify-between gap-3">
         <div
           className={cn(
-            "flex items-center gap-2 text-[12px] font-medium",
-            tone === "error" ? "text-[#991b1b]" : "text-[#34322d]",
+            "flex items-center gap-2 text-caption font-medium",
+            tone === "error" ? "text-danger" : "text-foreground",
           )}
         >
-          <div className="flex h-5 w-5 items-center justify-center rounded-full border border-[#e2e2df] bg-[#f7f7f7]">
+          <div className="flex h-5 w-5 items-center justify-center rounded-full border border-border bg-fill-hover">
             <FileText className="h-3 w-3" />
           </div>
           {title}
@@ -421,13 +421,13 @@ export function ToolCard({
           <button
             type="button"
             onClick={onAction}
-            className="rounded-[8px] border border-[#e2e2df] bg-[#f7f7f7] px-2 py-0.5 text-[12px] font-medium text-[#34322d]"
+            className="rounded-md border border-border bg-fill-hover px-2 py-0.5 text-caption font-medium text-foreground"
           >
             {actionLabel}
           </button>
         ) : null}
       </div>
-      <div className={cn("mt-2 text-[12px] leading-5", tone === "error" ? "text-[#b91c1c]" : "text-[#747571]")}>
+      <div className={cn("mt-2 text-caption leading-5", tone === "error" ? "text-danger" : "text-text-tertiary")}>
         {detail}
       </div>
     </div>
@@ -463,7 +463,7 @@ export function AliceErrorBubble({
     <div className="flex w-full justify-start">
       <div className={cn("group w-full space-y-3", SIMPLE_CHAT_BUBBLE_MAX)}>
         {/* Alice 身份头 */}
-        <div className="flex w-full min-w-0 items-center justify-between gap-3 text-[14px] font-medium text-[#303734]">
+        <div className="flex w-full min-w-0 items-center justify-between gap-3 text-body font-medium text-foreground">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center">
               <Image
@@ -475,17 +475,17 @@ export function AliceErrorBubble({
                 draggable={false}
               />
             </div>
-            <div className="text-[14px] font-semibold text-[#1f2421]">Alice</div>
+            <div className="text-body font-semibold text-foreground">Alice</div>
           </div>
-          <div className="shrink-0 text-[12px] text-[#858481] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <div className="shrink-0 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
             {formatTimeForBubble(datetime)}
           </div>
         </div>
 
         {/* 错误原因 */}
         {displayCause ? (
-          <div className="shrink-0 rounded-[16px] border border-[#fecaca] bg-[#fef2f2] px-4 py-3">
-            <div className="whitespace-pre-wrap text-[14px] leading-7 text-[#b91c1c]">
+          <div className="shrink-0 rounded-panel border border-danger-border bg-danger-bg px-4 py-3">
+            <div className="whitespace-pre-wrap text-body leading-7 text-danger">
               {displayCause}
             </div>
           </div>
@@ -494,16 +494,16 @@ export function AliceErrorBubble({
         {/* 补救措施（可点击气泡） */}
         {uniqueSuggestions.length > 0 ? (
           <div className="space-y-2.5 pl-0 sm:pl-12">
-            <p className="text-[12px] font-medium text-[#78716c]">可尝试以下操作：</p>
+            <p className="text-caption font-medium text-text-tertiary">可尝试以下操作：</p>
             <div className="flex flex-row flex-wrap items-start gap-2" role={interactive ? "list" : undefined}>
               {uniqueSuggestions.map((item, index) => {
                 const selected = composerDraftContainsSuggestion(composerDraft, item);
                 const chipClass = cn(
-                  "inline-flex max-w-full rounded-[999px] border px-3.5 py-2 text-left text-[13px] leading-5 transition",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15",
+                  "inline-flex max-w-full rounded-pill border px-3.5 py-2 text-left text-body leading-5 transition",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/15",
                   selected
-                    ? "border-[#111111] bg-[#111111] text-white shadow-[0_1px_2px_rgba(17,17,17,0.08)]"
-                    : "border-[#e2e2df] bg-white text-[#34322d] shadow-[0_1px_2px_rgba(17,17,17,0.03)] hover:border-[#c9c9c4] hover:bg-[#fafaf9]",
+                    ? "border-primary bg-primary text-primary-foreground shadow-surface-strong"
+                    : "border-border bg-bg-surface text-foreground shadow-surface hover:border-border-strong hover:bg-bg-page",
                 );
                 if (interactive) {
                   return (
@@ -512,7 +512,7 @@ export function AliceErrorBubble({
                       type="button"
                       role="listitem"
                       aria-pressed={selected}
-                      className={cn(chipClass, "active:scale-[0.98]")}
+                      className={cn(chipClass, "active-scale-chip")}
                       onClick={() => onSuggestionToggle(item)}
                     >
                       <span className="whitespace-pre-wrap break-words">{item}</span>

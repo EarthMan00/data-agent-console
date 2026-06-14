@@ -28,6 +28,7 @@ import {
   MessageCircleMore,
   PanelLeft,
   PanelLeftExpand,
+  PanelRightOpen,
   Plus,
   Search,
   SparkleHighlight,
@@ -38,12 +39,17 @@ import {
 } from "@/components/ui/tabler-icons";
 
 import { BrandLogo } from "@/components/brand-logo";
+import { DotmSquare11 } from "@/components/ui/dotm-square-11";
 import { EmptyState } from "@/components/empty-state";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { isPlatformBackendEnabled } from "@/lib/agent-runtime";
+import {
+  getFrontendMockHistoryEntry,
+  isFrontendMockSessionId,
+} from "@/lib/frontend-mock-session";
 import {
   AgentApiError,
   listSessions,
@@ -116,10 +122,14 @@ function useShellMetaContext() {
 type HistoryEntry = SessionListItem & {
   firstMessage?: string | null;
   firstAt?: string | null;
+  hasMessages?: boolean;
+  isOptimistic?: boolean;
 };
 
 const HISTORY_PAGE_SIZE = 20;
-const ACCOUNT_AVATAR_COLORS = ["#2563eb", "#7c3aed", "#db2777", "#dc2626", "#ea580c", "#16a34a", "#0891b2", "#4f46e5"];
+const OPTIMISTIC_HISTORY_TITLE = "正在规划工作...";
+const LEGACY_OPTIMISTIC_HISTORY_TITLE = "正在思考...";
+const ACCOUNT_AVATAR_CLASSES = ["bg-avatar-1", "bg-avatar-2", "bg-avatar-3", "bg-avatar-4", "bg-avatar-5", "bg-avatar-6", "bg-avatar-7", "bg-avatar-8"];
 
 function historyTimestampMs(entry: HistoryEntry) {
   const times = [entry.last_active_at, entry.firstAt, entry.created_at]
@@ -128,6 +138,13 @@ function historyTimestampMs(entry: HistoryEntry) {
       return Number.isFinite(ms) ? ms : 0;
     });
   return Math.max(...times);
+}
+
+function getHistoryDisplayTitle(entry: HistoryEntry, effectiveActiveSessionId: string | null | undefined, activeSessionTitle: string) {
+  if (entry.isOptimistic && (!entry.firstMessage || entry.firstMessage === LEGACY_OPTIMISTIC_HISTORY_TITLE)) {
+    return OPTIMISTIC_HISTORY_TITLE;
+  }
+  return entry.firstMessage || (entry.session_id === effectiveActiveSessionId ? activeSessionTitle : null) || "新对话";
 }
 
 function sortHistoryEntries(entries: HistoryEntry[]) {
@@ -148,7 +165,7 @@ function getAccountAvatarMeta(name: string) {
   }
   return {
     initial,
-    color: ACCOUNT_AVATAR_COLORS[hash % ACCOUNT_AVATAR_COLORS.length] ?? ACCOUNT_AVATAR_COLORS[0],
+    colorClass: ACCOUNT_AVATAR_CLASSES[hash % ACCOUNT_AVATAR_CLASSES.length] ?? ACCOUNT_AVATAR_CLASSES[0],
   };
 }
 
@@ -169,6 +186,7 @@ async function enrichHistoryEntries(
       const firstUser = sorted.find((m) => m.role === "user") ?? sorted[0];
       return {
         ...s,
+        hasMessages: sorted.length > 0,
         firstMessage: firstUser?.content ?? null,
         firstAt: firstUser?.created_at ?? s.created_at,
       };
@@ -194,6 +212,8 @@ type MoreDataShellStateValue = {
   /** 当前活跃会话的乐观标题（来自 workspace 实时首条用户消息），覆盖 enrichment 尚未完成的 firstMessage */
   activeSessionTitle: string;
   setActiveSessionTitle: (title: string) => void;
+  upsertOptimisticHistorySession: (sessionId: string, title?: string) => void;
+  removeOptimisticHistorySession: (sessionId: string) => void;
 };
 
 const MoreDataShellStateContext = createContext<MoreDataShellStateValue | null>(null);
@@ -213,9 +233,38 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
   const refreshHistoryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshHistoryInFlightRef = useRef(false);
   const refreshHistoryPendingRef = useRef(false);
+  const optimisticHistoryRef = useRef<Map<string, HistoryEntry>>(new Map());
 
   const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
   const historyHasMore = historySessions.length < historyTotal;
+
+  const upsertOptimisticHistorySession = useCallback((sessionId: string, title = OPTIMISTIC_HISTORY_TITLE) => {
+    const sid = sessionId.trim();
+    if (!sid) return;
+    const now = new Date().toISOString();
+    const entry: HistoryEntry = {
+      session_id: sid,
+      status: "creating",
+      created_at: now,
+      last_active_at: now,
+      expires_at: now,
+      firstMessage: title,
+      firstAt: now,
+      isOptimistic: true,
+    };
+    optimisticHistoryRef.current.set(sid, entry);
+    setHistorySessions((prev) => {
+      const next = [entry, ...prev.filter((s) => s.session_id !== sid)];
+      return sortHistoryEntries(next);
+    });
+  }, []);
+
+  const removeOptimisticHistorySession = useCallback((sessionId: string) => {
+    const sid = sessionId.trim();
+    if (!sid) return;
+    optimisticHistoryRef.current.delete(sid);
+    setHistorySessions((prev) => prev.filter((s) => !(s.isOptimistic && s.session_id === sid)));
+  }, []);
 
   const refreshHistoryNow = useCallback(async () => {
     if (!platformAgent?.auth?.accessToken) return;
@@ -232,8 +281,13 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
         const base = res.sessions ?? [];
         const enriched = await enrichHistoryEntries(token, base);
         historyPageRef.current = 1;
-        setHistoryTotal(res.total ?? enriched.length);
-        setHistorySessions(sortHistoryEntries(enriched));
+        const serverSessionIds = new Set(enriched.map((s) => s.session_id));
+        for (const sid of serverSessionIds) {
+          optimisticHistoryRef.current.delete(sid);
+        }
+        const optimisticOnly = Array.from(optimisticHistoryRef.current.values());
+        setHistoryTotal((res.total ?? enriched.length) + optimisticOnly.length);
+        setHistorySessions(sortHistoryEntries([...optimisticOnly, ...enriched]));
         setHistoryWasLoaded(true);
       });
     } catch (e) {
@@ -285,18 +339,20 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
         }
         const enriched = await enrichHistoryEntries(token, base);
         historyPageRef.current = nextPage;
-        setHistoryTotal(res.total ?? historyTotal);
+        for (const row of enriched) {
+          optimisticHistoryRef.current.delete(row.session_id);
+        }
         setHistorySessions((prev) => {
-          const seen = new Set(prev.map((s) => s.session_id));
-          const merged = [...prev];
+          const bySessionId = new Map(prev.map((s) => [s.session_id, s]));
           for (const row of enriched) {
-            if (!seen.has(row.session_id)) {
-              merged.push(row);
-              seen.add(row.session_id);
-            }
+            bySessionId.set(row.session_id, row);
           }
-          return sortHistoryEntries(merged);
+          for (const optimistic of optimisticHistoryRef.current.values()) {
+            bySessionId.set(optimistic.session_id, optimistic);
+          }
+          return sortHistoryEntries(Array.from(bySessionId.values()));
         });
+        setHistoryTotal((res.total ?? historyTotal) + optimisticHistoryRef.current.size);
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -312,6 +368,7 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
       setHistorySessions([]);
       setHistoryWasLoaded(false);
       setHistoryTotal(0);
+      optimisticHistoryRef.current.clear();
       historyPageRef.current = 0;
       return;
     }
@@ -335,6 +392,8 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
       setHistoryError,
       activeSessionTitle,
       setActiveSessionTitle,
+      upsertOptimisticHistorySession,
+      removeOptimisticHistorySession,
     }),
     [
       historySessions,
@@ -348,6 +407,8 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
       sidebarCollapsed,
       setHistoryError,
       activeSessionTitle,
+      upsertOptimisticHistorySession,
+      removeOptimisticHistorySession,
     ],
   );
 
@@ -356,11 +417,11 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
 
 function SidebarHistorySkeleton() {
   return (
-    <div className="space-y-2 px-[9px] py-2" aria-hidden="true">
+    <div className="space-y-2 px-2 py-2" aria-hidden="true">
       {Array.from({ length: 6 }).map((_, index) => (
-        <div key={index} className="rounded-[10px] px-0 py-1.5">
-          <div className="h-4 w-[82%] animate-pulse rounded-full bg-[#ececea]" />
-          <div className="mt-2 h-3 w-[46%] animate-pulse rounded-full bg-[#f1f1ef]" />
+        <div key={index} className="rounded-control px-0 py-1.5">
+          <div className="h-4 w-skeleton-wide animate-pulse rounded-full bg-fill-active" />
+          <div className="mt-2 h-3 w-skeleton-short animate-pulse rounded-full bg-bg-subtle" />
         </div>
       ))}
     </div>
@@ -415,7 +476,7 @@ export function MoreDataShellRoot({ children }: { children: ReactNode }) {
   return (
     <ShellMetaProvider>
       <MoreDataShellStateProvider>
-        <Suspense fallback={<div className="min-h-full flex-1 bg-[#fafafa]" aria-hidden />}>
+        <Suspense fallback={<div className="min-h-full flex-1 bg-bg-page" aria-hidden />}>
           <MoreDataShellInner>{children}</MoreDataShellInner>
         </Suspense>
       </MoreDataShellStateProvider>
@@ -469,6 +530,7 @@ function MoreDataShellComponent({
     setSidebarCollapsed,
     setHistoryError,
     activeSessionTitle,
+    removeOptimisticHistorySession,
   } = useMoreDataShellState();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [historyPurgeConfirmId, setHistoryPurgeConfirmId] = useState<string | null>(null);
@@ -478,8 +540,8 @@ function MoreDataShellComponent({
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
-  const [isResultCompactViewport, setIsResultCompactViewport] = useState(false);
-  const [compactChatDrawerOpen, setCompactChatDrawerOpen] = useState(false);
+  const [isResultRailDrawerViewport, setIsResultRailDrawerViewport] = useState(false);
+  const [compactResultDrawerOpen, setCompactResultDrawerOpen] = useState(false);
   const historySearchInputRef = useRef<HTMLInputElement | null>(null);
   const historyListScrollRef = useRef<HTMLDivElement | null>(null);
   const historyLoadSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -492,8 +554,8 @@ function MoreDataShellComponent({
   const sidebarExpandedWidth = 300;
   const sidebarCollapsedWidth = 68;
   const effectiveSidebarCollapsed = !isMobileViewport && sidebarCollapsed;
-  const showCompactRightRailMode = Boolean(rightRail && clientMounted && !isMobileViewport && isResultCompactViewport);
-  const showDesktopRightRail = Boolean(rightRail && clientMounted && !isMobileViewport && !isResultCompactViewport);
+  const showCompactRightRailDrawer = Boolean(rightRail && clientMounted && !isMobileViewport && isResultRailDrawerViewport);
+  const showDesktopRightRail = Boolean(rightRail && clientMounted && !isMobileViewport && !isResultRailDrawerViewport);
   const showMobileRightRailDrawer = Boolean(rightRail && clientMounted && isMobileViewport);
 
   const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
@@ -507,16 +569,16 @@ function MoreDataShellComponent({
   }, []);
 
   useEffect(() => {
-    const media = window.matchMedia("(max-width: 1279px)");
-    const update = () => setIsResultCompactViewport(media.matches);
+    const media = window.matchMedia("(max-width: 1023px)");
+    const update = () => setIsResultRailDrawerViewport(media.matches);
     update();
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
 
   useEffect(() => {
-    if (!showCompactRightRailMode) setCompactChatDrawerOpen(false);
-  }, [showCompactRightRailMode]);
+    if (!showCompactRightRailDrawer) setCompactResultDrawerOpen(false);
+  }, [showCompactRightRailDrawer]);
 
   useEffect(() => {
     setMobileSidebarOpen(false);
@@ -546,10 +608,11 @@ function MoreDataShellComponent({
   const activeSessionId = platformAgent?.platformSessionId ?? null;
   const urlRunId = searchParams.get("runId");
   const urlSessionId = searchParams.get("sessionId");
+  const isFrontendMockRoute = isFrontendMockSessionId(urlSessionId);
   const activeRun = (urlRunId ? runs.find((run) => run.id === urlRunId) : null) ?? runs.find((run) => run.id === currentRunId);
   const effectiveActiveSessionId = urlSessionId || activeRun?.platformSessionId || activeSessionId;
   const agentHasSpecificSelection = currentPath === "/agent" && Boolean(urlRunId || urlSessionId);
-  const showAuthSidebar = clientMounted && isLoggedIn;
+  const showAuthSidebar = clientMounted && (isLoggedIn || isFrontendMockRoute);
   /** 账户区：mount 前固定为「登录」，避免 token 仅在客户端存在时 hydration 不一致 */
   const headerAuth = platformAgent?.auth;
   const showHeaderUserMenu = clientMounted && Boolean(headerAuth);
@@ -587,14 +650,19 @@ function MoreDataShellComponent({
   }, [historySearchOpen]);
 
   const filteredHistorySessions = useMemo(() => {
+    const mockEntry: HistoryEntry = getFrontendMockHistoryEntry();
+    const visibleHistorySessions = [
+      mockEntry,
+      ...historySessions.filter((s) => s.session_id !== mockEntry.session_id),
+    ].filter((s) => s.isOptimistic || s.hasMessages !== false);
     const q = historySearch.trim().toLowerCase();
-    const base = q ? historySessions.filter((s) => {
+    const base = q ? visibleHistorySessions.filter((s) => {
       const haystack = [s.firstMessage, s.session_id, s.firstAt, s.created_at]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return haystack.includes(q);
-    }) : historySessions;
+    }) : visibleHistorySessions;
     return sortHistoryEntries(base);
   }, [historySearch, historySessions]);
 
@@ -625,6 +693,7 @@ function MoreDataShellComponent({
         setHistoryPurgeConfirmId(null);
 
         const sid = (sessionId || "").trim();
+        removeOptimisticHistorySession(sid);
         const matchingRunIds = runs
           .filter((r) => ((r.platformSessionId ?? "").trim() === sid))
           .map((r) => r.id);
@@ -668,6 +737,7 @@ function MoreDataShellComponent({
       activeSessionId,
       currentRunId,
       platformAgent,
+      removeOptimisticHistorySession,
       refreshHistoryNow,
       router,
       runs,
@@ -680,7 +750,7 @@ function MoreDataShellComponent({
     <div className={childManagedScroll ? "h-screen overflow-hidden bg-transparent" : "min-h-screen bg-transparent"}>
       <div
         className={cn(
-          "grid grid-cols-[minmax(0,1fr)] bg-[#f7f7f7] md:[grid-template-columns:var(--sidebar-width)_minmax(0,1fr)]",
+          "grid grid-cols-[minmax(0,1fr)] bg-background md:[grid-template-columns:var(--sidebar-width)_minmax(0,1fr)]",
           childManagedScroll ? "h-screen overflow-hidden" : "min-h-screen",
         )}
         style={
@@ -692,14 +762,14 @@ function MoreDataShellComponent({
         {mobileSidebarOpen ? (
           <button
             type="button"
-            className="fixed inset-0 z-[80] bg-black/20 backdrop-blur-[1px] md:hidden"
+            className="fixed inset-0 z-sidebar-overlay bg-mask-bg backdrop-blur-soft md:hidden"
             aria-label="关闭侧边栏遮罩"
             onClick={() => setMobileSidebarOpen(false)}
           />
         ) : null}
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-[90] flex h-dvh min-h-0 w-[min(300px,86vw)] max-w-[calc(100vw-24px)] flex-col overflow-hidden border-r border-[#e2e2df] bg-white shadow-[16px_0_40px_rgba(15,23,42,0.12)] transition-transform duration-200 md:sticky md:top-0 md:z-auto md:h-screen md:w-auto md:self-start md:translate-x-0 md:shadow-none",
+            "fixed inset-y-0 left-0 z-sidebar flex h-dvh min-h-0 w-mobile-sidebar max-w-mobile-sidebar flex-col overflow-hidden border-r border-border bg-bg-surface shadow-side transition-transform duration-200 md:sticky md:top-0 md:z-auto md:h-screen md:w-auto md:self-start md:translate-x-0 md:shadow-none",
             mobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
           )}
         >
@@ -711,10 +781,10 @@ function MoreDataShellComponent({
                   <button
                     type="button"
                     aria-label="展开侧边栏"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-control text-foreground transition hover:bg-fill-hover hover:text-foreground"
                     onClick={() => setSidebarCollapsed(false)}
                   >
-                    <PanelLeftExpand className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                    <PanelLeftExpand className="h-icon-md w-icon-md" strokeWidth={1.8} />
                   </button>
                 </div>
               ) : (
@@ -725,7 +795,7 @@ function MoreDataShellComponent({
                       <button
                         type="button"
                         aria-label="搜索所有任务"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-control text-foreground transition hover:bg-fill-hover hover:text-foreground"
                         onClick={() => {
                           if (historySearchOpen) {
                             setHistorySearch("");
@@ -735,23 +805,23 @@ function MoreDataShellComponent({
                           setHistorySearchOpen(true);
                         }}
                       >
-                        <Search className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                        <Search className="h-icon-md w-icon-md" strokeWidth={1.8} />
                       </button>
                       <button
                         type="button"
                         aria-label="收起侧边栏"
-                        className="hidden h-9 w-9 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d] md:inline-flex"
+                        className="hidden h-9 w-9 items-center justify-center rounded-control text-foreground transition hover:bg-fill-hover hover:text-foreground md:inline-flex"
                         onClick={() => setSidebarCollapsed(true)}
                       >
-                        <PanelLeft className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                        <PanelLeft className="h-icon-md w-icon-md" strokeWidth={1.8} />
                       </button>
                       <button
                         type="button"
                         aria-label="关闭侧边栏"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d] md:hidden"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-control text-foreground transition hover:bg-fill-hover hover:text-foreground md:hidden"
                         onClick={() => setMobileSidebarOpen(false)}
                       >
-                        <X className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                        <X className="h-icon-md w-icon-md" strokeWidth={1.8} />
                       </button>
                     </div>
                   </div>
@@ -760,11 +830,16 @@ function MoreDataShellComponent({
 
               <nav className={cn("space-y-1", effectiveSidebarCollapsed ? "mt-3 px-2" : "px-2 pt-2")}>
               {navItems.map(({ href, label, icon: Icon }) => {
-                const active = currentPath === href || (href === "/" && currentPath === "/agent" && !agentHasSpecificSelection);
+                const active =
+                  currentPath === href ||
+                  pathname === href ||
+                  (href === "/" && currentPath === "/agent" && !agentHasSpecificSelection);
                 return (
                   <Link
                     key={href}
                     href={href}
+                    aria-current={active ? "page" : undefined}
+                    data-active={active ? "true" : undefined}
                     onClick={(e) => {
                       if (href === "/") {
                         e.preventDefault();
@@ -781,17 +856,17 @@ function MoreDataShellComponent({
                       }
                       setMobileSidebarOpen(false);
                     }}
-                    className={`group flex h-9 items-center rounded-[10px] text-[16px] font-normal leading-6 transition-colors ${
+                    className={`mdata-sidebar-nav-item group flex h-9 items-center rounded-control text-title-1 font-normal leading-6 transition-colors ${
                     active
-                        ? "bg-[rgba(55,53,47,0.06)] text-[#34322d]"
-                        : "text-[#34322d] hover:bg-[rgba(55,53,47,0.06)]"
-                  } ${effectiveSidebarCollapsed ? "mx-auto w-9 justify-center px-0" : "gap-3 pl-[9px] pr-0.5"}`}
+                        ? "text-foreground"
+                        : "text-foreground"
+                  } ${effectiveSidebarCollapsed ? "mx-auto w-9 justify-center px-0" : "gap-3 pl-2 pr-0.5"}`}
                     title={effectiveSidebarCollapsed ? label : undefined}
                   >
-                    <Icon className="h-[18px] w-[18px] shrink-0 text-[#34322d]" strokeWidth={2} />
+                    <Icon className="h-icon-md w-icon-md shrink-0 text-foreground" strokeWidth={2} />
                     {!effectiveSidebarCollapsed ? (
                       <>
-                        <span className="text-[14px] leading-[21px]">{label}</span>
+                        <span className="text-body leading-5">{label}</span>
                       </>
                     ) : null}
                   </Link>
@@ -802,32 +877,34 @@ function MoreDataShellComponent({
 
             {!effectiveSidebarCollapsed && showAuthSidebar ? (
               <div className="mt-4 flex min-h-0 flex-1 flex-col px-2">
-                <div className="flex h-9 shrink-0 items-center justify-between rounded-[10px] px-[9px] text-[16px] font-normal leading-6 text-[#858481]">
-                  <span className="text-[14px] font-medium leading-[18px] text-[#858481]">所有任务</span>
+                <div className="flex h-9 shrink-0 items-center justify-between rounded-control px-2 text-title-1 font-normal leading-6 text-text-tertiary">
+                  <span className="text-body font-medium leading-5 text-text-tertiary">所有任务</span>
                 </div>
                 <div ref={historyListScrollRef} className="mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain">
                   <div className="space-y-1">
                   {historyBusy && historySessions.length === 0 ? (
                     <SidebarHistorySkeleton />
                   ) : historyError ? (
-                    <div className="px-[9px] py-2 text-[14px] leading-5 text-red-600">加载失败：{historyError}</div>
+                    <div className="px-2 py-2 text-body leading-5 text-danger">加载失败：{historyError}</div>
                   ) : filteredHistorySessions.length === 0 ? (
                     historySearch.trim() ? (
-                      <div className="px-[9px] py-2 text-[14px] leading-5 text-[#858481]">没有匹配的任务</div>
+                      <div className="px-2 py-2 text-body leading-5 text-text-tertiary">没有匹配的任务</div>
                     ) : null
                   ) : (
                     filteredHistorySessions.map((s) => {
                       const historyItemActive =
                         currentPath.startsWith("/agent") && effectiveActiveSessionId === s.session_id;
                       const createdTime = formatHistoryCreatedTime(s);
+                      const frontendMockHistory = isFrontendMockSessionId(s.session_id);
                       return (
                         <div
                           key={s.session_id}
-                          className={`group relative flex w-full items-stretch gap-0.5 rounded-[10px] text-[16px] font-normal leading-6 transition-colors ${
+                          className={cn(
+                            "mdata-history-item group relative flex w-full items-stretch rounded-control text-title-1 font-normal leading-6 transition-colors",
                             historyItemActive
-                              ? "bg-[rgba(55,53,47,0.06)] text-[#34322d]"
-                              : "text-[#34322d] hover:bg-[rgba(55,53,47,0.06)]"
-                          }`}
+                              ? "bg-fill-hover text-foreground"
+                              : "text-foreground hover:bg-fill-hover"
+                          )}
                         >
                           <button
                             type="button"
@@ -836,24 +913,34 @@ function MoreDataShellComponent({
                               router.push(`/agent?sessionId=${encodeURIComponent(s.session_id)}`);
                               setMobileSidebarOpen(false);
                             }}
-                            className="relative flex min-w-0 flex-1 items-center overflow-hidden px-[9px] py-1.5 text-left"
+                            className="relative flex min-w-0 flex-1 items-center overflow-hidden px-2 py-1.5 text-left"
                           >
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-[14px] leading-5">
-                                {s.firstMessage || (s.session_id === effectiveActiveSessionId ? activeSessionTitle : null) || "新对话"}
+                              <div className="flex min-w-0 items-center gap-1.5 text-body leading-5">
+                                {s.isOptimistic ? (
+                                  <DotmSquare11
+                                    size={14}
+                                    dotSize={2}
+                                    speed={1.15}
+                                    className="shrink-0 text-foreground"
+                                    aria-hidden
+                                  />
+                                ) : null}
+                                <span className="truncate">{getHistoryDisplayTitle(s, effectiveActiveSessionId, activeSessionTitle)}</span>
                               </div>
                             </div>
                           </button>
                           {createdTime ? (
                             <span
                               className={cn(
-                                "pointer-events-none inline-flex w-0 shrink-0 items-center justify-end overflow-hidden whitespace-nowrap text-right text-[12px] leading-4 text-[#858481] opacity-0 transition-[width,opacity] duration-150 group-focus-within:w-[136px] group-focus-within:opacity-100 group-hover:w-[136px] group-hover:opacity-100",
-                                historyPurgeConfirmId === s.session_id && "w-[136px] opacity-100"
+                                "mdata-history-time pointer-events-none",
+                                historyPurgeConfirmId === s.session_id && "mdata-history-time--visible"
                               )}
                             >
                               {createdTime}
                             </span>
                           ) : null}
+                          {!frontendMockHistory ? (
                           <Popover
                             open={historyPurgeConfirmId === s.session_id}
                             onOpenChange={(open) => {
@@ -863,23 +950,23 @@ function MoreDataShellComponent({
                             <PopoverTrigger asChild>
                               <button
                                 type="button"
-                                className="inline-flex w-8 shrink-0 items-center justify-center rounded-r-[9px] text-[#7f817d] opacity-0 transition hover:bg-transparent hover:text-red-600 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-40 data-[state=open]:bg-transparent data-[state=open]:text-red-600 data-[state=open]:opacity-100"
+                                className="inline-flex w-8 shrink-0 items-center justify-center rounded-r-control text-text-tertiary opacity-0 transition hover:bg-transparent hover:text-danger group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-40 data-[state=open]:bg-transparent data-[state=open]:text-danger data-[state=open]:opacity-100"
                                 aria-label="删除该历史任务"
                                 aria-expanded={historyPurgeConfirmId === s.session_id}
                                 disabled={deletingId === s.session_id}
                               >
-                                <Trash2 className="h-[15px] w-[15px]" aria-hidden />
+                                <Trash2 className="h-4 w-4" aria-hidden />
                               </button>
                             </PopoverTrigger>
                             <PopoverContent
                               side="bottom"
                               align="end"
                               sideOffset={6}
-                              className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
+                              className="w-responsive-popover-sm rounded-panel border border-border bg-bg-surface p-4 shadow-popover-strong"
                               onClick={(e) => e.stopPropagation()}
                               onCloseAutoFocus={(e) => e.preventDefault()}
                             >
-                              <p className="text-[14px] leading-6 text-[#34322d]">
+                              <p className="text-body leading-6 text-foreground">
                                 确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
                               </p>
                               <div className="mt-4 flex justify-end gap-2">
@@ -887,7 +974,7 @@ function MoreDataShellComponent({
                                   type="button"
                                   variant="outline"
                                   size="sm"
-                                  className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
+                                  className="h-9 rounded-control border-border bg-bg-surface px-4 text-body text-text-tertiary hover:bg-fill-hover"
                                   disabled={deletingId === s.session_id}
                                   onClick={() => setHistoryPurgeConfirmId(null)}
                                 >
@@ -897,7 +984,7 @@ function MoreDataShellComponent({
                                   type="button"
                                   variant="destructive"
                                   size="sm"
-                                  className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
+                                  className="h-9 rounded-control bg-danger px-4 text-body text-primary-foreground hover:bg-danger-hover"
                                   disabled={deletingId === s.session_id}
                                   onClick={() => void executePurgeHistorySession(s.session_id)}
                                 >
@@ -906,14 +993,15 @@ function MoreDataShellComponent({
                               </div>
                             </PopoverContent>
                           </Popover>
-                      </div>
-                    );
+                          ) : null}
+                        </div>
+                      );
                     })
                   )}
                   {historyHasMore ? (
                     <div
                       ref={historyLoadSentinelRef}
-                      className="px-3 py-2 text-center text-[12px] text-[#94a3b8]"
+                      className="px-3 py-2 text-center text-caption text-text-tertiary"
                       aria-hidden={!historyLoadingMore}
                     >
                       {historyLoadingMore ? "加载更多…" : "\u00a0"}
@@ -926,25 +1014,27 @@ function MoreDataShellComponent({
 
             {!effectiveSidebarCollapsed && isPlatformBackendEnabled() && platformAgent ? (
               <div className="mt-auto shrink-0 px-2 pb-5 pt-4">
-                <div className="mx-[9px] mb-3 h-px bg-[#e7e7e4]" />
+                <div className="mx-2 mb-3 h-px bg-border" />
                 <div className="flex h-9 w-full items-center gap-1">
                   {showHeaderUserMenu && headerAuth ? (
                     <Popover>
                       <PopoverTrigger asChild>
                         <button
                           type="button"
-                          className="flex h-9 min-w-0 flex-1 items-center gap-3 rounded-[10px] pl-[9px] pr-1 text-left text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
+                          className="flex h-9 min-w-0 flex-1 items-center gap-3 rounded-control pl-2 pr-1 text-left text-foreground transition-colors hover:bg-fill-hover"
                           aria-label="用户中心"
                           title={accountDisplayName}
                         >
                           <span
                             aria-hidden="true"
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold leading-none text-white"
-                            style={{ backgroundColor: accountAvatar.color }}
+                            className={cn(
+                              "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-caption font-semibold leading-none text-primary-foreground",
+                              accountAvatar.colorClass,
+                            )}
                           >
                             {accountAvatar.initial}
                           </span>
-                          <span className="min-w-0 flex-1 truncate text-[14px] font-normal leading-[21px] tracking-normal">
+                          <span className="min-w-0 flex-1 truncate text-body font-normal leading-5 tracking-normal">
                             {accountDisplayName}
                           </span>
                         </button>
@@ -953,42 +1043,29 @@ function MoreDataShellComponent({
                         align="start"
                         side="top"
                         sideOffset={8}
-                        className="w-[300px] rounded-[20px] border border-[rgba(0,0,0,0.12)] bg-white p-0 text-[#34322d] shadow-[0_8px_32px_rgba(0,0,0,0.06)]"
+                        className="w-panel-sm rounded-composer border border-border-strong bg-bg-surface p-0 text-foreground shadow-popover"
                       >
-                        <div className="flex w-full gap-2 px-4 pb-3 pt-5">
-                          <span
-                            aria-hidden="true"
-                            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-[18px] font-semibold leading-none text-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]"
-                            style={{ backgroundColor: accountAvatar.color }}
-                          >
-                            {accountAvatar.initial}
-                          </span>
-                          <div className="flex min-w-0 flex-1 flex-col justify-center">
-                            <div className="truncate text-[14px] font-medium leading-[22px] text-[#34322d]">{accountDisplayName}</div>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col gap-3 px-3 pb-3">
+                        <div className="flex flex-col gap-3 px-3 pb-3 pt-3">
                           <div className="flex flex-col gap-0.5">
-                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                              <UserRound className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-body font-medium leading-5 text-foreground">
+                              <UserRound className="h-5 w-5 text-text-secondary" strokeWidth={1.8} />
                               我的账号
                             </div>
-                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                              <BookOpen className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-body font-medium leading-5 text-foreground">
+                              <BookOpen className="h-5 w-5 text-text-secondary" strokeWidth={1.8} />
                               帮助文档
                             </div>
-                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-[14px] font-medium leading-5 text-[#34322d]">
-                              <HelpCircle className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-body font-medium leading-5 text-foreground">
+                              <HelpCircle className="h-5 w-5 text-text-secondary" strokeWidth={1.8} />
                               联系我们
                             </div>
-                            <div className="my-1 h-px bg-[rgba(0,0,0,0.06)]" />
+                            <div className="my-1 h-px bg-fill-active" />
                             <button
                               type="button"
-                              className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-[14px] font-medium leading-5 text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                              className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-body font-medium leading-5 text-foreground transition hover:bg-fill-hover"
                               onClick={() => setLogoutConfirmOpen(true)}
                             >
-                              <LogOut className="h-5 w-5 text-[#5e5e5b]" strokeWidth={1.8} />
+                              <LogOut className="h-5 w-5 text-text-secondary" strokeWidth={1.8} />
                               退出登录
                             </button>
                           </div>
@@ -998,11 +1075,11 @@ function MoreDataShellComponent({
                   ) : (
                     <button
                       type="button"
-                      className="flex h-9 min-w-0 flex-1 items-center gap-3 rounded-[10px] pl-[9px] pr-1 text-left text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
+                      className="flex h-9 min-w-0 flex-1 items-center gap-3 rounded-control pl-2 pr-1 text-left text-foreground transition-colors hover:bg-fill-hover"
                       onClick={() => platformAgent.openLogin()}
                     >
-                      <UserCircle className="h-[18px] w-[18px] shrink-0 text-[#34322d]" strokeWidth={2} />
-                      <span className="min-w-0 flex-1 truncate text-[14px] font-normal leading-[21px] tracking-normal">
+                      <UserCircle className="h-icon-md w-icon-md shrink-0 text-foreground" strokeWidth={2} />
+                      <span className="min-w-0 flex-1 truncate text-body font-normal leading-5 tracking-normal">
                         账号与设置
                       </span>
                     </button>
@@ -1011,10 +1088,10 @@ function MoreDataShellComponent({
                     type="button"
                     aria-label="通知提醒"
                     title="通知提醒"
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#34322d] transition-colors hover:bg-[rgba(55,53,47,0.06)]"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-foreground transition-colors hover:bg-fill-hover"
                     onClick={openNotifications}
                   >
-                    <Bell className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                    <Bell className="h-icon-md w-icon-md" strokeWidth={1.8} />
                   </button>
                 </div>
               </div>
@@ -1024,7 +1101,7 @@ function MoreDataShellComponent({
         </aside>
 
         {historySearchOpen ? (
-          <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label="搜索所有任务">
+          <div className="fixed inset-0 z-sidebar-overlay" role="dialog" aria-modal="true" aria-label="搜索所有任务">
             <button
               type="button"
               className="absolute inset-0 cursor-default bg-transparent"
@@ -1034,22 +1111,22 @@ function MoreDataShellComponent({
                 setHistorySearchOpen(false);
               }}
             />
-            <div className="pointer-events-none fixed left-1/2 top-1/2 w-[min(680px,calc(100vw_-_32px))] -translate-x-1/2 -translate-y-1/2">
-              <div className="pointer-events-auto flex h-[min(440px,calc(100vh_-_40px))] flex-col overflow-hidden rounded-[20px] border border-[rgba(0,0,0,0.06)] bg-[#f8f8f7] shadow-[0_0_1.25px_rgba(0,0,0,0.12),0_5px_16px_rgba(0,0,0,0.12)]">
-                <div className="flex h-[67px] shrink-0 items-center gap-2.5 border-b border-[rgba(0,0,0,0.06)] pb-[18px] pl-6 pr-2 pt-5">
-                  <Search className="h-6 w-6 shrink-0 text-[#5e5e5b]" strokeWidth={1.8} />
+            <div className="pointer-events-none fixed left-1/2 top-1/2 w-message-box -translate-x-1/2 -translate-y-1/2">
+              <div className="pointer-events-auto flex h-message-box flex-col overflow-hidden rounded-composer border border-border-subtle bg-bg-page shadow-popover">
+                <div className="flex h-16 shrink-0 items-center gap-2.5 border-b border-border-subtle pb-4 pl-6 pr-2 pt-5">
+                  <Search className="h-6 w-6 shrink-0 text-text-secondary" strokeWidth={1.8} />
                   <input
                     ref={historySearchInputRef}
                     id="history-task-search"
                     value={historySearch}
                     onChange={(e) => setHistorySearch(e.target.value)}
                     placeholder="搜索任务..."
-                    className="h-7 min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-[18px] font-normal leading-7 text-[#34322d] shadow-none outline-none placeholder:text-[#858481] focus-visible:rounded-none focus-visible:[box-shadow:none!important]"
+                    className="h-7 min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-lg font-normal leading-7 text-foreground shadow-none outline-none placeholder:text-text-tertiary focus-visible:rounded-none focus-ring-none-important"
                   />
                   <button
                     type="button"
                     aria-label="关闭搜索"
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-foreground transition hover:bg-fill-hover hover:text-foreground"
                     onClick={() => {
                       setHistorySearch("");
                       setHistorySearchOpen(false);
@@ -1062,7 +1139,7 @@ function MoreDataShellComponent({
                 <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
                   <button
                     type="button"
-                    className="flex h-12 w-full items-center gap-2.5 rounded-lg py-2 pl-2 pr-3 text-left text-sm text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] focus-visible:bg-[rgba(55,53,47,0.06)]"
+                    className="flex h-12 w-full items-center gap-2.5 rounded-lg py-2 pl-2 pr-3 text-left text-sm text-foreground transition hover:bg-fill-hover focus-visible:bg-fill-hover"
                     onClick={() => {
                       setHistorySearch("");
                       setHistorySearchOpen(false);
@@ -1070,26 +1147,26 @@ function MoreDataShellComponent({
                       router.replace("/");
                     }}
                     >
-                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[rgba(55,53,47,0.06)] text-[#3f403b]">
+                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-fill-hover text-text-secondary">
                       <Plus className="h-4 w-4" strokeWidth={2} />
                     </span>
-                    <span className="truncate text-sm font-normal leading-5 text-[#34322d]">新建任务</span>
+                    <span className="truncate text-sm font-normal leading-5 text-foreground">新建任务</span>
                   </button>
 
-                  <div className="mt-2 mb-1 flex px-2.5 pb-1.5 text-xs font-medium leading-4 text-[#858481]">更早的</div>
+                  <div className="mt-2 mb-1 flex px-2.5 pb-1.5 text-xs font-medium leading-4 text-text-tertiary">更早的</div>
                   <div className="space-y-0">
                     {historyBusy && historySessions.length === 0 ? (
                       <SidebarHistorySkeleton />
                     ) : filteredHistorySessions.length === 0 ? (
                       historySearch.trim() ? (
-                        <div className="px-2 py-3 text-[14px] text-[#8b8c87]">没有匹配的任务</div>
+                        <div className="px-2 py-3 text-body text-text-tertiary">没有匹配的任务</div>
                       ) : null
                     ) : (
                       filteredHistorySessions.slice(0, 8).map((s) => (
                         <button
                           key={s.session_id}
                           type="button"
-                          className="flex min-h-[52px] w-full items-center gap-2.5 rounded-lg py-1.5 pl-2 pr-3 text-left text-sm text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                          className="flex min-h-composer-compact w-full items-center gap-2.5 rounded-lg py-1.5 pl-2 pr-3 text-left text-sm text-foreground transition hover:bg-fill-hover"
                           onClick={() => {
                             setHistorySearch("");
                             setHistorySearchOpen(false);
@@ -1097,19 +1174,28 @@ function MoreDataShellComponent({
                             router.push(`/agent?sessionId=${encodeURIComponent(s.session_id)}`);
                           }}
                         >
-                          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[rgba(55,53,47,0.06)] text-[#666761]">
+                          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-fill-hover text-text-secondary">
                             <MessageCircleMore className="h-4 w-4" strokeWidth={1.9} />
                           </span>
-                          <span className="min-w-0 flex-1 pr-4">
-                            <span className="block truncate text-sm font-medium leading-5 text-[#34322d]">
-                              {s.firstMessage || (s.session_id === effectiveActiveSessionId ? activeSessionTitle : null) || "新对话"}
+                            <span className="min-w-0 flex-1 pr-4">
+                            <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5 text-foreground">
+                              {s.isOptimistic ? (
+                                <DotmSquare11
+                                  size={14}
+                                  dotSize={2}
+                                  speed={1.15}
+                                  className="shrink-0 text-foreground"
+                                  aria-hidden
+                                />
+                              ) : null}
+                              <span className="truncate">{getHistoryDisplayTitle(s, effectiveActiveSessionId, activeSessionTitle)}</span>
                             </span>
-                            <span className="block truncate text-sm font-normal leading-5 text-[#858481]">
+                            <span className="block truncate text-sm font-normal leading-5 text-text-tertiary">
                               {s.session_id}
                             </span>
                           </span>
                           {s.firstAt ? (
-                            <span className="shrink-0 text-sm font-normal text-[#858481]">
+                            <span className="shrink-0 text-sm font-normal text-text-tertiary">
                               {formatShortDate(s.firstAt)}
                             </span>
                           ) : null}
@@ -1126,29 +1212,29 @@ function MoreDataShellComponent({
         <Dialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
           <DialogContent
             hideClose
-            className="h-[180px] w-[420px] max-w-[calc(100vw-32px)] rounded-[16px] border-transparent p-0 shadow-[0_20px_56px_rgba(0,0,0,0.16)]"
-            overlayClassName="bg-[rgba(0,0,0,0.38)] backdrop-blur-[1px]"
+            className="h-confirm-dialog w-confirm-dialog max-w-screen-gutter rounded-panel border-transparent p-0 shadow-dialog"
+            overlayClassName="bg-mask-bg backdrop-blur-soft"
           >
             <div className="flex h-full flex-col px-6 pb-5 pt-5">
               <div className="flex items-center gap-2.5">
-                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#f4f4f3] text-[#111111]">
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-bg-subtle text-foreground">
                   <InfoCircle className="h-5 w-5" strokeWidth={1.9} />
                 </span>
-                <DialogTitle className="text-[16px] font-semibold leading-6 text-[#34322d]">提示</DialogTitle>
+                <DialogTitle className="text-title-1 font-semibold leading-6 text-foreground">提示</DialogTitle>
               </div>
-              <p className="mt-4 text-[14px] font-normal leading-6 text-[#34322d]">确定要退出登录吗？</p>
+              <p className="mt-4 text-body font-normal leading-6 text-foreground">确定要退出登录吗？</p>
               <div className="mt-auto grid grid-cols-2 gap-3">
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-10 rounded-[10px] border-[#d8dbe2] bg-white text-[14px] font-medium text-[#676a70] hover:bg-white hover:text-[#34322d]"
+                  className="h-10 rounded-control border-border bg-bg-surface text-body font-medium text-text-secondary hover:bg-bg-surface hover:text-foreground"
                   onClick={() => setLogoutConfirmOpen(false)}
                 >
                   取消
                 </Button>
                 <Button
                   type="button"
-                  className="h-10 rounded-[10px] bg-[#111111] text-[14px] font-medium text-white hover:bg-[#111111]"
+                  className="h-10 rounded-control bg-primary text-body font-medium text-primary-foreground hover:bg-primary"
                   onClick={() => {
                     setLogoutConfirmOpen(false);
                     void platformAgent?.logout();
@@ -1165,29 +1251,29 @@ function MoreDataShellComponent({
           <DialogContent
             hideClose
             aria-describedby={undefined}
-            overlayClassName="bg-[rgba(22,24,28,0.32)] backdrop-blur-[1px]"
-            className="h-[min(620px,calc(100vh-56px))] w-[min(828px,calc(100vw-32px))] max-w-none overflow-hidden rounded-[22px] border border-[rgba(0,0,0,0.06)] bg-white p-0 shadow-[0_28px_90px_rgba(15,23,42,0.18)] sm:rounded-[22px]"
+            overlayClassName="bg-overlay-bg backdrop-blur-soft"
+            className="h-notification-dialog w-notification-dialog max-w-none overflow-hidden rounded-dialog border border-border-subtle bg-bg-surface p-0 shadow-modal sm:rounded-dialog"
           >
-            <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[188px_minmax(0,1fr)] sm:grid-rows-none md:grid-cols-[228px_minmax(0,1fr)]">
-              <aside className="min-h-0 border-b border-[rgba(0,0,0,0.04)] bg-white px-[18px] py-4 sm:border-b-0 sm:border-r sm:py-6">
-                <div className="text-[18px] font-normal leading-7 text-[#858481]">消息盒子</div>
+            <div className="grid h-full min-h-0 grid-rows-header-content sm:grid-notification-dialog-sm sm:grid-rows-none md:grid-notification-dialog-md">
+              <aside className="min-h-0 border-b border-border-subtle bg-bg-surface px-4 py-4 sm:border-b-0 sm:border-r sm:py-6">
+                <div className="text-lg font-normal leading-7 text-text-tertiary">消息盒子</div>
                 <nav className="mt-3 flex gap-2 overflow-x-auto sm:mt-5 sm:block sm:space-y-2 sm:overflow-visible">
                   <button
                     type="button"
-                    className="flex h-[49px] w-auto shrink-0 items-center gap-3 rounded-[10px] bg-[rgba(55,53,47,0.06)] px-4 text-left text-[#111111] sm:w-full sm:px-5"
+                    className="flex h-12 w-auto shrink-0 items-center gap-3 rounded-control bg-fill-hover px-4 text-left text-foreground sm:w-full sm:px-5"
                   >
                     <Bell className="h-5 w-5 shrink-0" strokeWidth={2.2} />
-                    <span className="text-[14px] font-medium leading-[21px]">通知提醒</span>
+                    <span className="text-body font-medium leading-5">通知提醒</span>
                   </button>
                 </nav>
               </aside>
-              <section className="relative flex min-h-0 flex-col bg-[#fbfbfb]">
-                <div className="flex h-[56px] shrink-0 items-center justify-between px-5 sm:px-8">
-                  <DialogTitle className="text-[16px] font-semibold leading-6 text-[#111111]">通知提醒</DialogTitle>
+              <section className="relative flex min-h-0 flex-col bg-bg-page">
+                <div className="flex h-14 shrink-0 items-center justify-between px-5 sm:px-8">
+                  <DialogTitle className="text-title-1 font-semibold leading-6 text-foreground">通知提醒</DialogTitle>
                   <button
                     type="button"
                     aria-label="关闭消息盒子"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#9b9b98] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-control text-text-tertiary transition hover:bg-fill-hover hover:text-foreground"
                     onClick={() => setNotificationOpen(false)}
                   >
                     <X className="h-6 w-6" strokeWidth={1.6} />
@@ -1200,28 +1286,28 @@ function MoreDataShellComponent({
                         <button
                           key={item.id}
                           type="button"
-                          className="relative flex min-h-[88px] w-full items-center gap-4 rounded-[22px] bg-white px-6 py-5 text-left transition hover:bg-[rgba(255,255,255,0.86)]"
+                          className="relative flex min-h-22 w-full items-center gap-4 rounded-dialog bg-bg-surface px-6 py-5 text-left transition hover:bg-bg-surface/85"
                         >
-                          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#f4f4f4] text-[#0084ff]">
+                          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-bg-subtle text-primary">
                             <AlarmFilled className="h-7 w-7" />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[14px] font-semibold leading-[21px] text-[#111111]">
+                            <span className="block truncate text-body font-semibold leading-5 text-foreground">
                               {item.title}
                             </span>
-                            <span className="mt-1 block truncate text-[12px] leading-[18px] text-[#858481]">
+                            <span className="mt-1 block truncate text-caption leading-5 text-text-tertiary">
                               {item.description}
                             </span>
                           </span>
-                          <span className="shrink-0 text-[12px] leading-[18px] text-[#858481]">{item.time}</span>
+                          <span className="shrink-0 text-caption leading-5 text-text-tertiary">{item.time}</span>
                           {item.unread ? (
-                            <span className="absolute right-4 top-4 h-1.5 w-1.5 rounded-full bg-[#ff3b3f]" aria-label="未读" />
+                            <span className="absolute right-4 top-4 h-1.5 w-1.5 rounded-full bg-danger" aria-label="未读" />
                           ) : null}
                         </button>
                       ))}
                     </div>
                   ) : (
-                    <div className="flex h-full items-center justify-center pb-[34px]">
+                    <div className="flex h-full items-center justify-center pb-8">
                       <EmptyState className="m-0 min-h-0" message="暂无消息" />
                     </div>
                   )}
@@ -1240,64 +1326,66 @@ function MoreDataShellComponent({
           )}
         >
           {!showTopHeader && !currentRunLabel ? (
-            <header className="fixed left-0 right-0 top-0 z-50 grid h-16 grid-cols-[64px_minmax(0,1fr)_64px] items-center border-b border-transparent bg-white px-2 md:hidden">
+            <header className="fixed left-0 right-0 top-0 z-50 grid h-16 grid-mobile-header items-center border-b border-transparent bg-bg-surface px-2 md:hidden">
               <button
                 type="button"
                 aria-label="打开侧边栏"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-control text-foreground transition hover:bg-fill-hover"
                 onClick={() => setMobileSidebarOpen(true)}
               >
                 <Menu className="h-5 w-5" strokeWidth={2} />
               </button>
-              <div className="min-w-0 text-center text-[16px] font-semibold leading-6 text-[#111111]">Alice</div>
+              <div className="min-w-0 text-center text-title-1 font-semibold leading-6 text-foreground">Alice</div>
               <button
                 type="button"
                 aria-label="通知提醒"
                 title="通知提醒"
-                className="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)]"
+                className="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-control text-foreground transition hover:bg-fill-hover"
                 onClick={openNotifications}
               >
-                <Bell className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                <Bell className="h-icon-md w-icon-md" strokeWidth={1.8} />
               </button>
             </header>
           ) : null}
 
           {showTopHeader || currentRunLabel ? (
-            <header className="sticky top-0 z-50 flex h-14.5 items-center bg-white px-3 sm:px-4 md:px-6">
+            <header className="sticky top-0 z-50 flex h-14.5 items-center bg-bg-surface px-3 sm:px-4 md:px-6">
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <button
                   type="button"
                   aria-label="打开侧边栏"
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] md:hidden"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-foreground transition hover:bg-fill-hover md:hidden"
                   onClick={() => setMobileSidebarOpen(true)}
                 >
                   <Menu className="h-5 w-5" strokeWidth={2} />
                 </button>
                 {currentRunLabel ? (
-                  <div className="min-w-0 truncate text-[14px] font-medium text-[#243248]">
+                  <div className="min-w-0 truncate text-body font-medium text-foreground">
                     {currentRunLabel}
                   </div>
                 ) : null}
               </div>
-              {showCompactRightRailMode ? (
+              {showCompactRightRailDrawer ? (
                 <button
                   type="button"
-                  aria-label="查看对话过程"
-                  className="ml-3 hidden h-9 shrink-0 items-center gap-2 rounded-[10px] px-3 text-[14px] font-medium text-[#34322d] transition hover:bg-[rgba(55,53,47,0.06)] md:inline-flex xl:hidden"
-                  onClick={() => setCompactChatDrawerOpen(true)}
+                  aria-label="查看任务执行结果"
+                  className="ml-3 hidden h-9 shrink-0 items-center gap-2 rounded-control px-3 text-body font-medium text-foreground transition hover:bg-fill-hover md:inline-flex lg:hidden"
+                  onClick={() => setCompactResultDrawerOpen(true)}
                 >
-                  <MessageCircleMore className="h-[18px] w-[18px]" strokeWidth={1.9} />
-                  查看过程
+                  <PanelRightOpen className="h-icon-md w-icon-md" strokeWidth={1.9} />
+                  查看结果
                 </button>
               ) : null}
             </header>
           ) : null}
 
           <div
+            data-testid={rightRail ? "workspace-main-grid" : undefined}
             className={cn(
               "min-h-0 flex-1",
+              childManagedScroll && "overflow-hidden",
               !showTopHeader && !currentRunLabel && "pt-16 md:pt-0",
-              showDesktopRightRail && "grid min-h-0 grid-cols-1 xl:grid-cols-[minmax(360px,42%)_minmax(680px,58%)]",
+              showDesktopRightRail && "grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(360px,42%)_minmax(680px,58%)]",
             )}
           >
             <div
@@ -1315,14 +1403,15 @@ function MoreDataShellComponent({
                   childManagedScroll ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "h-full",
                 )}
               >
-                {showCompactRightRailMode ? rightRail : children}
+                {children}
               </div>
             </div>
             {showDesktopRightRail ? (
               <aside
+                data-testid="workspace-right-rail"
                 className={cn(
-                  "flex min-h-0 min-w-0 flex-col border-l border-[#e3e8ef] bg-[rgba(255,255,255,0.7)] backdrop-blur-xl",
-                  "border-l-0 border-t xl:border-l xl:border-t-0",
+                  "flex min-h-0 min-w-0 flex-col border-l border-border bg-bg-surface/70 backdrop-blur-xl",
+                  "border-l-0 border-t lg:border-l lg:border-t-0",
                   childManagedScroll ? "overflow-hidden" : "overflow-visible",
                 )}
               >
@@ -1333,57 +1422,57 @@ function MoreDataShellComponent({
         </main>
       </div>
 
-      {showCompactRightRailMode ? (
+      {showCompactRightRailDrawer ? (
         <div
           className={cn(
-            "fixed inset-0 z-[70] hidden transition md:block xl:hidden",
-            compactChatDrawerOpen ? "pointer-events-auto" : "pointer-events-none",
+            "fixed inset-0 z-mobile-sheet hidden transition md:block lg:hidden",
+            compactResultDrawerOpen ? "pointer-events-auto" : "pointer-events-none",
           )}
           role="dialog"
-          aria-modal={compactChatDrawerOpen ? "true" : undefined}
-          aria-hidden={!compactChatDrawerOpen}
-          aria-label="对话过程"
+          aria-modal={compactResultDrawerOpen ? "true" : undefined}
+          aria-hidden={!compactResultDrawerOpen}
+          aria-label="任务执行结果"
         >
           <button
             type="button"
-            aria-label="关闭对话过程"
+            aria-label="关闭任务执行结果"
             className={cn(
-              "absolute inset-0 bg-black/[0.18] backdrop-blur-[1px] transition-opacity",
-              compactChatDrawerOpen ? "opacity-100" : "opacity-0",
+              "absolute inset-0 bg-overlay-bg backdrop-blur-soft transition-opacity",
+              compactResultDrawerOpen ? "opacity-100" : "opacity-0",
             )}
-            onClick={() => setCompactChatDrawerOpen(false)}
+            onClick={() => setCompactResultDrawerOpen(false)}
           />
           <aside
             className={cn(
-              "absolute bottom-0 left-0 top-0 flex w-[min(440px,calc(100vw-72px))] min-w-0 flex-col border-r border-[#e2e2df] bg-white shadow-[18px_0_48px_rgba(15,23,42,0.16)] transition-transform duration-200 ease-out",
-              compactChatDrawerOpen ? "translate-x-0" : "-translate-x-full",
+              "absolute bottom-0 right-0 top-0 flex w-[min(720px,calc(100vw-80px))] min-w-0 flex-col border-l border-border bg-bg-surface shadow-side-strong transition-transform duration-200 ease-out",
+              compactResultDrawerOpen ? "translate-x-0" : "translate-x-full",
             )}
           >
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-[#e2e2df] px-4">
-              <div className="truncate text-[16px] font-semibold leading-6 text-[#111111]">对话过程</div>
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
+              <div className="truncate text-title-1 font-semibold leading-6 text-foreground">任务执行结果</div>
               <button
                 type="button"
-                aria-label="关闭对话过程"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#7f817d] transition hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
-                onClick={() => setCompactChatDrawerOpen(false)}
+                aria-label="关闭任务执行结果"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-control text-text-tertiary transition hover:bg-fill-hover hover:text-foreground"
+                onClick={() => setCompactResultDrawerOpen(false)}
               >
                 <X className="h-5 w-5" strokeWidth={1.8} />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+            <div className="min-h-0 flex-1 overflow-hidden">{rightRail}</div>
           </aside>
         </div>
       ) : null}
 
       {showMobileRightRailDrawer ? (
         <div
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/[0.18] backdrop-blur-[1px] md:hidden"
+          className="fixed inset-0 z-mobile-sheet flex items-end justify-center bg-overlay-bg backdrop-blur-soft md:hidden"
           role="dialog"
           aria-modal="true"
           aria-label="任务执行结果抽屉"
         >
-          <div className="flex max-h-[82dvh] min-h-0 w-full max-w-[980px] flex-col overflow-hidden rounded-t-[20px] border border-b-0 border-[#e2e2df] bg-white shadow-[0_-18px_50px_rgba(15,23,42,0.18)]">
-            <div className="mx-auto my-2 h-1 w-10 shrink-0 rounded-full bg-[#d6d6d3]" aria-hidden />
+          <div className="flex max-h-mobile-sheet min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-t-composer border border-b-0 border-border bg-bg-surface shadow-sheet">
+            <div className="mx-auto my-2 h-1 w-10 shrink-0 rounded-full bg-fill-active" aria-hidden />
             <div className="min-h-0 flex-1 overflow-hidden">{rightRail}</div>
           </div>
         </div>

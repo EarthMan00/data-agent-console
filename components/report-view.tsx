@@ -30,7 +30,7 @@ export function ReportView() {
   if (!report || !run) {
     return (
       <MoreDataShell currentPath="/report" currentRunLabel="未找到报告" mainDecoration={null}>
-        <div className="p-8 text-sm text-[#747571]">未找到报告。请从运行列表或带 reportId 的链接进入。</div>
+        <div className="p-8 text-sm text-text-tertiary">未找到报告。请从运行列表或带 reportId 的链接进入。</div>
       </MoreDataShell>
     );
   }
@@ -38,14 +38,14 @@ export function ReportView() {
   return (
     <MoreDataShell currentPath="/report" currentRunLabel={run.title}>
       <div className="h-full overflow-auto">
-        <div className="flex items-center justify-between border-b border-[#e2e2df] bg-white px-8 py-4">
+        <div className="flex items-center justify-between border-b border-border bg-bg-surface px-8 py-4">
           <div>
-            <div className="text-[24px] font-semibold leading-8 text-[#111111]">
+            <div className="text-title-3 font-semibold leading-8 text-foreground">
               {report.title}
             </div>
-            <div className="mt-1 text-sm text-[#747571]">{report.subtitle}</div>
+            <div className="mt-1 text-sm text-text-tertiary">{report.subtitle}</div>
           </div>
-          <div className="flex items-center gap-2 text-[#747571]">
+          <div className="flex items-center gap-2 text-text-tertiary">
             <Button aria-label="分享结果页" variant="ghost" size="iconSm" onClick={() => setNotice("分享能力待接入。")}>
               <Share2 className="h-4 w-4" />
             </Button>
@@ -63,7 +63,7 @@ export function ReportView() {
         </div>
 
         <div className="px-8 py-6">
-          {notice ? <p className="mb-5 text-sm text-[#52525b]">{notice}</p> : null}
+          {notice ? <p className="mb-5 text-sm text-text-secondary">{notice}</p> : null}
 
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2">
@@ -86,22 +86,22 @@ export function ReportView() {
           </div>
 
           {activeTab === "overview" ? (
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_360px]">
+            <div className="grid gap-5 xl:grid-report-view">
               <div className="space-y-4">
                 {report.summary.map((line) => (
                   <div
                     key={line}
-                    className="rounded-[18px] border border-[#e2e2df] bg-white px-5 py-5 text-[14px] leading-7 text-[#52524f] shadow-[0_1px_2px_rgba(17,17,17,0.03)]"
+                    className="rounded-popover border border-border bg-bg-surface px-5 py-5 text-body leading-7 text-text-secondary shadow-surface"
                   >
                     {line}
                   </div>
                 ))}
               </div>
-              <div className="rounded-[18px] border border-[#e2e2df] bg-white p-5 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
-                <div className="text-[14px] font-medium text-[#34322d]">任务上下文</div>
-                <div className="mt-4 text-[18px] font-semibold text-[#111111]">{run.title}</div>
-                <p className="mt-3 text-[14px] leading-7 text-[#52524f]">{run.objective}</p>
-                <div className="mt-5 space-y-3 text-[12px] text-[#8b8c87]">
+              <div className="rounded-popover border border-border bg-bg-surface p-5 shadow-surface">
+                <div className="text-body font-medium text-foreground">任务上下文</div>
+                <div className="mt-4 text-lg font-semibold text-foreground">{run.title}</div>
+                <p className="mt-3 text-body leading-7 text-text-secondary">{run.objective}</p>
+                <div className="mt-5 space-y-3 text-caption text-text-tertiary">
                   <div>生成时间：{report.generatedAt}</div>
                   <div>任务模式：{run.mode}</div>
                   <div>已补充追问：{run.notes.length} 条</div>
@@ -109,20 +109,20 @@ export function ReportView() {
               </div>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-[18px] border border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
-              <div className="grid grid-cols-5 bg-[#111111] text-center text-white">
-                <div className="col-span-5 px-6 py-7 text-[18px] font-semibold">{report.title}</div>
+            <div className="overflow-hidden rounded-popover border border-border bg-bg-surface shadow-surface">
+              <div className="grid grid-cols-5 bg-primary text-center text-primary-foreground">
+                <div className="col-span-5 px-6 py-7 text-lg font-semibold">{report.title}</div>
               </div>
 
-              <table className="w-full border-collapse text-left text-[14px]">
+              <table className="w-full border-collapse text-left text-body">
                 <tbody>
                   {report.sheetRows.map((row, rowIndex) => (
-                    <tr key={`${report.id}-${rowIndex}`} className="border-b border-[#e2e2df]">
+                    <tr key={`${report.id}-${rowIndex}`} className="border-b border-border">
                       {row.map((cell, cellIndex) => (
                         <td
                           key={`${report.id}-${rowIndex}-${cellIndex}`}
-                          className={`border-r border-[#e2e2df] px-4 py-4 align-top ${
-                            rowIndex === 0 ? "bg-[#f7f7f7] font-medium text-[#34322d]" : "bg-white text-[#747571]"
+                          className={`border-r border-border px-4 py-4 align-top ${
+                            rowIndex === 0 ? "bg-fill-hover font-medium text-foreground" : "bg-bg-surface text-text-tertiary"
                           }`}
                         >
                           {cell}

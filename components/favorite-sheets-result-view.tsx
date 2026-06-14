@@ -27,7 +27,7 @@ function FavoriteSheetPane({
   title?: string;
 }) {
   if (!sheet) {
-    return <p className="text-[14px] leading-6 text-[#64748b]">暂无可展示内容。</p>;
+    return <p className="text-body leading-6 text-text-secondary">暂无可展示内容。</p>;
   }
 
   if (sheet.primary_pdf_placeholder && sheet.primary_kind === "pdf") {
@@ -75,7 +75,7 @@ function FavoriteSheetPane({
     );
   }
 
-  return <p className="text-[14px] leading-6 text-[#64748b]">暂无可展示内容。</p>;
+  return <p className="text-body leading-6 text-text-secondary">暂无可展示内容。</p>;
 }
 
 export function FavoriteSheetsResultView({
@@ -113,16 +113,16 @@ export function FavoriteSheetsResultView({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {showTableCodeToggle ? (
-        <div className="flex shrink-0 flex-col gap-1 border-b border-[#e5e7eb] bg-[linear-gradient(180deg,#fafafa,#f4f4f5)] px-3 py-2">
+        <div className="flex shrink-0 flex-col gap-1 border-b border-border bg-surface-gradient px-3 py-2">
           <div className="flex items-start justify-end gap-2">
-            <div className="mr-1 flex rounded-[10px] border border-[#e5e7eb] bg-[#ececec]/80 p-0.5">
+            <div className="mr-1 flex rounded-control border border-border bg-border-subtle/80 p-0.5">
               <button
                 type="button"
                 className={cn(
-                  "rounded-[8px] px-2.5 py-1 text-xs font-medium transition",
+                  "rounded-md px-2.5 py-1 text-xs font-medium transition",
                   viewMode === "table"
-                    ? "bg-white text-[#15803d] shadow-sm"
-                    : "text-[#64748b] hover:text-[#334155]",
+                    ? "bg-bg-surface text-success shadow-sm"
+                    : "text-text-secondary hover:text-text-secondary",
                 )}
                 onClick={() => setViewMode("table")}
               >
@@ -131,10 +131,10 @@ export function FavoriteSheetsResultView({
               <button
                 type="button"
                 className={cn(
-                  "rounded-[8px] px-2.5 py-1 text-xs font-medium transition",
+                  "rounded-md px-2.5 py-1 text-xs font-medium transition",
                   viewMode === "code"
-                    ? "bg-white text-[#15803d] shadow-sm"
-                    : "text-[#64748b] hover:text-[#334155]",
+                    ? "bg-bg-surface text-success shadow-sm"
+                    : "text-text-secondary hover:text-text-secondary",
                 )}
                 onClick={() => setViewMode("code")}
               >
@@ -155,7 +155,7 @@ export function FavoriteSheetsResultView({
       </div>
 
       {sheets.length > 1 ? (
-        <div className="flex shrink-0 gap-1 overflow-x-auto border-t border-[#e5e7eb] bg-white px-2 py-2">
+        <div className="flex shrink-0 gap-1 overflow-x-auto border-t border-border bg-bg-surface px-2 py-2">
           {sheets.map((s) => (
             <button
               key={s.id}
@@ -167,11 +167,11 @@ export function FavoriteSheetsResultView({
               className={cn(
                 "shrink-0 rounded-lg px-3 py-2 text-left text-xs transition",
                 activeSheet?.id === s.id
-                  ? "border-b-2 border-[#16a34a] font-medium text-[#15803d]"
-                  : "border-b-2 border-transparent text-[#64748b] hover:bg-[rgba(55,53,47,0.06)]",
+                  ? "border-b-2 border-success-border font-medium text-success"
+                  : "border-b-2 border-transparent text-text-secondary hover:bg-fill-hover",
               )}
             >
-              <span className="line-clamp-2 max-w-[200px]">{s.label}</span>
+              <span className="line-clamp-2 max-w-52">{s.label}</span>
             </button>
           ))}
         </div>

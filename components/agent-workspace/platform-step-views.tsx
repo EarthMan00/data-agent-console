@@ -41,22 +41,22 @@ function PlatformSubtaskResultCard({
         onSelect();
       }}
       className={cn(
-        "w-full rounded-[16px] border px-4 py-3 text-left shadow-none transition-colors",
-        isActive ? "border-[#2563eb] bg-[#eff6ff]" : "border-[#eceef1] bg-white",
+        "w-full rounded-panel border px-4 py-3 text-left shadow-none transition-colors",
+        isActive ? "border-info-border bg-info-bg" : "border-border-subtle bg-bg-surface",
         hasPreviewFiles
-          ? "cursor-pointer hover:border-[#bfdbfe] hover:bg-[#f8fafc]"
+          ? "cursor-pointer hover:border-info-border hover:bg-bg-subtle"
           : "cursor-default opacity-95",
       )}
     >
-      <div className="text-[12px] font-medium uppercase tracking-wide text-[#9aa39e]">{header}</div>
+      <div className="text-caption font-medium uppercase tracking-wide text-text-disabled">{header}</div>
       <div className="mt-2 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold text-[#1f2421]">步骤 {stepNo}</div>
-          <p className="mt-1 text-[12px] leading-5.5 text-[#4f5753]">{compactText(snap.label, 200)}</p>
+          <div className="text-body font-semibold text-foreground">步骤 {stepNo}</div>
+          <p className="mt-1 text-caption leading-5.5 text-text-secondary">{compactText(snap.label, 200)}</p>
         </div>
       </div>
       {snap.errorMessage ? (
-        <p className="mt-2 text-[12px] leading-5 text-[#b91c1c]">
+        <p className="mt-2 text-caption leading-5 text-danger">
           {compactText(humanizeTaskErrorMessage(snap.errorMessage), 220)}
         </p>
       ) : null}
