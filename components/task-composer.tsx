@@ -2121,11 +2121,18 @@ export function TaskComposer({
                       {attachment.previewUrl ? (
                         <span
                           aria-label={`图片预览 ${attachment.name}`}
-                          className="flex h-attachment-thumb w-attachment-thumb shrink-0 rounded-control border border-border-subtle bg-cover bg-center bg-no-repeat"
+                          className="size-attachment-thumb relative flex shrink-0 overflow-hidden rounded-control border border-border-subtle bg-cover bg-center bg-no-repeat"
                           style={{ backgroundImage: `url(${attachment.previewUrl})` }}
-                        />
+                        >
+                          <span
+                            aria-label={`图片类型 ${typeLabel}`}
+                            className="absolute bottom-0 right-0 rounded-tl-control bg-bg-surface/95 px-1.5 py-0.5 text-[10px] font-semibold leading-3 text-text-tertiary shadow-sm ring-1 ring-border-subtle"
+                          >
+                            {typeLabel.slice(0, 4)}
+                          </span>
+                        </span>
                       ) : (
-                        <span className="flex h-attachment-thumb w-attachment-thumb shrink-0 items-center justify-center rounded-control bg-bg-surface text-caption font-semibold text-text-tertiary">
+                        <span className="size-attachment-thumb flex shrink-0 items-center justify-center rounded-control bg-bg-surface text-caption font-semibold text-text-tertiary">
                           {typeLabel.slice(0, 4)}
                         </span>
                       )}

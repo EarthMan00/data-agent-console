@@ -316,6 +316,7 @@ describe("task composer data source menu", () => {
       expect(onFilesSelected).not.toHaveBeenCalled();
       expect(screen.getByText("pasted-image-1.png")).toBeInTheDocument();
       expect(screen.getByLabelText("图片预览 pasted-image-1.png")).toBeInTheDocument();
+      expect(screen.getByLabelText("图片类型 PNG")).toHaveTextContent("PNG");
     } finally {
       Object.defineProperty(URL, "createObjectURL", {
         configurable: true,
