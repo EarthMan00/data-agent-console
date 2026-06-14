@@ -1580,7 +1580,7 @@ export function PlatformSessionAgentWorkspace({
                       : ({ kind: "none" } as const);
                   const key = m.id;
                   return (
-                    <div key={key} className="space-y-2">
+                    <div key={key} className="space-y-3.5">
                       {m.role === "user" ? (
                         <>
                           {showDeferredTaskSteps && archivedClarifyText ? (
@@ -1719,7 +1719,7 @@ export function PlatformSessionAgentWorkspace({
                             }
                           />
                         ) : guidancePresentation.kind !== "none" && !taskId ? (
-                          <div className="space-y-2">
+                          <div className="space-y-3.5">
                             {guidancePresentation.kind === "embedded" &&
                             guidancePresentation.leading ? (
                               <SimpleAssistantBubble
@@ -1797,7 +1797,7 @@ export function PlatformSessionAgentWorkspace({
                         />
                       ) : null}
                       {taskId && guidancePresentation.kind !== "none" ? (
-                        <div className="space-y-2">
+                        <div className="space-y-3.5">
                           {guidancePresentation.kind === "embedded" &&
                           guidancePresentation.leading ? (
                             <SimpleAssistantBubble

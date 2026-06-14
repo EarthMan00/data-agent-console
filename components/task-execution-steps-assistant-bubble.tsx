@@ -137,7 +137,7 @@ export function TaskExecutionStepsAssistantBubble({
 
   return (
 
-    <div className={cn("flex w-full justify-start", WRAP)}>
+    <div className={cn("flex w-full justify-start pb-1", WRAP)}>
 
       <TaskOrchestrationBlock
 
@@ -189,5 +189,4 @@ export function TaskExecutionStepsAssistantBubble({
   );
 
 }
-
 

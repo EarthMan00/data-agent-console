@@ -65,6 +65,19 @@ function executionSubtitle(status: TaskExecutionStep["status"]): string {
   return "执行失败";
 }
 
+function executionStepBodyToneClass(status: TaskExecutionStep["status"]): string {
+  if (status === "error") return "text-danger";
+  if (status === "awaiting_input") return "text-warning";
+  return "text-foreground";
+}
+
+function executionStepHeaderToneClass(status: TaskExecutionStep["status"]): string {
+  if (status === "error" || status === "awaiting_input") {
+    return executionStepBodyToneClass(status);
+  }
+  return "text-text-disabled";
+}
+
 function formatElapsed(seconds: number): string {
   const safeSeconds = Math.max(0, Math.floor(seconds));
   const minutes = Math.floor(safeSeconds / 60);
@@ -136,20 +149,14 @@ export function ExecutionStepCard({
 }) {
   const stepNo = stepIndex + 1;
   const showStatusIcon = step.status !== "pending";
+  const bodyToneClass = executionStepBodyToneClass(step.status);
   return (
     <div
-      className={cn(
-        "px-0 py-1.5",
-        step.status === "error"
-          ? "text-danger"
-          : step.status === "awaiting_input"
-            ? "text-warning"
-            : "text-foreground",
-      )}
+      className={cn("px-0 py-1.5", bodyToneClass)}
       data-testid="execution-step-card"
       data-step-index={stepIndex}
     >
-      <div className="mb-2 text-caption font-medium uppercase tracking-wide text-text-disabled">
+      <div className={cn("mb-2 text-caption font-medium uppercase tracking-wide", executionStepHeaderToneClass(step.status))}>
         步骤 {stepNo} / {total} · {executionSubtitle(step.status)}
       </div>
       <div className={cn("flex", showStatusIcon ? "gap-3" : "gap-0")}>
@@ -165,15 +172,15 @@ export function ExecutionStepCard({
                 speed={1.15}
               />
             ) : step.status === "awaiting_input" ? (
-              <AlertCircle className="h-5 w-5 text-warning" />
+              <AlertCircle className={cn("h-5 w-5", bodyToneClass)} />
             ) : step.status === "done" ? (
               <CheckCircle2 className="h-5 w-5 text-success" />
             ) : (
-              <XCircle className="h-5 w-5 text-danger" />
+              <XCircle className={cn("h-5 w-5", bodyToneClass)} />
             )}
           </div>
         ) : null}
-        <p className="min-w-0 flex-1 break-words overflow-wrap-anywhere text-body leading-6.5">
+        <p className={cn("min-w-0 flex-1 break-words overflow-wrap-anywhere text-body leading-6.5", bodyToneClass)}>
           {humanizeStepLabelForUi(step.label)}
         </p>
       </div>
