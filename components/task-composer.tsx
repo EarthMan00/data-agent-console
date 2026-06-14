@@ -316,14 +316,49 @@ function getToolTokenNearCaret(container: HTMLElement, direction: "backward" | "
   return resolveTokenFromNode(seed, direction === "backward" ? "previousSibling" : "nextSibling");
 }
 
-function moveCaretAfterNode(node: Node) {
+function moveCaretAfterToolToken(token: HTMLElement) {
   const selection = window.getSelection();
   if (!selection) return;
+
   const range = document.createRange();
-  range.setStartAfter(node);
+  const next = token.nextSibling;
+  if (next?.nodeType === Node.TEXT_NODE && next.textContent?.startsWith(" ")) {
+    range.setStart(next, 1);
+  } else {
+    range.setStartAfter(token);
+  }
   range.collapse(true);
   selection.removeAllRanges();
   selection.addRange(range);
+}
+
+function deleteRangeContentsWithUndo(range: Range) {
+  const selection = window.getSelection();
+  if (!selection) return false;
+
+  selection.removeAllRanges();
+  selection.addRange(range);
+  if (typeof document.execCommand === "function" && document.execCommand("delete")) {
+    return true;
+  }
+
+  range.deleteContents();
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return false;
+}
+
+function createToolTokenDeletionRange(token: HTMLElement) {
+  const range = document.createRange();
+  range.setStartBefore(token);
+  const next = token.nextSibling;
+  if (next?.nodeType === Node.TEXT_NODE && next.textContent?.startsWith(" ")) {
+    range.setEnd(next, 1);
+  } else {
+    range.setEndAfter(token);
+  }
+  return range;
 }
 
 function placeCaretAtEditorEnd(editor: HTMLElement) {
@@ -350,11 +385,7 @@ function normalizeSelectionOutsideToolToken(container: HTMLElement) {
   const token = anchorElement?.closest<HTMLElement>("[data-tool-token='true']");
   if (!token || !container.contains(token)) return;
 
-  const spacer =
-    token.nextSibling?.nodeType === Node.TEXT_NODE && token.nextSibling.textContent?.startsWith(" ")
-      ? token.nextSibling
-      : token;
-  moveCaretAfterNode(spacer);
+  moveCaretAfterToolToken(token);
 }
 
 function normalizeEditorContent(container: HTMLElement) {
@@ -625,6 +656,7 @@ export function TaskComposer({
   const syncEditorInteractionStateRef = useRef<(editor: HTMLElement) => void>(() => {});
   const onAttachmentsChangeRef = useRef(onAttachmentsChange);
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
+  const selectedSourceIdsRef = useRef(selectedSourceIds);
 
   const [sourceButtonOpen, setSourceButtonOpen] = useState(false);
   const [sourceButtonHighlightedIndex, setSourceButtonHighlightedIndex] = useState(0);
@@ -891,6 +923,10 @@ export function TaskComposer({
   useEffect(() => {
     onAttachmentsChangeRef.current = onAttachmentsChange;
   }, [onAttachmentsChange]);
+
+  useEffect(() => {
+    selectedSourceIdsRef.current = selectedSourceIds;
+  }, [selectedSourceIds]);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -1374,6 +1410,28 @@ export function TaskComposer({
     syncMentionState(nextValue, offsets?.start ?? nextValue.length);
   };
 
+  const syncEditorSourceState = useCallback((editor: HTMLElement) => {
+    const domTokenIds = Array.from(new Set(getTokenIds(editor).filter(Boolean)));
+    const validDomTokenIds = domTokenIds.filter(
+      (id) => selectedSourceIdsRef.current.includes(id) || filteredTools.some((tool) => tool.id === id),
+    );
+    const currentIds = selectedSourceIdsRef.current;
+
+    currentIds
+      .filter((id) => !validDomTokenIds.includes(id))
+      .forEach((id) => {
+        onSourceRemove(id);
+      });
+
+    validDomTokenIds
+      .filter((id) => !currentIds.includes(id) && filteredTools.some((tool) => tool.id === id))
+      .forEach((id) => {
+        onToolSelect(id);
+      });
+
+    selectedSourceIdsRef.current = validDomTokenIds;
+  }, [filteredTools, onSourceRemove, onToolSelect]);
+
   useEffect(() => {
     syncEditorInteractionStateRef.current = syncEditorInteractionState;
   });
@@ -1410,11 +1468,12 @@ export function TaskComposer({
     if (!selection || !range) return false;
 
     suppressExternalSyncRef.current = true;
-    range.deleteContents();
+    deleteRangeContentsWithUndo(range);
     selectedToolIds.forEach((id) => {
       editor.querySelector<HTMLElement>(`[data-tool-token='true'][data-tool-id='${id}']`)?.remove();
       onSourceRemove(id);
     });
+    selectedSourceIdsRef.current = selectedSourceIdsRef.current.filter((id) => !selectedToolIds.includes(id));
     normalizeEditorContent(editor);
     syncEditorValue();
     closeMentionMenu();
@@ -1432,16 +1491,13 @@ export function TaskComposer({
     if (!editor) return;
     const token = editor.querySelector<HTMLElement>(`[data-tool-token='true'][data-tool-id='${capabilityId}']`);
     if (!token) return;
-    const trailingSpace =
-      token.nextSibling?.nodeType === Node.TEXT_NODE && token.nextSibling.textContent?.startsWith(" ")
-        ? token.nextSibling
-        : null;
-    token.remove();
-    trailingSpace?.remove();
+    const deletionRange = createToolTokenDeletionRange(token);
+    deleteRangeContentsWithUndo(deletionRange);
     normalizeEditorContent(editor);
     suppressExternalSyncRef.current = true;
     syncEditorValue();
     onSourceRemove(capabilityId);
+    selectedSourceIdsRef.current = selectedSourceIdsRef.current.filter((id) => id !== capabilityId);
     if (acceptedTemplateToolId === capabilityId) {
       setAcceptedTemplateToolId(null);
     }
@@ -1582,6 +1638,9 @@ export function TaskComposer({
         ...current,
         [capabilityId]: 0,
       }));
+      if (!selectedSourceIdsRef.current.includes(capabilityId)) {
+        selectedSourceIdsRef.current = [...selectedSourceIdsRef.current, capabilityId];
+      }
       onToolSelect(capabilityId);
     }
   };
@@ -1822,9 +1881,22 @@ export function TaskComposer({
                       }}
                       onInput={(event) => {
                         syncEditorInteractionState(event.currentTarget);
+                        syncEditorSourceState(event.currentTarget);
                       }}
                       onKeyDown={(event) => {
                         normalizeSelectionOutsideToolToken(event.currentTarget);
+                        if (
+                          (event.metaKey || event.ctrlKey) &&
+                          (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y")
+                        ) {
+                          requestAnimationFrame(() => {
+                            const editor = editorRef.current;
+                            if (!editor) return;
+                            syncEditorInteractionState(editor);
+                            syncEditorSourceState(editor);
+                          });
+                          return;
+                        }
                         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
                           event.preventDefault();
                           const selection = window.getSelection();

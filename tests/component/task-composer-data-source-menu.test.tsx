@@ -162,6 +162,27 @@ describe("task composer data source menu", () => {
     expect(screen.getByLabelText("移除数据源 亚马逊前端搜索模拟")).toBeInTheDocument();
   });
 
+  it("keeps following text when removing a datasource token", async () => {
+    render(<ComposerHarness />);
+
+    await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    const amazonOption = within(listbox).getByRole("option", { name: /亚马逊前端搜索模拟/ });
+    fireEvent.pointerDown(amazonOption);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await userEvent.type(editor, "请围绕目标关键词搜索结果做标签化。");
+    expect(editor).toHaveTextContent("请围绕目标关键词搜索结果做标签化。");
+
+    fireEvent.mouseDown(screen.getByLabelText("移除数据源 亚马逊前端搜索模拟"));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText("移除数据源 亚马逊前端搜索模拟")).not.toBeInTheDocument();
+    });
+    expect(editor).toHaveTextContent("请围绕目标关键词搜索结果做标签化。");
+  });
+
   it("searches after a typed mention query and selects the filtered result with Enter", async () => {
     const onToolSelect = vi.fn();
     render(<ComposerHarness onToolSelect={onToolSelect} />);
