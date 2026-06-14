@@ -70,10 +70,10 @@ import {
   buildBundleDownloadApiForPanel,
   enrichOrchestrationBundlesWithStepLabels,
   fetchTaskOrchestrationForResultPanel,
-  mergeBundlesIntoPlatformSnapshots,
+  alignStepStatusesWithOrchestrationBundles,
+  buildPlatformSubtasksForExecutionSteps,
   pickBestOrchestrationAnchor,
-  resolveAnchorForPanelFromMessageMeta,
-  resolveOrchestrationAnchorFromMessageMeta,
+  resolvePanelAnchorForStepsMessage,
   type OrchestrationAnchor,
   type PanelOrchestrationAnchor,
   type ResultPanelContext,
@@ -926,8 +926,8 @@ export function PlatformSessionAgentWorkspace({
   const loadSupplementalBundlesForMessage = useCallback((messageId: string, meta: Record<string, unknown> | undefined) => {
     if (!frontendMockSession && !platformAgent?.auth) return;
     if (supplementalBundlesById[messageId] || fetchedSupplementalRef.current.has(messageId)) return;
-    const anchor = resolveOrchestrationAnchorFromMessageMeta(meta);
-    if (!anchor) {
+    const panelAnchor = resolvePanelAnchorForStepsMessage(messages, meta);
+    if (!panelAnchor) {
       fetchedSupplementalRef.current.add(messageId);
       return;
     }
@@ -942,18 +942,23 @@ export function PlatformSessionAgentWorkspace({
     if (!platformAgent?.auth) return;
     void platformAgent.withFreshToken(async (token) => {
       try {
+        const expandOrchestration =
+          !panelAnchor.bundleTaskIds || panelAnchor.bundleTaskIds.length <= 1;
         const data = await fetchTaskOrchestrationForResultPanel(
           token,
-          anchor.primaryTaskId,
-          anchor.bundleTaskIds.length > 0 ? anchor.bundleTaskIds : undefined,
-          { orchestrationId: anchor.orchestrationId, expandOrchestration: false },
+          panelAnchor.primaryTaskId,
+          panelAnchor.bundleTaskIds,
+          {
+            orchestrationId: panelAnchor.orchestrationId,
+            expandOrchestration,
+          },
         );
         setSupplementalBundlesById((prev) => ({ ...prev, [messageId]: data.bundles }));
       } catch {
         // task/orchestration may have been deleted
       }
     });
-  }, [frontendMockSession, platformAgent, supplementalBundlesById]);
+  }, [frontendMockSession, platformAgent, supplementalBundlesById, messages]);
 
   useEffect(() => {
     fetchedSupplementalRef.current = new Set();
@@ -1193,13 +1198,14 @@ export function PlatformSessionAgentWorkspace({
       setError("");
       try {
         await platformAgent.withFreshToken(async (token) => {
+        const expandOrchestration = !anchor.bundleTaskIds || anchor.bundleTaskIds.length <= 1;
           const data = await fetchTaskOrchestrationForResultPanel(
             token,
             anchor.primaryTaskId,
             anchor.bundleTaskIds,
             {
               orchestrationId: anchor.orchestrationId ?? undefined,
-              expandOrchestration: false,
+              expandOrchestration,
             },
           );
           applyPanelFetchToContext(messageId, anchor, data, options?.focusedSubtaskId);
@@ -1217,11 +1223,11 @@ export function PlatformSessionAgentWorkspace({
       messageId: string | null,
       options?: { focusedSubtaskId?: string | null },
     ) => {
-      const anchor = resolveAnchorForPanelFromMessageMeta(meta);
+      const anchor = resolvePanelAnchorForStepsMessage(messages, meta);
       if (!anchor) return;
       await openResultPanelFromAnchor(anchor, messageId, options);
     },
-    [openResultPanelFromAnchor],
+    [messages, openResultPanelFromAnchor],
   );
 
   const withFreshTokenForResultPanel = useCallback(
@@ -1592,7 +1598,12 @@ export function PlatformSessionAgentWorkspace({
                           {showDeferredTaskSteps ? (
                             <TaskExecutionStepsAssistantBubble
                               steps={mergeTaskStepStatuses(
-                                latestExecutionSteps!,
+                                alignStepStatusesWithOrchestrationBundles(
+                                  latestExecutionSteps!,
+                                  supplementalBundlesById[m.id]?.length
+                                    ? supplementalBundlesById[m.id]!
+                                    : orchestrationBundlesForUi,
+                                ),
                                 liveOrchStepStatuses,
                               )}
                               datetime={m.created_at}
@@ -1600,10 +1611,13 @@ export function PlatformSessionAgentWorkspace({
                                 (() => {
                                   const supp = supplementalBundlesById[m.id];
                                   if (supp && supp.length > 0) {
-                                    return mergeBundlesIntoPlatformSnapshots(latestExecutionSteps!, supp);
+                                    return buildPlatformSubtasksForExecutionSteps(latestExecutionSteps!, supp);
                                   }
                                   if (stepsMessageIdForBundles && orchestrationBundlesForUi.length > 0) {
-                                    return mergeBundlesIntoPlatformSnapshots(latestExecutionSteps!, orchestrationBundlesForUi);
+                                    return buildPlatformSubtasksForExecutionSteps(
+                                      latestExecutionSteps!,
+                                      orchestrationBundlesForUi,
+                                    );
                                   }
                                   return undefined;
                                 })()
@@ -1630,7 +1644,14 @@ export function PlatformSessionAgentWorkspace({
                           <>
                             <TaskExecutionStepsAssistantBubble
                               steps={mergeTaskStepStatuses(
-                                taskStepsToShow!,
+                                alignStepStatusesWithOrchestrationBundles(
+                                  taskStepsToShow!,
+                                  supplementalBundlesById[m.id]?.length
+                                    ? supplementalBundlesById[m.id]!
+                                    : m.id === stepsMessageIdForBundles
+                                      ? orchestrationBundlesForUi
+                                      : [],
+                                ),
                                 (m.id === latestStepsMessageId || isThisOrchestrationTurn) &&
                                   liveOrchStepStatuses
                                   ? liveOrchStepStatuses
@@ -1641,10 +1662,13 @@ export function PlatformSessionAgentWorkspace({
                                 (() => {
                                   const supp = supplementalBundlesById[m.id];
                                   if (supp && supp.length > 0) {
-                                    return mergeBundlesIntoPlatformSnapshots(taskStepsToShow!, supp);
+                                    return buildPlatformSubtasksForExecutionSteps(taskStepsToShow!, supp);
                                   }
                                   if (m.id === stepsMessageIdForBundles && orchestrationBundlesForUi.length > 0) {
-                                    return mergeBundlesIntoPlatformSnapshots(taskStepsToShow!, orchestrationBundlesForUi);
+                                    return buildPlatformSubtasksForExecutionSteps(
+                                      taskStepsToShow!,
+                                      orchestrationBundlesForUi,
+                                    );
                                   }
                                   if (taskStepsToShow && taskStepsToShow.length > 0 && m.id !== stepsMessageIdForBundles) {
                                     const meta2 = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;

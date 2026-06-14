@@ -156,6 +156,104 @@ export function resolveAnchorForPanelFromMessageMeta(
   };
 }
 
+const ORCHESTRATION_TASK_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function orchestrationStepTaskIdsFromMeta(meta: Record<string, unknown>): string[] {
+  const raw = Array.isArray(meta.orchestration_step_task_ids)
+    ? (meta.orchestration_step_task_ids as unknown[])
+    : [];
+  return raw
+    .map((x) => (typeof x === "string" ? x.trim() : ""))
+    .filter((x) => x.length > 0 && ORCHESTRATION_TASK_ID_RE.test(x));
+}
+
+/**
+ * 历史回放：task_execution_steps 消息 meta 通常只有单个 task_id；
+ * 从同 orchestration 的完成消息补全 orchestration_step_task_ids。
+ */
+export function resolvePanelAnchorForStepsMessage(
+  messages: SessionMessageItem[],
+  stepsMeta: Record<string, unknown> | undefined,
+): PanelOrchestrationAnchor | null {
+  const direct = resolveAnchorForPanelFromMessageMeta(stepsMeta);
+  if (!direct) return null;
+  if (direct.bundleTaskIds && direct.bundleTaskIds.length >= 2) return direct;
+
+  const orchId =
+    typeof stepsMeta?.orchestration_id === "string" ? stepsMeta.orchestration_id.trim() : "";
+  const stepsTaskId = typeof stepsMeta?.task_id === "string" ? stepsMeta.task_id.trim() : "";
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role !== "assistant") continue;
+    const meta = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
+    if (!meta) continue;
+
+    if (orchId) {
+      const metaOrchId = typeof meta.orchestration_id === "string" ? meta.orchestration_id.trim() : "";
+      if (metaOrchId !== orchId) continue;
+    } else if (stepsTaskId) {
+      const metaTaskId = typeof meta.task_id === "string" ? meta.task_id.trim() : "";
+      const ids = orchestrationStepTaskIdsFromMeta(meta);
+      if (metaTaskId !== stepsTaskId && !ids.includes(stepsTaskId)) continue;
+    } else {
+      continue;
+    }
+
+    const ids = orchestrationStepTaskIdsFromMeta(meta);
+    if (ids.length < 2) continue;
+
+    const tid =
+      typeof meta.task_id === "string" && ORCHESTRATION_TASK_ID_RE.test(meta.task_id.trim())
+        ? meta.task_id.trim()
+        : ids[ids.length - 1]!;
+    const metaOrchId =
+      typeof meta.orchestration_id === "string" && meta.orchestration_id.trim()
+        ? meta.orchestration_id.trim()
+        : orchId || null;
+
+    return {
+      primaryTaskId: tid,
+      bundleTaskIds: ids,
+      orchestrationId: metaOrchId,
+    };
+  }
+
+  return direct;
+}
+
+/** 历史时间线：步骤 meta 未全部终态时，按已拉到的 bundle 索引推断 done，以渲染可点的结果卡。 */
+export function alignStepStatusesWithOrchestrationBundles(
+  steps: TaskExecutionStep[],
+  bundles: TaskOrchestrationBundleRow[],
+): TaskExecutionStep[] {
+  if (steps.length === 0 || bundles.length === 0) return steps;
+  if (steps.every((s) => s.status === "done" || s.status === "error")) return steps;
+
+  const bundleByIdx = new Map<number, TaskOrchestrationBundleRow>();
+  for (const b of bundles) {
+    bundleByIdx.set(b.stepIndex, b);
+  }
+  const ordered = [...steps].sort((a, b) => a.order - b.order);
+  return ordered.map((step, i) => {
+    const b = bundleByIdx.get(i);
+    if (!b?.taskId || b.taskId.startsWith("__no_task_")) return step;
+    if (step.status === "pending" || step.status === "running") {
+      return { ...step, status: "done" as const };
+    }
+    return step;
+  });
+}
+
+export function buildPlatformSubtasksForExecutionSteps(
+  executionSteps: TaskExecutionStep[],
+  bundles: TaskOrchestrationBundleRow[],
+): PlatformSubtaskSnapshot[] {
+  const aligned = alignStepStatusesWithOrchestrationBundles(executionSteps, bundles);
+  return mergeBundlesIntoPlatformSnapshots(aligned, bundles);
+}
+
 export function buildBundleDownloadApiForPanel(
   primaryTaskId: string,
   bundleTaskIds: string[] | undefined,

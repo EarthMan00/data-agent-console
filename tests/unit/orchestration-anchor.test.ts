@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import type { SessionMessageItem } from "@/lib/agent-api/types";
 import {
+  alignStepStatusesWithOrchestrationBundles,
   buildBundleDownloadApiForPanel,
+  buildPlatformSubtasksForExecutionSteps,
   displayLabelForIndexedSubtask,
   isUnhelpfulApiTaskLabel,
   mergeBundlesIntoPlatformSnapshots,
   pickBestOrchestrationAnchor,
   resolveAnchorForPanelFromMessageMeta,
+  resolvePanelAnchorForStepsMessage,
 } from "@/lib/merge-orchestration-task-artifacts";
 import type { TaskExecutionStep } from "@/lib/agent-events";
 
@@ -82,6 +85,56 @@ describe("resolveAnchorForPanelFromMessageMeta", () => {
     });
     expect(round1?.primaryTaskId).not.toBe(round2?.primaryTaskId);
     expect(round1?.bundleTaskIds ?? []).not.toContain(round2!.primaryTaskId);
+  });
+});
+
+describe("resolvePanelAnchorForStepsMessage", () => {
+  it("从同 orchestration 的完成消息补全 task_execution_steps 缺失的多步 task ids", () => {
+    const messages: SessionMessageItem[] = [
+      assistant("steps", {
+        kind: "task_execution_steps",
+        task_id: "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+        orchestration_id: "orch-round-2",
+        steps: [{ id: "s1", label: "1", status: "pending" }],
+      }),
+      assistant("done", {
+        task_id: "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+        orchestration_id: "orch-round-2",
+        orchestration_step_task_ids: [
+          "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+          "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+        ],
+      }),
+    ];
+    const anchor = resolvePanelAnchorForStepsMessage(messages, {
+      kind: "task_execution_steps",
+      task_id: "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+      orchestration_id: "orch-round-2",
+    });
+    expect(anchor?.bundleTaskIds).toEqual([
+      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+    ]);
+    expect(anchor?.orchestrationId).toBe("orch-round-2");
+  });
+});
+
+describe("alignStepStatusesWithOrchestrationBundles / buildPlatformSubtasksForExecutionSteps", () => {
+  it("有 bundle 的步骤在 meta 仍为 pending 时对齐为 done 并映射到正确 taskId", () => {
+    const steps: TaskExecutionStep[] = [
+      { id: "x0", label: "A", order: 1, status: "done", roundId: "r" },
+      { id: "x1", label: "B", order: 2, status: "pending", roundId: "r" },
+    ];
+    const bundles = [
+      { taskId: "task-a", stepIndex: 0, label: "A", artifacts: [] },
+      { taskId: "task-b", stepIndex: 1, label: "B", artifacts: [] },
+    ];
+    const aligned = alignStepStatusesWithOrchestrationBundles(steps, bundles);
+    expect(aligned[1]?.status).toBe("done");
+    const snaps = buildPlatformSubtasksForExecutionSteps(steps, bundles);
+    expect(snaps[1]!.taskId).toBe("task-b");
   });
 });
 
