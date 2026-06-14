@@ -1147,7 +1147,9 @@ function AgentRunWorkspaceView({
               sendButtonClassName="h-10 w-10 min-w-0 rounded-full border border-transparent bg-primary p-0 text-primary-foreground shadow-none transition hover:bg-link-hover"
             />
 
-            <div className="mt-3 text-center text-xs text-text-tertiary">内容由 AI 大模型生成，请仔细甄别</div>
+            <div className="mt-3 text-center text-xs text-text-tertiary">
+              AI 可能产生不准确的信息。请核实重要细节。
+            </div>
           </div>
         </div>
       </AssistantThreadFrame>

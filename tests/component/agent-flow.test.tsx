@@ -98,6 +98,7 @@ describe("agent flow", () => {
 
     expect(screen.getByTestId("agent-user-input-card")).toBeInTheDocument();
     expect(await screen.findByTestId("agent-execution-panel")).toBeInTheDocument();
+    expect(screen.getByText("AI 可能产生不准确的信息。请核实重要细节。")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByTestId("agent-result-section")).toBeInTheDocument();
       expect(document.querySelector("main aside [data-testid='agent-preview-panel']")).toBeInTheDocument();

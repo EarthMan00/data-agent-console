@@ -1411,7 +1411,7 @@ function MoreDataShellComponent({
                 data-testid="workspace-right-rail"
                 className={cn(
                   "flex min-h-0 min-w-0 flex-col border-l border-border bg-bg-surface/70 backdrop-blur-xl",
-                  "border-l-0 border-t lg:border-l lg:border-t-0",
+                  "border-l-0 border-t lg:border-l lg:border-t",
                   childManagedScroll ? "overflow-hidden" : "overflow-visible",
                 )}
               >

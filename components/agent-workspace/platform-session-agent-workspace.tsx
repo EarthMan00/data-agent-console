@@ -1877,40 +1877,45 @@ export function PlatformSessionAgentWorkspace({
                 </div>
               </div>
             ) : (
-              <TaskComposer
-                value={draft}
-                onValueChange={setDraft}
-                placeholder="您可以继续追问或者让我做其他工作哦～"
-                mode="普通模式"
-                onModeChange={() => {}}
-                selectedSourceIds={[]}
-                onToolSelect={() => {}}
-                onSourceRemove={() => {}}
-                onFilesSelected={(files) => {
-                  setPendingFiles((prev) => {
-                    const picked = Array.from(files);
-                    if (picked.length === 0) return prev;
-                    const seen = new Set(prev.map((f) => `${f.name}:${f.size}:${f.lastModified}`));
-                    const merged = [...prev];
-                    for (const f of picked) {
-                      const key = `${f.name}:${f.size}:${f.lastModified}`;
-                      if (!seen.has(key)) {
-                        seen.add(key);
-                        merged.push(f);
+              <>
+                <TaskComposer
+                  value={draft}
+                  onValueChange={setDraft}
+                  placeholder="您可以继续追问或者让我做其他工作哦～"
+                  mode="普通模式"
+                  onModeChange={() => {}}
+                  selectedSourceIds={[]}
+                  onToolSelect={() => {}}
+                  onSourceRemove={() => {}}
+                  onFilesSelected={(files) => {
+                    setPendingFiles((prev) => {
+                      const picked = Array.from(files);
+                      if (picked.length === 0) return prev;
+                      const seen = new Set(prev.map((f) => `${f.name}:${f.size}:${f.lastModified}`));
+                      const merged = [...prev];
+                      for (const f of picked) {
+                        const key = `${f.name}:${f.size}:${f.lastModified}`;
+                        if (!seen.has(key)) {
+                          seen.add(key);
+                          merged.push(f);
+                        }
                       }
-                    }
-                    return merged;
-                  });
-                }}
-                onAttachmentsChange={(files) => {
-                  setPendingFiles(files);
-                }}
-                onSubmit={() => void send()}
-                visualStyle="default"
-                containerClassName="overflow-visible rounded-popover border border-border bg-bg-surface shadow-surface"
-                textareaClassName="min-h-composer max-h-composer-chat min-w-44 flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-body leading-6 text-foreground caret-foreground outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-ring-none-important"
-                placeholderClassName="top-2 text-body text-text-tertiary"
-              />
+                      return merged;
+                    });
+                  }}
+                  onAttachmentsChange={(files) => {
+                    setPendingFiles(files);
+                  }}
+                  onSubmit={() => void send()}
+                  visualStyle="default"
+                  containerClassName="overflow-visible rounded-popover border border-border bg-bg-surface shadow-surface"
+                  textareaClassName="min-h-composer max-h-composer-chat min-w-44 flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-body leading-6 text-foreground caret-foreground outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-ring-none-important"
+                  placeholderClassName="top-2 text-body text-text-tertiary"
+                />
+                <div className="mt-3 text-center text-xs text-text-tertiary">
+                  AI 可能产生不准确的信息。请核实重要细节。
+                </div>
+              </>
             )}
           </div>
         </div>

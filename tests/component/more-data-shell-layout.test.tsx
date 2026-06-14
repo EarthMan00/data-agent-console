@@ -106,6 +106,8 @@ describe("MoreDataShell right rail layout", () => {
     await waitFor(() => {
       expect(document.querySelector("main aside [data-testid='agent-preview-panel']")).toBeInTheDocument();
     });
+    expect(document.querySelector('[data-testid="workspace-right-rail"]')).toHaveClass("lg:border-t");
+    expect(document.querySelector('[data-testid="workspace-right-rail"]')).not.toHaveClass("lg:border-t-0");
     expect(document.querySelector("main > div > div [data-testid='agent-preview-panel']")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "任务执行结果抽屉" })).not.toBeInTheDocument();
   });

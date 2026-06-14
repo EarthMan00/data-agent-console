@@ -120,7 +120,7 @@ function ExcelStyleSheetTabBar({
                 className={cn(
                   "flex w-full rounded-md px-2 py-2 text-left text-body transition",
                   activeId === t.id
-                    ? "bg-success-bg font-medium text-success"
+                    ? "bg-fill-active font-medium text-[var(--color-text-1)]"
                     : "text-foreground hover:bg-fill-hover",
                 )}
                 onClick={() => {
@@ -151,13 +151,13 @@ function ExcelStyleSheetTabBar({
               className={cn(
                 "relative shrink-0 px-3 pb-2 pt-1.5 text-left leading-tight transition",
                 dense ? "text-caption" : "text-body",
-                active ? "font-medium text-success" : "text-text-secondary hover:bg-fill-hover",
+                active ? "font-medium text-[var(--color-text-1)]" : "text-text-secondary hover:bg-fill-hover",
               )}
             >
               <span className="line-clamp-1 max-w-task-label-fluid">{t.label}</span>
               {active ? (
                 <span
-                  className="absolute bottom-0 left-2 right-2 h-1 rounded-t-xs bg-success"
+                  className="absolute bottom-0 left-2 right-2 h-1 rounded-t-xs bg-[var(--color-text-1)]"
                   aria-hidden
                 />
               ) : null}
