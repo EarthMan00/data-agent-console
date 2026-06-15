@@ -122,6 +122,7 @@ function useShellMetaContext() {
 type HistoryEntry = SessionListItem & {
   firstMessage?: string | null;
   firstAt?: string | null;
+  lastMessageAt?: string | null;
   hasMessages?: boolean;
   isOptimistic?: boolean;
 };
@@ -132,7 +133,7 @@ const LEGACY_OPTIMISTIC_HISTORY_TITLE = "正在思考...";
 const ACCOUNT_AVATAR_CLASSES = ["bg-avatar-1", "bg-avatar-2", "bg-avatar-3", "bg-avatar-4", "bg-avatar-5", "bg-avatar-6", "bg-avatar-7", "bg-avatar-8"];
 
 function historyTimestampMs(entry: HistoryEntry) {
-  const times = [entry.last_active_at, entry.firstAt, entry.created_at]
+  const times = [entry.last_active_at, entry.lastMessageAt, entry.created_at]
     .map((iso) => {
       const ms = Date.parse(iso || "");
       return Number.isFinite(ms) ? ms : 0;
@@ -184,11 +185,13 @@ async function enrichHistoryEntries(
         (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
       );
       const firstUser = sorted.find((m) => m.role === "user") ?? sorted[0];
+      const lastMsg = sorted.length > 0 ? sorted[sorted.length - 1] : undefined;
       return {
         ...s,
         hasMessages: sorted.length > 0,
         firstMessage: firstUser?.content ?? null,
         firstAt: firstUser?.created_at ?? s.created_at,
+        lastMessageAt: lastMsg?.created_at ?? s.last_active_at,
       };
     } catch {
       return { ...s, firstMessage: null, firstAt: s.created_at };
@@ -214,6 +217,8 @@ type MoreDataShellStateValue = {
   setActiveSessionTitle: (title: string) => void;
   upsertOptimisticHistorySession: (sessionId: string, title?: string) => void;
   removeOptimisticHistorySession: (sessionId: string) => void;
+  /** 发送新消息时乐观刷新侧栏排序（last_active_at） */
+  bumpHistorySessionActivity: (sessionId: string) => void;
 };
 
 const MoreDataShellStateContext = createContext<MoreDataShellStateValue | null>(null);
@@ -250,6 +255,7 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
       expires_at: now,
       firstMessage: title,
       firstAt: now,
+      lastMessageAt: now,
       isOptimistic: true,
     };
     optimisticHistoryRef.current.set(sid, entry);
@@ -264,6 +270,21 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
     if (!sid) return;
     optimisticHistoryRef.current.delete(sid);
     setHistorySessions((prev) => prev.filter((s) => !(s.isOptimistic && s.session_id === sid)));
+  }, []);
+
+  const bumpHistorySessionActivity = useCallback((sessionId: string) => {
+    const sid = sessionId.trim();
+    if (!sid) return;
+    const now = new Date().toISOString();
+    setHistorySessions((prev) =>
+      sortHistoryEntries(
+        prev.map((s) =>
+          s.session_id === sid
+            ? { ...s, last_active_at: now, lastMessageAt: now }
+            : s,
+        ),
+      ),
+    );
   }, []);
 
   const refreshHistoryNow = useCallback(async () => {
@@ -394,6 +415,7 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
       setActiveSessionTitle,
       upsertOptimisticHistorySession,
       removeOptimisticHistorySession,
+      bumpHistorySessionActivity,
     }),
     [
       historySessions,
@@ -409,6 +431,7 @@ export function MoreDataShellStateProvider({ children }: { children: ReactNode }
       activeSessionTitle,
       upsertOptimisticHistorySession,
       removeOptimisticHistorySession,
+      bumpHistorySessionActivity,
     ],
   );
 

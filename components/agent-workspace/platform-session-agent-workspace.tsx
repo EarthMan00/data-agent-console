@@ -143,7 +143,7 @@ export function PlatformSessionAgentWorkspace({
   fallbackTaskId?: string;
 }) {
   const platformAgent = useOptionalPlatformAgent();
-  const { refreshHistoryNow, setActiveSessionTitle } = useMoreDataShellState();
+  const { refreshHistoryNow, setActiveSessionTitle, bumpHistorySessionActivity } = useMoreDataShellState();
   const router = useRouter();
   const frontendMockSession = isFrontendMockSessionId(sessionId);
   const isMounted = useRef(true);
@@ -1336,6 +1336,7 @@ export function PlatformSessionAgentWorkspace({
     sseAbortRef.current = abortController;
     setSending(true);
     setError("");
+    bumpHistorySessionActivity(sessionId);
     const optimisticAttachments = buildUserMessageAttachmentsFromFiles(filesToSend);
     const optimistic: SessionMessageItem = {
       id: `optimistic_user_${safeRandomUUID()}`,
@@ -1403,6 +1404,7 @@ export function PlatformSessionAgentWorkspace({
     processStreamingMessages,
     reload,
     refreshHistoryNow,
+    bumpHistorySessionActivity,
     sending,
     sessionId,
   ]);
