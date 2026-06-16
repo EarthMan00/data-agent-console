@@ -58,7 +58,7 @@ import {
   isSupersededTaskExecutionStepsMessage,
   messageIdsEligibleForTaskResultCard,
 } from "@/lib/session-task-result-card-visibility";
-import { extractDecompositionLabelsFromMessages } from "@/lib/parse-decomposition-labels";
+import { extractDecompositionLabelsFromMessages, findLatestDecompositionAssistantIndex } from "@/lib/parse-decomposition-labels";
 import { resolvePostTaskGuidancePresentation } from "@/lib/parse-post-task-guidance";
 import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
 import {
@@ -86,7 +86,7 @@ import {
   getFrontendMockSessionMessages,
   isFrontendMockSessionId,
 } from "@/lib/frontend-mock-session";
-import { pollPlatformTaskUntilSettled } from "@/lib/poll-task-until-settled";
+import { pollAcceptedPlatformTaskInSession } from "@/lib/session-accepted-task-poll";
 import {
   isTaskInFlight,
   SCHEDULE_TRIAL_SESSION_RELOAD_INTERVAL_MS,
@@ -972,6 +972,17 @@ export function PlatformSessionAgentWorkspace({
     [messages],
   );
 
+  const latestDecompositionAssistantIndex = useMemo(
+    () => findLatestDecompositionAssistantIndex(messages),
+    [messages],
+  );
+
+  /** 试跑/运行记录仍锚定首条助手；历史追问锚定最近一轮拆解消息。 */
+  const orchestrationTurnIndex = useMemo(() => {
+    if (scheduleTrial || scheduledRunRecord) return firstAssistantIndex;
+    return latestDecompositionAssistantIndex;
+  }, [scheduleTrial, scheduledRunRecord, firstAssistantIndex, latestDecompositionAssistantIndex]);
+
   const latestStepsMessageId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i]!;
@@ -1032,12 +1043,22 @@ export function PlatformSessionAgentWorkspace({
     const orchCancelled = messages.some(
       (m) => m.role === "assistant" && /多步任务已由用户终止/.test(m.content || ""),
     );
-    return buildTaskStepsFromDecompositionLabels(labels, sessionId, false, null, {
+    const historyTaskInFlight = !scheduleTrial && !scheduledRunRecord && sending;
+    return buildTaskStepsFromDecompositionLabels(labels, sessionId, historyTaskInFlight, lastTaskSnapshot, {
       multiStepOrchestration: labels.length > 1,
       orchestrationFinished: Boolean(orchestrationAnchor),
       orchestrationSuccess: !orchFailed && !orchCancelled,
     });
-  }, [latestStepsMessageId, messages, orchestrationAnchor, sessionId]);
+  }, [
+    latestStepsMessageId,
+    messages,
+    orchestrationAnchor,
+    sessionId,
+    scheduleTrial,
+    scheduledRunRecord,
+    sending,
+    lastTaskSnapshot,
+  ]);
 
   const runRecordExecutionStepsForLabels = useMemo(() => {
     if (!scheduledRunRecord) return null;
@@ -1375,11 +1396,20 @@ export function PlatformSessionAgentWorkspace({
         if (sessionGenRef.current !== sendGen) return;
         void refreshHistoryNow();
         if (sendResult.kind === "accepted") {
-          await pollPlatformTaskUntilSettled(
-            (fn) => platformAgent.withFreshToken(fn),
-            sendResult,
-            () => abortPollRef.current || sessionGenRef.current !== sendGen,
-          );
+          setLastTaskSnapshot(null);
+          await pollAcceptedPlatformTaskInSession(token, sessionId, mid, sendResult, {
+            shouldAbort: () => abortPollRef.current || sessionGenRef.current !== sendGen,
+            onReload: async () => {
+              if (sessionGenRef.current === sendGen) {
+                await reload();
+              }
+            },
+            onTaskUpdate: (t) => {
+              if (sessionGenRef.current === sendGen) {
+                setLastTaskSnapshot(t);
+              }
+            },
+          });
         }
       });
       if (sessionGenRef.current === sendGen) {
@@ -1506,7 +1536,7 @@ export function PlatformSessionAgentWorkspace({
                   const trialLabels =
                     scheduleTrial && tmeta?.sessionId === sessionId ? tmeta.executionStepLabels : undefined;
                   const isThisOrchestrationTurn =
-                    m.role === "assistant" && i === firstAssistantIndex;
+                    m.role === "assistant" && i === orchestrationTurnIndex;
                   const syntheticForTrial =
                     scheduleTrial &&
                     isThisOrchestrationTurn &&

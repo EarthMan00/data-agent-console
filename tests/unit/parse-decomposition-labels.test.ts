@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   extractDecompositionLabelsFromMessages,
+  findLatestDecompositionAssistantIndex,
   parseDecompositionLabelsFromContent,
 } from "@/lib/parse-decomposition-labels";
 import type { SessionMessageItem } from "@/lib/agent-api/types";
@@ -24,7 +25,7 @@ describe("parseDecompositionLabelsFromContent", () => {
 });
 
 describe("extractDecompositionLabelsFromMessages", () => {
-  it("reads labels from the first matching assistant message", () => {
+  it("reads labels from the latest matching assistant message", () => {
     const messages: SessionMessageItem[] = [
       {
         id: "u1",
@@ -41,7 +42,23 @@ describe("extractDecompositionLabelsFromMessages", () => {
         created_at: "",
         message_index: 1,
       },
+      {
+        id: "u2",
+        role: "user",
+        content: "again",
+        created_at: "",
+        message_index: 2,
+      },
+      {
+        id: "a2",
+        role: "assistant",
+        content:
+          "拆解为 1 个执行步骤，将开始执行。\n1. 生成分析报告",
+        created_at: "",
+        message_index: 3,
+      },
     ];
-    expect(extractDecompositionLabelsFromMessages(messages)).toEqual(["搜索商品"]);
+    expect(extractDecompositionLabelsFromMessages(messages)).toEqual(["生成分析报告"]);
+    expect(findLatestDecompositionAssistantIndex(messages)).toBe(3);
   });
 });

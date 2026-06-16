@@ -20,10 +20,21 @@ export function parseDecompositionLabelsFromContent(content: string): string[] {
 }
 
 export function extractDecompositionLabelsFromMessages(messages: SessionMessageItem[]): string[] {
-  for (const m of messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
     if (m.role !== "assistant") continue;
     const labels = parseDecompositionLabelsFromContent(m.content);
     if (labels.length > 0) return labels;
   }
   return [];
+}
+
+/** 最近一轮「拆解为 N 个执行步骤」助手消息的下标（历史多轮追问用）。 */
+export function findLatestDecompositionAssistantIndex(messages: SessionMessageItem[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role !== "assistant") continue;
+    if (parseDecompositionLabelsFromContent(m.content).length > 0) return i;
+  }
+  return -1;
 }
