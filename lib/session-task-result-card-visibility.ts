@@ -26,7 +26,8 @@ export function buildTaskResultHintsByTaskId(
   for (const m of messages) {
     if (m.role !== "assistant") continue;
     const meta = messageMeta(m);
-    const tid = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+    if (!meta) continue;
+    const tid = typeof meta.task_id === "string" ? meta.task_id.trim() : "";
     if (!tid) continue;
 
     const kind = typeof meta.kind === "string" ? meta.kind.trim() : "";
