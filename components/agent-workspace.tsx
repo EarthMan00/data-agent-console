@@ -943,7 +943,9 @@ function AgentRunWorkspaceView({
                       ) : null;
 
                       const showResultCard =
-                        round.showTaskResultInChat && (run.activePreviewId || latestRoundWantsTaskPanel);
+                        !round.assistantPending &&
+                        round.showTaskResultInChat &&
+                        (run.activePreviewId || latestRoundWantsTaskPanel);
 
                       const afterExecution = (
                         <>
@@ -1029,10 +1031,6 @@ function AgentRunWorkspaceView({
                                 datetime={round.createdAt}
                                 streaming={round.assistantStreaming}
                               />
-                            ) : round.assistantPending &&
-                              round.executionGroups.length === 0 &&
-                              !round.executionSteps?.length ? (
-                              <AssistantLoadingRow variant="task" />
                             ) : null
                           }
                           showExecutionPanel={deferExecution ? false : splitRevealDone}

@@ -428,7 +428,9 @@ export function buildRoundViewModels(run: TaskRunLike) {
             tabularOk &&
             taskOutcomeReady,
         )
-      : !(uiLayout === "tool_orchestration" && hasExecSteps) || taskOutcomeReady;
+      : uiLayout === "tool_orchestration" && !hasExecSteps
+        ? executionPhasesComplete && taskOutcomeReady
+        : taskOutcomeReady;
 
     const hasResult = isPlatformStepRound
       ? Boolean(!errorMessage && run.status === "success" && tabularOk && taskOutcomeReady)

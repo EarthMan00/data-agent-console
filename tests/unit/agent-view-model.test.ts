@@ -284,6 +284,44 @@ describe("agent view model helpers", () => {
     expect(round.showTaskResultInChat).toBe(false);
   });
 
+  it("does not show task result card before platform execution steps are initialized", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      status: "running",
+      chains: [],
+      roundUiLayouts: { "round-1": "tool_orchestration" },
+      platformTaskArtifacts: [
+        {
+          artifact_id: "a1",
+          artifact_type: "text/csv",
+          original_name: "result.csv",
+          download_api: "/api/tasks/x/download/a1",
+        },
+      ],
+      timeline: [
+        {
+          id: "node-user",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:00",
+          kind: "user_message",
+          text: "调研 Yoga Mat 市场",
+        },
+        {
+          id: "node-stream",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:05",
+          kind: "assistant_stream",
+          text: "",
+          status: "complete",
+        },
+      ],
+    };
+    const [round] = buildRoundViewModels(run);
+    expect(round.assistantPending).toBe(true);
+    expect(round.showTaskResultInChat).toBe(false);
+    expect(round.hasResult).toBe(false);
+  });
+
   it("marks hasResult when platform steps are complete and final output exists", () => {
     const run: TaskRunLike = {
       ...sampleRun,
