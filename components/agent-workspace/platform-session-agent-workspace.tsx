@@ -54,6 +54,7 @@ import { buildTaskStepsFromDecompositionLabels } from "@/lib/schedule-trial-exec
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import {
   buildLatestStepsMessageIdByTaskId,
+  buildTaskResultHintsByTaskId,
   isSupersededTaskExecutionStepsMessage,
   messageIdsEligibleForTaskResultCard,
 } from "@/lib/session-task-result-card-visibility";
@@ -825,6 +826,7 @@ export function PlatformSessionAgentWorkspace({
   ]);
 
   const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
+  const taskResultHintsByTaskId = useMemo(() => buildTaskResultHintsByTaskId(messages), [messages]);
 
   const orchestrationAnchor = useMemo(() => pickBestOrchestrationAnchor(messages), [messages]);
 
@@ -1791,17 +1793,26 @@ export function PlatformSessionAgentWorkspace({
                       ) : (
                         <SimpleSystemBubble message={m.content} />
                       )}
-                      {taskId && meta?.has_artifacts === true ? (
+                      {taskId ? (
                         <TaskResultSummaryCard
                           title="任务结果"
                           className="ml-12 w-[calc(100%-3rem)]"
-                          summary={
-                            meta?.task_status === "FAILED" && typeof meta?.error_message === "string"
-                              ? `任务执行失败：${humanizeTaskErrorMessage(meta!.error_message as string)}`
-                              : meta?.task_status === "FAILED"
-                                ? "任务执行失败，可在右侧查看任务结果详情。"
-                                : "该轮任务已完成，可在右侧查看任务结果与数据文件。"
-                          }
+                          summary={(() => {
+                            const hints = taskResultHintsByTaskId.get(taskId);
+                            const taskStatus =
+                              hints?.taskStatus ??
+                              (typeof meta?.task_status === "string" ? meta.task_status : undefined);
+                            const errorMessage =
+                              hints?.errorMessage ??
+                              (typeof meta?.error_message === "string" ? meta.error_message : undefined);
+                            if (taskStatus === "FAILED" && errorMessage) {
+                              return `任务执行失败：${humanizeTaskErrorMessage(errorMessage)}`;
+                            }
+                            if (taskStatus === "FAILED") {
+                              return "任务执行失败，可在右侧查看任务结果详情。";
+                            }
+                            return "该轮任务已完成，可在右侧查看任务结果与数据文件。";
+                          })()}
                           expanded={showResultPanel && focusedTaskId === taskId}
                           onToggle={() => {
                             if (showResultPanel && focusedTaskId === taskId) {

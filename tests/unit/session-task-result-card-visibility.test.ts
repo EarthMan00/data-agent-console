@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { SessionMessageItem } from "@/lib/agent-api/types";
 import {
   buildLatestStepsMessageIdByTaskId,
+  buildTaskResultHintsByTaskId,
   isSupersededTaskExecutionStepsMessage,
   messageIdsEligibleForTaskResultCard,
 } from "@/lib/session-task-result-card-visibility";
@@ -80,6 +81,64 @@ describe("messageIdsEligibleForTaskResultCard", () => {
     ];
     const ids = messageIdsEligibleForTaskResultCard(messages);
     expect(ids.has("steps-failed")).toBe(true);
+  });
+});
+
+describe("buildTaskResultHintsByTaskId", () => {
+  it("resolves has_artifacts and task_status from completion summary onto steps message task_id", () => {
+    const messages: SessionMessageItem[] = [
+      assistant("completion", {
+        content: "多步任务已全部完成，可以在右侧查看最后一步任务结果与数据。",
+        meta: {
+          task_id: "task-1",
+          has_artifacts: true,
+          task_status: "SUCCESS",
+        },
+      }),
+      assistant("steps", {
+        content: "（以下为该轮任务的执行步骤记录）",
+        meta: {
+          kind: "task_execution_steps",
+          task_id: "task-1",
+          steps: [
+            { id: "s1", label: "步骤一", status: "done" },
+            { id: "s2", label: "步骤二", status: "done" },
+          ],
+        },
+      }),
+    ];
+    const hints = buildTaskResultHintsByTaskId(messages);
+    expect(hints.get("task-1")).toEqual({
+      hasArtifacts: true,
+      taskStatus: "SUCCESS",
+    });
+  });
+
+  it("prefers orchestration failure message for error fields", () => {
+    const messages: SessionMessageItem[] = [
+      assistant("steps", {
+        meta: {
+          kind: "task_execution_steps",
+          task_id: "task-2",
+          steps: [{ id: "s1", label: "步骤一", status: "error" }],
+        },
+      }),
+      assistant("failure", {
+        meta: {
+          kind: "orchestration_failure",
+          task_id: "task-2",
+          task_status: "FAILED",
+          error_message: "数据源超时",
+          has_artifacts: false,
+        },
+      }),
+    ];
+    const hints = buildTaskResultHintsByTaskId(messages);
+    expect(hints.get("task-2")).toEqual({
+      hasArtifacts: false,
+      taskStatus: "FAILED",
+      errorMessage: "数据源超时",
+    });
   });
 });
 

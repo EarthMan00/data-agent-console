@@ -7,6 +7,51 @@ function messageMeta(m: SessionMessageItem): Record<string, unknown> | undefined
     : undefined;
 }
 
+export type TaskResultHints = {
+  hasArtifacts: boolean;
+  taskStatus?: string;
+  errorMessage?: string;
+};
+
+/**
+ * 从会话消息中汇总每个 task_id 的结果元数据。
+ * 任务结果卡片挂在 task_execution_steps 消息上时，has_artifacts / task_status 等字段
+ * 通常在同 task_id 的完成总结消息里，需要跨消息解析。
+ */
+export function buildTaskResultHintsByTaskId(
+  messages: SessionMessageItem[],
+): Map<string, TaskResultHints> {
+  const map = new Map<string, TaskResultHints>();
+
+  for (const m of messages) {
+    if (m.role !== "assistant") continue;
+    const meta = messageMeta(m);
+    const tid = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+    if (!tid) continue;
+
+    const kind = typeof meta.kind === "string" ? meta.kind.trim() : "";
+    const status = typeof meta.task_status === "string" ? meta.task_status.trim() : "";
+    const err = typeof meta.error_message === "string" ? meta.error_message.trim() : "";
+    const hasArtifacts = meta.has_artifacts === true;
+
+    const prev = map.get(tid) ?? { hasArtifacts: false };
+    if (hasArtifacts) prev.hasArtifacts = true;
+
+    // 完成总结 / 失败消息优先于步骤占位消息上的状态字段
+    if (kind !== "task_execution_steps") {
+      if (status) prev.taskStatus = status;
+      if (err) prev.errorMessage = err;
+    } else {
+      if (!prev.taskStatus && status) prev.taskStatus = status;
+      if (!prev.errorMessage && err) prev.errorMessage = err;
+    }
+
+    map.set(tid, prev);
+  }
+
+  return map;
+}
+
 /**
  * 每个 task_id 仅展示一张「任务结果」卡片。
  * 优先挂在**最后一条**带步骤元数据的 assistant 消息上，避免「多步任务已全部完成」总结消息
