@@ -14,6 +14,22 @@ describe("parseCsvLine", () => {
 });
 
 describe("parseChatexcelArtifactText", () => {
+  it("treats nested result.status ERROR as failure even when top-level ok is true", () => {
+    const payload = {
+      ok: true,
+      action: "read_excel_metadata",
+      result: {
+        status: "ERROR",
+        error: "SMART_READ_FAILED",
+        message: "智能读取失败: 示例错误",
+      },
+    };
+    const m = parseChatexcelArtifactText(JSON.stringify(payload));
+    expect(m.ok).toBe(false);
+    expect(m.error).toBe("智能读取失败: 示例错误");
+    expect(m.errorType).toBe("SMART_READ_FAILED");
+  });
+
   it("strips log prefix and parses result.output as CSV table", () => {
     const payload = {
       ok: true,

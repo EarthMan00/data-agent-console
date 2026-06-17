@@ -4,7 +4,12 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type Keyboard
 import { createPortal } from "react-dom";
 import { ArrowUp, ChevronDown, CornerDownLeft, Paperclip, X } from "@/components/ui/tabler-icons";
 
-import { homeCapabilityGroups, homeDataSourceItems } from "@/lib/home-capability-items";
+import {
+  homeCapabilityGroups,
+  homeDataSourceItems,
+  type HomeCapabilityGroup,
+  type HomeCapabilityItem,
+} from "@/lib/home-capability-items";
 import { getPlatformLogoSvgMarkup, PlatformLogo } from "@/components/platform-logo";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -19,6 +24,8 @@ type TaskComposerProps = {
   mode: ComposerMode;
   onModeChange: (mode: ComposerMode) => void;
   selectedSourceIds?: string[];
+  dataSourceGroups?: HomeCapabilityGroup[];
+  dataSourceItems?: HomeCapabilityItem[];
   onToolSelect: (capabilityId: string) => void;
   onSourceRemove: (capabilityId: string) => void;
   onFilesSelected: (files: FileList) => void;
@@ -64,6 +71,19 @@ const IMAGE_ATTACHMENT_EXTENSIONS = new Set([
   "webp",
 ]);
 
+const CLIPBOARD_IMAGE_EXTENSION_BY_TYPE: Record<string, string> = {
+  "image/avif": "avif",
+  "image/bmp": "bmp",
+  "image/gif": "gif",
+  "image/heic": "heic",
+  "image/heif": "heif",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/svg+xml": "svg",
+  "image/tiff": "tif",
+  "image/webp": "webp",
+};
+
 const DATA_SOURCE_MENU_NAVIGATION_KEYS = new Set([
   "ArrowDown",
   "ArrowRight",
@@ -79,7 +99,10 @@ const DATA_SOURCE_MENU_NAVIGATION_KEYS = new Set([
   "Tab",
 ]);
 
+const DATA_SOURCE_GRID_COLUMNS = 2;
 const EDITOR_IGNORED_TEXT_SELECTOR = "[data-tool-token='true'], [data-template-ghost='true']";
+const TEMPLATE_SUGGESTION_VISIBLE_MS = 3200;
+const TEMPLATE_SUGGESTION_FADE_MS = 220;
 
 type PromptTemplatePart =
   | { kind: "text"; text: string }
@@ -404,11 +427,28 @@ function insertPlainTextAtSelection(text: string) {
   selection.addRange(range);
 }
 
-function handleEditorPaste(event: React.ClipboardEvent<HTMLElement>, syncValue: () => string) {
+function insertPlainTextAtSelectionWithUndo(text: string) {
+  if (typeof document.execCommand === "function" && document.execCommand("insertText", false, text)) return;
+  insertPlainTextAtSelection(text);
+}
+
+function handleEditorPaste(
+  event: React.ClipboardEvent<HTMLElement>,
+  syncValue: () => string,
+  appendImageFiles?: (files: File[]) => void,
+) {
+  const imageFiles = appendImageFiles ? getClipboardImageFiles(event.clipboardData) : [];
+  if (imageFiles.length > 0) {
+    event.preventDefault();
+    appendImageFiles?.(imageFiles);
+    syncValue();
+    return;
+  }
+
   event.preventDefault();
   const plain = event.clipboardData.getData("text/plain");
   if (!plain) return;
-  insertPlainTextAtSelection(plain);
+  insertPlainTextAtSelectionWithUndo(plain);
   syncValue();
 }
 
@@ -440,19 +480,35 @@ function getPromptTemplatePlainText(template: string) {
     .join("");
 }
 
+function getCapabilityPromptTemplates(source: HomeCapabilityItem) {
+  const templates: string[] = [];
+  const addTemplate = (template: string | null | undefined) => {
+    const normalized = template?.trim();
+    if (!normalized || templates.includes(normalized)) return;
+    templates.push(normalized);
+  };
+
+  addTemplate(source.promptTemplate);
+  source.promptTemplates?.forEach(addTemplate);
+  return templates;
+}
+
 function createTemplateSlotNode(text: string) {
   const span = document.createElement("span");
   span.dataset.templateSlot = "true";
   span.className =
-    "mx-1 inline-flex h-6 cursor-text items-center rounded-[6px] bg-[rgba(55,53,47,0.06)] px-1.5 align-baseline text-[14px] font-medium leading-6 text-[#34322d]";
+    "mx-1 inline-flex h-6 cursor-text items-center rounded-sm bg-fill-hover px-1.5 align-baseline text-body font-medium leading-6 text-foreground";
   span.textContent = text;
   return span;
 }
 
-function createTemplateGhostNode(template: string) {
+function createTemplateGhostNode(template: string, phase: "visible" | "fading") {
   const span = document.createElement("span");
   span.dataset.templateGhost = "true";
-  span.className = "pointer-events-none select-none text-[#b8bec8]";
+  span.className = cn(
+    "pointer-events-none select-none text-text-disabled transition-opacity duration-200",
+    phase === "fading" ? "opacity-0" : "opacity-100",
+  );
   span.setAttribute("contenteditable", "false");
   span.textContent = `${template} [按 Tab 键补全]`;
   return span;
@@ -494,7 +550,7 @@ function renderHighlightedText(text: string, query: string) {
   while (index >= 0) {
     if (index > cursor) nodes.push(text.slice(cursor, index));
     nodes.push(
-      <span key={`${text}-${index}`} className="text-[#3478ff]">
+      <span key={`${text}-${index}`} className="text-link">
         {text.slice(index, index + normalizedQuery.length)}
       </span>,
     );
@@ -525,7 +581,7 @@ function createToolTokenNode({
   button.dataset.toolId = capabilityId;
   button.dataset.sourceTag = capabilityId;
   button.className =
-    "group mx-1 inline-flex h-7 items-center gap-1.5 rounded-[10px] border border-transparent bg-[#e5efff] px-2.5 align-middle text-[14px] font-semibold leading-none text-[#1764ff]";
+    "group mx-1 inline-flex h-7 items-center gap-1.5 rounded-control border border-transparent bg-info-bg px-2.5 align-middle text-body font-semibold leading-none text-link";
   button.setAttribute("contenteditable", "false");
   button.setAttribute("aria-label", `移除数据源 ${label}`);
 
@@ -553,6 +609,8 @@ export function TaskComposer({
   onValueChange,
   placeholder,
   selectedSourceIds = [],
+  dataSourceGroups = homeCapabilityGroups,
+  dataSourceItems = homeDataSourceItems,
   onToolSelect,
   onSourceRemove,
   onFilesSelected,
@@ -573,24 +631,18 @@ export function TaskComposer({
   const isHeroMinimal = visualStyle === "heroMinimal";
   const hasText = value.trim().length > 0;
   const showStop = submitVariant === "stop";
-  const defaultSendButtonClassName = isHeroMinimal
-    ? hasText
-      ? "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[#37352f] p-0 text-white shadow-none transition hover:bg-[#2f2d28]"
-      : "h-8 w-8 min-w-0 rounded-full border border-transparent bg-[rgba(55,53,47,0.08)] p-0 text-white shadow-none transition hover:bg-[rgba(55,53,47,0.08)]"
-    : hasText
-      ? "h-10 w-10 min-w-0 rounded-full border border-transparent bg-[#111111] p-0 text-white shadow-none transition hover:bg-[#2a2a2a]"
-      : "h-10 w-10 min-w-0 rounded-full border border-transparent bg-[#dededc] p-0 text-white shadow-none transition hover:bg-[#d1d1cf]";
-  const resolvedSendButtonClassName = sendButtonClassName ?? defaultSendButtonClassName;
   const fileInputId = useId();
   const textboxRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sourceButtonTriggerRef = useRef<HTMLButtonElement | null>(null);
   const sourceButtonItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const sourceButtonCategoryRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const sourceButtonListRef = useRef<HTMLDivElement | null>(null);
   const sourceButtonOptionPaneRef = useRef<HTMLDivElement | null>(null);
   const sourceButtonHighlightedIndexRef = useRef(0);
   const toolItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const mentionCategoryRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const toolListRef = useRef<HTMLDivElement | null>(null);
   const mentionOptionPaneRef = useRef<HTMLDivElement | null>(null);
   const highlightedToolIndexRef = useRef(-1);
@@ -615,10 +667,36 @@ export function TaskComposer({
   const [, setModeOpen] = useState(false);
   const [highlightedToolIndex, setHighlightedToolIndex] = useState(-1);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const canSubmit = hasText || attachments.length > 0;
+  const handleSubmit = () => {
+    if (showStop) {
+      onStop?.();
+      return;
+    }
+    if (!canSubmit) return;
+    onSubmit();
+    setAttachments((current) => {
+      current.forEach((attachment) => {
+        if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+      });
+      return [];
+    });
+  };
+  const defaultSendButtonClassName = isHeroMinimal
+    ? canSubmit
+      ? "h-8 w-8 min-w-0 rounded-full border border-transparent bg-primary p-0 text-primary-foreground shadow-none transition hover:bg-link-hover"
+      : "h-8 w-8 min-w-0 rounded-full border border-transparent bg-fill-active p-0 text-primary-foreground shadow-none transition hover:bg-fill-active"
+    : canSubmit
+      ? "h-10 w-10 min-w-0 rounded-full border border-transparent bg-primary p-0 text-primary-foreground shadow-none transition hover:bg-link-hover"
+      : "h-10 w-10 min-w-0 rounded-full border border-transparent bg-fill-active p-0 text-primary-foreground shadow-none transition hover:bg-fill-active";
+  const resolvedSendButtonClassName = sendButtonClassName ?? defaultSendButtonClassName;
   const [acceptedTemplateToolId, setAcceptedTemplateToolId] = useState<string | null>(null);
+  const [templateSuggestionIndexByToolId, setTemplateSuggestionIndexByToolId] = useState<Record<string, number>>({});
+  const [templateGhostPhase, setTemplateGhostPhase] = useState<"visible" | "fading">("visible");
   const blurTimeoutRef = useRef<number | null>(null);
+  const preserveMentionFocusRef = useRef(false);
 
-  const filteredTools = useMemo(() => homeDataSourceItems, []);
+  const filteredTools = useMemo(() => dataSourceItems, [dataSourceItems]);
 
   const selectedSources = useMemo(
     () =>
@@ -629,31 +707,73 @@ export function TaskComposer({
   );
 
   const templateSuggestion = useMemo(() => {
-    const source = [...selectedSources].reverse().find((item) => Boolean(item.promptTemplate));
-    if (!source?.promptTemplate) return null;
+    const source = [...selectedSources].reverse().find((item) => getCapabilityPromptTemplates(item).length > 0);
+    if (!source) return null;
+    const templates = getCapabilityPromptTemplates(source);
+    const templateIndex = ((templateSuggestionIndexByToolId[source.id] ?? 0) % templates.length + templates.length) % templates.length;
+    const template = templates[templateIndex];
+    if (!template) return null;
     return {
       toolId: source.id,
-      template: source.promptTemplate,
-      plainText: getPromptTemplatePlainText(source.promptTemplate),
+      template,
+      templateIndex,
+      templates,
+      plainText: getPromptTemplatePlainText(template),
     };
-  }, [selectedSources]);
+  }, [selectedSources, templateSuggestionIndexByToolId]);
 
   const acceptedTemplateRender = useMemo(() => {
     if (!acceptedTemplateToolId) return null;
     const source = selectedSources.find((item) => item.id === acceptedTemplateToolId);
-    if (!source?.promptTemplate) return null;
-    const plainText = getPromptTemplatePlainText(source.promptTemplate);
+    if (!source) return null;
+    const templates = getCapabilityPromptTemplates(source);
+    if (templates.length === 0) return null;
+    const templateIndex = ((templateSuggestionIndexByToolId[source.id] ?? 0) % templates.length + templates.length) % templates.length;
+    const template = templates[templateIndex];
+    if (!template) return null;
+    const plainText = getPromptTemplatePlainText(template);
     return {
       toolId: source.id,
-      template: source.promptTemplate,
+      template,
+      templateIndex,
       plainText,
     };
-  }, [acceptedTemplateToolId, selectedSources]);
+  }, [acceptedTemplateToolId, selectedSources, templateSuggestionIndexByToolId]);
 
   const templateGhostRender = useMemo(() => {
     if (value.length > 0 || mentionOpen || acceptedTemplateRender || !templateSuggestion) return null;
-    return templateSuggestion;
-  }, [acceptedTemplateRender, mentionOpen, templateSuggestion, value.length]);
+    return {
+      ...templateSuggestion,
+      phase: templateGhostPhase,
+    };
+  }, [acceptedTemplateRender, mentionOpen, templateGhostPhase, templateSuggestion, value.length]);
+
+  useEffect(() => {
+    if (!templateGhostRender) {
+      setTemplateGhostPhase("visible");
+      return;
+    }
+
+    setTemplateGhostPhase("visible");
+    if (templateGhostRender.templates.length <= 1) return;
+
+    const fadeTimer = window.setTimeout(() => {
+      setTemplateGhostPhase("fading");
+    }, TEMPLATE_SUGGESTION_VISIBLE_MS);
+    const rotateTimer = window.setTimeout(() => {
+      setTemplateSuggestionIndexByToolId((current) => ({
+        ...current,
+        [templateGhostRender.toolId]:
+          (((current[templateGhostRender.toolId] ?? templateGhostRender.templateIndex) + 1) % templateGhostRender.templates.length),
+      }));
+      setTemplateGhostPhase("visible");
+    }, TEMPLATE_SUGGESTION_VISIBLE_MS + TEMPLATE_SUGGESTION_FADE_MS);
+
+    return () => {
+      window.clearTimeout(fadeTimer);
+      window.clearTimeout(rotateTimer);
+    };
+  }, [templateGhostRender?.templateIndex, templateGhostRender?.templates.length, templateGhostRender?.toolId]);
 
   const mentionQuery = useMemo(() => {
     if (!mentionRange) return "";
@@ -665,7 +785,7 @@ export function TaskComposer({
     const query = mentionQuery.trim().toLowerCase();
     if (!query) return filteredTools;
     return filteredTools.filter((item) => {
-      const haystack = [item.label, item.parentLabel, item.promptHint, item.promptTemplate, item.id]
+      const haystack = [item.label, item.parentLabel, item.promptHint, item.promptTemplate, ...getCapabilityPromptTemplates(item), item.id]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -680,13 +800,13 @@ export function TaskComposer({
 
   const sourceButtonToolGroups = useMemo(
     () =>
-      homeCapabilityGroups
+      dataSourceGroups
         .map((group) => ({
           ...group,
           items: group.items.filter((item) => filteredTools.some((tool) => tool.id === item.id)),
         }))
         .filter((group) => group.items.length > 0),
-    [filteredTools],
+    [dataSourceGroups, filteredTools],
   );
   const sourceButtonMenuListboxHeight = useMemo(
     () => estimateDataSourceMenuHeight(sourceButtonToolGroups.length, 360),
@@ -696,6 +816,92 @@ export function TaskComposer({
   const getSourceButtonGroupFirstIndex = (group: (typeof sourceButtonToolGroups)[number]) => {
     const firstItem = group.items[0];
     return firstItem ? filteredTools.findIndex((tool) => tool.id === firstItem.id) : -1;
+  };
+
+  const getGroupFirstToolIndexByGroupIndex = (groupIndex: number) => {
+    const group = sourceButtonToolGroups[groupIndex];
+    return group ? getSourceButtonGroupFirstIndex(group) : -1;
+  };
+
+  const getGroupIndexForToolIndex = (toolIndex: number) => {
+    const tool = filteredTools[toolIndex];
+    if (!tool) return -1;
+    return sourceButtonToolGroups.findIndex((group) => group.items.some((item) => item.id === tool.id));
+  };
+
+  const getSafeGroupIndex = (index: number) => {
+    if (sourceButtonToolGroups.length === 0) return -1;
+    return ((index % sourceButtonToolGroups.length) + sourceButtonToolGroups.length) % sourceButtonToolGroups.length;
+  };
+
+  const getToolIndexByGroupPosition = (groupIndex: number, itemIndex: number) => {
+    const group = sourceButtonToolGroups[groupIndex];
+    if (!group || group.items.length === 0) return -1;
+    const safeItemIndex = Math.min(Math.max(itemIndex, 0), group.items.length - 1);
+    const item = group.items[safeItemIndex];
+    return item ? filteredTools.findIndex((tool) => tool.id === item.id) : -1;
+  };
+
+  const getToolPositionByIndex = (toolIndex: number) => {
+    const tool = filteredTools[toolIndex];
+    if (!tool) return null;
+    const groupIndex = sourceButtonToolGroups.findIndex((group) => group.items.some((item) => item.id === tool.id));
+    const group = sourceButtonToolGroups[groupIndex];
+    if (!group) return null;
+    const itemIndex = group.items.findIndex((item) => item.id === tool.id);
+    if (itemIndex < 0) return null;
+    return { group, groupIndex, itemIndex };
+  };
+
+  const getGroupedToolNavigationTarget = (toolIndex: number, key: "ArrowDown" | "ArrowRight" | "ArrowUp" | "ArrowLeft") => {
+    const position = getToolPositionByIndex(toolIndex);
+    if (!position) {
+      const safeIndex =
+        filteredTools.length === 0 ? -1 : ((toolIndex % filteredTools.length) + filteredTools.length) % filteredTools.length;
+      return { kind: "item" as const, index: safeIndex };
+    }
+
+    const { group, groupIndex, itemIndex } = position;
+    const columnIndex = itemIndex % DATA_SOURCE_GRID_COLUMNS;
+
+    if (key === "ArrowLeft") {
+      if (columnIndex === 0) return { kind: "category" as const, groupIndex };
+      const previousIndex = getToolIndexByGroupPosition(groupIndex, itemIndex - 1);
+      return { kind: "item" as const, index: previousIndex >= 0 ? previousIndex : toolIndex };
+    }
+
+    if (key === "ArrowRight") {
+      const nextIndex = getToolIndexByGroupPosition(groupIndex, itemIndex + 1);
+      if (itemIndex + 1 < group.items.length && nextIndex >= 0) return { kind: "item" as const, index: nextIndex };
+      const nextGroupIndex = getSafeGroupIndex(groupIndex + 1);
+      return { kind: "item" as const, index: getToolIndexByGroupPosition(nextGroupIndex, 0) };
+    }
+
+    if (key === "ArrowDown") {
+      const nextRowIndex = getToolIndexByGroupPosition(groupIndex, itemIndex + DATA_SOURCE_GRID_COLUMNS);
+      if (itemIndex + DATA_SOURCE_GRID_COLUMNS < group.items.length && nextRowIndex >= 0) {
+        return { kind: "item" as const, index: nextRowIndex };
+      }
+      const nextGroupIndex = getSafeGroupIndex(groupIndex + 1);
+      return {
+        kind: "item" as const,
+        index: getToolIndexByGroupPosition(nextGroupIndex, columnIndex),
+      };
+    }
+
+    const previousRowIndex = getToolIndexByGroupPosition(groupIndex, itemIndex - DATA_SOURCE_GRID_COLUMNS);
+    if (itemIndex - DATA_SOURCE_GRID_COLUMNS >= 0 && previousRowIndex >= 0) {
+      return { kind: "item" as const, index: previousRowIndex };
+    }
+    const previousGroupIndex = getSafeGroupIndex(groupIndex - 1);
+    const previousGroup = sourceButtonToolGroups[previousGroupIndex];
+    const previousGroupLastRowStart = previousGroup
+      ? Math.max(0, previousGroup.items.length - DATA_SOURCE_GRID_COLUMNS)
+      : 0;
+    return {
+      kind: "item" as const,
+      index: getToolIndexByGroupPosition(previousGroupIndex, previousGroupLastRowStart + columnIndex),
+    };
   };
 
   useEffect(() => {
@@ -732,6 +938,14 @@ export function TaskComposer({
       if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
       return current.filter((attachment) => attachment.id !== id);
     });
+  }, [setAttachments]);
+
+  const appendAttachmentFiles = useCallback((files: File[]) => {
+    if (files.length === 0) return;
+    setAttachments((current) => [
+      ...current,
+      ...files.map((file, index) => createComposerAttachment(file, current.length + index)),
+    ]);
   }, []);
 
   const addAttachmentFiles = useCallback((files: File[], sourceFileList?: FileList | null) => {
@@ -764,11 +978,19 @@ export function TaskComposer({
         : ((sourceButtonHighlightedIndexRef.current % filteredTools.length) + filteredTools.length) % filteredTools.length;
     if (safeIndex < 0) return;
     sourceButtonHighlightedIndexRef.current = safeIndex;
+    const selectedTool = filteredTools[safeIndex];
+    const groupIndex = selectedTool
+      ? sourceButtonToolGroups.findIndex((group) => group.items.some((item) => item.id === selectedTool.id))
+      : -1;
     const frame = requestAnimationFrame(() => {
+      if (groupIndex >= 0) {
+        sourceButtonCategoryRefs.current[groupIndex]?.focus({ preventScroll: true });
+        return;
+      }
       sourceButtonItemRefs.current[safeIndex]?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
-  }, [filteredTools.length, sourceButtonOpen]);
+  }, [filteredTools, sourceButtonOpen, sourceButtonToolGroups]);
 
   useEffect(() => {
     if (!sourceButtonOpen) return;
@@ -781,7 +1003,7 @@ export function TaskComposer({
     });
   }, [sourceButtonHighlightedIndex, sourceButtonOpen]);
 
-  const focusEditor = (collapseToEnd = true) => {
+  const focusEditor = useCallback((collapseToEnd = true) => {
     if (blurTimeoutRef.current) {
       window.clearTimeout(blurTimeoutRef.current);
       blurTimeoutRef.current = null;
@@ -794,9 +1016,10 @@ export function TaskComposer({
       placeCaretAtEditorEnd(editor);
       scrollEditorToBottom(editor);
     });
-  };
+  }, []);
 
   const closeMentionMenu = useCallback(() => {
+    preserveMentionFocusRef.current = false;
     setMentionOpen(false);
     mentionRangeRef.current = null;
     setMentionRange(null);
@@ -805,35 +1028,38 @@ export function TaskComposer({
     setHighlightedToolIndex(-1);
   }, []);
 
-  const handleImagePaste = useCallback((event: ClipboardEvent | React.ClipboardEvent<HTMLElement>) => {
-    const clipboardData = event.clipboardData;
-    if (!clipboardData) return false;
-    const pastedImages = getClipboardImageFiles(clipboardData);
-    if (pastedImages.length === 0) return false;
-    event.preventDefault();
-    event.stopPropagation();
-    closeMentionMenu();
-    setSourceButtonOpen(false);
-    addAttachmentFiles(pastedImages);
-    return true;
-  }, [addAttachmentFiles, closeMentionMenu]);
+  const clearPendingBlurClose = () => {
+    if (!blurTimeoutRef.current) return;
+    window.clearTimeout(blurTimeoutRef.current);
+    blurTimeoutRef.current = null;
+  };
 
-  useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    const onPaste = (event: ClipboardEvent) => {
-      handleImagePaste(event);
-    };
-    editor.addEventListener("paste", onPaste, true);
-    return () => {
-      editor.removeEventListener("paste", onPaste, true);
-    };
-  }, [handleImagePaste]);
+  const queueCloseMentionMenuIfFocusOutside = () => {
+    clearPendingBlurClose();
+    blurTimeoutRef.current = window.setTimeout(() => {
+      if (preserveMentionFocusRef.current) {
+        preserveMentionFocusRef.current = false;
+        return;
+      }
+      const activeElement = document.activeElement;
+      const insideComposer =
+        activeElement instanceof HTMLElement &&
+        Boolean(activeElement.closest("[data-task-composer-root]"));
+      const insideMentionMenu =
+        activeElement instanceof HTMLElement &&
+        Boolean(activeElement.closest("[data-task-composer-mention-menu]"));
+      if (!insideComposer && !insideMentionMenu) {
+        closeMentionMenu();
+      }
+    }, 0);
+  };
 
   const updateHighlightedToolIndex = (nextIndex: number, focusItem = false) => {
     highlightedToolIndexRef.current = nextIndex;
     setHighlightedToolIndex(nextIndex);
     if (!focusItem || nextIndex < 0) return;
+    preserveMentionFocusRef.current = true;
+    toolItemRefs.current[nextIndex]?.focus({ preventScroll: true });
     requestAnimationFrame(() => {
       toolItemRefs.current[nextIndex]?.focus({ preventScroll: true });
     });
@@ -854,6 +1080,41 @@ export function TaskComposer({
     });
   };
 
+  const focusMentionCategory = (groupIndex: number) => {
+    const safeIndex = getSafeGroupIndex(groupIndex);
+    if (safeIndex < 0) return;
+    preserveMentionFocusRef.current = true;
+    mentionCategoryRefs.current[safeIndex]?.focus({ preventScroll: true });
+    requestAnimationFrame(() => {
+      mentionCategoryRefs.current[safeIndex]?.focus({ preventScroll: true });
+    });
+  };
+
+  const focusSourceButtonCategory = (groupIndex: number) => {
+    const safeIndex = getSafeGroupIndex(groupIndex);
+    if (safeIndex < 0) return;
+    sourceButtonCategoryRefs.current[safeIndex]?.focus({ preventScroll: true });
+    requestAnimationFrame(() => {
+      sourceButtonCategoryRefs.current[safeIndex]?.focus({ preventScroll: true });
+    });
+  };
+
+  const updateMentionGroupHighlight = (groupIndex: number, focusTarget: "category" | "item" | false = false) => {
+    const safeGroupIndex = getSafeGroupIndex(groupIndex);
+    const firstIndex = getGroupFirstToolIndexByGroupIndex(safeGroupIndex);
+    if (firstIndex < 0) return;
+    updateHighlightedToolIndex(firstIndex, focusTarget === "item");
+    if (focusTarget === "category") focusMentionCategory(safeGroupIndex);
+  };
+
+  const updateSourceButtonGroupHighlight = (groupIndex: number, focusTarget: "category" | "item" | false = false) => {
+    const safeGroupIndex = getSafeGroupIndex(groupIndex);
+    const firstIndex = getGroupFirstToolIndexByGroupIndex(safeGroupIndex);
+    if (firstIndex < 0) return;
+    updateSourceButtonHighlightedIndex(firstIndex, focusTarget === "item");
+    if (focusTarget === "category") focusSourceButtonCategory(safeGroupIndex);
+  };
+
   const handleMentionMenuKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (!DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) return;
     event.stopPropagation();
@@ -871,6 +1132,164 @@ export function TaskComposer({
     const currentIndex = highlightedToolIndexRef.current < 0 ? 0 : highlightedToolIndexRef.current;
     const getSafeMentionIndex = (index: number) =>
       ((index % mentionTools.length) + mentionTools.length) % mentionTools.length;
+
+    if (!isMentionSearchMode) {
+      const eventTarget = event.target instanceof HTMLElement ? event.target : null;
+      const currentTarget = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const activeCategory =
+        eventTarget?.closest<HTMLElement>("[data-mention-category-index]") ??
+        currentTarget?.closest<HTMLElement>("[data-mention-category-index]") ??
+        activeElement?.closest<HTMLElement>("[data-mention-category-index]") ??
+        null;
+      const activeOption =
+        eventTarget?.closest<HTMLElement>("[data-mention-option-index]") ??
+        currentTarget?.closest<HTMLElement>("[data-mention-option-index]") ??
+        activeElement?.closest<HTMLElement>("[data-mention-option-index]") ??
+        null;
+      const currentGroupIndex = getGroupIndexForToolIndex(currentIndex);
+      const safeCurrentGroupIndex = currentGroupIndex >= 0 ? currentGroupIndex : 0;
+      const eventFromEditor = eventTarget === editorRef.current || activeElement === editorRef.current;
+
+      if (activeCategory) {
+        const parsedGroupIndex = Number.parseInt(activeCategory.dataset.mentionCategoryIndex ?? "0", 10);
+        const groupIndex = Number.isFinite(parsedGroupIndex) ? parsedGroupIndex : 0;
+
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          updateMentionGroupHighlight(groupIndex + 1, "category");
+          return;
+        }
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          updateMentionGroupHighlight(groupIndex - 1, "category");
+          return;
+        }
+        if (event.key === "Home") {
+          event.preventDefault();
+          updateMentionGroupHighlight(0, "category");
+          return;
+        }
+        if (event.key === "End") {
+          event.preventDefault();
+          updateMentionGroupHighlight(sourceButtonToolGroups.length - 1, "category");
+          return;
+        }
+        if (event.key === "PageDown") {
+          event.preventDefault();
+          updateMentionGroupHighlight(groupIndex + 4, "category");
+          return;
+        }
+        if (event.key === "PageUp") {
+          event.preventDefault();
+          updateMentionGroupHighlight(groupIndex - 4, "category");
+          return;
+        }
+        if (event.key === "ArrowRight" || event.key === "Enter" || event.key === " " || (event.key === "Tab" && !event.shiftKey)) {
+          event.preventDefault();
+          updateMentionGroupHighlight(groupIndex, "item");
+          return;
+        }
+        if (event.key === "ArrowLeft" || (event.key === "Tab" && event.shiftKey)) {
+          event.preventDefault();
+          focusEditor(false);
+          return;
+        }
+      }
+
+      if (
+        activeOption &&
+        (event.key === "ArrowDown" || event.key === "ArrowRight" || event.key === "ArrowUp" || event.key === "ArrowLeft")
+      ) {
+        event.preventDefault();
+        const parsedOptionIndex = Number.parseInt(activeOption.dataset.mentionOptionIndex ?? `${currentIndex}`, 10);
+        const activeOptionIndex = Number.isFinite(parsedOptionIndex) ? parsedOptionIndex : currentIndex;
+        const target = getGroupedToolNavigationTarget(activeOptionIndex, event.key);
+        if (target.kind === "category") {
+          updateMentionGroupHighlight(target.groupIndex, "category");
+        } else {
+          updateHighlightedToolIndex(target.index, true);
+        }
+        return;
+      }
+
+      if (!activeOption && eventFromEditor) {
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 1));
+          return;
+        }
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 1));
+          return;
+        }
+        if (event.key === "Home") {
+          event.preventDefault();
+          updateHighlightedToolIndex(0);
+          return;
+        }
+        if (event.key === "End") {
+          event.preventDefault();
+          updateHighlightedToolIndex(mentionTools.length - 1);
+          return;
+        }
+        if (event.key === "PageDown") {
+          event.preventDefault();
+          updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 4));
+          return;
+        }
+        if (event.key === "PageUp") {
+          event.preventDefault();
+          updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 4));
+          return;
+        }
+      }
+
+      if (!activeOption) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          updateMentionGroupHighlight(safeCurrentGroupIndex, "category");
+          return;
+        }
+        if (event.key === "Home") {
+          event.preventDefault();
+          updateMentionGroupHighlight(0, "category");
+          return;
+        }
+        if (event.key === "End") {
+          event.preventDefault();
+          updateMentionGroupHighlight(sourceButtonToolGroups.length - 1, "category");
+          return;
+        }
+        if (event.key === "PageDown") {
+          event.preventDefault();
+          updateMentionGroupHighlight(safeCurrentGroupIndex + 4, "category");
+          return;
+        }
+        if (event.key === "PageUp") {
+          event.preventDefault();
+          updateMentionGroupHighlight(safeCurrentGroupIndex - 4, "category");
+          return;
+        }
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          updateMentionGroupHighlight(safeCurrentGroupIndex, "item");
+          return;
+        }
+      }
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        updateMentionGroupHighlight(getGroupIndexForToolIndex(currentIndex), "category");
+        return;
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        updateHighlightedToolIndex(getSafeSourceButtonIndex(currentIndex + 1), true);
+        return;
+      }
+    }
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -1112,7 +1531,7 @@ export function TaskComposer({
       setAcceptedTemplateToolId(null);
     }
     requestAnimationFrame(() => focusEditor(false));
-  }, [acceptedTemplateToolId, onSourceRemove, syncEditorValue]);
+  }, [acceptedTemplateToolId, focusEditor, onSourceRemove, syncEditorValue]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -1121,8 +1540,16 @@ export function TaskComposer({
     const currentTokenIds = getTokenIds(editor);
     const nextTemplateToolId = acceptedTemplateRender?.toolId ?? "";
     const nextGhostToolId = templateGhostRender?.toolId ?? "";
+    const nextTemplateRenderKey = acceptedTemplateRender
+      ? `${acceptedTemplateRender.toolId}:${acceptedTemplateRender.templateIndex}:${acceptedTemplateRender.template}`
+      : "";
+    const nextGhostRenderKey = templateGhostRender
+      ? `${templateGhostRender.toolId}:${templateGhostRender.templateIndex}:${templateGhostRender.phase}:${templateGhostRender.template}`
+      : "";
     const currentTemplateToolId = editor.dataset.templateToolId ?? "";
     const currentGhostToolId = editor.dataset.templateGhostToolId ?? "";
+    const currentTemplateRenderKey = editor.dataset.templateRenderKey ?? "";
+    const currentGhostRenderKey = editor.dataset.templateGhostRenderKey ?? "";
     const tokensMatch =
       currentTokenIds.length === selectedSourceIds.length &&
       currentTokenIds.every((id, index) => id === selectedSourceIds[index]);
@@ -1132,18 +1559,24 @@ export function TaskComposer({
       currentText === value &&
       tokensMatch &&
       currentTemplateToolId === nextTemplateToolId &&
-      currentGhostToolId === nextGhostToolId
+      currentGhostToolId === nextGhostToolId &&
+      currentTemplateRenderKey === nextTemplateRenderKey &&
+      currentGhostRenderKey === nextGhostRenderKey
     ) {
       suppressExternalSyncRef.current = false;
     } else if (
       currentText !== value ||
       !tokensMatch ||
       currentTemplateToolId !== nextTemplateToolId ||
-      currentGhostToolId !== nextGhostToolId
+      currentGhostToolId !== nextGhostToolId ||
+      currentTemplateRenderKey !== nextTemplateRenderKey ||
+      currentGhostRenderKey !== nextGhostRenderKey
     ) {
       editor.innerHTML = "";
       editor.dataset.templateToolId = nextTemplateToolId;
       editor.dataset.templateGhostToolId = nextGhostToolId;
+      editor.dataset.templateRenderKey = nextTemplateRenderKey;
+      editor.dataset.templateGhostRenderKey = nextGhostRenderKey;
       selectedSources.forEach((source) => {
         editor.appendChild(
           createToolTokenNode({
@@ -1161,7 +1594,7 @@ export function TaskComposer({
       } else {
         editor.appendChild(document.createTextNode(value));
         if (templateGhostRender) {
-          const ghost = createTemplateGhostNode(templateGhostRender.template);
+          const ghost = createTemplateGhostNode(templateGhostRender.template, templateGhostRender.phase);
           editor.appendChild(ghost);
           if (document.activeElement === editor) {
             requestAnimationFrame(() => placeCaretBeforeNode(editor, ghost));
@@ -1230,6 +1663,10 @@ export function TaskComposer({
     normalizeEditorContent(editor);
     syncEditorValue();
     if (!selectedSourceIds.includes(capabilityId)) {
+      setTemplateSuggestionIndexByToolId((current) => ({
+        ...current,
+        [capabilityId]: 0,
+      }));
       onToolSelect(capabilityId);
     }
   };
@@ -1252,6 +1689,17 @@ export function TaskComposer({
     setSourceButtonOpen(true);
   };
 
+  const openSourceButtonMenuAndFocusItem = (initialIndex = 0) => {
+    closeMentionMenu();
+    setModeOpen(false);
+    updateSourceButtonHighlightedIndex(initialIndex);
+    setSourceButtonOpen(true);
+    requestAnimationFrame(() => {
+      const safeIndex = getSafeSourceButtonIndex(initialIndex);
+      if (safeIndex >= 0) sourceButtonItemRefs.current[safeIndex]?.focus({ preventScroll: true });
+    });
+  };
+
   const handleSourceButtonMenuKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -1261,6 +1709,81 @@ export function TaskComposer({
     }
     if (filteredTools.length === 0) return;
     const currentIndex = sourceButtonHighlightedIndexRef.current < 0 ? 0 : sourceButtonHighlightedIndexRef.current;
+    const eventTarget = event.target instanceof HTMLElement ? event.target : null;
+    const currentTarget = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const activeCategory =
+      eventTarget?.closest<HTMLElement>("[data-source-button-category-index]") ??
+      currentTarget?.closest<HTMLElement>("[data-source-button-category-index]") ??
+      activeElement?.closest<HTMLElement>("[data-source-button-category-index]") ??
+      null;
+    const activeOption =
+      eventTarget?.closest<HTMLElement>("[data-source-button-option-index]") ??
+      currentTarget?.closest<HTMLElement>("[data-source-button-option-index]") ??
+      activeElement?.closest<HTMLElement>("[data-source-button-option-index]") ??
+      null;
+
+    if (activeCategory) {
+      const parsedGroupIndex = Number.parseInt(activeCategory.dataset.sourceButtonCategoryIndex ?? "0", 10);
+      const groupIndex = Number.isFinite(parsedGroupIndex) ? parsedGroupIndex : 0;
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        updateSourceButtonGroupHighlight(groupIndex + 1, "category");
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        updateSourceButtonGroupHighlight(groupIndex - 1, "category");
+        return;
+      }
+      if (event.key === "Home") {
+        event.preventDefault();
+        updateSourceButtonGroupHighlight(0, "category");
+        return;
+      }
+      if (event.key === "End") {
+        event.preventDefault();
+        updateSourceButtonGroupHighlight(sourceButtonToolGroups.length - 1, "category");
+        return;
+      }
+      if (event.key === "PageDown") {
+        event.preventDefault();
+        updateSourceButtonGroupHighlight(groupIndex + 4, "category");
+        return;
+      }
+      if (event.key === "PageUp") {
+        event.preventDefault();
+        updateSourceButtonGroupHighlight(groupIndex - 4, "category");
+        return;
+      }
+      if (event.key === "ArrowRight" || event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        updateSourceButtonGroupHighlight(groupIndex, "item");
+        return;
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        requestAnimationFrame(() => sourceButtonTriggerRef.current?.focus());
+        return;
+      }
+    }
+
+    if (
+      activeOption &&
+      (event.key === "ArrowDown" || event.key === "ArrowRight" || event.key === "ArrowUp" || event.key === "ArrowLeft")
+    ) {
+      event.preventDefault();
+      const parsedOptionIndex = Number.parseInt(activeOption.dataset.sourceButtonOptionIndex ?? `${currentIndex}`, 10);
+      const activeOptionIndex = Number.isFinite(parsedOptionIndex) ? parsedOptionIndex : currentIndex;
+      const target = getGroupedToolNavigationTarget(activeOptionIndex, event.key);
+      if (target.kind === "category") {
+        updateSourceButtonGroupHighlight(target.groupIndex, "category");
+      } else {
+        updateSourceButtonHighlightedIndex(target.index, true);
+      }
+      return;
+    }
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -1279,7 +1802,7 @@ export function TaskComposer({
     }
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      updateSourceButtonHighlightedIndex(currentIndex - 1, true);
+      updateSourceButtonGroupHighlight(getGroupIndexForToolIndex(currentIndex), "category");
       return;
     }
     if (event.key === "Home") {
@@ -1316,10 +1839,10 @@ export function TaskComposer({
       className={
         containerClassName ??
         cn(
-          "relative z-30 w-full border text-[#243248]",
+          "relative z-30 w-full border text-foreground",
           isHeroMinimal
-            ? "rounded-[22px] !border-[#e2e2df] !bg-none !bg-white !shadow-[0_1px_2px_rgba(17,17,17,0.03)] backdrop-blur-none"
-            : "rounded-[18px] border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]",
+            ? "rounded-dialog !border-border !bg-none !bg-bg-surface !shadow-surface backdrop-blur-none"
+            : "rounded-popover border-border bg-bg-surface shadow-surface",
         )
       }
     >
@@ -1342,8 +1865,8 @@ export function TaskComposer({
               }
             }}
           >
-            <div className={cn(isHeroMinimal ? "min-h-[54px]" : "min-h-[88px]")}>
-              <div className={cn("relative", isHeroMinimal ? "min-h-[42px]" : "min-h-[72px]")}>
+            <div className={cn(isHeroMinimal ? "min-h-composer-hero" : "min-h-22")}>
+              <div className={cn("relative", isHeroMinimal ? "min-h-attachment-thumb" : "min-h-18")}>
                 <div
                   ref={textboxRef}
                   data-testid="task-composer-textbox"
@@ -1366,27 +1889,26 @@ export function TaskComposer({
                     }
                   }}
                   onFocus={() => focusEditor(false)}
-                  className={cn("relative overflow-visible", isHeroMinimal ? "min-h-[52px]" : "min-h-[84px]")}
+                  className={cn("relative overflow-visible", isHeroMinimal ? "min-h-composer-compact" : "min-h-composer")}
                 >
-                  <div
-                    className={cn(
-                      "flex flex-wrap items-start gap-1.5",
-                      isHeroMinimal ? "min-h-[52px]" : "min-h-[84px]",
-                      editorRowClassName,
-                    )}
-                  >
+                  <div className={cn("flex flex-wrap items-start gap-1.5", isHeroMinimal ? "min-h-composer-compact" : "min-h-composer")}>
                     <div
                       ref={editorRef}
                       data-testid="task-composer-editor"
                       aria-label="任务输入编辑器"
                       contentEditable
+                      suppressHydrationWarning
                       suppressContentEditableWarning
+                      onKeyDownCapture={(event) => {
+                        if (!mentionOpen || !DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) return;
+                        handleMentionMenuKeyDown(event);
+                        event.stopPropagation();
+                      }}
                       onBeforeInput={(event) => {
                         normalizeSelectionOutsideToolToken(event.currentTarget);
                       }}
                       onPaste={(event) => {
-                        if (handleImagePaste(event)) return;
-                        handleEditorPaste(event, syncEditorValue);
+                        handleEditorPaste(event, syncEditorValue, showAttachmentButton ? appendAttachmentFiles : undefined);
                       }}
                       onInput={(event) => {
                         syncEditorInteractionState(event.currentTarget);
@@ -1415,10 +1937,6 @@ export function TaskComposer({
                             : event.key === "Delete"
                               ? getToolTokenNearCaret(event.currentTarget, "forward")
                               : null;
-                        if (mentionOpen && DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) {
-                          handleMentionMenuKeyDown(event);
-                          return;
-                        }
                         if (event.key === "Tab" && acceptTemplateSuggestion()) {
                           event.preventDefault();
                           return;
@@ -1447,8 +1965,8 @@ export function TaskComposer({
                           event.preventDefault();
                           if (showStop && onStop) {
                             onStop();
-                          } else {
-                            onSubmit();
+                          } else if (canSubmit) {
+                            handleSubmit();
                           }
                         }
                       }}
@@ -1457,14 +1975,12 @@ export function TaskComposer({
                         syncEditorInteractionState(event.currentTarget);
                       }}
                       onKeyUp={(event) => {
-                        if (DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) return;
+                        if (mentionOpen && DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) return;
+                        if (event.key === "Tab" || event.key === "Enter" || event.key === "Escape") return;
                         syncEditorInteractionState(event.currentTarget);
                       }}
                       onFocus={(event) => {
-                        if (blurTimeoutRef.current) {
-                          window.clearTimeout(blurTimeoutRef.current);
-                          blurTimeoutRef.current = null;
-                        }
+                        clearPendingBlurClose();
                         if (pendingEditorEndPlacementRef.current) {
                           pendingEditorEndPlacementRef.current = false;
                           const editor = event.currentTarget;
@@ -1475,34 +1991,23 @@ export function TaskComposer({
                         }
                       }}
                       onBlur={() => {
-                        blurTimeoutRef.current = window.setTimeout(() => {
-                          const activeElement = document.activeElement;
-                          const insideComposer =
-                            activeElement instanceof HTMLElement &&
-                            Boolean(activeElement.closest("[data-task-composer-root]"));
-                          const insideMentionMenu =
-                            activeElement instanceof HTMLElement &&
-                            Boolean(activeElement.closest("[data-task-composer-mention-menu]"));
-                          if (!insideComposer && !insideMentionMenu) {
-                            closeMentionMenu();
-                          }
-                        }, 0);
+                        queueCloseMentionMenuIfFocusOutside();
                       }}
                       className={cn(
                         textareaClassName ??
                           (isHeroMinimal
-                            ? "min-h-[28px] max-h-[9em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-[14px] leading-6 text-[#1d2129] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
-                            : "min-h-[28px] max-h-[10em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1 pr-2 text-[14px] leading-7 text-[#1c1c1c] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"),
+                            ? "min-h-composer-text max-h-composer-compact min-w-44 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-body leading-6 text-foreground outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
+                            : "min-h-composer-text max-h-composer-home min-w-44 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1 pr-2 text-body leading-7 text-foreground outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"),
                       )}
                     />
                   </div>
                   {!value && selectedSources.length === 0 ? (
                     <div
                       className={cn(
-                        "pointer-events-none absolute left-[1px] max-w-[520px] leading-7",
+                        "pointer-events-none absolute left-px max-w-lg leading-7",
                         isHeroMinimal
-                          ? "top-[8px] text-[14px] text-[#86909c]"
-                          : "top-[4px] text-[14px] text-[#a1a1aa]",
+                          ? "top-2 text-body text-text-tertiary"
+                          : "top-1 text-body text-text-disabled",
                         placeholderClassName,
                       )}
                     >
@@ -1515,15 +2020,17 @@ export function TaskComposer({
                       <div
                         data-task-composer-mention-menu
                         data-testid="task-composer-mention-menu"
-                        className="pointer-events-auto fixed z-[140] overflow-hidden rounded-[12px] border border-[#e2e5ea] bg-white shadow-[0_10px_30px_rgba(24,24,27,0.12)]"
+                        className="pointer-events-auto fixed z-composer-menu overflow-hidden rounded-field border border-border bg-bg-surface shadow-menu"
+                        onFocusCapture={clearPendingBlurClose}
+                        onBlurCapture={queueCloseMentionMenuIfFocusOutside}
                         style={{
                           top: mentionMenuStyle.top,
                           left: mentionMenuStyle.left,
                           width: mentionMenuStyle.width,
                         }}
                       >
-                        <div className="flex h-11 items-center border-b border-[#e5e7eb] px-4">
-                          <div className="text-[15px] font-semibold leading-5 text-[#111111]">
+                        <div className="flex h-11 items-center border-b border-border px-4">
+                          <div className="text-title-1 font-semibold text-foreground">
                             {isMentionSearchMode ? "选择工具" : "@数据源"}
                           </div>
                         </div>
@@ -1548,30 +2055,36 @@ export function TaskComposer({
                                   data-mention-tool-id={item.id}
                                   role="option"
                                   aria-selected={index === highlightedToolIndex}
+                                  data-mention-option-index={index}
+                                  tabIndex={index === highlightedToolIndex ? 0 : -1}
                                   onMouseEnter={() => updateHighlightedToolIndex(index)}
+                                  onKeyDown={(event) => {
+                                    event.stopPropagation();
+                                    handleMentionMenuKeyDown(event);
+                                  }}
                                   onPointerDown={(event) => {
                                     event.preventDefault();
                                     selectDataSource(item.id, "mention");
                                   }}
                                   onClick={(event) => event.preventDefault()}
                                   className={cn(
-                                    "flex h-[46px] w-full cursor-pointer items-center px-4 text-left text-[14px] leading-5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1764ff]/30",
-                                    index === highlightedToolIndex ? "bg-[#f7f8fa]" : "hover:bg-[#f7f8fa]",
+                                    "flex h-source-row w-full cursor-pointer items-center px-4 text-left text-body leading-5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
+                                    index === highlightedToolIndex ? "bg-fill-hover" : "hover:bg-fill-hover",
                                   )}
                                 >
                                   <span className="min-w-0 truncate">
-                                    <span className="text-[#b4b6bd]">
+                                    <span className="text-text-disabled">
                                       {renderHighlightedText(item.parentLabel, mentionQuery)}
                                     </span>
-                                    <span className="mx-2.5 text-[#111111]">/</span>
-                                    <span className="font-medium text-[#111111]">
+                                    <span className="mx-2.5 text-foreground">/</span>
+                                    <span className="font-medium text-foreground">
                                       {renderHighlightedText(item.label, mentionQuery)}
                                     </span>
                                   </span>
                                 </button>
                               ))
                             ) : (
-                              <div className="flex h-12 items-center px-4 text-[14px] text-[#9a9b97]">没有匹配工具</div>
+                              <div className="flex h-12 items-center px-4 text-body text-text-disabled">没有匹配工具</div>
                             )}
                           </div>
                         ) : (
@@ -1579,31 +2092,37 @@ export function TaskComposer({
                             ref={toolListRef}
                             role="listbox"
                             aria-label="数据源列表"
-                            className="grid min-h-0 grid-cols-[176px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden"
+                            className="grid min-h-0 grid-source-menu overflow-hidden"
                             style={{ height: Math.min(sourceButtonMenuListboxHeight, mentionMenuStyle.maxHeight), maxHeight: 360 }}
                             onKeyDown={handleMentionMenuKeyDown}
                             onWheel={(event) => event.stopPropagation()}
                           >
                             <div
                               data-testid="task-composer-mention-category-pane"
-                              className="h-full min-h-0 overflow-y-auto overscroll-contain border-r border-[rgba(0,0,0,0.06)] bg-[#fafafa] p-2"
+                              className="h-full min-h-0 overflow-y-auto overscroll-contain border-r border-border-subtle bg-bg-surface p-2"
                             >
-                              {sourceButtonToolGroups.map((group) => {
+                              {sourceButtonToolGroups.map((group, groupIndex) => {
                                 const active = group.items.some(
                                   (item) => filteredTools.findIndex((tool) => tool.id === item.id) === highlightedToolIndex,
                                 );
                                 return (
                                   <button
                                     key={group.id}
-                                    type="button"
-                                    tabIndex={-1}
-                                    onClick={() => {
-                                      const firstIndex = getSourceButtonGroupFirstIndex(group);
-                                      if (firstIndex >= 0) updateHighlightedToolIndex(firstIndex, true);
+                                    ref={(node) => {
+                                      mentionCategoryRefs.current[groupIndex] = node;
                                     }}
+                                    type="button"
+                                    data-mention-category-index={groupIndex}
+                                    tabIndex={active ? 0 : -1}
+                                    onMouseEnter={() => updateMentionGroupHighlight(groupIndex)}
+                                    onKeyDown={(event) => {
+                                      event.stopPropagation();
+                                      handleMentionMenuKeyDown(event);
+                                    }}
+                                    onClick={() => updateMentionGroupHighlight(groupIndex, "category")}
                                     className={cn(
-                                      "flex h-10 w-full items-center gap-2 rounded-[10px] px-2 text-left text-[14px] font-medium leading-5 text-[#6f716d] transition hover:bg-[rgba(55,53,47,0.05)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1764ff]/30",
-                                      active && "bg-[rgba(55,53,47,0.06)] text-[#34322d]",
+                                      "flex h-10 w-full items-center gap-2 rounded-control px-2 text-left text-body font-medium leading-5 text-text-tertiary transition hover:bg-fill-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
+                                      active && "bg-fill-hover text-foreground",
                                     )}
                                   >
                                     <PlatformLogo name={group.icon} color={group.accent} className="h-4 w-4 shrink-0" />
@@ -1615,12 +2134,12 @@ export function TaskComposer({
                             <div
                               ref={mentionOptionPaneRef}
                               data-testid="task-composer-mention-option-pane"
-                              className="h-full min-h-0 overflow-y-auto overscroll-contain p-3"
+                              className="h-full min-h-0 overflow-y-auto overscroll-contain bg-bg-surface p-3"
                             >
                               {sourceButtonToolGroups.map((group) => (
                                 <section key={group.id} className="pb-5 last:pb-1">
-                                  <div className="mb-2 flex items-center gap-2 text-[14px] font-semibold leading-5 text-[#111111]">
-                                    <span className="h-4 w-0.5 rounded-full bg-[#1764ff]" />
+                                  <div className="mb-2 flex items-center gap-2 text-body font-semibold leading-5 text-foreground">
+                                    <span className="h-4 w-0.5 rounded-full bg-primary" />
                                     {group.label}
                                   </div>
                                   <div className="grid grid-cols-2 gap-2.5">
@@ -1636,29 +2155,35 @@ export function TaskComposer({
                                           data-mention-tool-id={item.id}
                                           role="option"
                                           aria-selected={index === highlightedToolIndex}
+                                          data-mention-option-index={index}
+                                          tabIndex={index === highlightedToolIndex ? 0 : -1}
                                           onMouseEnter={() => updateHighlightedToolIndex(index)}
+                                          onKeyDown={(event) => {
+                                            event.stopPropagation();
+                                            handleMentionMenuKeyDown(event);
+                                          }}
                                           onPointerDown={(event) => {
                                             event.preventDefault();
                                             selectDataSource(item.id, "mention");
                                           }}
                                           onClick={(event) => event.preventDefault()}
                                           className={cn(
-                                            "flex min-h-[76px] cursor-pointer items-center gap-3 rounded-[12px] border bg-white px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1764ff]/35",
+                                            "flex min-h-source-option cursor-pointer items-center gap-3 rounded-field border bg-bg-surface px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
                                             index === highlightedToolIndex
-                                              ? "border-[rgba(23,100,255,0.24)] bg-[rgba(23,100,255,0.04)]"
-                                              : "border-[rgba(0,0,0,0.06)] hover:border-[rgba(23,100,255,0.22)] hover:bg-[rgba(23,100,255,0.03)]",
+                                              ? "border-border-strong bg-fill-hover"
+                                              : "border-border-subtle hover:border-border-strong hover:bg-fill-hover",
                                           )}
                                         >
                                           <PlatformLogo name={item.icon} color={item.accent} className="h-4 w-4 shrink-0" />
                                           <span className="min-w-0 flex-1">
-                                            <span className="block truncate text-[14px] font-medium leading-5 text-[#34322d]">
+                                            <span className="block truncate text-body font-medium leading-5 text-foreground">
                                               {item.label}
                                             </span>
-                                            <span className="mt-1 line-clamp-1 block text-[12px] leading-[18px] text-[#9a9b97]">
+                                            <span className="mt-1 line-clamp-1 block text-caption leading-5 text-text-secondary">
                                               {item.promptHint}
                                             </span>
                                           </span>
-                                          <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-[#858481]" />
+                                          <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
                                         </button>
                                       );
                                     })}
@@ -1683,31 +2208,31 @@ export function TaskComposer({
                   return (
                     <div
                       key={attachment.id}
-                      className="relative flex h-[58px] max-w-full items-center gap-3 rounded-[14px] bg-[#eeeeec] py-2 pl-2 pr-9 text-left"
+                      className="relative flex h-composer-attachment max-w-full items-center gap-3 rounded-card bg-bg-subtle py-2 pl-2 pr-9 text-left"
                     >
                       {attachment.previewUrl ? (
                         <span
                           aria-label={`图片预览 ${attachment.name}`}
-                          className="flex h-[42px] w-[42px] shrink-0 rounded-[10px] border border-white bg-cover bg-center bg-no-repeat"
+                          className="flex h-attachment-thumb w-attachment-thumb shrink-0 rounded-control border border-border-subtle bg-cover bg-center bg-no-repeat"
                           style={{ backgroundImage: `url(${attachment.previewUrl})` }}
                         />
                       ) : (
-                        <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[10px] bg-white text-[10px] font-semibold text-[#8b8c87]">
+                        <span className="flex h-attachment-thumb w-attachment-thumb shrink-0 items-center justify-center rounded-control bg-bg-surface text-caption font-semibold text-text-tertiary">
                           {typeLabel.slice(0, 4)}
                         </span>
                       )}
                       <span className="min-w-0">
-                        <span className="block max-w-[260px] truncate text-[14px] font-medium leading-5 text-[#18181b]">
+                        <span className="block max-w-attachment-name truncate text-body font-medium leading-5 text-foreground">
                           {attachment.name}
                         </span>
-                        <span className="mt-0.5 block text-[12px] leading-4 text-[#787a76]">
+                        <span className="mt-0.5 block text-caption leading-4 text-text-tertiary">
                           {typeLabel} | {formatComposerAttachmentSize(attachment.size)}
                         </span>
                       </span>
                       <button
                         type="button"
                         aria-label={`删除附件 ${attachment.name}`}
-                        className="absolute -right-1.5 -top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#c7c7c3] text-white transition hover:bg-[#a9a9a4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/20"
+                        className="absolute -right-1.5 -top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-fill-active text-primary-foreground transition hover:bg-fill-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
                         onClick={() => removeAttachment(attachment.id)}
                       >
                         <X className="h-4 w-4" strokeWidth={2.4} />
@@ -1722,7 +2247,7 @@ export function TaskComposer({
           <div
             className={cn(
               "mt-2.5 flex flex-wrap items-center justify-between gap-3 pt-2.5",
-              isHeroMinimal ? "mt-2.5 border-t border-[rgba(0,0,0,0.06)] pt-2.5" : "border-t border-[#f1eeea]",
+              isHeroMinimal ? "mt-2.5 border-t border-border-subtle pt-2.5" : "border-t border-border-subtle",
             )}
           >
             <div className="flex flex-wrap items-center gap-1.5">
@@ -1733,10 +2258,10 @@ export function TaskComposer({
                     variant="outline"
                     size="sm"
                     className={cn(
-                      "h-8 rounded-[10px] bg-white px-3 text-[14px] font-medium shadow-none",
+                      "h-8 rounded-control bg-bg-surface px-3 text-body font-medium shadow-none",
                       isHeroMinimal
-                        ? "border-[rgba(0,0,0,0.08)] text-[#34322d] hover:border-[rgba(0,0,0,0.12)] hover:bg-[rgba(55,53,47,0.06)]"
-                        : "border-[#e6e2da] text-[#27272a] hover:border-[#d9d4cb] hover:bg-[#fbfaf8]",
+                        ? "border-border text-foreground hover:border-border-strong hover:bg-fill-hover"
+                        : "border-border text-foreground hover:border-border hover:bg-bg-subtle",
                     )}
                     type="button"
                     onClick={() => {
@@ -1747,9 +2272,18 @@ export function TaskComposer({
                       }
                     }}
                     onKeyDown={(event) => {
+                      if (event.key === "Escape" && sourceButtonOpen) {
+                        event.preventDefault();
+                        setSourceButtonOpen(false);
+                        return;
+                      }
+                      if (sourceButtonOpen && DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) {
+                        handleSourceButtonMenuKeyDown(event);
+                        return;
+                      }
                       if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
                       event.preventDefault();
-                      openSourceButtonMenu(event.key === "ArrowUp" ? filteredTools.length - 1 : 0);
+                      openSourceButtonMenuAndFocusItem(event.key === "ArrowUp" ? filteredTools.length - 1 : 0);
                     }}
                   >
                     @数据源
@@ -1761,35 +2295,42 @@ export function TaskComposer({
                   sideOffset={10}
                   onOpenAutoFocus={(event) => event.preventDefault()}
                   onCloseAutoFocus={(event) => event.preventDefault()}
-	                  className="pointer-events-auto w-[760px] max-w-[calc(100vw-32px)] rounded-[18px] border-[rgba(0,0,0,0.08)] bg-white p-0 shadow-[0_20px_48px_rgba(24,24,27,0.12)]"
+	                  className="pointer-events-auto w-source-menu max-w-screen-gutter rounded-popover border-border bg-bg-surface p-0 shadow-menu-wide"
                 >
-                  <div className="flex items-center border-b border-[rgba(0,0,0,0.06)] px-4 py-3">
-                    <div className="text-[14px] font-medium text-[#34322d]">@数据源</div>
+                  <div className="flex items-center border-b border-border-subtle px-4 py-3">
+                    <div className="text-body font-medium text-foreground">@数据源</div>
                   </div>
 	                  <div
 	                    ref={sourceButtonListRef}
 	                    role="listbox"
 	                    aria-label="数据源列表"
-	                    className="grid min-h-0 grid-cols-[176px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden"
+                      tabIndex={-1}
+	                    className="grid min-h-0 grid-source-menu overflow-hidden"
 	                    style={{ height: sourceButtonMenuListboxHeight, maxHeight: 360 }}
 	                    onKeyDown={handleSourceButtonMenuKeyDown}
 	                    onWheel={(event) => event.stopPropagation()}
 	                  >
-	                    <div data-testid="task-composer-source-category-pane" className="h-full min-h-0 overflow-y-auto overscroll-contain border-r border-[rgba(0,0,0,0.06)] bg-[#fafafa] p-2">
-	                      {sourceButtonToolGroups.map((group) => {
+	                    <div data-testid="task-composer-source-category-pane" className="h-full min-h-0 overflow-y-auto overscroll-contain border-r border-border-subtle bg-bg-surface p-2">
+	                      {sourceButtonToolGroups.map((group, groupIndex) => {
 	                        const active = group.items.some((item) => filteredTools.findIndex((tool) => tool.id === item.id) === sourceButtonHighlightedIndex);
 	                        return (
 	                          <button
 	                            key={group.id}
-	                            type="button"
-	                            tabIndex={-1}
-	                            onClick={() => {
-	                              const firstIndex = getSourceButtonGroupFirstIndex(group);
-	                              if (firstIndex >= 0) updateSourceButtonHighlightedIndex(firstIndex, true);
+	                            ref={(node) => {
+	                              sourceButtonCategoryRefs.current[groupIndex] = node;
 	                            }}
+	                            type="button"
+	                            data-source-button-category-index={groupIndex}
+	                            tabIndex={active ? 0 : -1}
+	                            onMouseEnter={() => updateSourceButtonGroupHighlight(groupIndex)}
+	                            onKeyDown={(event) => {
+	                              event.stopPropagation();
+	                              handleSourceButtonMenuKeyDown(event);
+	                            }}
+	                            onClick={() => updateSourceButtonGroupHighlight(groupIndex, "category")}
 	                            className={cn(
-	                              "flex h-10 w-full items-center gap-2 rounded-[10px] px-2 text-left text-[14px] font-medium leading-5 text-[#6f716d] transition hover:bg-[rgba(55,53,47,0.05)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1764ff]/30",
-	                              active && "bg-[rgba(55,53,47,0.06)] text-[#34322d]",
+	                              "flex h-10 w-full items-center gap-2 rounded-control px-2 text-left text-body font-medium leading-5 text-text-tertiary transition hover:bg-fill-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
+	                              active && "bg-fill-hover text-foreground",
 	                            )}
 	                          >
 	                            <PlatformLogo name={group.icon} color={group.accent} className="h-4 w-4 shrink-0" />
@@ -1798,11 +2339,11 @@ export function TaskComposer({
 	                        );
 	                      })}
 	                    </div>
-	                    <div ref={sourceButtonOptionPaneRef} data-testid="task-composer-source-option-pane" className="h-full min-h-0 overflow-y-auto overscroll-contain p-3">
+	                    <div ref={sourceButtonOptionPaneRef} data-testid="task-composer-source-option-pane" className="h-full min-h-0 overflow-y-auto overscroll-contain bg-bg-surface p-3">
 	                      {sourceButtonToolGroups.map((group) => (
 	                        <section key={group.id} className="pb-5 last:pb-1">
-	                          <div className="mb-2 flex items-center gap-2 text-[14px] font-semibold leading-5 text-[#111111]">
-	                            <span className="h-4 w-0.5 rounded-full bg-[#1764ff]" />
+	                          <div className="mb-2 flex items-center gap-2 text-body font-semibold leading-5 text-foreground">
+	                            <span className="h-4 w-0.5 rounded-full bg-primary" />
 	                            {group.label}
 	                          </div>
 	                          <div className="grid grid-cols-2 gap-2.5">
@@ -1817,27 +2358,35 @@ export function TaskComposer({
 	                                  type="button"
 	                                  role="option"
 	                                  aria-selected={index === sourceButtonHighlightedIndex}
+	                                  data-source-button-option-index={index}
+	                                  tabIndex={index === sourceButtonHighlightedIndex ? 0 : -1}
 	                                  onMouseEnter={() => updateSourceButtonHighlightedIndex(index)}
+	                                  onKeyDown={(event) => {
+	                                    event.stopPropagation();
+	                                    handleSourceButtonMenuKeyDown(event);
+	                                  }}
 	                                  onPointerDown={(event) => {
 	                                    event.preventDefault();
 	                                    selectDataSource(item.id, "button");
 	                                  }}
 	                                  onClick={(event) => event.preventDefault()}
 	                                  className={cn(
-	                                    "flex min-h-[76px] cursor-pointer items-center gap-3 rounded-[12px] border bg-white px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1764ff]/35",
+	                                    "flex min-h-source-option cursor-pointer items-center gap-3 rounded-field border bg-bg-surface px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
 	                                    index === sourceButtonHighlightedIndex
-	                                      ? "border-[rgba(23,100,255,0.24)] bg-[rgba(23,100,255,0.04)]"
-	                                      : "border-[rgba(0,0,0,0.06)] hover:border-[rgba(23,100,255,0.22)] hover:bg-[rgba(23,100,255,0.03)]",
+	                                      ? "border-border-strong bg-fill-hover"
+	                                      : "border-border-subtle hover:border-border-strong hover:bg-fill-hover",
 	                                  )}
 	                                >
 	                                  <PlatformLogo name={item.icon} color={item.accent} className="h-4 w-4 shrink-0" />
 	                                  <span className="min-w-0 flex-1">
-	                                    <span className="block truncate text-[14px] font-medium leading-5 text-[#34322d]">{item.label}</span>
-	                                    <span className="mt-1 line-clamp-1 block text-[12px] leading-[18px] text-[#9a9b97]">
+	                                    <span className="block truncate text-body font-medium leading-5 text-foreground">
+	                                      {item.label}
+	                                    </span>
+	                                    <span className="mt-1 line-clamp-1 block text-caption leading-5 text-text-secondary">
 	                                      {item.promptHint}
 	                                    </span>
 	                                  </span>
-	                                  <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-[#858481]" />
+	                                  <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
 	                                </button>
 	                              );
 	                            })}
@@ -1856,12 +2405,12 @@ export function TaskComposer({
                     id={fileInputId}
                     type="file"
                     className="sr-only"
-                    accept="image/*,.xlsx,.csv,.pdf,.zip,.json"
                     multiple
                     onChange={(event) => {
                       if (event.target.files?.length) {
                         const selectedFiles = Array.from(event.target.files);
-                        addAttachmentFiles(selectedFiles, event.target.files);
+                        appendAttachmentFiles(selectedFiles);
+                        onFilesSelected(event.target.files);
                       }
                       event.target.value = "";
                     }}
@@ -1871,10 +2420,10 @@ export function TaskComposer({
                     variant="ghost"
                     size="sm"
                     className={cn(
-                      "h-8 rounded-[10px] border px-3 text-[14px] font-medium",
+                      "h-8 rounded-control border px-3 text-body font-medium",
                       isHeroMinimal
-                        ? "border-transparent text-[#34322d] hover:border-[rgba(0,0,0,0.08)] hover:bg-[rgba(55,53,47,0.06)] hover:text-[#34322d]"
-                        : "border-transparent text-[#6f7783] hover:border-[#e8e2d8] hover:bg-[#faf8f4] hover:text-[#27272a]",
+                        ? "border-transparent text-foreground hover:border-border hover:bg-fill-hover hover:text-foreground"
+                        : "border-transparent text-text-tertiary hover:border-border hover:bg-bg-subtle hover:text-foreground",
                     )}
                     onClick={() => {
                       setSourceButtonOpen(false);
@@ -1904,10 +2453,10 @@ export function TaskComposer({
                     variant="outline"
                     size="sm"
                     className={cn(
-                      "h-[30px] rounded-[10px] bg-white px-[10px] text-[12px] shadow-none",
+                      "h-8 rounded-control bg-bg-surface px-2.5 text-caption shadow-none",
                       isHeroMinimal
-                        ? "border-[#e5e7eb] text-[#6b7280] hover:bg-[#fafafa]"
-                        : "border-[#e7e5e4] text-[#52525b] hover:bg-[#fafaf9]",
+                        ? "border-border text-text-tertiary hover:bg-bg-subtle"
+                        : "border-border text-text-secondary hover:bg-bg-page",
                     )}
                     type="button"
                     onClick={() => {
@@ -1916,14 +2465,14 @@ export function TaskComposer({
                     }}
                   >
                     {composerModeLabel[mode]}
-                    <ChevronDown className="h-[13px] w-[13px]" />
+                    <ChevronDown className="h-3 w-3" />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent
                   align="end"
                   onOpenAutoFocus={(event) => event.preventDefault()}
                   onCloseAutoFocus={(event) => event.preventDefault()}
-                  className="w-[180px] rounded-[18px] border-[#e7e5e4] p-2 shadow-[0_16px_34px_rgba(24,24,27,0.08)]"
+                  className="w-44 rounded-popover border-border p-2 shadow-popover"
                 >
                   <div className="grid gap-1">
                     {(["普通模式", "深度模式"] as const).map((option) => (
@@ -1935,8 +2484,8 @@ export function TaskComposer({
                           setModeOpen(false);
                           focusEditor();
                         }}
-                        className={`rounded-[12px] px-3 py-3 text-left text-sm transition ${
-                          mode === option ? "bg-[#f5f5f4] text-[#18181b]" : "text-[#52525b] hover:bg-[#f5f5f4]"
+                        className={`rounded-field px-3 py-3 text-left text-sm transition ${
+                          mode === option ? "bg-fill-hover text-foreground" : "text-text-secondary hover:bg-fill-hover"
                         }`}
                       >
                         {composerModeLabel[option]}
@@ -1949,7 +2498,8 @@ export function TaskComposer({
               {showSubmitButton ? (
                 <Button
                   type="button"
-                  onClick={() => (showStop ? onStop?.() : onSubmit())}
+                  onClick={handleSubmit}
+                  disabled={!showStop && !canSubmit}
                   size="icon"
                   aria-label={showStop ? "停止任务" : "发送任务"}
                   data-testid="task-composer-submit"
@@ -1957,15 +2507,15 @@ export function TaskComposer({
                     showStop
                       ? cn(
                           resolvedSendButtonClassName,
-                          "shrink-0 rounded-full border-transparent !bg-[#171a1f] p-0 text-white shadow-none transition hover:!bg-[#111318] focus-visible:ring-2 focus-visible:ring-[#171a1f]/20",
+                          "shrink-0 rounded-full border-transparent !bg-primary p-0 text-primary-foreground shadow-none transition hover:!bg-link-hover focus-visible:ring-2 focus-visible:ring-primary/20",
                         )
                       : resolvedSendButtonClassName
                   }
                 >
                   {showStop ? (
-                    <span className="block h-4 w-4 rounded-[3px] bg-white" aria-hidden />
+                    <span className="block h-4 w-4 rounded-xxs bg-bg-surface" aria-hidden />
                   ) : (
-                    <ArrowUp className="h-[15px] w-[15px]" strokeWidth={2.4} />
+                    <ArrowUp className="h-4 w-4" strokeWidth={2.4} />
                   )}
                 </Button>
               ) : null}

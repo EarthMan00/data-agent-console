@@ -343,21 +343,6 @@ function applyEventToRun(run: TaskRun, report: Report, event: AgentRoundRuntimeE
   }
 
   if (event.type === "task_split_delta") {
-    const existing = nextRun.taskExecutionStepsByRound?.[event.roundId] ?? [];
-    const rows: TaskExecutionStep[] = event.steps.map((label, idx) => {
-      const prev = existing[idx];
-      return {
-        id: prev?.id ?? `${event.roundId}-split-${idx + 1}`,
-        roundId: event.roundId,
-        order: idx,
-        label,
-        status: prev?.status ?? ("pending" as const),
-      };
-    });
-    nextRun.taskExecutionStepsByRound = {
-      ...(nextRun.taskExecutionStepsByRound ?? {}),
-      [event.roundId]: rows,
-    };
     nextRun.roundUiLayouts = {
       ...(nextRun.roundUiLayouts ?? {}),
       [event.roundId]: "tool_orchestration",

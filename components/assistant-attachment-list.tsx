@@ -26,16 +26,16 @@ export function AssistantAttachmentList({ attachments, className }: AssistantAtt
       {attachments.map((attachment) => (
         <AttachmentPrimitive.Root
           key={attachment.id}
-          className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-[12px] border border-[#e7e7ea] bg-white px-3 py-2 text-left shadow-[0_4px_12px_rgba(15,23,42,0.03)]"
+          className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-field border border-border bg-bg-surface px-3 py-2 text-left shadow-surface"
         >
-          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-[#f4f4f5] text-[#62666d]">
+          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-fill-active text-text-secondary">
             <FileText className="h-4 w-4" aria-hidden />
           </span>
           <span className="min-w-0">
-            <span className="block max-w-[220px] truncate text-[12px] font-medium text-[#202124]">
+            <span className="block max-w-sidebar-admin truncate text-caption font-medium text-foreground">
               {attachment.name}
             </span>
-            <span className="mt-0.5 block text-[12px] text-[#9a9ea6]">
+            <span className="mt-0.5 block text-caption text-text-disabled">
               {[attachment.extension?.toUpperCase(), formatAttachmentSize(attachment.size)].filter(Boolean).join(" · ") || "附件"}
             </span>
           </span>

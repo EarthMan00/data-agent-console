@@ -13,12 +13,12 @@ type AutoToastProps = {
   /** 默认 2000ms */
   durationMs?: number;
   className?: string;
-  /** 成功为左侧黑底勾；错误为黑底感叹号（与「已存在同名分组」等提示一致） */
+  /** 成功为左侧绿色勾；错误为黑底感叹号（与「已存在同名分组」等提示一致） */
   variant?: "default" | "error";
 };
 
 /**
- * 顶部居中浮层：白底、圆角、左侧黑底白勾 + 文案，`durationMs` 后自动关闭。
+ * 顶部居中浮层：白底、圆角、左侧状态图标 + 文案，`durationMs` 后自动关闭。
  */
 export function AutoToast({
   message,
@@ -45,19 +45,19 @@ export function AutoToast({
   const node = (
     <div
       className={cn(
-        "pointer-events-none fixed left-1/2 z-[10000] flex w-[min(100%,24rem)] -translate-x-1/2 justify-center px-4",
+        "pointer-events-none fixed left-1/2 z-toast flex w-toast -translate-x-1/2 justify-center px-4",
         // 顶栏高度 + 间距（勿用 top-6：会叠在 sticky header 下方但仍被 z-50 压住）
-        "top-[max(1rem,calc(env(safe-area-inset-top,0px)+4.375rem))]",
+        "top-safe-toast",
         className,
       )}
       role="status"
       aria-live="polite"
     >
-      <div className="pointer-events-auto flex max-w-full items-center gap-2.5 rounded-[12px] border border-[#e8e8ea] bg-white px-4 py-3 shadow-[0_12px_40px_rgba(15,23,42,0.12)]">
+      <div className="pointer-events-auto flex max-w-full items-center gap-2.5 rounded-field border border-border bg-bg-surface px-4 py-3 shadow-popover-strong">
         <span
           className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
-            variant === "error" ? "bg-[#18181b] text-white" : "text-[#00B42A]",
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-primary-foreground",
+            variant === "error" ? "bg-primary" : "bg-success",
           )}
         >
           {variant === "error" ? (
@@ -76,7 +76,7 @@ export function AutoToast({
             </svg>
           )}
         </span>
-        <span className="text-[14px] font-medium leading-tight text-[#18181b]">{message}</span>
+        <span className="text-body font-medium leading-tight text-foreground">{message}</span>
       </div>
     </div>
   );

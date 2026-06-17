@@ -27,6 +27,7 @@ export function isUnhelpfulApiTaskLabel(s: string): boolean {
   if (/^hash:/i.test(t)) return true;
   if (/^hash:os:[a-f0-9]+$/i.test(t)) return true;
   if (/^os:[a-f0-9]+$/i.test(t)) return true;
+  if (/^run_(?:linkfox|chatexcel)_task$/i.test(t)) return true;
   return false;
 }
 
@@ -34,10 +35,6 @@ function labelForOrchestrationStep(task: TaskResponse, stepIndex: number): strin
   const hint = (task.key_hint ?? "").trim();
   if (hint && !isUnhelpfulApiTaskLabel(hint)) {
     return hint.length > 36 ? `${hint.slice(0, 33)}...` : hint;
-  }
-  const tn = (task.tool_name ?? "").trim();
-  if (tn && !isUnhelpfulApiTaskLabel(tn)) {
-    return tn.length > 36 ? `${tn.slice(0, 33)}...` : tn;
   }
   return `步骤 ${stepIndex + 1}`;
 }
@@ -85,6 +82,25 @@ export type OrchestrationAnchor = {
   orchestrationId: string | null;
 };
 
+/** 右侧结果面板：按用户点中的单条消息隔离，不复用会话级最新 anchor */
+export type ResultPanelContext = {
+  sourceMessageId: string | null;
+  primaryTaskId: string;
+  bundles: TaskOrchestrationBundleRow[];
+  finishedAt: string | null;
+  errorMessage: string | null;
+  lastStatus: string | null;
+  bundleDownloadApi: string | null;
+  bundleDownloadName: string | null;
+  focusedSubtaskId: string | null;
+};
+
+export type PanelOrchestrationAnchor = {
+  primaryTaskId: string;
+  bundleTaskIds: string[] | undefined;
+  orchestrationId: string | null;
+};
+
 /**
  * 从单条消息的 meta 中解析编排 anchor，不扫描全 session。
  * 用于 per-message bundles 加载，使每轮独立获取自己的产物。
@@ -113,6 +129,47 @@ export function resolveOrchestrationAnchorFromMessageMeta(
     primaryTaskId: primary,
     bundleTaskIds: ids.length > 0 ? ids : [primary],
     orchestrationId: orchId,
+  };
+}
+
+/**
+ * 从单条消息 meta 解析面板 anchor；不回退到会话级最新编排。
+ * 用于历史回放点击某轮任务卡 / 步骤结果卡。
+ */
+export function resolveAnchorForPanelFromMessageMeta(
+  meta: Record<string, unknown> | undefined,
+): PanelOrchestrationAnchor | null {
+  const fromOrch = resolveOrchestrationAnchorFromMessageMeta(meta);
+  if (fromOrch) {
+    return {
+      primaryTaskId: fromOrch.primaryTaskId,
+      bundleTaskIds: fromOrch.bundleTaskIds.length > 0 ? fromOrch.bundleTaskIds : undefined,
+      orchestrationId: fromOrch.orchestrationId,
+    };
+  }
+  const tid = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+  if (!tid) return null;
+  return {
+    primaryTaskId: tid,
+    bundleTaskIds: undefined,
+    orchestrationId: null,
+  };
+}
+
+export function buildBundleDownloadApiForPanel(
+  primaryTaskId: string,
+  bundleTaskIds: string[] | undefined,
+): { api: string; name: string | null } {
+  const ids = (bundleTaskIds ?? []).map((x) => (x || "").trim()).filter(Boolean);
+  if (ids.length > 0) {
+    return {
+      api: `/api/tasks/download?${ids.map((id) => `task_ids=${encodeURIComponent(id)}`).join("&")}`,
+      name: ids.length > 1 ? `${primaryTaskId}.zip` : null,
+    };
+  }
+  return {
+    api: `/api/tasks/${encodeURIComponent(primaryTaskId)}/download`,
+    name: null,
   };
 }
 
@@ -169,15 +226,18 @@ export async function fetchTaskOrchestrationForResultPanel(
   token: string,
   primaryTaskId: string,
   bundleTaskIds: string[] | undefined,
-  options?: { orchestrationId?: string | null },
+  options?: { orchestrationId?: string | null; expandOrchestration?: boolean },
 ): Promise<{
   bundles: TaskOrchestrationBundleRow[];
   mergedArtifacts: PlatformTaskArtifactRef[];
   finishedAt: string | null;
+  errorMessage: string | null;
+  lastStatus: string | null;
 }> {
   let stepIds = dedupeOrchestrationTaskIds(primaryTaskId, bundleTaskIds);
 
-  if (stepIds.length <= 1 && options?.orchestrationId) {
+  const mayExpandOrch = options?.expandOrchestration !== false;
+  if (stepIds.length <= 1 && options?.orchestrationId && mayExpandOrch) {
     try {
       const orch = await getToolOrchestration(token, options.orchestrationId);
       const fromOrch = orch.steps
@@ -196,11 +256,17 @@ export async function fetchTaskOrchestrationForResultPanel(
   const bundles: TaskOrchestrationBundleRow[] = [];
   const mergedArtifacts: PlatformTaskArtifactRef[] = [];
   let finishedAt: string | null = null;
+  let errorMessage: string | null = null;
+  let lastStatus: string | null = null;
 
   for (let i = 0; i < stepIds.length; i++) {
     const id = stepIds[i]!;
     const task = await getTask(token, id);
     finishedAt = task.finished_at ?? finishedAt;
+    lastStatus = task.status ?? lastStatus;
+    if ((task.error_message ?? "").trim()) {
+      errorMessage = task.error_message!;
+    }
     const arts = (task.artifacts ?? []).map((a) => ({
       artifact_id: a.artifact_id,
       artifact_type: a.artifact_type,
@@ -216,7 +282,7 @@ export async function fetchTaskOrchestrationForResultPanel(
     });
   }
 
-  return { bundles, mergedArtifacts, finishedAt };
+  return { bundles, mergedArtifacts, finishedAt, errorMessage, lastStatus };
 }
 
 export async function fetchArtifactsForResultPanel(

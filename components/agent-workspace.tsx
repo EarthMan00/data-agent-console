@@ -14,16 +14,18 @@ import type {
   PlatformTaskArtifactRef,
 } from "@/lib/agent-events";
 import { AgentRoutePlaceholder } from "@/components/agent-route-placeholder";
-import { AliceShell } from "@/components/alice-shell";
-import { EmptyState } from "@/components/empty-state";
+import { AliceShell, useAliceShellState } from "@/components/alice-shell";
+import { AssistantAttachmentList } from "@/components/assistant-attachment-list";
 import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
 import { buildAttachmentItems } from "@/components/agent-workspace/attachment-utils";
 import {
+  AssistantOutputFrame,
   AliceMessageBubble,
   ORCHESTRATION_BLOCK_MAX,
+  SIMPLE_CHAT_BUBBLE_MAX,
   SIMPLE_CHAT_COLUMN_MAX,
   SimpleAssistantBubble,
   SimpleSystemBubble,
@@ -32,6 +34,7 @@ import {
 } from "@/components/agent-workspace/chat-bubbles";
 import { TaskOrchestrationBlock } from "@/components/agent-workspace/task-orchestration-block";
 import { TaskExecutionPanel } from "@/components/agent-workspace/task-execution-panel";
+import { ExecutionRuntimeTag } from "@/components/execution-steps-monitor";
 import { PlatformRoundStepTimeline } from "@/components/agent-workspace/platform-step-views";
 import { PostTaskGuidanceBubble } from "@/components/agent-workspace/post-task-guidance-bubble";
 import { PlatformSessionAgentWorkspace } from "@/components/agent-workspace/platform-session-agent-workspace";
@@ -69,6 +72,7 @@ import {
   type TaskRunLike,
   toCapabilitySafeTitle,
 } from "@/components/agent-workspace-view-models";
+import { isFrontendMockSessionId } from "@/lib/frontend-mock-session";
 
 export {
   buildAcknowledgement,
@@ -121,10 +125,23 @@ export function AgentWorkspace() {
   const runId = urlRunId || currentRunId;
   const run = runId ? (runs.find((item) => item.id === runId) ?? null) : null;
   const report = run ? (reports.find((item) => item.id === run.reportId) ?? null) : null;
+  const { refreshHistory } = useAliceShellState();
+  const frontendMockSession = isFrontendMockSessionId(historySessionId);
+
+  // Ensure the session list reflects newly-created sessions as soon as we
+  // enter a task view (every entry point: homepage, template, replay, etc.).
+  useEffect(() => {
+    if (runId && isPlatformBackendEnabled() && clientMounted) {
+      refreshHistory();
+    }
+  }, [runId, clientMounted, refreshHistory]);
 
   const platformRouteReady = !isPlatformBackendEnabled() || clientMounted;
   const isPlatformSession =
-    platformRouteReady && isPlatformBackendEnabled() && Boolean(platformAgent) && Boolean(historySessionId);
+    platformRouteReady &&
+    isPlatformBackendEnabled() &&
+    Boolean(historySessionId) &&
+    (Boolean(platformAgent) || frontendMockSession);
   const awaitingAgentRouteParams =
     platformRouteReady &&
     isPlatformBackendEnabled() &&
@@ -149,7 +166,7 @@ export function AgentWorkspace() {
   if (awaitingAgentRouteParams) {
     return (
       <AliceShell currentPath="/agent" contentScrollMode="child" currentRunLabel="历史对话" mainDecoration={null}>
-        <div className="flex h-full min-h-0 flex-1 items-center justify-center text-sm text-[#71717a]">加载中…</div>
+        <div className="flex h-full min-h-0 flex-1 items-center justify-center text-sm text-text-tertiary">加载中…</div>
       </AliceShell>
     );
   }
@@ -157,6 +174,7 @@ export function AgentWorkspace() {
   if (isPlatformSession) {
     return (
       <PlatformSessionAgentWorkspace
+        key={historySessionId}
         sessionId={historySessionId}
         scheduleTrial={scheduleTrial}
         scheduledRunRecord={scheduledRunRecord}
@@ -169,21 +187,7 @@ export function AgentWorkspace() {
   if (!run || !report) {
     return (
       <AliceShell currentPath="/agent" contentScrollMode="child" currentRunLabel="未找到任务" mainDecoration={null}>
-        <EmptyState
-          className="m-0 min-h-[calc(100vh-160px)]"
-          message="未找到任务"
-          action={
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-auto px-1 py-0 text-[14px] font-medium text-[#1d2129] hover:bg-transparent hover:text-[#1d2129]"
-              onClick={() => router.replace("/")}
-            >
-              返回首页
-            </Button>
-          }
-        />
+        <div className="p-6 text-sm text-text-secondary">未在本地状态中找到该任务。请从首页发起研究，或确认 URL 中 runId 有效。</div>
       </AliceShell>
     );
   }
@@ -204,6 +208,7 @@ function AgentRunWorkspaceView({
   platformAgent: ReturnType<typeof useOptionalPlatformAgent>;
 }) {
   const { currentRunId } = useWorkspaceState();
+  const { refreshHistoryNow } = useAliceShellState();
   const [previewOverrides, setPreviewOverrides] = useState<Record<string, string | null>>({});
   const [panelVisibility, setPanelVisibility] = useState<Record<string, boolean>>({});
   /** 右侧任务结果区：点击某张步骤结果卡片时锁定该步产物；新一轮步骤快照到达时自动清除以跟随最新一步 */
@@ -580,6 +585,9 @@ function AgentRunWorkspaceView({
       setQueuedAttachments((current) => ({ ...current, [run.id]: [] }));
       setQueuedAttachmentFiles((current) => ({ ...current, [run.id]: [] }));
       setComposerVersion((current) => ({ ...current, [run.id]: (current[run.id] ?? 0) + 1 }));
+      if (isPlatformBackendEnabled() && run.platformSessionId) {
+        void refreshHistoryNow();
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : "本轮执行失败，请稍后重试。";
       workspaceActions.applyRuntimeEvent(run.id, {
@@ -597,7 +605,7 @@ function AgentRunWorkspaceView({
       executingRoundsRef.current.delete(input.roundId);
       setAgentRoundInFlight(false);
     }
-  }, [composerMode, platformAgent, run.id, run.objective, run.platformSessionId]);
+  }, [composerMode, platformAgent, refreshHistoryNow, run.id, run.objective, run.platformSessionId]);
 
   useEffect(() => {
   if (run.status !== "queued" || !run.latestRoundId) return;
@@ -730,7 +738,7 @@ function AgentRunWorkspaceView({
   };
 
   const resultFeedbackActions = (
-    <div className="flex items-center gap-1 text-[#8a97a8]">
+    <div className="flex items-center gap-1 text-text-tertiary">
       <Button aria-label="反馈喜欢" variant="ghost" size="iconSm" onClick={() => handleFeedback("喜欢")}>
         <ThumbsUp className="h-4 w-4" />
       </Button>
@@ -801,7 +809,7 @@ function AgentRunWorkspaceView({
         ) : undefined
       }
     >
-      <AssistantThreadFrame className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-transparent" isRunning={composerShowsStop} onCancel={stopCurrentRound}>
+      <AssistantThreadFrame className="flex h-platform-session-main min-h-0 flex-1 flex-col overflow-hidden bg-transparent" isRunning={composerShowsStop} onCancel={stopCurrentRound}>
         <div
           ref={messagesScrollRef}
           className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-4 pt-6 sm:px-6"
@@ -809,11 +817,11 @@ function AgentRunWorkspaceView({
           <div ref={messagesInnerRef} className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
             <div className="space-y-5">
               {isPlatformBackendEnabled() && !run.platformSessionId ? (
-                <p className="text-sm leading-relaxed text-[#92400e]">
-                  当前任务无有效平台会话，消息不会发往 Alice 后端服务。请从首页重新发起任务以创建真实会话；勿直接打开 /agent 且无 runId，或仅依赖侧栏中无后端关联的历史项。
+                <p className="text-sm leading-relaxed text-warning">
+                  当前任务无有效平台会话，消息不会发往 Data Agent Server。请从首页重新发起任务以创建真实会话；勿直接打开 /agent 且无 runId，或仅依赖侧栏中无后端关联的历史项。
                 </p>
               ) : null}
-              {notice ? <p className="text-sm text-[#52525b]">{notice}</p> : null}
+              {notice ? <p className="text-sm text-text-secondary">{notice}</p> : null}
 
             <div className="space-y-7">
               {roundModels.map((round, index) => {
@@ -822,20 +830,30 @@ function AgentRunWorkspaceView({
                   (!round.collapseExecution ||
                     Boolean(round.aliceClarification) ||
                     Boolean(round.clarificationDialog && !round.clarificationDialog.answered));
-                const splitRevealDone =
-                  round.splitItems.length === 0 ||
-                  !round.splitReveal ||
-                  round.roundTerminal ||
-                  Boolean(round.splitRevealComplete);
+                const splitRevealDone = true;
 
                 return (
-                <div key={round.roundId} className="space-y-2">
-                  {round.userMessage || round.attachments.length > 0 ? (
-                    <SimpleUserBubble
-                      text={round.userMessage ?? ""}
-                      datetime={round.createdAt}
-                      attachments={round.attachments}
-                    />
+                <div key={round.roundId} className="space-y-3">
+                  {round.userMessage ? (
+                    <SimpleUserBubble text={round.userMessage} datetime={round.createdAt} />
+                  ) : null}
+
+                  {round.attachments.length > 0 ? (
+                    <div
+                      className={cn(
+                        "w-full",
+                        round.uiLayout === "simple_chat" ? "flex justify-end" : "max-w-3xl",
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "rounded-panel border border-border bg-bg-surface px-3 py-3 shadow-surface",
+                          round.uiLayout === "simple_chat" && cn("w-full", SIMPLE_CHAT_BUBBLE_MAX),
+                        )}
+                      >
+                        <AssistantAttachmentList attachments={round.attachments} />
+                      </div>
+                    </div>
                   ) : null}
 
                   {round.uiLayout === "simple_chat" && !(round.executionSteps?.length) ? (
@@ -917,7 +935,7 @@ function AgentRunWorkspaceView({
                                     <AssistantLoadingRow variant="task" />
                                   </div>
                                 ) : (
-                                  <div className="rounded-[18px] border border-dashed border-[#e5e7eb] bg-[#fcfcfd] px-4 py-5 text-[14px] leading-7 text-[#6c7571]">
+                                  <div className="rounded-popover border border-dashed border-border bg-bg-surface px-4 py-5 text-body leading-7 text-text-tertiary">
                                     正在为这轮任务准备执行节点，稍后会把关键过程同步到这里。
                                   </div>
                                 )
@@ -932,14 +950,7 @@ function AgentRunWorkspaceView({
 
                       const afterExecution = (
                         <>
-                          {round.errorMessage ? (
-                            <SimpleAssistantBubble
-                              body={round.errorMessage}
-                              datetime={round.createdAt}
-                              streaming={false}
-                              typewriter={false}
-                            />
-                          ) : null}
+                          {round.errorMessage ? <p className="text-sm text-danger">{round.errorMessage}</p> : null}
                           {showResultCard ? (
                             <>
                               <TaskResultSummaryCard
@@ -989,9 +1000,25 @@ function AgentRunWorkspaceView({
                           key={`${round.roundId}-supplement-${idx}`}
                           text={m.text}
                           datetime={m.createdAt}
-                          attachments={m.attachments}
+                          attachments={m.attachments.map((attachment) => ({
+                            name: attachment.name,
+                            size: attachment.size ?? 0,
+                            extension: attachment.name.includes(".")
+                              ? attachment.name.split(".").pop()?.toLowerCase()
+                              : undefined,
+                          }))}
                         />
                       ));
+                      const executionTitleTag = round.executionSteps?.some(
+                        (step) => step.status === "running" && (step.runtimeHint || step.runtimeStartedAt),
+                      )
+                        ? <ExecutionRuntimeTag steps={round.executionSteps} />
+                        : undefined;
+                      const executionTitle = round.errorMessage
+                        ? "任务执行失败"
+                        : round.collapseExecution
+                          ? "任务已完成"
+                          : "任务执行";
 
                       const orchestrationBlock = (
                         <TaskOrchestrationBlock
@@ -1032,6 +1059,8 @@ function AgentRunWorkspaceView({
                           }
                           executionCollapsible={round.collapseExecution}
                           executionTestId="agent-execution-panel"
+                          executionTitle={executionTitle}
+                          executionTitleTag={executionTitleTag}
                           afterExecution={deferExecution ? undefined : afterExecution}
                         >
                           {deferExecution ? null : executionBody}
@@ -1054,7 +1083,7 @@ function AgentRunWorkspaceView({
                             {guidanceBubble}
                             {supplementBubbles}
                             {splitRevealDone ? (
-                              <>
+                              <AssistantOutputFrame datetime={round.createdAt} wide>
                                 <TaskExecutionPanel
                                   expanded={executionExpanded}
                                   onExpandedChange={(next) =>
@@ -1065,11 +1094,13 @@ function AgentRunWorkspaceView({
                                   }
                                   collapsible={round.collapseExecution}
                                   testId="agent-execution-panel"
+                                  title={executionTitle}
+                                  titleTag={executionTitleTag}
                                 >
                                   {executionBody}
                                 </TaskExecutionPanel>
                                 {afterExecution}
-                              </>
+                              </AssistantOutputFrame>
                             ) : null}
                           </>
                         );
@@ -1095,7 +1126,7 @@ function AgentRunWorkspaceView({
                     />
                   ) : null}
 
-                  {index < roundModels.length - 1 ? <div className="border-b border-dashed border-[#e5e7eb]" /> : null}
+                  {index < roundModels.length - 1 ? <div className="border-b border-dashed border-border" /> : null}
                 </div>
                 );
               })}
@@ -1105,7 +1136,7 @@ function AgentRunWorkspaceView({
           </div>
         </div>
 
-        <div className="shrink-0 bg-transparent px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:px-6">
+        <div className="shrink-0 bg-transparent px-4 pb-composer-safe pt-4 sm:px-6">
           <div className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
             <TaskComposer
               key={`${run.id}-${currentComposerVersion}`}
@@ -1127,12 +1158,9 @@ function AgentRunWorkspaceView({
               submitVariant={composerShowsStop ? "stop" : "send"}
               onStop={() => void stopCurrentRound()}
               onSubmit={() => void appendNote()}
-              containerClassName="overflow-visible rounded-[18px] border border-[#e2e2df] bg-white shadow-[0_1px_2px_rgba(17,17,17,0.03)]"
-              textareaClassName="min-h-[84px] max-h-[12em] min-w-[180px] flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-[14px] leading-6 text-[#34322d] caret-[#34322d] outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-visible:[box-shadow:none!important]"
-              sendButtonClassName="h-10 w-10 min-w-0 rounded-full border border-transparent bg-[#111111] p-0 text-white shadow-none transition hover:bg-[#2a2a2a]"
             />
 
-            <div className="mt-3 text-center text-xs text-[#8b8c87]">内容由 AI 大模型生成，请仔细甄别</div>
+            <div className="mt-3 text-center text-xs text-text-tertiary">内容由 AI 大模型生成，请仔细甄别</div>
           </div>
         </div>
       </AssistantThreadFrame>

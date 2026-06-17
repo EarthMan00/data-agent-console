@@ -10,9 +10,9 @@ import type {
 import {
   buildPlatformStepTimeline,
   ExecutionStepCard,
+  ExecutionTimelineRow,
   StepResultPendingCard,
 } from "@/components/execution-steps-monitor";
-import { cn } from "@/lib/utils";
 import { compactText } from "@/components/agent-workspace-view-models";
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
@@ -21,40 +21,33 @@ function PlatformSubtaskResultCard({
   snap,
   isActive,
   onSelect,
+  totalSteps,
 }: {
   snap: PlatformSubtaskSnapshot;
   isActive: boolean;
   onSelect: () => void;
+  totalSteps: number;
 }) {
-  const stepNo = snap.stepIndex + 1;
   const hasPreviewFiles = hasTabularTaskResultFiles(snap.artifacts);
+  const status = snap.outcome === "failed" ? "error" : "done";
   return (
-    <button
-      type="button"
-      onClick={() => {
-        if (!hasPreviewFiles) return;
-        onSelect();
-      }}
-      className={cn(
-        "w-full rounded-[16px] border px-4 py-3 text-left shadow-none transition-colors",
-        isActive ? "border-[#2563eb] bg-[#eff6ff]" : "border-[#eceef1] bg-white",
+    <ExecutionTimelineRow
+      label={
+        snap.errorMessage
+          ? compactText(humanizeTaskErrorMessage(snap.errorMessage), 220)
+          : compactText(snap.label, 200)
+      }
+      status={status}
+      isLast={snap.stepIndex >= totalSteps - 1}
+      active={isActive || status === "error"}
+      onSelect={
         hasPreviewFiles
-          ? "cursor-pointer hover:border-[#bfdbfe] hover:bg-[#f8fafc]"
-          : "cursor-default opacity-95",
-      )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold text-[#1d2129]">步骤 {stepNo}</div>
-          <p className="mt-1 text-[12px] leading-5.5 text-[#4e5969]">{compactText(snap.label, 200)}</p>
-        </div>
-      </div>
-      {snap.errorMessage ? (
-        <p className="mt-2 text-[12px] leading-5 text-[#b91c1c]">
-          {compactText(humanizeTaskErrorMessage(snap.errorMessage), 220)}
-        </p>
-      ) : null}
-    </button>
+          ? () => {
+              onSelect();
+            }
+          : undefined
+      }
+    />
   );
 }
 
@@ -65,18 +58,21 @@ export function PlatformRoundStepTimeline({
   runId,
   setPanelSubtaskFocus,
   setPanelVisibility,
+  onOpenSubtaskResult,
 }: {
   executionSteps: TaskExecutionStep[];
   platformSubtasks: PlatformSubtaskSnapshot[] | undefined;
   /** 与右侧结果区当前页签对齐的步骤 taskId（含默认选中「最新有结果的一步」） */
   activeHighlightTaskId: string | null;
   runId: string;
-  setPanelSubtaskFocus: Dispatch<SetStateAction<{ taskId: string; artifacts: PlatformTaskArtifactRef[] } | null>>;
-  setPanelVisibility: Dispatch<SetStateAction<Record<string, boolean>>>;
+  setPanelSubtaskFocus?: Dispatch<SetStateAction<{ taskId: string; artifacts: PlatformTaskArtifactRef[] } | null>>;
+  setPanelVisibility?: Dispatch<SetStateAction<Record<string, boolean>>>;
+  /** 历史回放：按该轮消息打开结果面板，优先于 setPanelSubtaskFocus */
+  onOpenSubtaskResult?: (taskId: string) => void;
 }) {
   const items = buildPlatformStepTimeline(executionSteps, platformSubtasks);
   return (
-    <div className="space-y-3" data-testid="agent-step-timeline">
+    <div className="space-y-0" data-testid="agent-step-timeline">
       {items.map((item) => {
         if (item.kind === "executing") {
           return (
@@ -84,6 +80,7 @@ export function PlatformRoundStepTimeline({
               key={`exec-${item.step.id}-${item.stepIndex}`}
               step={item.step}
               stepIndex={item.stepIndex}
+              total={item.total}
             />
           );
         }
@@ -92,6 +89,7 @@ export function PlatformRoundStepTimeline({
             <StepResultPendingCard
               key={`rp-${item.stepIndex}`}
               stepIndex={item.stepIndex}
+              total={item.total}
               label={item.label}
               status={item.status}
             />
@@ -104,7 +102,13 @@ export function PlatformRoundStepTimeline({
             key={snap.taskId}
             snap={snap}
             isActive={active}
+            totalSteps={executionSteps.length}
             onSelect={() => {
+              if (onOpenSubtaskResult) {
+                onOpenSubtaskResult(snap.taskId);
+                return;
+              }
+              if (!setPanelSubtaskFocus || !setPanelVisibility) return;
               setPanelSubtaskFocus({ taskId: snap.taskId, artifacts: snap.artifacts });
               setPanelVisibility((c) => ({ ...c, [runId]: true }));
             }}

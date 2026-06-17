@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  artifactDisplayLabelForUi,
+  artifactDownloadNameForUi,
   filterArtifactsForTaskResultPanel,
   hasTabularTaskResultFiles,
   pickPrimaryCsvArtifact,
@@ -244,5 +246,17 @@ describe("pickPrimaryTaskDataArtifact", () => {
       },
     ]);
     expect(p?.original_name).toBe("merged.csv");
+  });
+});
+
+describe("artifactDisplayLabelForUi", () => {
+  it("neutralizes linkfox and data report html names", () => {
+    expect(artifactDisplayLabelForUi("linkfox_report.html")).toBe("数据报告");
+    expect(artifactDisplayLabelForUi("data_report.html")).toBe("数据报告");
+    expect(artifactDownloadNameForUi("linkfox_report.html")).toBe("数据报告.html");
+  });
+
+  it("strips internal tool names from generic stems", () => {
+    expect(artifactDisplayLabelForUi("run_linkfox_task_output.csv")).toBe("_output");
   });
 });

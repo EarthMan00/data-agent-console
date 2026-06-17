@@ -70,6 +70,7 @@ function sortGroupsByCreatedAsc(groups: UserPromptGroupDto[]) {
 const tabToValue = (tab: FilterTab) => (tab.kind === "group" ? `group:${tab.id}` : tab.kind);
 
 function valueToTab(value: string): FilterTab {
+  if (value === "all") return { kind: "all" };
   if (value === "default") return { kind: "default" };
   if (value.startsWith("group:")) return { kind: "group", id: value.slice("group:".length) };
   return { kind: "all" };
@@ -209,7 +210,7 @@ export function PromptLibraryWorkspace() {
     setEditingId(null);
     setFormTitle("");
     setFormPrompt("");
-    setFormGroupId(tab.kind === "default" ? null : tab.kind === "group" ? tab.id : null);
+    setFormGroupId(tab.kind === "group" ? tab.id : null);
     setSaveOpen(true);
   };
 
@@ -308,7 +309,7 @@ export function PromptLibraryWorkspace() {
         await deleteUserPromptGroup(token, id);
       });
       setDeleteGroupId(null);
-      if (tab.kind === "group" && tab.id === id) setTab({ kind: "all" });
+      if (tab.kind === "group" && tab.id === id) setTab({ kind: "default" });
       await refresh();
     } catch (e) {
       const msg =
@@ -402,23 +403,23 @@ export function PromptLibraryWorkspace() {
         }}
         durationMs={2000}
       />
-      <div className="px-8 pb-14 pt-5">
-        <div className="mx-auto max-w-[1040px]">
+      <div className="px-4 pb-14 pt-5 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-page-content">
           <div className="space-y-5">
             <div className="flex items-center">
-              <h1 className="shrink-0 whitespace-nowrap text-[24px] font-semibold leading-8 text-[#111111]">我的提示词</h1>
+              <h1 className="shrink-0 whitespace-nowrap text-title-3 font-semibold leading-8 text-foreground">我的提示词</h1>
             </div>
 
-            <div className="flex min-h-[40px] flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <div className="flex min-h-10 w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 lg:flex-none">
                 <Tabs value={tabToValue(tab)} onValueChange={(value) => setTab(valueToTab(value))}>
                   <TabsList className="flex-wrap justify-start">
                     <TabsTrigger value="all">全部</TabsTrigger>
                     <TabsTrigger value="default">默认</TabsTrigger>
                     {groups.map((g) => (
-                      <div key={g.id} className="group/chip relative inline-flex items-center rounded-[8px]">
+                      <div key={g.id} className="group/chip relative inline-flex items-center rounded-md">
                         <TabsTrigger value={`group:${g.id}`}>
-                          <span className="max-w-[160px] truncate">{g.name || "未命名"}</span>
+                          <span className="max-w-40 truncate">{g.name || "未命名"}</span>
                         </TabsTrigger>
                         <Button
                           type="button"
@@ -426,7 +427,7 @@ export function PromptLibraryWorkspace() {
                           aria-label={`删除分组 ${g.name || "未命名"}`}
                           aria-expanded={deleteGroupId === g.id}
                           disabled={deletingGroupId === g.id}
-                          className="pointer-events-auto absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-[#71717a] opacity-0 transition hover:bg-transparent hover:text-red-600 focus-visible:opacity-100 group-hover/chip:opacity-100 data-[state=open]:opacity-100"
+                          className="pointer-events-auto absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-text-tertiary opacity-0 transition hover:bg-transparent hover:text-danger focus-visible:opacity-100 group-hover/chip:opacity-100 data-[state=open]:opacity-100"
                           onMouseDown={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -456,14 +457,14 @@ export function PromptLibraryWorkspace() {
                   <PlusThin />
                 </Button>
               </div>
-              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 lg:w-auto lg:shrink-0">
-                <div className="relative w-full min-w-0 max-[960px]:hidden sm:w-[220px]">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+              <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 lg:w-auto lg:shrink-0 lg:flex-nowrap lg:justify-end">
+                <div className="relative w-full min-w-0 max-lg:hidden sm:w-sidebar-admin">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
                   <Input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="搜索提示词"
-                    className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
+                    className="h-9 w-full rounded-control border-border pl-9"
                   />
                 </div>
                 <Button
@@ -471,13 +472,13 @@ export function PromptLibraryWorkspace() {
                   variant="outline"
                   size="icon"
                   aria-label="搜索提示词"
-                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[rgba(55,53,47,0.06)] max-[960px]:inline-flex"
+                  className="hidden h-9 w-9 shrink-0 rounded-control border-border bg-bg-surface text-foreground hover:bg-fill-hover max-lg:inline-flex"
                   onClick={() => setSearchDialogOpen(true)}
                 >
                   <Search className="h-4 w-4" />
                 </Button>
                 <Button
-                  className="h-9 shrink-0 rounded-[10px] bg-[#111111] px-3 text-white hover:bg-[#2a2a2a] sm:px-4"
+                  className="h-9 shrink-0 whitespace-nowrap rounded-control bg-primary px-3 text-primary-foreground hover:bg-link-hover sm:px-4"
                   onClick={openCreate}
                 >
                   <Plus />
@@ -488,41 +489,32 @@ export function PromptLibraryWorkspace() {
           </div>
 
           {error && !showLoadError ? (
-            <div className="mt-6 text-sm text-red-600">
+            <div className="mt-6 text-sm text-danger">
               {error}
             </div>
           ) : null}
-          {busy ? <div className="mt-8 text-sm text-[#71717a]">加载中…</div> : null}
+          {busy ? <div className="mt-8 text-sm text-text-tertiary">加载中…</div> : null}
 
           {showLoadError ? (
             <PageLostState onRetry={() => void refresh()} />
           ) : !busy && filteredPrompts.length === 0 ? (
             prompts.length === 0 ? (
               <EmptyState
-                className="min-h-[calc(100vh-260px)]"
-                message={tab.kind === "all" ? "暂无提示词" : tab.kind === "default" ? "默认分组下暂无提示词" : "该分组下暂无提示词"}
-                action={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-auto px-1 py-0 text-[14px] font-medium text-[#18181b] hover:bg-transparent hover:text-[#27272a]"
-                    onClick={openCreate}
-                  >
-                    马上创建提示词
-                  </Button>
+                className="min-h-prompt-list"
+                message={
+                  tab.kind === "all" ? "暂无提示词" : tab.kind === "default" ? "默认分组下暂无提示词" : "该分组下暂无提示词"
                 }
               />
             ) : (
               <EmptyState
-                className="mt-16 min-h-[240px]"
+                className="mt-16 min-h-60"
                 message="未找到匹配的提示词"
                 action={
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                    className="h-8 px-2 text-sm text-[#18181b] underline decoration-[#d4d4d8] underline-offset-4 hover:bg-transparent hover:text-[#27272a]"
+                    className="h-8 px-2 text-sm text-foreground underline decoration-border underline-offset-4 hover:bg-transparent hover:text-foreground"
                   onClick={() => setSearch("")}
                 >
                   清空搜索条件
@@ -570,15 +562,15 @@ export function PromptLibraryWorkspace() {
           if (!open && !deletingGroupId) setDeleteGroupId(null);
         }}
       >
-        <DialogContent hideClose className="max-w-[360px] rounded-[16px] p-5" aria-describedby={undefined}>
+        <DialogContent hideClose className="max-w-sm rounded-panel p-5" aria-describedby={undefined}>
           <DialogTitle className="sr-only">删除提示词分组</DialogTitle>
-          <p className="text-[14px] leading-6 text-[#34322d]">确定删除吗？该分组下的提示词将移回默认分组</p>
+          <p className="text-body leading-6 text-foreground">确定删除吗？该分组下的提示词将移回默认分组</p>
           <div className="mt-4 flex justify-end gap-2">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="h-9 rounded-[10px]"
+              className="h-9 rounded-control"
               disabled={deletingGroupId !== null}
               onClick={() => setDeleteGroupId(null)}
             >
@@ -588,7 +580,7 @@ export function PromptLibraryWorkspace() {
               type="button"
               variant="destructive"
               size="sm"
-              className="h-9 rounded-[10px] bg-red-600 px-4 text-white hover:bg-red-700"
+              className="h-9 rounded-control bg-danger px-4 text-primary-foreground hover:bg-danger-hover"
               disabled={deletingGroupId !== null || !deleteGroupId}
               onClick={() => {
                 if (deleteGroupId) void handleDeleteGroup(deleteGroupId);
@@ -601,10 +593,10 @@ export function PromptLibraryWorkspace() {
       </Dialog>
 
       <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
-        <DialogContent className="max-w-[420px] rounded-[16px] p-5">
-          <DialogTitle className="text-[16px] font-semibold text-[#111111]">搜索提示词</DialogTitle>
+        <DialogContent className="max-w-confirm-dialog rounded-panel p-5">
+          <DialogTitle className="text-title-1 font-semibold text-foreground">搜索提示词</DialogTitle>
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
             <Input
               ref={searchDialogInputRef}
               value={search}
@@ -613,7 +605,7 @@ export function PromptLibraryWorkspace() {
                 if (e.key === "Enter") setSearchDialogOpen(false);
               }}
               placeholder="搜索提示词"
-              className="h-10 w-full rounded-[12px] border-[#e2e2df] pl-9"
+              className="h-10 w-full rounded-field border-border pl-9"
             />
           </div>
           <div className="flex justify-end gap-2">
@@ -621,7 +613,7 @@ export function PromptLibraryWorkspace() {
               <Button
                 type="button"
                 variant="outline"
-                className="h-9 rounded-[10px] border-[#e2e2df] px-3 text-[14px]"
+                className="h-9 rounded-control border-border px-3 text-body"
                 onClick={() => setSearch("")}
               >
                 清空
@@ -629,7 +621,7 @@ export function PromptLibraryWorkspace() {
             ) : null}
             <Button
               type="button"
-              className="h-9 rounded-[10px] bg-[#111111] px-4 text-[14px] text-white hover:bg-[#2a2a2a]"
+              className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-link-hover"
               onClick={() => setSearchDialogOpen(false)}
             >
               完成
@@ -649,8 +641,8 @@ export function PromptLibraryWorkspace() {
           }
         }}
       >
-        <DialogContent className="max-w-[400px] rounded-[16px] p-5">
-          <DialogTitle className="text-[16px] font-semibold text-[#111111]">新建分组</DialogTitle>
+        <DialogContent className="max-w-md rounded-panel p-5">
+          <DialogTitle className="text-title-1 font-semibold text-foreground">新建分组</DialogTitle>
           <div>
             <Input
               id="prompt-library-new-group-name"
@@ -670,14 +662,14 @@ export function PromptLibraryWorkspace() {
                 }
               }}
               placeholder="请输入分组名称"
-              className={`h-10 rounded-[12px] text-[14px] ${
+              className={`h-10 rounded-field text-body ${
                 newGroupNameConflict
-                  ? "!border-red-500 focus-visible:!ring-red-500/20"
-                  : "border-[#e2e2df]"
+                  ? "!border-danger focus-visible:!ring-danger/20"
+                  : "border-border"
               }`}
             />
             {newGroupNameConflict ? (
-              <p className="mt-2 flex items-center gap-1.5 text-[14px] leading-5 text-red-600">
+              <p className="mt-2 flex items-center gap-1.5 text-body leading-5 text-danger">
                 <InfoCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 名称已存在
               </p>
@@ -687,7 +679,7 @@ export function PromptLibraryWorkspace() {
             <Button
               type="button"
               variant="outline"
-              className="h-9 rounded-[10px] border-[#e2e2df] px-3 text-[14px]"
+              className="h-9 rounded-control border-border px-3 text-body"
               disabled={newGroupSaving}
               onClick={() => {
                 setAddGroupOpen(false);
@@ -699,7 +691,7 @@ export function PromptLibraryWorkspace() {
             </Button>
             <Button
               type="button"
-              className="h-9 rounded-[10px] bg-[#111111] px-4 text-[14px] text-white hover:bg-[#2a2a2a]"
+              className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-link-hover"
               disabled={newGroupCreateDisabled}
               onClick={() => void commitNewGroupInput()}
             >
@@ -717,30 +709,30 @@ export function PromptLibraryWorkspace() {
       </Dialog>
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
-        <DialogContent className="max-w-[540px] rounded-[18px] border-[#e5e7eb] p-0">
+        <DialogContent className="max-w-xl rounded-popover border-border p-0">
           <div className="px-8 pb-8 pt-7">
-            <DialogTitle className="text-[16px] font-semibold text-[#18181b]">
+            <DialogTitle className="text-title-1 font-semibold text-foreground">
               {editingId ? "编辑提示词" : "保存提示词"}
             </DialogTitle>
             <div className="mt-6 space-y-5">
               <div className="space-y-2">
-                <label className="text-sm text-[#52525b]">
+                <label className="text-sm text-text-secondary">
                   标题 <RequiredAsterisk />
                 </label>
                 <Input
                   value={formTitle}
                   onChange={(e) => setFormTitle(e.target.value)}
                   placeholder="为这个提示词起个名字吧"
-                  className="h-12 rounded-[12px] border-[#d4d4d8]"
+                  className="h-12 rounded-field border-border"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-[#52525b]">分组</label>
+                <label className="text-sm text-text-secondary">分组</label>
                 <Select
                   value={formGroupId ?? DEFAULT_GROUP_VALUE}
                   onValueChange={(value) => setFormGroupId(value === DEFAULT_GROUP_VALUE ? null : value)}
                 >
-                  <SelectTrigger className="h-12 rounded-[12px] border-[#e2e2df] text-[#34322d]">
+                  <SelectTrigger className="h-12 rounded-field border-border text-foreground">
                     <SelectValue placeholder="默认" />
                   </SelectTrigger>
                   <SelectContent>
@@ -756,7 +748,7 @@ export function PromptLibraryWorkspace() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-[#52525b]">
+                <label className="text-sm text-text-secondary">
                   提示词 prompt <RequiredAsterisk />
                 </label>
                 <Textarea
@@ -765,7 +757,7 @@ export function PromptLibraryWorkspace() {
                   placeholder={
                     "示例：@卖家精灵-选产品 在亚马逊[[美国站]]搜索关键词 '{{Sports Water Bottles}}' 产品…\n可通过 {{}} 设置可编辑参数，如 [[亚马逊美国站]]"
                   }
-                  className="min-h-[180px] rounded-[12px] border-[#e5e7eb] px-4 py-3"
+                  className="min-h-confirm-dialog rounded-field border-border px-4 py-3"
                 />
               </div>
             </div>
@@ -782,15 +774,15 @@ export function PromptLibraryWorkspace() {
       </Dialog>
 
       <Dialog open={Boolean(preview)} onOpenChange={(o) => !o && setPreview(null)}>
-        <DialogContent className="max-w-[520px] rounded-[16px] p-0">
+        <DialogContent className="max-w-lg rounded-panel p-0">
           {preview ? (
             <div className="px-6 pb-6 pt-5">
-              <DialogTitle className="pr-8 text-[16px] font-semibold text-[#18181b]">{preview.title}</DialogTitle>
+              <DialogTitle className="pr-8 text-title-1 font-semibold text-foreground">{preview.title}</DialogTitle>
               {preview.description ? (
-                <p className="mt-2 text-sm text-[#71717a]">{preview.description}</p>
+                <p className="mt-2 text-sm text-text-tertiary">{preview.description}</p>
               ) : null}
-              <div className="mt-4 rounded-[12px] bg-[#f5f5f5] p-4">
-                <div className="flex items-center justify-between border-b border-[#e5e7eb] pb-2 text-xs text-[#71717a]">
+              <div className="mt-4 rounded-field bg-fill-hover p-4">
+                <div className="flex items-center justify-between border-b border-border pb-2 text-xs text-text-tertiary">
                   <span>提示词(Prompt)</span>
                   <Button
                     type="button"
@@ -802,7 +794,7 @@ export function PromptLibraryWorkspace() {
                     复制
                   </Button>
                 </div>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-[#18181b]">{preview.prompt_text}</p>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground">{preview.prompt_text}</p>
               </div>
               <div className="mt-6 flex justify-end gap-3">
                 <Button variant="outline" onClick={() => setPreview(null)}>
@@ -823,14 +815,14 @@ export function PromptLibraryWorkspace() {
       </Dialog>
 
       <Dialog open={Boolean(moveTarget)} onOpenChange={(o) => !o && setMoveTarget(null)}>
-        <DialogContent className="max-w-[400px] rounded-[16px]">
+        <DialogContent className="max-w-md rounded-panel">
           <DialogTitle>移动到</DialogTitle>
           <DialogDescription>选择目标分组（默认表示未分组）</DialogDescription>
           <Select
             value={moveGroupId ?? DEFAULT_GROUP_VALUE}
             onValueChange={(value) => setMoveGroupId(value === DEFAULT_GROUP_VALUE ? null : value)}
           >
-            <SelectTrigger className="mt-4 h-11 rounded-[10px] border-[#e2e2df]">
+            <SelectTrigger className="mt-4 h-11 rounded-control border-border">
               <SelectValue placeholder="默认" />
             </SelectTrigger>
             <SelectContent>
@@ -856,7 +848,7 @@ export function PromptLibraryWorkspace() {
       </Dialog>
 
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="max-w-[400px] rounded-[16px]">
+        <DialogContent className="max-w-md rounded-panel">
           <DialogTitle>重命名</DialogTitle>
           <Input value={renameTitle} onChange={(e) => setRenameTitle(e.target.value)} className="mt-4" placeholder="新标题" />
           <div className="mt-6 flex justify-end gap-2">
@@ -900,17 +892,17 @@ function PromptLibraryCard({
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   return (
-    <Card className="group relative overflow-hidden rounded-[18px] border border-white/70 bg-white/72 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition duration-200 hover:bg-white hover:shadow-[0_10px_24px_rgba(17,17,17,0.06)]">
-      <CardContent className="flex min-h-[198px] flex-col px-5 py-[18px]">
+    <Card className="group relative overflow-hidden rounded-popover border border-border-subtle bg-bg-surface/75 text-left shadow-surface transition duration-200 hover:bg-bg-surface hover:shadow-card-hover">
+      <CardContent className="flex min-h-50 flex-col px-5 py-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <div className="line-clamp-1 text-[16px] font-semibold leading-6 text-[#111111]">{p.title}</div>
-            <div className="mt-1 text-xs text-[#8b8c87]">{formatDateTime(p.updated_at)}</div>
+            <div className="line-clamp-1 text-title-1 font-semibold leading-6 text-foreground">{p.title}</div>
+            <div className="mt-1 text-xs text-text-tertiary">{formatDateTime(p.updated_at)}</div>
           </div>
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <Button type="button" variant="ghost" size="iconSm">
-                <MoreVertical className="h-4 w-4 text-[#71717a]" />
+                <MoreVertical className="h-4 w-4 text-text-tertiary" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-48" align="end">
@@ -932,7 +924,7 @@ function PromptLibraryCard({
                   复制提示词
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  className="text-red-600 data-[highlighted]:bg-red-50 data-[highlighted]:text-red-600"
+                  className="text-danger data-[highlighted]:bg-danger-bg data-[highlighted]:text-danger"
                   onSelect={(event) => {
                     event.preventDefault();
                     setMenuOpen(false);
@@ -946,15 +938,15 @@ function PromptLibraryCard({
             </DropdownMenuContent>
           </DropdownMenu>
           <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-            <DialogContent hideClose className="max-w-[360px] rounded-[16px] p-5" aria-describedby={undefined}>
+            <DialogContent hideClose className="max-w-sm rounded-panel p-5" aria-describedby={undefined}>
               <DialogTitle className="sr-only">删除提示词</DialogTitle>
-              <p className="text-[14px] leading-6 text-[#34322d]">确定删除该提示词吗？删除后不可恢复</p>
+              <p className="text-body leading-6 text-foreground">确定删除该提示词吗？删除后不可恢复</p>
               <div className="mt-4 flex justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-9 rounded-[10px]"
+                  className="h-9 rounded-control"
                   disabled={deleteBusy}
                   onClick={() => setDeleteOpen(false)}
                 >
@@ -964,7 +956,7 @@ function PromptLibraryCard({
                   type="button"
                   variant="destructive"
                   size="sm"
-                  className="h-9 rounded-[10px] bg-red-600 px-4 text-white hover:bg-red-700"
+                  className="h-9 rounded-control bg-danger px-4 text-primary-foreground hover:bg-danger-hover"
                   disabled={deleteBusy}
                   onClick={async () => {
                     setDeleteBusy(true);
@@ -990,16 +982,16 @@ function PromptLibraryCard({
             </DialogContent>
           </Dialog>
         </div>
-        <p className="mt-3 line-clamp-4 whitespace-pre-wrap text-[14px] leading-6 text-[#747571]">{p.prompt_text}</p>
+        <p className="mt-3 line-clamp-4 whitespace-pre-wrap text-body leading-6 text-text-tertiary">{p.prompt_text}</p>
         <div className="mt-auto flex flex-wrap justify-end gap-2 pt-4">
-          <Button type="button" variant="outline" size="sm" className="gap-1 rounded-[8px]" onClick={() => onPreview(p)}>
+          <Button type="button" variant="outline" size="sm" className="gap-1 rounded-md" onClick={() => onPreview(p)}>
             <EyeFilled className="h-3.5 w-3.5" />
             预览
           </Button>
           <Button
             type="button"
             size="sm"
-            className="rounded-[8px] bg-[#111111] text-white hover:bg-[#2a2a2a]"
+            className="rounded-md bg-primary text-primary-foreground hover:bg-link-hover"
             onClick={() => void onUse(p.prompt_text)}
           >
             使用

@@ -15,8 +15,22 @@ type FlickeringGridProps = {
   height?: number;
 };
 
-function hexToRgb(value: string) {
-  const normalized = value.replace("#", "").trim();
+function resolveCssColor(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("var(") || typeof window === "undefined") return trimmed;
+  const match = /^var\((--[^,)]+)(?:,[^)]+)?\)$/.exec(trimmed);
+  if (!match) return trimmed;
+  return getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim() || trimmed;
+}
+
+function cssColorToRgb(value: string) {
+  const color = resolveCssColor(value);
+  const rgbMatch = /^rgba?\(([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(color);
+  if (rgbMatch) {
+    return { r: Number(rgbMatch[1]), g: Number(rgbMatch[2]), b: Number(rgbMatch[3]) };
+  }
+
+  const normalized = color.replace("#", "").trim();
   const expanded = normalized.length === 3
     ? normalized
       .split("")
@@ -25,7 +39,7 @@ function hexToRgb(value: string) {
     : normalized;
 
   if (!/^[\da-fA-F]{6}$/.test(expanded)) {
-    return { r: 107, g: 114, b: 128 };
+    return { r: 107, g: 119, b: 133 };
   }
 
   const channel = Number.parseInt(expanded, 16);
@@ -41,7 +55,7 @@ export function FlickeringGrid({
   className,
   squareSize = 4,
   gridGap = 6,
-  color = "#6B7280",
+  color = "var(--color-text-tertiary)",
   maxOpacity = 0.5,
   flickerChance = 0.08,
   width,
@@ -56,7 +70,7 @@ export function FlickeringGrid({
     const context = canvas.getContext("2d");
     if (!context) return;
 
-    const { r, g, b } = hexToRgb(color);
+    const { r, g, b } = cssColorToRgb(color);
     const dpr = window.devicePixelRatio || 1;
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let frameId = 0;

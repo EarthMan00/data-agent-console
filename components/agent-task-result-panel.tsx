@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Ellipsis, Menu, Star, X } from "@/components/ui/tabler-icons";
+import { Download, Menu, Star, X } from "@/components/ui/tabler-icons";
 
 import { AutoToast } from "@/components/auto-toast";
 import { TaskResultSheetBody } from "@/components/task-result-sheet-body";
@@ -12,15 +12,14 @@ import {
   createUserFavorite,
   deleteUserFavorite,
   downloadAuthorizedFile,
-  formatAgentApiErrorForUser,
   getFavoriteByTask,
 } from "@/lib/agent-api/client";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { buildFavoriteSnapshotFromArtifacts } from "@/lib/build-favorite-snapshot";
-import { pickPrimaryTaskDataArtifact } from "@/lib/platform-task-artifacts";
+import { artifactDownloadNameForUi, listDownloadableTaskArtifacts, pickPrimaryTaskDataArtifact } from "@/lib/platform-task-artifacts";
+import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import {
   buildTaskResultSheets,
-  downloadTargetForSheet,
   sheetSupportsTableCodeToggle,
   type TaskResultSheet,
 } from "@/lib/task-result-sheets";
@@ -46,7 +45,13 @@ type AgentTaskResultPanelProps = {
   subtaskResultTabs?: AgentTaskSubtaskTab[];
   activeSubtaskTaskId?: string | null;
   onSubtaskSelect?: (taskId: string) => void;
+  /** 任务失败时的错误信息 */
+  errorMessage?: string | null;
+  /** 任务状态（如 FAILED / SUCCESS） */
+  taskStatus?: string | null;
 };
+
+const FRONTEND_MOCK_TOKEN = "__frontend_mock_token__";
 
 function effectiveBundleDownloadPath(p: {
   bundleDownloadApi?: string | null;
@@ -97,28 +102,28 @@ function ExcelStyleSheetTabBar({
   if (tabs.length <= 1) return null;
 
   return (
-    <div className="flex min-w-0 shrink-0 items-stretch border-t border-[#dadce0] bg-[#f1f3f4]">
+    <div className="flex min-w-0 shrink-0 items-stretch border-t border-border bg-fill-hover">
       <Popover open={sheetMenuOpen} onOpenChange={setSheetMenuOpen}>
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="flex h-9 w-9 shrink-0 items-center justify-center border-r border-[#dadce0] text-[#5f6368] transition hover:bg-[rgba(55,53,47,0.06)]"
+            className="flex h-9 w-9 shrink-0 items-center justify-center border-r border-border text-text-secondary transition hover:bg-fill-hover"
             aria-label="全部工作表"
           >
             <Menu className="h-4 w-4" strokeWidth={2} />
           </button>
         </PopoverTrigger>
-        <PopoverContent side="top" align="start" className="w-[min(100vw-2rem,17rem)] p-1">
-          <div className="max-h-[min(60vh,320px)] overflow-y-auto">
+        <PopoverContent side="top" align="start" className="w-responsive-popover-md p-1">
+          <div className="max-h-agent-result overflow-y-auto">
             {tabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 className={cn(
-                  "flex w-full rounded-md px-2 py-2 text-left text-[14px] transition",
+                  "flex w-full rounded-md px-2 py-2 text-left text-body transition",
                   activeId === t.id
-                    ? "bg-[#e6f4ea] font-medium text-[#15803d]"
-                    : "text-[#3c4043] hover:bg-[rgba(55,53,47,0.06)]",
+                    ? "bg-success-bg font-medium text-success"
+                    : "text-foreground hover:bg-fill-hover",
                 )}
                 onClick={() => {
                   onSelect(t.id);
@@ -147,14 +152,14 @@ function ExcelStyleSheetTabBar({
               onClick={() => onSelect(t.id)}
               className={cn(
                 "relative shrink-0 px-3 pb-2 pt-1.5 text-left leading-tight transition",
-                dense ? "text-[12px]" : "text-[14px]",
-                active ? "font-medium text-[#15803d]" : "text-[#5f6368] hover:bg-[rgba(55,53,47,0.06)]",
+                dense ? "text-caption" : "text-body",
+                active ? "font-medium text-success" : "text-text-secondary hover:bg-fill-hover",
               )}
             >
-              <span className="line-clamp-1 max-w-[min(220px,52vw)]">{t.label}</span>
+              <span className="line-clamp-1 max-w-task-label-fluid">{t.label}</span>
               {active ? (
                 <span
-                  className="absolute bottom-0 left-2 right-2 h-[3px] rounded-t-[2px] bg-[#15803d]"
+                  className="absolute bottom-0 left-2 right-2 h-1 rounded-t-xs bg-success"
                   aria-hidden
                 />
               ) : null}
@@ -178,11 +183,17 @@ export function AgentTaskResultPanel({
   subtaskResultTabs,
   activeSubtaskTaskId,
   onSubtaskSelect,
+  errorMessage,
+  taskStatus,
 }: AgentTaskResultPanelProps) {
   const tid = (taskId ?? "").trim();
   const sheets = useMemo(() => buildTaskResultSheets(artifacts ?? []), [artifacts]);
   const fallbackPrimary = pickPrimaryTaskDataArtifact(artifacts ?? []);
   const useSheetUi = sheets.length > 0;
+  const displayErrorMessage = useMemo(
+    () => humanizeTaskErrorMessage(errorMessage ?? ""),
+    [errorMessage],
+  );
 
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "code">("table");
@@ -214,29 +225,43 @@ export function AgentTaskResultPanel({
   const showTableCodeToggle = Boolean(activeSheet && sheetSupportsTableCodeToggle(activeSheet));
 
   const bundleDownloadPath = effectiveBundleDownloadPath({ bundleDownloadApi, zipDownloadApi, taskId });
+  const downloadableArtifacts = useMemo(
+    () => listDownloadableTaskArtifacts(artifacts ?? []),
+    [artifacts],
+  );
+
+  /** 多文件打包：编排多步且正在查看某一子任务时只打该任务，否则用整轮 bundle */
+  const multiFileDownloadPath = useMemo(() => {
+    if (subtaskResultTabs && subtaskResultTabs.length > 1 && tid) {
+      return `/api/tasks/${encodeURIComponent(tid)}/download`;
+    }
+    return bundleDownloadPath ?? (tid ? `/api/tasks/${encodeURIComponent(tid)}/download` : null);
+  }, [bundleDownloadPath, subtaskResultTabs, tid]);
 
   const downloadCurrent = useCallback(() => {
     if (!withFreshToken) return;
-    if (useSheetUi && activeSheet) {
-      const target = downloadTargetForSheet(activeSheet, viewMode);
-      if (target) {
-        void withFreshToken(async (token) => {
-          const name = safeFilename(target.original_name, "download");
-          await downloadAuthorizedFile(token, target.download_api, name);
-        });
-        return;
-      }
+
+    if (downloadableArtifacts.length > 1) {
+      if (!multiFileDownloadPath) return;
+      void withFreshToken(async (token) => {
+        const name = (bundleDownloadName ?? "").trim() || `${tid || "task"}.zip`;
+        await downloadAuthorizedFile(token, multiFileDownloadPath, name);
+      });
+      return;
     }
-    if (!useSheetUi && fallbackPrimary) {
+
+    if (downloadableArtifacts.length === 1) {
+      const target = downloadableArtifacts[0]!;
       void withFreshToken(async (token) => {
         await downloadAuthorizedFile(
           token,
-          fallbackPrimary.download_api,
-          safeFilename(fallbackPrimary.original_name, "download"),
+          target.download_api,
+          safeFilename(artifactDownloadNameForUi(target.original_name), "download"),
         );
       });
       return;
     }
+
     if (bundleDownloadPath) {
       void withFreshToken(async (token) => {
         const name =
@@ -246,21 +271,17 @@ export function AgentTaskResultPanel({
       });
     }
   }, [
-    activeSheet,
     bundleDownloadName,
     bundleDownloadPath,
-    fallbackPrimary,
+    downloadableArtifacts,
+    multiFileDownloadPath,
     tid,
-    useSheetUi,
-    viewMode,
     withFreshToken,
   ]);
 
   const canDownloadTop = Boolean(
     withFreshToken &&
-      ((useSheetUi && activeSheet && downloadTargetForSheet(activeSheet, viewMode)) ||
-        (!useSheetUi && fallbackPrimary) ||
-        bundleDownloadPath),
+      (downloadableArtifacts.length > 0 || bundleDownloadPath),
   );
 
   const primaryForFavorite = fallbackPrimary;
@@ -268,13 +289,19 @@ export function AgentTaskResultPanel({
   const [favorited, setFavorited] = useState(false);
   const [favoriteId, setFavoriteId] = useState<string | null>(null);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
-  const [notice, setNotice] = useState("");
-  const [noticeVariant, setNoticeVariant] = useState<"default" | "error">("default");
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastVariant, setToastVariant] = useState<"default" | "error">("default");
+
+  const showToast = useCallback((message: string, variant: "default" | "error" = "default") => {
+    setToastVariant(variant);
+    setToastMessage(message);
+  }, []);
 
   const refreshFavoriteState = useCallback(async () => {
     if (!withFreshToken || !tid) return;
     try {
       await withFreshToken(async (token) => {
+        if (token === FRONTEND_MOCK_TOKEN) return;
         const r = await getFavoriteByTask(token, tid);
         setFavorited(r.favorited);
         setFavoriteId(r.favorite_id);
@@ -291,40 +318,43 @@ export function AgentTaskResultPanel({
 
   const toggleFavorite = async () => {
     if (!withFreshToken || !tid || !primaryForFavorite) {
-      setNoticeVariant("error");
-      setNotice("当前无可收藏的结果文件。");
+      showToast("当前无可收藏的结果文件。", "error");
       return;
     }
     setFavoriteBusy(true);
-    setNotice("");
     try {
       if (favorited && favoriteId) {
         await withFreshToken(async (token) => {
+          if (token === FRONTEND_MOCK_TOKEN) return;
           await deleteUserFavorite(token, favoriteId);
         });
         setFavorited(false);
         setFavoriteId(null);
-        setNoticeVariant("default");
-        setNotice("已取消收藏。");
+        showToast("已取消收藏");
         return;
       }
       const built = await buildFavoriteSnapshotFromArtifacts(withFreshToken, {
         artifacts: artifacts ?? [],
       });
+      let createdFavoriteId: string | null = null;
       await withFreshToken(async (token) => {
-        await createUserFavorite(token, {
+        if (token === FRONTEND_MOCK_TOKEN) {
+          createdFavoriteId = `mock-favorite-${tid}`;
+          return;
+        }
+        const created = await createUserFavorite(token, {
           title: built.title,
           source_task_id: tid,
           snapshot: built.snapshot,
           copy_artifact_id: built.copy_artifact_id ?? null,
         });
+        createdFavoriteId = created.id || null;
       });
-      await refreshFavoriteState();
-      setNoticeVariant("default");
-      setNotice("已加入收藏夹。");
-    } catch (e) {
-      setNoticeVariant("error");
-      setNotice(formatAgentApiErrorForUser(e));
+      setFavorited(true);
+      setFavoriteId(createdFavoriteId);
+      showToast("收藏成功，可前往收藏夹查看");
+    } catch {
+      showToast("收藏失败，请稍后重试", "error");
     } finally {
       setFavoriteBusy(false);
     }
@@ -335,25 +365,34 @@ export function AgentTaskResultPanel({
   const showSubtaskSheetBar = Boolean(subtaskResultTabs && subtaskResultTabs.length > 1 && onSubtaskSelect);
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col bg-white" data-testid="agent-preview-panel">
-      <div className="flex shrink-0 flex-col gap-1 border-b border-[#e2e2df] bg-white px-3 py-2 sm:px-4">
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-bg-surface" data-testid="agent-preview-panel">
+      <AutoToast
+        message={toastMessage}
+        variant={toastVariant}
+        onDismiss={() => {
+          setToastMessage(null);
+          setToastVariant("default");
+        }}
+        durationMs={2200}
+      />
+      <div className="flex shrink-0 flex-col gap-1 border-b border-border bg-bg-surface px-3 py-2 sm:px-4">
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <div className="text-[14px] font-medium text-[#1f2421]">任务执行结果</div>
+            <div className="text-body font-medium text-foreground">任务执行结果</div>
             {dateLine ? (
-              <div className="mt-0.5 text-[12px] text-[#8b8c87]">最后生成时间：{dateLine}</div>
+              <div className="mt-0.5 text-caption text-text-tertiary">最后生成时间：{dateLine}</div>
             ) : null}
           </div>
-          <div className="flex max-w-[55%] shrink-0 flex-wrap items-center justify-end gap-1 sm:max-w-none">
+          <div className="flex max-w-agent-panel-controls shrink-0 flex-wrap items-center justify-end gap-1 sm:max-w-none">
             {showTableCodeToggle ? (
-              <div className="mr-1 flex rounded-[10px] border border-[#e2e2df] bg-[#f0f0ef] p-0.5">
+              <div className="mr-1 flex rounded-control border border-border bg-fill-hover p-0.5">
                 <button
                   type="button"
                   className={cn(
-                    "rounded-[8px] px-2.5 py-1 text-xs font-medium transition",
+                    "rounded-md px-2.5 py-1 text-xs font-medium transition",
                     viewMode === "table"
-                      ? "bg-white text-[#111111] shadow-none"
-                      : "text-[#747571] hover:text-[#34322d]",
+                      ? "bg-bg-surface text-foreground shadow-none"
+                      : "text-text-tertiary hover:text-foreground",
                   )}
                   onClick={() => setViewMode("table")}
                 >
@@ -362,10 +401,10 @@ export function AgentTaskResultPanel({
                 <button
                   type="button"
                   className={cn(
-                    "rounded-[8px] px-2.5 py-1 text-xs font-medium transition",
+                    "rounded-md px-2.5 py-1 text-xs font-medium transition",
                     viewMode === "code"
-                      ? "bg-white text-[#111111] shadow-none"
-                      : "text-[#747571] hover:text-[#34322d]",
+                      ? "bg-bg-surface text-foreground shadow-none"
+                      : "text-text-tertiary hover:text-foreground",
                   )}
                   onClick={() => setViewMode("code")}
                 >
@@ -379,42 +418,35 @@ export function AgentTaskResultPanel({
                 aria-label="下载当前结果"
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 rounded-[10px] text-[#747571]"
+                className="h-8 w-8 rounded-control text-text-tertiary"
                 onClick={() => downloadCurrent()}
               >
                 <Download className="h-4 w-4" />
               </Button>
             ) : null}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  aria-label="更多"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-[10px] text-[#747571]"
-                >
-                  <Ellipsis className="h-4 w-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-52 p-1">
-                <button
-                  type="button"
-                  disabled={favoriteBusy || !tid}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-[rgba(55,53,47,0.06)] disabled:opacity-50"
-                  onClick={() => void toggleFavorite()}
-                >
-                  <Star className={`h-4 w-4 shrink-0 ${favorited ? "fill-amber-400 text-amber-500" : ""}`} />
-                  {favorited ? "取消收藏" : "收藏报告"}
-                </button>
-              </PopoverContent>
-            </Popover>
+            <Button
+              type="button"
+              aria-label={favorited ? "取消收藏报告" : "收藏报告"}
+              variant="outline"
+              size="sm"
+              disabled={favoriteBusy || !tid}
+              className="h-8 shrink-0 gap-1.5 rounded-control border-border bg-bg-surface px-2.5 text-xs text-foreground hover:bg-fill-hover"
+              onClick={() => void toggleFavorite()}
+            >
+              <Star
+                className={cn(
+                  "h-4 w-4 shrink-0",
+                  favorited ? "fill-warning text-warning" : "text-text-tertiary",
+                )}
+              />
+              <span>{favorited ? "取消收藏" : "收藏报告"}</span>
+            </Button>
             <Button
               type="button"
               aria-label="关闭任务结果"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-[10px] text-[#747571]"
+              className="h-8 w-8 rounded-control text-text-tertiary"
               onClick={onClose}
             >
               <X className="h-4 w-4" />
@@ -424,20 +456,34 @@ export function AgentTaskResultPanel({
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {(taskStatus === "FAILED" && displayErrorMessage) ? (
+          <div className="shrink-0 border-b border-danger-border bg-danger-bg px-3 py-3 sm:px-4">
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 shrink-0 text-sm font-semibold text-danger">执行失败</span>
+            </div>
+            <p className="mt-1.5 whitespace-pre-wrap text-body leading-relaxed text-danger">
+              {displayErrorMessage}
+            </p>
+          </div>
+        ) : null}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto px-3 pt-2 sm:px-4">
           {withFreshToken && useSheetUi && activeSheet ? (
             <TaskResultSheetBody sheet={activeSheet} viewMode={viewMode} withFreshToken={withFreshToken} />
           ) : withFreshToken && !useSheetUi && fallbackPrimary ? (
             <TaskSingleDataArtifactPreview artifact={fallbackPrimary} withFreshToken={withFreshToken} />
+          ) : taskStatus === "FAILED" ? (
+            <p className="text-body leading-6 text-text-secondary">
+              任务未产生可展示的数据文件（CSV/JSON 等），详情请查看上方错误信息。
+            </p>
           ) : (
-            <p className="text-[14px] leading-6 text-[#64748b]">
+            <p className="text-body leading-6 text-text-secondary">
               暂无数据或报告类结果文件（CSV/JSON/Markdown/HTML/PDF 等）可展示。
             </p>
           )}
         </div>
 
         {/* Excel 式底部 sheet：截图同款浅灰条 + 绿色激活下划线；多子任务时栏在最底，其上方可为同任务多文件 */}
-        <div className="flex shrink-0 flex-col shadow-[0_-1px_0_#dadce0]">
+        <div className="flex shrink-0 flex-col shadow-hairline">
           {useSheetUi && sheets.length > 1 ? (
             <ExcelStyleSheetTabBar
               tabs={sheets.map((s) => ({ id: s.id, label: s.label }))}
@@ -455,13 +501,6 @@ export function AgentTaskResultPanel({
           ) : null}
         </div>
       </div>
-      <AutoToast
-        message={notice || null}
-        variant={noticeVariant}
-        onDismiss={() => {
-          setNotice("");
-        }}
-      />
     </div>
   );
 }

@@ -67,17 +67,17 @@ function JsonCodeBlock({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 py-8 text-[14px] text-[#64748b]">
+      <div className="flex items-center gap-2 py-8 text-body text-text-secondary">
         <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
         正在加载 JSON…
       </div>
     );
   }
   if (error) {
-    return <p className="py-4 text-[14px] text-red-600">{error}</p>;
+    return <p className="py-4 text-body text-danger">{error}</p>;
   }
   return (
-    <pre className="min-h-0 min-w-0 flex-1 overflow-auto rounded-[10px] border border-[#e5e7eb] bg-[#0f172a] p-3 text-[12px] leading-relaxed text-[#e2e8f0]">
+    <pre className="min-h-0 min-w-0 flex-1 overflow-auto rounded-control border border-border bg-code-bg p-3 text-caption leading-relaxed text-code-text">
       {formatted}
     </pre>
   );
@@ -87,7 +87,7 @@ function JsonCodeBlock({
 export function InlineJsonArtifactBlock({ text }: { text: string }) {
   const formatted = useMemo(() => tryFormatJson(text), [text]);
   return (
-    <pre className="min-h-0 min-w-0 flex-1 overflow-auto rounded-[10px] border border-[#e5e7eb] bg-[#0f172a] p-3 text-[12px] leading-relaxed text-[#e2e8f0]">
+    <pre className="min-h-0 min-w-0 flex-1 overflow-auto rounded-control border border-border bg-code-bg p-3 text-caption leading-relaxed text-code-text">
       {formatted}
     </pre>
   );
@@ -121,5 +121,5 @@ export function TaskResultSheetBody({ sheet, viewMode, withFreshToken }: TaskRes
     return <JsonCodeBlock downloadApi={sheet.json.download_api} withFreshToken={withFreshToken} />;
   }
 
-  return <p className="text-[14px] text-[#64748b]">暂无可展示内容。</p>;
+  return <p className="text-body text-text-secondary">暂无可展示内容。</p>;
 }

@@ -99,6 +99,7 @@ import type {
   UserScheduledTaskItemApi,
 } from "@/lib/agent-api/types";
 import { cn } from "@/lib/utils";
+import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 
 const PRIMARY_TABS = ["已定时", "运行记录"] as const;
 const WORKFLOW_STATUS_OPTIONS = ["全部状态", "生效中", "已暂停", "已完结"] as const;
@@ -207,7 +208,7 @@ function ScheduleEmptyState({ onCreate }: { onCreate: () => void }) {
           type="button"
           variant="ghost"
           size="sm"
-          className="h-auto px-1 py-0 text-[14px] font-medium text-[#18181b] hover:bg-transparent hover:text-[#27272a]"
+          className="h-auto px-1 py-0 text-body font-medium text-foreground hover:bg-transparent hover:text-foreground"
           onClick={onCreate}
         >
           立即创建
@@ -896,11 +897,11 @@ export function SchedulesWorkspace() {
       }}
     >
       <DialogContent
-        className="flex max-h-[min(calc(100vh-48px),680px)] max-w-[520px] flex-col overflow-hidden rounded-[16px] border-transparent p-0 shadow-[0_18px_48px_rgba(0,0,0,0.14)] [&>button]:right-5 [&>button]:top-5"
-        overlayClassName="bg-[rgba(17,17,17,0.42)] backdrop-blur-[1px]"
+        className="flex max-h-schedule-dialog max-w-lg flex-col overflow-hidden rounded-panel border-transparent p-0 shadow-popover-strong [&>button]:right-5 [&>button]:top-5"
+        overlayClassName="bg-mask-bg-strong backdrop-blur-soft"
       >
-        <div className="shrink-0 bg-white px-6 pb-3 pt-5">
-          <DialogTitle className="text-lg font-medium leading-7 text-[#18181b]">
+        <div className="shrink-0 bg-bg-surface px-6 pb-3 pt-5">
+          <DialogTitle className="text-lg font-medium leading-7 text-foreground">
             {editId ? "编辑定时任务" : "创建定时任务"}
           </DialogTitle>
           <DialogDescription className="sr-only">
@@ -908,7 +909,7 @@ export function SchedulesWorkspace() {
           </DialogDescription>
         </div>
         <div className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto px-6 pb-3">
-            {notice ? <p className="mt-3 text-sm text-[#52525b]">{notice}</p> : null}
+            {notice ? <p className="mt-3 text-sm text-text-secondary">{notice}</p> : null}
 
             <div className="mt-4 space-y-4">
                 <Field label="标题" required>
@@ -918,9 +919,9 @@ export function SchedulesWorkspace() {
                       maxLength={SCHEDULE_TITLE_MAX_LENGTH}
                       onChange={(e) => setTitle(e.target.value)}
                       placeholder="请输入任务名称"
-                      className="h-10 rounded-[10px] border-transparent bg-[#f7f7f7] px-3 pr-14 text-sm text-[#18181b] placeholder:text-[#a1a1aa] focus-visible:ring-0"
+                      className="h-10 rounded-control border-transparent bg-fill-hover px-3 pr-14 text-sm text-foreground placeholder:text-text-disabled focus-visible:ring-0"
                     />
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#71717a]">
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-tertiary">
                       {title.length}/{SCHEDULE_TITLE_MAX_LENGTH}
                     </span>
                   </div>
@@ -943,14 +944,14 @@ export function SchedulesWorkspace() {
                       showSubmitButton={false}
                       submitOnEnter={false}
                       visualStyle="heroMinimal"
-                      containerClassName="relative z-30 w-full rounded-[10px] border border-transparent bg-[#f7f7f7] shadow-none"
-                      textareaClassName="min-h-[84px] max-h-[9em] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1 pr-2 text-sm font-normal leading-6 text-[#1d2129] outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
+                      containerClassName="relative z-30 w-full rounded-control border border-transparent bg-fill-hover shadow-none"
+                      textareaClassName="min-h-composer max-h-composer-compact min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1 pr-2 text-sm font-normal leading-6 text-foreground outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
                       sendButtonClassName={cn(
-                        "h-8 w-8 min-w-0 rounded-full border border-transparent p-0 text-white shadow-none transition",
-                        serializedPrompt ? "bg-[#111111] hover:bg-[#2a2a2a]" : "bg-[#dededc] hover:bg-[#d1d1cf]",
+                        "h-8 w-8 min-w-0 rounded-full border border-transparent p-0 text-primary-foreground shadow-none transition",
+                        serializedPrompt ? "bg-primary hover:bg-link-hover" : "bg-fill-active hover:bg-fill-active",
                       )}
                     />
-                    <span className="pointer-events-none absolute bottom-3 right-3 text-xs text-[#71717a]">
+                    <span className="pointer-events-none absolute bottom-3 right-3 text-xs text-text-tertiary">
                       {serializedPrompt.length}/{SCHEDULE_PROMPT_MAX_LENGTH}
                     </span>
                   </div>
@@ -976,7 +977,7 @@ export function SchedulesWorkspace() {
                         }
                       }}
                     >
-                      <SelectTrigger className="h-10 w-full rounded-[10px] border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] focus-visible:ring-0">
+                      <SelectTrigger className="h-10 w-full rounded-control border-transparent bg-fill-hover px-3 text-sm text-foreground focus-visible:ring-0">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -995,7 +996,7 @@ export function SchedulesWorkspace() {
                         type="date"
                         value={runOnceDate}
                         onChange={(e) => setRunOnceDate(e.target.value)}
-                        className="h-10 w-full min-w-0 rounded-[10px] border border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] outline-none [color-scheme:light]"
+                        className="color-scheme-light h-10 w-full min-w-0 rounded-control border border-transparent bg-fill-hover px-3 text-sm text-foreground outline-none"
                       />
                     ) : null}
                     {scheduleKind === "每周" ? (
@@ -1004,16 +1005,16 @@ export function SchedulesWorkspace() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-10 w-full justify-between rounded-[10px] border-transparent bg-[#f7f7f7] px-3 text-left text-sm font-normal text-[#18181b] hover:bg-[#eeeeee]"
+                            className="h-10 w-full justify-between rounded-control border-transparent bg-fill-hover px-3 text-left text-sm font-normal text-foreground hover:bg-bg-subtle"
                           >
-                            <span className={cn("truncate", selectedWeekdays.size === 0 && "text-[#9ca3af]")}>
+                            <span className={cn("truncate", selectedWeekdays.size === 0 && "text-text-disabled")}>
                               {weekdayButtonLabel(selectedWeekdays)}
                             </span>
-                            <ChevronDown className="h-4 w-4 shrink-0 text-[#71717a]" />
+                            <ChevronDown className="h-4 w-4 shrink-0 text-text-tertiary" />
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent
-                          className="w-[min(100vw-2rem,16rem)] p-0"
+                          className="w-responsive-popover-sm p-0"
                           align="start"
                           onOpenAutoFocus={(ev) => ev.preventDefault()}
                         >
@@ -1021,7 +1022,7 @@ export function SchedulesWorkspace() {
                             {WEEKDAY_OPTIONS.map((w) => (
                               <label
                                 key={w.value}
-                                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[rgba(55,53,47,0.06)]"
+                                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-fill-hover"
                               >
                                 <Checkbox
                                   checked={selectedWeekdays.has(w.value)}
@@ -1053,7 +1054,7 @@ export function SchedulesWorkspace() {
                           setSelectedMonthDays(Number.isInteger(next) && next >= 1 && next <= 31 ? new Set([next]) : new Set());
                         }}
                       >
-                            <SelectTrigger className="h-10 w-full rounded-[10px] border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] focus-visible:ring-0">
+                            <SelectTrigger className="h-10 w-full rounded-control border-transparent bg-fill-hover px-3 text-sm text-foreground focus-visible:ring-0">
                               <SelectValue placeholder="选择日期" />
                             </SelectTrigger>
                             <SelectContent className="max-h-64">
@@ -1069,7 +1070,7 @@ export function SchedulesWorkspace() {
                     ) : null}
 
                     <Select value={timeHhmm} onValueChange={setTimeHhmm}>
-                      <SelectTrigger className="h-10 w-full rounded-[10px] border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] focus-visible:ring-0">
+                      <SelectTrigger className="h-10 w-full rounded-control border-transparent bg-fill-hover px-3 text-sm text-foreground focus-visible:ring-0">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1085,20 +1086,20 @@ export function SchedulesWorkspace() {
                   </div>
 
                   {scheduleKind === "单次" && runOnceDate.trim() ? (
-                    <p className="mt-2 text-xs text-[#a1a1aa]">
+                    <p className="mt-2 text-xs text-text-disabled">
                       仅执行一次: {runOnceDate} {toHhmm(timeHhmm)}
                     </p>
                   ) : null}
                   {scheduleKind === "单次" && !runOnceDate && !tryRunSubmitBlocked ? (
-                    <p className="mt-2 text-xs text-[#a1a1aa]">请选择执行日期</p>
+                    <p className="mt-2 text-xs text-text-disabled">请选择执行日期</p>
                   ) : null}
                   {scheduleKind === "每周" && selectedWeekdays.size === 0 && !tryRunSubmitBlocked ? (
-                    <p className="mt-2 text-xs text-[#a1a1aa]">请选择星期</p>
+                    <p className="mt-2 text-xs text-text-disabled">请选择星期</p>
                   ) : scheduleKind === "每月" && selectedMonthDays.size === 0 && !tryRunSubmitBlocked ? (
-                    <p className="mt-2 text-xs text-[#a1a1aa]">请选择日期</p>
+                    <p className="mt-2 text-xs text-text-disabled">请选择日期</p>
                   ) : null}
                   {tryRunSubmitBlocked ? (
-                    <p className="mt-2 text-xs text-red-600" role="alert">
+                    <p className="mt-2 text-xs text-danger" role="alert">
                       无法排程，请检查周期、星期/日期或时间。
                     </p>
                   ) : null}
@@ -1106,13 +1107,13 @@ export function SchedulesWorkspace() {
                 <div className="space-y-3">
                   <button
                     type="button"
-                    className="flex h-10 w-full items-center justify-between rounded-[10px] bg-[#f7f7f7] px-3 text-left text-sm font-medium text-[#18181b] transition hover:bg-[#eeeeee]"
+                    className="flex h-10 w-full items-center justify-between rounded-control bg-fill-hover px-3 text-left text-sm font-medium text-foreground transition hover:bg-bg-subtle"
                     aria-expanded={advancedOpen}
                     onClick={() => setAdvancedOpen((open) => !open)}
                   >
                     <span>高级设置</span>
                     <ChevronDown
-                      className={cn("h-4 w-4 text-[#71717a] transition-transform", advancedOpen && "rotate-180")}
+                      className={cn("h-4 w-4 text-text-tertiary transition-transform", advancedOpen && "rotate-180")}
                     />
                   </button>
                   {advancedOpen ? (
@@ -1122,7 +1123,7 @@ export function SchedulesWorkspace() {
                           value={formGroupId ?? DEFAULT_GROUP_VALUE}
                           onValueChange={(value) => setFormGroupId(value === DEFAULT_GROUP_VALUE ? null : value)}
                         >
-                          <SelectTrigger className="h-10 w-full rounded-[10px] border-transparent bg-[#f7f7f7] px-3 text-sm text-[#18181b] focus-visible:ring-0">
+                          <SelectTrigger className="h-10 w-full rounded-control border-transparent bg-fill-hover px-3 text-sm text-foreground focus-visible:ring-0">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -1154,7 +1155,7 @@ export function SchedulesWorkspace() {
                 </div>
             </div>
         </div>
-        <div className="shrink-0 border-t border-[#e5e7eb] bg-white px-6 py-3">
+        <div className="shrink-0 border-t border-border bg-bg-surface px-6 py-3">
           <div className="flex flex-wrap items-center justify-end gap-3">
             {editId ? <span className="mr-auto" aria-hidden /> : null}
             <div className="relative z-10 flex flex-shrink-0 items-center justify-end gap-3">
@@ -1164,7 +1165,7 @@ export function SchedulesWorkspace() {
                     <span className="inline-flex">
                       <Button
                         type="button"
-                        className="h-9 shrink-0 rounded-[10px] bg-[#111111] px-4 text-sm text-white hover:bg-[#2a2a2a]"
+                        className="h-9 shrink-0 rounded-control bg-primary px-4 text-sm text-primary-foreground hover:bg-link-hover"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -1180,11 +1181,11 @@ export function SchedulesWorkspace() {
                     side="top"
                     align="end"
                     sideOffset={8}
-                    className="w-[min(calc(100vw-2rem),300px)] p-4"
+                    className="w-responsive-popover-sm p-4"
                     onCloseAutoFocus={(e) => e.preventDefault()}
                   >
-                    <p className="text-sm font-semibold text-[#18181b]">提示词已修改</p>
-                    <p className="mt-2 text-xs leading-relaxed text-[#71717a]">
+                    <p className="text-sm font-semibold text-foreground">提示词已修改</p>
+                    <p className="mt-2 text-xs leading-relaxed text-text-tertiary">
                       修改提示词后需要重新试运行才能保存
                     </p>
                     <div className="mt-4 flex justify-end gap-2">
@@ -1192,7 +1193,7 @@ export function SchedulesWorkspace() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="rounded-[10px]"
+                        className="rounded-control"
                         onClick={() => setEditPromptChangedSaveGateOpen(false)}
                       >
                         取消
@@ -1200,7 +1201,7 @@ export function SchedulesWorkspace() {
                       <Button
                         type="button"
                         size="sm"
-                        className="rounded-[10px] bg-[#111111] text-white hover:bg-[#2a2a2a]"
+                        className="rounded-control bg-primary text-primary-foreground hover:bg-link-hover"
                         disabled={busy}
                         onClick={() => {
                           setEditPromptChangedSaveGateOpen(false);
@@ -1215,7 +1216,7 @@ export function SchedulesWorkspace() {
               ) : (
                 <Button
                   type="button"
-                  className="h-9 shrink-0 rounded-[10px] bg-[#111111] px-4 text-sm text-white hover:bg-[#2a2a2a]"
+                  className="h-9 shrink-0 rounded-control bg-primary px-4 text-sm text-primary-foreground hover:bg-link-hover"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1237,7 +1238,7 @@ export function SchedulesWorkspace() {
   if (!isPlatformBackendEnabled() || !platformAgent) {
     return (
       <AliceShell currentPath="/schedules">
-        <div className="px-8 py-12 text-sm text-[#747571]">当前未启用平台后端，无法管理定时任务。</div>
+        <div className="px-8 py-12 text-sm text-text-tertiary">当前未启用平台后端，无法管理定时任务。</div>
       </AliceShell>
     );
   }
@@ -1256,19 +1257,19 @@ export function SchedulesWorkspace() {
         durationMs={2200}
       />
       {scheduleFormDialog}
-      <div className="px-8 pb-14 pt-5">
-        <div className="mx-auto max-w-[1040px]">
+      <div className="px-4 pb-14 pt-5 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-page-content">
           {error && !showScheduledLoadError && !showRunsLoadError ? (
-            <div className="mb-4 text-sm text-red-600" role="alert">
+            <div className="mb-4 text-sm text-danger" role="alert">
               {error}
             </div>
           ) : null}
           <div>
             <div className="flex items-center">
-              <h1 className="shrink-0 whitespace-nowrap text-[24px] font-semibold leading-8 text-[#111111]">定时任务</h1>
+              <h1 className="shrink-0 whitespace-nowrap text-title-3 font-semibold leading-8 text-foreground">定时任务</h1>
             </div>
 
-            <div className="mt-5 flex min-h-[40px] flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="mt-5 flex min-h-10 w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <Tabs
                 value={primaryTab}
                 onValueChange={(value) => {
@@ -1285,14 +1286,14 @@ export function SchedulesWorkspace() {
                   ))}
                 </TabsList>
               </Tabs>
-              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 lg:w-auto lg:shrink-0">
-                <div className="relative w-full min-w-0 max-[960px]:hidden sm:w-[220px]">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+              <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 lg:w-auto lg:shrink-0 lg:flex-nowrap lg:justify-end">
+                <div className="relative w-full min-w-0 max-lg:hidden sm:w-sidebar-admin">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
                   <Input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder={searchPlaceholder}
-                    className="h-9 w-full rounded-[10px] border-[#e2e2df] pl-9"
+                    className="h-9 w-full rounded-control border-border pl-9"
                   />
                 </div>
                 <Button
@@ -1300,14 +1301,14 @@ export function SchedulesWorkspace() {
                   variant="outline"
                   size="icon"
                   aria-label={searchPlaceholder}
-                  className="hidden h-9 w-9 shrink-0 rounded-[10px] border-[#e2e2df] bg-white text-[#34322d] hover:bg-[rgba(55,53,47,0.06)] max-[960px]:inline-flex"
+                  className="hidden h-9 w-9 shrink-0 rounded-control border-border bg-bg-surface text-foreground hover:bg-fill-hover max-lg:inline-flex"
                   onClick={() => setSearchDialogOpen(true)}
                 >
                   <Search className="h-4 w-4" />
                 </Button>
                 <Button
                   type="button"
-                  className="h-9 shrink-0 rounded-[10px] bg-[#111111] px-3 text-white hover:bg-[#2a2a2a] sm:px-4"
+                  className="h-9 shrink-0 whitespace-nowrap rounded-control bg-primary px-3 text-primary-foreground hover:bg-link-hover sm:px-4"
                   onClick={() => {
                     const g = createGroupIdForChip();
                     const q = g ? `&groupId=${encodeURIComponent(g)}` : "";
@@ -1322,8 +1323,8 @@ export function SchedulesWorkspace() {
 
             {/* 第三行：已定时 = 左分组胶囊 + 右（状态/批量/视图，与目标稿第二幅图对齐）；运行记录 = 仅右侧筛选区 */}
             {primaryTab === "已定时" ? (
-              <div className="mt-5 flex min-h-[40px] flex-wrap items-center justify-between gap-x-4 gap-y-3">
-                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <div className="mt-5 flex min-h-10 w-full max-w-4xl flex-wrap items-center justify-start gap-x-4 gap-y-3 lg:w-fit">
+                <div className="flex min-w-0 flex-wrap items-center gap-2 lg:flex-none">
                   <Tabs value={activeChip} onValueChange={setActiveChip}>
                     <TabsList className="flex-wrap justify-start">
                       <TabsTrigger value="全部">全部</TabsTrigger>
@@ -1331,9 +1332,9 @@ export function SchedulesWorkspace() {
                       {groups.map((g) => {
                         const name = g.name || "未命名";
                         return (
-                          <div key={g.id} className="group/chip relative inline-flex items-center rounded-[8px]">
+                          <div key={g.id} className="group/chip relative inline-flex items-center rounded-md">
                             <TabsTrigger value={name}>
-                              <span className="max-w-[160px] truncate">{name}</span>
+                              <span className="max-w-40 truncate">{name}</span>
                             </TabsTrigger>
                             <Popover
                               open={deleteGroupConfirmId === g.id}
@@ -1345,7 +1346,7 @@ export function SchedulesWorkspace() {
                                   variant="ghost"
                                   aria-label={`删除分组 ${name}`}
                                   aria-expanded={deleteGroupConfirmId === g.id}
-                                  className="pointer-events-auto absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-[#71717a] opacity-0 transition hover:bg-transparent hover:text-red-600 focus-visible:opacity-100 group-hover/chip:opacity-100 data-[state=open]:opacity-100"
+                                  className="pointer-events-auto absolute -right-1 -top-1 z-10 h-4 w-4 rounded-full p-0 text-text-tertiary opacity-0 transition hover:bg-transparent hover:text-danger focus-visible:opacity-100 group-hover/chip:opacity-100 data-[state=open]:opacity-100"
                                   onMouseDown={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
@@ -1363,10 +1364,10 @@ export function SchedulesWorkspace() {
                                 side="bottom"
                                 align="end"
                                 sideOffset={8}
-                                className="w-[min(300px,calc(100vw-2rem))] rounded-[16px] border border-[#e5e5e2] bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.12)]"
+                                className="w-responsive-popover-sm rounded-panel border border-border bg-bg-surface p-4 shadow-popover-strong"
                                 onCloseAutoFocus={(e) => e.preventDefault()}
                               >
-                                <p className="text-[14px] leading-6 text-[#34322d]">
+                                <p className="text-body leading-6 text-foreground">
                                   确定删除吗？该分组下的定时任务将移回默认分组
                                 </p>
                                 <div className="mt-4 flex justify-end gap-2">
@@ -1374,7 +1375,7 @@ export function SchedulesWorkspace() {
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    className="h-9 rounded-[10px] border-[#e2e2df] bg-white px-4 text-[14px] text-[#747571] hover:bg-[rgba(55,53,47,0.06)]"
+                                    className="h-9 rounded-control border-border bg-bg-surface px-4 text-body text-text-tertiary hover:bg-fill-hover"
                                     disabled={busy}
                                     onClick={() => setDeleteGroupConfirmId(null)}
                                   >
@@ -1384,7 +1385,7 @@ export function SchedulesWorkspace() {
                                     type="button"
                                     variant="destructive"
                                     size="sm"
-                                    className="h-9 rounded-[10px] bg-red-600 px-4 text-[14px] text-white hover:bg-red-700"
+                                    className="h-9 rounded-control bg-danger px-4 text-body text-primary-foreground hover:bg-danger-hover"
                                     disabled={busy}
                                     onClick={() => void handleDeleteGroup(g)}
                                   >
@@ -1412,12 +1413,12 @@ export function SchedulesWorkspace() {
                     <PlusThin />
                   </Button>
                 </div>
-                <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:shrink-0">
+                <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 sm:w-auto sm:shrink-0 sm:flex-nowrap">
                   <Select
                     value={workflowStatusFilter}
                     onValueChange={(value) => setWorkflowStatusFilter(value as (typeof WORKFLOW_STATUS_OPTIONS)[number])}
                   >
-                    <SelectTrigger className="h-9 w-[128px]">
+                    <SelectTrigger className="h-9 w-36 shrink-0">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1433,7 +1434,7 @@ export function SchedulesWorkspace() {
                 </div>
               </div>
             ) : (
-              <div className="mt-5 flex min-h-[40px] flex-wrap items-center justify-end gap-2">
+              <div className="mt-5 flex min-h-10 flex-wrap items-center justify-end gap-2">
                 <Select
                   value={runStatusFilter}
                   onValueChange={(value) => {
@@ -1456,7 +1457,7 @@ export function SchedulesWorkspace() {
                     })();
                   }}
                 >
-                  <SelectTrigger className="h-9 w-[128px]">
+                  <SelectTrigger className="h-9 w-36 shrink-0">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1473,9 +1474,9 @@ export function SchedulesWorkspace() {
             )}
           </div>
 
-          {notice ? <p className="mt-4 text-sm text-[#52525b]">{notice}</p> : null}
-          {busy && primaryTab === "已定时" && tasks.length === 0 ? <p className="mt-6 text-sm text-[#71717a]">加载中…</p> : null}
-          {busy && primaryTab === "运行记录" && runs.length === 0 ? <p className="mt-6 text-sm text-[#71717a]">加载中…</p> : null}
+          {notice ? <p className="mt-4 text-sm text-text-secondary">{notice}</p> : null}
+          {busy && primaryTab === "已定时" && tasks.length === 0 ? <p className="mt-6 text-sm text-text-tertiary">加载中…</p> : null}
+          {busy && primaryTab === "运行记录" && runs.length === 0 ? <p className="mt-6 text-sm text-text-tertiary">加载中…</p> : null}
 
           {showScheduledLoadError ? (
             <PageLostState onRetry={() => void refreshGroupsAndTasks()} />
@@ -1535,10 +1536,10 @@ export function SchedulesWorkspace() {
       </div>
 
       <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
-        <DialogContent className="max-w-[420px] rounded-[16px] p-5">
-          <DialogTitle className="text-[16px] font-semibold text-[#111111]">{searchPlaceholder}</DialogTitle>
+        <DialogContent className="max-w-confirm-dialog rounded-panel p-5">
+          <DialogTitle className="text-title-1 font-semibold text-foreground">{searchPlaceholder}</DialogTitle>
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71717a]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
             <Input
               ref={searchDialogInputRef}
               value={search}
@@ -1547,7 +1548,7 @@ export function SchedulesWorkspace() {
                 if (e.key === "Enter") setSearchDialogOpen(false);
               }}
               placeholder={searchPlaceholder}
-              className="h-10 w-full rounded-[12px] border-[#e2e2df] pl-9"
+              className="h-10 w-full rounded-field border-border pl-9"
             />
           </div>
           <div className="flex justify-end gap-2">
@@ -1555,7 +1556,7 @@ export function SchedulesWorkspace() {
               <Button
                 type="button"
                 variant="outline"
-                className="h-9 rounded-[10px] border-[#e2e2df] px-3 text-[14px]"
+                className="h-9 rounded-control border-border px-3 text-body"
                 onClick={() => setSearch("")}
               >
                 清空
@@ -1563,7 +1564,7 @@ export function SchedulesWorkspace() {
             ) : null}
             <Button
               type="button"
-              className="h-9 rounded-[10px] bg-[#111111] px-4 text-[14px] text-white hover:bg-[#2a2a2a]"
+              className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-link-hover"
               onClick={() => setSearchDialogOpen(false)}
             >
               完成
@@ -1583,8 +1584,8 @@ export function SchedulesWorkspace() {
           }
         }}
       >
-        <DialogContent className="max-w-[400px] rounded-[16px] p-5">
-          <DialogTitle className="text-[16px] font-semibold text-[#111111]">新建分组</DialogTitle>
+        <DialogContent className="max-w-md rounded-panel p-5">
+          <DialogTitle className="text-title-1 font-semibold text-foreground">新建分组</DialogTitle>
           <div>
             <Input
               id="schedule-new-group-name"
@@ -1604,14 +1605,14 @@ export function SchedulesWorkspace() {
                 }
               }}
               placeholder="请输入分组名称"
-              className={`h-10 rounded-[12px] text-[14px] ${
+              className={`h-10 rounded-field text-body ${
                 newGroupNameConflict
-                  ? "!border-red-500 focus-visible:!ring-red-500/20"
-                  : "border-[#e2e2df]"
+                  ? "!border-danger focus-visible:!ring-danger/20"
+                  : "border-border"
               }`}
             />
             {newGroupNameConflict ? (
-              <p className="mt-2 flex items-center gap-1.5 text-[14px] leading-5 text-red-600">
+              <p className="mt-2 flex items-center gap-1.5 text-body leading-5 text-danger">
                 <InfoCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 名称已存在
               </p>
@@ -1621,7 +1622,7 @@ export function SchedulesWorkspace() {
             <Button
               type="button"
               variant="outline"
-              className="h-9 rounded-[10px] border-[#e2e2df] px-3 text-[14px]"
+              className="h-9 rounded-control border-border px-3 text-body"
               disabled={newGroupSaving}
               onClick={() => {
                 setAddGroupOpen(false);
@@ -1633,7 +1634,7 @@ export function SchedulesWorkspace() {
             </Button>
             <Button
               type="button"
-              className="h-9 rounded-[10px] bg-[#111111] px-4 text-[14px] text-white hover:bg-[#2a2a2a]"
+              className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-link-hover"
               disabled={newGroupCreateDisabled}
               onClick={() => void commitNewGroup()}
             >
@@ -1651,14 +1652,14 @@ export function SchedulesWorkspace() {
       </Dialog>
 
       <Dialog open={Boolean(moveTask)} onOpenChange={(o) => !o && setMoveTask(null)}>
-        <DialogContent className="max-w-[400px] rounded-[16px]">
+        <DialogContent className="max-w-md rounded-panel">
           <DialogTitle>移动到分组</DialogTitle>
           <div className="mt-4 space-y-3">
             <Select
               value={moveGroupId || DEFAULT_GROUP_VALUE}
               onValueChange={(value) => setMoveGroupId(value === DEFAULT_GROUP_VALUE ? "" : value)}
             >
-              <SelectTrigger className="h-11 w-full rounded-[10px] border-[#e5e7eb]">
+              <SelectTrigger className="h-11 w-full rounded-control border-border">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1677,7 +1678,7 @@ export function SchedulesWorkspace() {
                 取消
               </Button>
               <Button
-                className="bg-[#111111] text-white hover:bg-[#2a2a2a]"
+                className="bg-primary text-primary-foreground hover:bg-link-hover"
                 onClick={() => {
                   if (!moveTask || !platformAgent) return;
                   const gid = moveGroupId || null;
@@ -1707,7 +1708,7 @@ export function SchedulesWorkspace() {
 function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <div>
-      <div className="mb-2 text-sm font-medium leading-5 text-[#18181b]">
+      <div className="mb-2 text-sm font-medium leading-5 text-foreground">
         {label}
         {required ? (
           <>
@@ -1748,40 +1749,40 @@ function ApiScheduledTaskCard({
   return (
     <Card
       className={cn(
-        "box-border flex h-[184px] w-full max-w-[304px] shrink-0 flex-col overflow-hidden rounded-[18px] border border-white/80 bg-white/90 p-0",
-        "min-[300px]:w-[304px] shadow-none transition-colors duration-200 hover:bg-white",
+        "box-border flex h-schedule-card w-full max-w-card-grid shrink-0 flex-col overflow-hidden rounded-popover border border-border-subtle bg-bg-surface/90 p-0",
+        " shadow-none transition-colors duration-200 hover:bg-bg-surface",
       )}
     >
       <div className="min-h-0 flex-1 overflow-hidden px-4 pb-3 pt-4">
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#0a8fff] text-white">
-              <AlarmFilled className="h-[18px] w-[18px]" />
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-info text-primary-foreground">
+              <AlarmFilled className="h-icon-md w-icon-md" />
             </div>
-            <div className="min-w-0 flex-1 line-clamp-1 break-words text-[16px] font-semibold leading-6 text-[#111111]">
+            <div className="min-w-0 flex-1 line-clamp-1 break-words text-title-1 font-semibold leading-6 text-foreground">
               {t.title}
             </div>
           </div>
           {ended ? (
-            <span className="shrink-0 rounded-full bg-[#f4f4f3] px-2 py-0.5 text-[12px] font-medium leading-5 text-[#8b8c87]">
+            <span className="shrink-0 rounded-full bg-fill-hover px-2 py-0.5 text-caption font-medium leading-5 text-text-tertiary">
               {ui}
             </span>
           ) : null}
         </div>
-        <p className="mt-3 line-clamp-2 break-words text-[14px] leading-5 text-[#6f7378]">
+        <p className="mt-3 line-clamp-2 break-words text-body leading-5 text-text-tertiary">
           {promptSummary}
         </p>
       </div>
-      <div className="mx-4 h-px bg-[#ececea]" />
+      <div className="mx-4 h-px bg-border-subtle" />
       <div className="mt-auto flex shrink-0 items-center gap-2 px-4 py-3">
-        <div className="min-w-0 flex-1 truncate text-[14px] leading-5 text-[#8b8c87]">
+        <div className="min-w-0 flex-1 truncate text-body leading-5 text-text-tertiary">
           {scheduleLabel}
         </div>
         <Button
           type="button"
           variant="subtle"
           size="sm"
-          className="h-8 shrink-0 rounded-full bg-[#f2f2f2] px-4 text-[14px] font-semibold text-[#111111] hover:bg-[#e9e9e9]"
+          className="h-8 shrink-0 rounded-full bg-fill-hover px-4 text-body font-semibold text-foreground hover:bg-fill-hover"
           onClick={onRun}
         >
           运行
@@ -1797,7 +1798,7 @@ function ApiScheduledTaskCard({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 shrink-0 rounded-full text-[#a8a8a8] hover:bg-[#f2f2f2] hover:text-[#111111]"
+              className="h-8 w-8 shrink-0 rounded-full text-text-disabled hover:bg-fill-hover hover:text-foreground"
               aria-label="更多任务操作"
             >
               <MoreVertical className="h-4 w-4" />
@@ -1820,7 +1821,7 @@ function ApiScheduledTaskCard({
                 移动到
               </DropdownMenuItem>
               <DropdownMenuItem
-                className="text-red-600 focus:bg-red-50 focus:text-red-600"
+                className="text-danger focus:bg-danger-bg focus:text-danger"
                 onSelect={(event) => {
                   event.preventDefault();
                   setMenuOpen(false);
@@ -1836,19 +1837,19 @@ function ApiScheduledTaskCard({
         <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
           <DialogContent
             hideClose
-            className="max-w-[360px] rounded-[16px] p-5"
+            className="max-w-sm rounded-panel p-5"
             aria-describedby={undefined}
           >
             <DialogTitle className="sr-only">删除定时任务</DialogTitle>
-            <p className="text-[14px] leading-6 text-[#34322d]">
-              确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
+            <p className="text-body leading-6 text-foreground">
+              确定删除该任务吗？删除后会话记忆与产出物将不可恢复
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 rounded-[10px]"
+                className="h-9 rounded-control"
                 disabled={deleteBusy}
                 onClick={() => setDeleteOpen(false)}
               >
@@ -1858,7 +1859,7 @@ function ApiScheduledTaskCard({
                 type="button"
                 variant="destructive"
                 size="sm"
-                className="h-9 rounded-[10px] bg-red-600 px-4 text-white hover:bg-red-700"
+                className="h-9 rounded-control bg-danger px-4 text-primary-foreground hover:bg-danger-hover"
                 disabled={deleteBusy}
                 onClick={async () => {
                   setDeleteBusy(true);
@@ -1966,26 +1967,30 @@ function ApiRunRecordRow({
 
   const summaryText = (() => {
     const err = (r.error_message || "").trim();
-    if (err) return err;
+    if (err) return humanizeTaskErrorMessage(err);
     return (r.prompt_snapshot || "").trim() || "—";
+  })();
+
+  const statusTooltip = (() => {
+    const err = (r.error_message || "").trim();
+    if (err) return humanizeTaskErrorMessage(err);
+    return st.text === "运行成功" ? "执行成功" : st.text;
   })();
 
   return (
     <div
-      className="flex gap-3 rounded-[18px] border border-[#e2e2df] bg-white p-4 shadow-[0_1px_2px_rgba(17,17,17,0.03)] transition-colors hover:border-[#d4d4d0] hover:bg-white sm:gap-4 sm:p-5"
+      className="flex gap-3 rounded-popover border border-border bg-bg-surface p-4 shadow-surface transition-colors hover:border-border hover:bg-bg-surface sm:gap-4 sm:p-5"
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5 pr-1">
+          <div className="flex min-w-0 flex-1.5 flex-wrap items-center gap-2 pr-1">
             <span
               className={cn("inline-flex w-fit shrink-0 items-center rounded-md px-2.5 py-1 text-xs font-medium", st.className)}
-              title={
-                (r.error_message && r.error_message.trim()) || (st.text === "运行成功" ? "执行成功" : st.text)
-              }
+              title={statusTooltip}
             >
               {st.text}
             </span>
-            <div className="min-w-0 flex-1 break-words text-[14px] font-semibold leading-snug text-[#111111]">
+            <div className="min-w-0 flex-1 break-words text-body font-semibold leading-snug text-foreground">
               {r.task_title_snapshot || "定时任务执行"}
             </div>
           </div>
@@ -1997,7 +2002,7 @@ function ApiRunRecordRow({
                 size="sm"
                 disabled={downloading}
                 onClick={() => void onDownloadAll()}
-                className="h-9 px-2 text-sm text-[#111111] hover:text-[#2a2a2a] hover:underline"
+                className="h-9 px-2 text-sm text-foreground hover:text-foreground hover:underline"
               >
                 <Download className="h-4 w-4 shrink-0" />
                 {downloading ? "准备中…" : "下载所有报告"}
@@ -2014,7 +2019,7 @@ function ApiRunRecordRow({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 shrink-0 rounded-[10px] text-[#747571]"
+                  className="h-9 w-9 shrink-0 rounded-control text-text-tertiary"
                   aria-label="更多操作"
                 >
                   <MoreVertical className="h-5 w-5" />
@@ -2027,7 +2032,7 @@ function ApiRunRecordRow({
                     查看执行过程
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    className="text-red-600 focus:bg-red-50 focus:text-red-600"
+                    className="text-danger focus:bg-danger-bg focus:text-danger"
                     onSelect={(event) => {
                       event.preventDefault();
                       setMenuOpen(false);
@@ -2043,19 +2048,19 @@ function ApiRunRecordRow({
             <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
               <DialogContent
                 hideClose
-                className="max-w-[360px] rounded-[16px] p-5"
+                className="max-w-sm rounded-panel p-5"
                 aria-describedby={undefined}
               >
                 <DialogTitle className="sr-only">删除运行记录</DialogTitle>
-                <p className="text-[14px] leading-6 text-[#34322d]">
-                  确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
+                <p className="text-body leading-6 text-foreground">
+                  确定删除该任务吗？删除后会话记忆与产出物将不可恢复
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-9 rounded-[10px]"
+                    className="h-9 rounded-control"
                     disabled={deleteBusy}
                     onClick={() => setDeleteOpen(false)}
                   >
@@ -2065,7 +2070,7 @@ function ApiRunRecordRow({
                     type="button"
                     variant="destructive"
                     size="sm"
-                    className="h-9 rounded-[10px] bg-red-600 px-4 text-white hover:bg-red-700"
+                    className="h-9 rounded-control bg-danger px-4 text-primary-foreground hover:bg-danger-hover"
                     disabled={deleteBusy}
                     onClick={() => void onDeleteRun()}
                   >
@@ -2076,8 +2081,8 @@ function ApiRunRecordRow({
             </Dialog>
           </div>
         </div>
-        <p className="mt-3 line-clamp-6 text-sm leading-relaxed text-[#747571] sm:line-clamp-4">{summaryText}</p>
-        <p className="mt-3 text-xs text-[#8b8c87]">完成时间：{finished}</p>
+        <p className="mt-3 line-clamp-6 text-sm leading-relaxed text-text-tertiary sm:line-clamp-4">{summaryText}</p>
+        <p className="mt-3 text-xs text-text-tertiary">完成时间：{finished}</p>
       </div>
     </div>
   );

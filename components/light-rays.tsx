@@ -29,11 +29,26 @@ interface LightRaysProps {
   className?: string;
 }
 
-const DEFAULT_COLOR = "#ffffff";
+const DEFAULT_COLOR = "var(--color-bg-surface)";
 
-const hexToRgb = (hex: string): [number, number, number] => {
-  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return m ? [parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255] : [1, 1, 1];
+const resolveCssColor = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("var(") || typeof window === "undefined") return trimmed;
+  const match = /^var\((--[^,)]+)(?:,[^)]+)?\)$/.exec(trimmed);
+  if (!match) return trimmed;
+  return getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim() || trimmed;
+};
+
+const cssColorToRgb = (value: string): [number, number, number] => {
+  const color = resolveCssColor(value);
+  const rgbMatch = /^rgba?\(([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(color);
+  if (rgbMatch) {
+    return [Number(rgbMatch[1]) / 255, Number(rgbMatch[2]) / 255, Number(rgbMatch[3]) / 255];
+  }
+  const hexMatch = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(color);
+  return hexMatch
+    ? [parseInt(hexMatch[1], 16) / 255, parseInt(hexMatch[2], 16) / 255, parseInt(hexMatch[3], 16) / 255]
+    : [1, 1, 1];
 };
 
 const getAnchorAndDir = (
@@ -269,7 +284,7 @@ void main() {
         rayPos: { value: [0, 0] },
         rayDir: { value: [0, 1] },
 
-        raysColor: { value: hexToRgb(raysColor) },
+        raysColor: { value: cssColorToRgb(raysColor) },
         raysSpeed: { value: raysSpeed },
         lightSpread: { value: lightSpread },
         rayLength: { value: rayLength },
@@ -400,7 +415,7 @@ void main() {
     const u = uniformsRef.current;
     const renderer = rendererRef.current;
 
-    u.raysColor.value = hexToRgb(raysColor);
+    u.raysColor.value = cssColorToRgb(raysColor);
     u.raysSpeed.value = raysSpeed;
     u.lightSpread.value = lightSpread;
     u.rayLength.value = rayLength;
@@ -448,7 +463,7 @@ void main() {
   return (
     <div
       ref={containerRef}
-      className={`pointer-events-none absolute inset-0 z-[1] h-full w-full overflow-hidden ${className}`.trim()}
+      className={`pointer-events-none absolute inset-0 z-layer-base h-full w-full overflow-hidden ${className}`.trim()}
     />
   );
 }

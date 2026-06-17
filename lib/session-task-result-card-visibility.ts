@@ -16,6 +16,9 @@ export function messageIdsEligibleForTaskResultCard(messages: SessionMessageItem
   const out = new Set<string>();
   const coveredTaskIds = new Set<string>();
 
+  // Pass 1: only task_execution_steps messages. Always reserve the task_id
+  // so pass 2 won't add a fallback card, but only emit a result card if every
+  // step has reached a terminal status.
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]!;
     if (m.role !== "assistant") continue;
@@ -25,9 +28,14 @@ export function messageIdsEligibleForTaskResultCard(messages: SessionMessageItem
     const steps = parseTaskExecutionStepsFromMeta(meta);
     if (!steps?.length) continue;
     coveredTaskIds.add(tid);
-    out.add(m.id);
+    const allTerminal = steps.every((s) => s.status === "done" || s.status === "error");
+    if (allTerminal) {
+      out.add(m.id);
+    }
   }
 
+  // Pass 2: remaining assistant messages with a task_id that lack explicit
+  // task_execution_steps meta — e.g. orchestration summary messages.
   for (const m of messages) {
     if (m.role !== "assistant") continue;
     const meta = messageMeta(m);
@@ -40,7 +48,9 @@ export function messageIdsEligibleForTaskResultCard(messages: SessionMessageItem
   return out;
 }
 
-/** 按 task_id / orchestration_id 分组，返回每组最新的 steps 消息 id。 */
+/** 按 orchestration_id / task_id 分组，返回每组最新的 steps 消息 id。
+ *  同一次编排可能产出多条 task_execution_steps 消息（task_id 不同），
+ *  优先按 orchestration_id 去重以保证只有最新的那条被保留。 */
 export function buildLatestStepsMessageIdByTaskId(
   messages: SessionMessageItem[],
 ): Record<string, string> {
@@ -53,15 +63,15 @@ export function buildLatestStepsMessageIdByTaskId(
     if (!steps?.length) continue;
     const tid = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
     const oid = typeof meta?.orchestration_id === "string" ? meta.orchestration_id.trim() : "";
-    const key = tid || oid || "__global__";
+    const key = oid || tid || "__global__";
     if (!map[key]) map[key] = m.id;
   }
   return map;
 }
 
 /**
- * 仅当与同 task_id / orchestration_id 的最新 steps 消息不同时视为 superseded。
- * 不同任务各自保留最新的 progress 消息。
+ * 仅当与同 orchestration_id / task_id 的最新 steps 消息不同时视为 superseded。
+ * 优先按 orchestration_id 匹配，使同一次编排的多条进度消息互斥。
  */
 export function isSupersededTaskExecutionStepsMessage(
   message: SessionMessageItem,
@@ -72,7 +82,7 @@ export function isSupersededTaskExecutionStepsMessage(
   const meta = messageMeta(message);
   const tid = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
   const oid = typeof meta?.orchestration_id === "string" ? meta.orchestration_id.trim() : "";
-  const key = tid || oid || "__global__";
+  const key = oid || tid || "__global__";
   const latestForThisTask = latestStepsByTaskId[key];
   if (!latestForThisTask) return false;
   return message.id !== latestForThisTask;

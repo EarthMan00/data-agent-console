@@ -1,18 +1,16 @@
 "use client";
 
-import Image from "next/image";
 import { useMemo } from "react";
 
+import { AssistantOutputFrame, handleSuggestionOptionKeyDown } from "@/components/agent-workspace/chat-bubbles";
 import { composerDraftContainsSuggestion } from "@/lib/composer-prefill";
 import { parsePostTaskGuidanceSuggestions } from "@/lib/parse-post-task-guidance";
 import { cn } from "@/lib/utils";
 
-const WRAP = "w-full max-w-[min(100%,780px)]";
-
-function formatTime(iso: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString();
+function formatTime(datetime: string) {
+  const date = new Date(datetime);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString();
 }
 
 export function PostTaskGuidanceBubble({
@@ -37,40 +35,25 @@ export function PostTaskGuidanceBubble({
   if (suggestions.length === 0) return null;
 
   return (
-    <div className={cn("group flex w-full justify-start text-left", WRAP, className)}>
-      <div className="w-full space-y-3">
-        <div className="flex w-full min-w-0 items-center gap-3 text-[14px] font-medium text-[#1d2129]">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center">
-              <Image
-                src="/alice-logo.png"
-                alt="Alice"
-                width={36}
-                height={36}
-                className="h-9 w-9 shrink-0 object-contain"
-                draggable={false}
-              />
-            </div>
-            <div>
-              <div className="text-[14px] font-semibold text-[#1d2129]">Alice</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-1 pl-0">
-          <p className="text-[12px] leading-5 text-[#4e5969]">接下来您可以试试：</p>
+    <AssistantOutputFrame datetime={datetime} wide className={className}>
+      <div className="w-full text-left">
+        <div className="space-y-2">
+          <p className="text-body leading-5 text-text-secondary">接下来您可以试试：</p>
           <div
-            className="flex flex-row flex-wrap items-start gap-1"
+            className="flex flex-row flex-wrap items-start gap-2"
+            role={interactive ? "group" : "list"}
+            aria-label={interactive ? "选择下一步建议" : undefined}
+            onKeyDown={interactive ? handleSuggestionOptionKeyDown : undefined}
           >
             {suggestions.map((item, index) => {
               const selected =
                 interactive && composerDraftContainsSuggestion(composerDraft, item);
               const chipClass = cn(
-                "inline-flex max-w-full rounded-[999px] border px-3.5 py-2 text-left text-[14px] leading-5 transition",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15",
+                "inline-flex max-w-full rounded-pill border px-3.5 py-2 text-left text-body leading-5 transition",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/15",
                 selected
-                  ? "border-[#111111] bg-[#111111] text-white shadow-[0_1px_2px_rgba(17,17,17,0.08)]"
-                  : "border-[#e2e2df] bg-white text-[#1d2129] shadow-[0_1px_2px_rgba(17,17,17,0.03)] hover:border-[#c9c9c4] hover:bg-[#fafaf9]",
+                  ? "border-primary bg-primary text-primary-foreground shadow-surface-strong"
+                  : "border-border bg-bg-surface text-foreground shadow-surface hover:border-border-strong hover:bg-bg-page",
               );
 
               if (interactive) {
@@ -79,7 +62,8 @@ export function PostTaskGuidanceBubble({
                     key={`${index}-${item.slice(0, 24)}`}
                     type="button"
                     aria-pressed={selected}
-                    className={cn(chipClass, "active:scale-[0.98]")}
+                    data-clarification-option
+                    className={cn(chipClass, "active-scale-chip")}
                     onClick={() => onSuggestionToggle(item)}
                   >
                     <span className="whitespace-pre-wrap break-words">{item}</span>
@@ -90,7 +74,7 @@ export function PostTaskGuidanceBubble({
               return (
                 <div
                   key={`${index}-${item.slice(0, 24)}`}
-                  className={cn(chipClass, "border-[#e2e2df] bg-[#fafaf9] text-[#4e5969]")}
+                  className={cn(chipClass, "border-border bg-bg-page text-text-secondary")}
                 >
                   <span className="whitespace-pre-wrap break-words">{item}</span>
                 </div>
@@ -102,6 +86,6 @@ export function PostTaskGuidanceBubble({
           {formatTime(datetime)}
         </div>
       </div>
-    </div>
+    </AssistantOutputFrame>
   );
 }

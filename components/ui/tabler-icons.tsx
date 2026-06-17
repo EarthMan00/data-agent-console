@@ -54,6 +54,7 @@ export {
   IconPackageOff as PackageOpen,
   IconLayoutSidebarLeftCollapse as PanelLeft,
   IconLayoutSidebarLeftExpand as PanelLeftExpand,
+  IconLayoutSidebarRightExpand as PanelRightOpen,
   IconPaperclip as Paperclip,
   IconPencil as Pencil,
   IconPlayerPlay as Play,

@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Copy, FileText } from "@/components/ui/tabler-icons";
 
@@ -13,7 +14,11 @@ import { useTypewriterReveal } from "@/lib/use-typewriter-reveal";
 import { cn } from "@/lib/utils";
 import { stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 import { sanitizeClarificationForUserDisplay, splitClarificationForDisplay } from "@/lib/alice-clarification";
+import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
+import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
 import { composerDraftContainsSuggestion } from "@/lib/composer-prefill";
+import type { UserMessageAttachment } from "@/lib/user-message-attachments";
+import { UserMessageAttachmentCards } from "@/components/user-message-attachment-cards";
 
 function charLen(text: string): number {
   return [...text].length;
@@ -27,8 +32,9 @@ function splitMessageLines(text: string) {
 }
 
 /** 普通对话：与消息列表同列宽，用户气泡贴右、助手气泡贴左，最大宽度一致 */
-export const SIMPLE_CHAT_COLUMN_MAX = "max-w-[min(100%,920px)]";
-export const SIMPLE_CHAT_BUBBLE_MAX = "max-w-[min(100%,720px)]";
+export const SIMPLE_CHAT_COLUMN_MAX = "max-w-simple-column";
+export const SIMPLE_CHAT_BUBBLE_MAX = "max-w-simple-bubble";
+export const SIMPLE_CHAT_ROW_MAX = "max-w-simple-row";
 /** 任务拆分 / 任务执行卡片：占满会话列宽，长附件名可换行 */
 export const ORCHESTRATION_BLOCK_MAX = "w-full min-w-0";
 
@@ -36,6 +42,84 @@ function formatTimeForBubble(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleString();
+}
+
+function AliceAvatar({ className }: { className?: string }) {
+  return (
+    <span className={cn("relative block h-9 w-9 shrink-0", className)}>
+      <Image src="/mdata-logo.png" alt="Alice" fill sizes="36px" className="object-contain" draggable={false} />
+    </span>
+  );
+}
+
+export function handleSuggestionOptionKeyDown(event: KeyboardEvent<HTMLElement>) {
+  const key = event.key;
+  if (!["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End", "Enter", " "].includes(key)) {
+    return;
+  }
+
+  const container = event.currentTarget;
+  const options = Array.from(container.querySelectorAll<HTMLButtonElement>("[data-clarification-option]"));
+  if (options.length === 0) return;
+
+  const target = event.target as HTMLElement | null;
+  const currentIndex = Math.max(
+    0,
+    options.findIndex((option) => option === target || option.contains(target)),
+  );
+
+  if (key === "Enter" || key === " ") {
+    event.preventDefault();
+    options[currentIndex]?.click();
+    return;
+  }
+
+  event.preventDefault();
+  const lastIndex = options.length - 1;
+  const nextIndex =
+    key === "Home"
+      ? 0
+      : key === "End"
+        ? lastIndex
+        : key === "ArrowRight" || key === "ArrowDown"
+          ? currentIndex >= lastIndex
+            ? 0
+            : currentIndex + 1
+          : currentIndex <= 0
+            ? lastIndex
+            : currentIndex - 1;
+  options[nextIndex]?.focus();
+}
+
+export function AssistantOutputFrame({
+  datetime,
+  children,
+  className,
+  wide = false,
+}: {
+  datetime?: string;
+  children: ReactNode;
+  className?: string;
+  wide?: boolean;
+}) {
+  return (
+    <div className="flex w-full justify-start">
+      <div className={cn("group flex items-start gap-3", wide ? cn("w-full", SIMPLE_CHAT_ROW_MAX) : SIMPLE_CHAT_BUBBLE_MAX, className)}>
+        <AliceAvatar className="mt-1" />
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex items-center gap-3">
+            <div className="text-body font-semibold text-foreground">Alice</div>
+          </div>
+          {children}
+          {datetime ? (
+            <div className="mt-1 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+              {formatTimeForBubble(datetime)}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** 与 app-demo `live-agent-workbench` BubbleLine 对齐：普通对话气泡 */
@@ -46,54 +130,21 @@ export function SimpleUserBubble({
 }: {
   text: string;
   datetime: string;
-  attachments?: AgentAttachment[];
+  attachments?: UserMessageAttachment[];
 }) {
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const copyResetTimer = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (copyResetTimer.current !== null) {
-        window.clearTimeout(copyResetTimer.current);
-      }
-    };
-  }, []);
-
-  const copyMessage = async () => {
-    const ok = await copyTextToClipboard(text);
-    setCopyState(ok ? "copied" : "failed");
-    if (copyResetTimer.current !== null) {
-      window.clearTimeout(copyResetTimer.current);
-    }
-    copyResetTimer.current = window.setTimeout(() => {
-      setCopyState("idle");
-      copyResetTimer.current = null;
-    }, 1500);
-  };
-
+  const visibleText = text.trim();
   return (
     <div className="flex w-full justify-end" data-testid="agent-user-input-card">
-      <div className={cn("group flex flex-col items-end", SIMPLE_CHAT_BUBBLE_MAX)}>
-        <div className="shrink-0 rounded-[16px] bg-[#f0f0ef] px-4 py-3 text-[14px] leading-7 text-[#1d2129] shadow-none">
-          {text ? <div className="break-words whitespace-pre-wrap">{text}</div> : null}
-          {attachments.length > 0 ? (
-            <AssistantAttachmentList attachments={attachments} className={cn(text ? "mt-3" : "")} />
-          ) : null}
+      <div className={cn("group flex flex-col items-end gap-2", SIMPLE_CHAT_BUBBLE_MAX)}>
+        <div className="mb-1 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          {formatTimeForBubble(datetime)}
         </div>
-        <div className="mt-1 flex h-9 items-center justify-end gap-2">
-          <span className="text-[12px] font-normal text-[#4e5969] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-            {formatTimeForBubble(datetime)}
-          </span>
-          <button
-            type="button"
-            aria-label={copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败" : "复制消息"}
-            title={copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败" : "复制"}
-            className="pointer-events-none inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#4e5969] opacity-0 transition-[background-color,opacity] duration-150 hover:bg-[rgba(55,53,47,0.06)] focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15 group-hover:pointer-events-auto group-hover:opacity-100"
-            onClick={() => void copyMessage()}
-          >
-            <Copy className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden />
-          </button>
-        </div>
+        {attachments.length > 0 ? <UserMessageAttachmentCards attachments={attachments} /> : null}
+        {visibleText ? (
+          <div className="shrink-0 rounded-panel bg-fill-hover px-4 py-3 text-body leading-7 text-foreground shadow-none">
+            <div className="break-words whitespace-pre-wrap">{visibleText}</div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -104,16 +155,20 @@ export function SimpleAssistantBubble({
   datetime,
   streaming = false,
   typewriter = true,
+  after,
 }: {
   body: string;
   datetime: string;
   streaming?: boolean;
   /** 流式时是否逐字展示（默认开启） */
   typewriter?: boolean;
+  /** 附属于同一条 assistant 消息的卡片，例如任务结果。 */
+  after?: ReactNode;
 }) {
   const targetNorm = (() => {
     const t = streaming ? stripModelThinkingForStreamPartial(body) : stripModelThinkingForUi(body);
-    return t === "（无回复）" ? "" : t;
+    const norm = t === "（无回复）" ? "" : t;
+    return stripInternalToolNamesForUi(norm);
   })();
   const [latchedVisible, setLatchedVisible] = useState(() => (targetNorm.trim() ? targetNorm : ""));
   useEffect(() => {
@@ -134,6 +189,7 @@ export function SimpleAssistantBubble({
   });
   /** 仅在 SSE 进行中显示光标；流结束后继续打字机追平但不闪光标 */
   const showCursor = Boolean(streaming && runTypewriter && revealing);
+  const frameMax = after ? cn("w-full", SIMPLE_CHAT_ROW_MAX) : SIMPLE_CHAT_BUBBLE_MAX;
 
   useEffect(() => {
     if (!revealing && !streaming) {
@@ -143,43 +199,37 @@ export function SimpleAssistantBubble({
 
   return (
     <div className="flex w-full justify-start">
-      <div className={cn("group flex items-start gap-3", SIMPLE_CHAT_BUBBLE_MAX)}>
-        <Image
-          src="/alice-logo.png"
-          alt="Alice"
-          width={36}
-          height={36}
-          className="mt-1 h-9 w-9 shrink-0 object-contain"
-          draggable={false}
-        />
+      <div className={cn("group flex items-start gap-3", frameMax)}>
+        <AliceAvatar className="mt-1" />
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex items-center gap-3">
-            <div className="text-[14px] font-semibold text-[#1d2129]">Alice</div>
+            <div className="text-body font-semibold text-foreground">Alice</div>
           </div>
           {waitingForContent ? (
-            <div className="min-w-0 text-[#1d2129]">
+            <div className="min-w-0 text-foreground">
               <div
-                className="flex items-center gap-3 py-0.5 text-[14px] leading-7 text-[#4e5969]"
+                className="flex items-center gap-3 py-0.5 text-body leading-7 text-text-tertiary"
                 role="status"
                 aria-live="polite"
               >
-                <DotmSquare11 size={22} dotSize={3} speed={1.15} className="shrink-0 text-[#1d2129]" aria-hidden />
+                <DotmSquare11 size={22} dotSize={3} speed={1.15} className="shrink-0 text-foreground" aria-hidden />
                 <span>我正在思考，请等我一下～</span>
               </div>
             </div>
           ) : (
-            <div className="shrink-0 rounded-[16px] border border-[#e2e2df] bg-white px-4 py-3 text-[#1d2129] shadow-none">
+            <div className="shrink-0 rounded-panel border border-border bg-bg-surface px-4 py-3 text-foreground shadow-none">
               <div className="min-w-0">
                 <ChatMarkdown>{shown}</ChatMarkdown>
                 {showCursor ? (
-                  <span className="ml-0.5 inline-block animate-pulse text-[#4e5969]" aria-hidden>
+                  <span className="ml-0.5 inline-block animate-pulse text-text-tertiary" aria-hidden>
                     ▌
                   </span>
                 ) : null}
               </div>
             </div>
           )}
-          <div className="mt-1 text-[12px] font-normal text-[#4e5969] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          {after ? <div className="mt-2 w-full">{after}</div> : null}
+          <div className="mt-1 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
             {formatTimeForBubble(datetime)}
           </div>
         </div>
@@ -237,45 +287,39 @@ export function AliceMessageBubble({
 
   return (
     <div className="flex w-full justify-start">
-      <div className={cn("group w-full space-y-3", SIMPLE_CHAT_BUBBLE_MAX)}>
-        <div className="flex w-full min-w-0 items-center gap-3 text-[14px] font-medium text-[#1d2129]">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center">
-              <Image
-                src="/alice-logo.png"
-                alt="Alice"
-                width={36}
-                height={36}
-                className="h-9 w-9 shrink-0 object-contain"
-                draggable={false}
-              />
-            </div>
-            <div className="text-[14px] font-semibold text-[#1d2129]">Alice</div>
+      <div className={cn("group flex items-start gap-3", SIMPLE_CHAT_BUBBLE_MAX)}>
+        <AliceAvatar className="mt-1" />
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex items-center gap-3">
+            <div className="text-body font-semibold text-foreground">Alice</div>
           </div>
-        </div>
-        {targetNorm ? (
-          <div className="shrink-0 rounded-[16px] border border-[#e2e2df] bg-white px-4 py-3 text-[#1d2129] shadow-none">
-            <div className="min-w-0 text-[14px] leading-7">
-              <ChatMarkdown>{shown}</ChatMarkdown>
-              {showCursor ? (
-                <span className="ml-0.5 inline-block animate-pulse text-[#4e5969]" aria-hidden>
-                  ▌
-                </span>
-              ) : null}
+          {targetNorm ? (
+            <div className="shrink-0 rounded-panel border border-border bg-bg-surface px-4 py-3 text-foreground shadow-none">
+              <div className="min-w-0 text-body leading-7">
+                <ChatMarkdown>{shown}</ChatMarkdown>
+                {showCursor ? (
+                  <span className="ml-0.5 inline-block animate-pulse text-text-tertiary" aria-hidden>
+                    ▌
+                  </span>
+                ) : null}
+              </div>
             </div>
-          </div>
-        ) : null}
-        {visibleSuggestions.length > 0 ? (
-          <div className="space-y-2.5 pl-0 sm:pl-12">
-            <div className="flex flex-row flex-wrap items-start gap-2" role={interactive ? "list" : undefined}>
+          ) : null}
+          {visibleSuggestions.length > 0 ? (
+            <div
+              className="mt-2 flex flex-row flex-wrap items-start gap-2"
+              role={interactive ? "group" : "list"}
+              aria-label={interactive ? "选择确认条件" : undefined}
+              onKeyDown={interactive ? handleSuggestionOptionKeyDown : undefined}
+            >
               {visibleSuggestions.map((item, index) => {
                 const selected = composerDraftContainsSuggestion(composerDraft, item);
                 const chipClass = cn(
-                  "inline-flex max-w-full rounded-[999px] border px-3.5 py-2 text-left text-[14px] leading-5 transition",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15",
+                  "inline-flex max-w-full rounded-pill border px-3.5 py-2 text-left text-body leading-5 transition",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/15",
                   selected
-                    ? "border-[#111111] bg-[#111111] text-white shadow-[0_1px_2px_rgba(17,17,17,0.08)]"
-                    : "border-[#e2e2df] bg-white text-[#1d2129] shadow-[0_1px_2px_rgba(17,17,17,0.03)] hover:border-[#c9c9c4] hover:bg-[#fafaf9]",
+                    ? "border-primary bg-primary text-primary-foreground shadow-surface-strong"
+                    : "border-border bg-bg-surface text-foreground shadow-surface hover:border-border-strong hover:bg-bg-page",
                 );
                 if (interactive) {
                   return (
@@ -283,7 +327,8 @@ export function AliceMessageBubble({
                       key={`${index}-${item.slice(0, 24)}`}
                       type="button"
                       aria-pressed={selected}
-                      className={cn(chipClass, "active:scale-[0.98]")}
+                      data-clarification-option
+                      className={cn(chipClass, "active-scale-chip")}
                       onClick={() => onSuggestionToggle(item)}
                     >
                       <span className="whitespace-pre-wrap break-words">{item}</span>
@@ -297,10 +342,10 @@ export function AliceMessageBubble({
                 );
               })}
             </div>
+          ) : null}
+          <div className="mt-1 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            {formatTimeForBubble(datetime)}
           </div>
-        ) : null}
-        <div className="!mt-1 text-[12px] font-normal text-[#4e5969] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-          {formatTimeForBubble(datetime)}
         </div>
       </div>
     </div>
@@ -326,11 +371,11 @@ export function SimpleSystemBubble({ message }: { message: string }) {
     <div className="flex w-full justify-start">
       <div
         className={cn(
-          "shrink-0 rounded-[16px] border border-[#e2e2df] bg-white px-4 py-3 text-[14px] leading-7 text-[#4e5969] shadow-[0_1px_2px_rgba(17,17,17,0.03)]",
+          "shrink-0 rounded-panel border border-border bg-bg-surface px-4 py-3 text-body leading-7 text-text-secondary shadow-surface",
           SIMPLE_CHAT_BUBBLE_MAX,
         )}
       >
-        <div className="text-[12px] font-medium uppercase tracking-wide opacity-70">系统</div>
+        <div className="text-caption font-medium uppercase tracking-wide opacity-70">系统</div>
         <p className="mt-1 whitespace-pre-wrap break-words">{message}</p>
       </div>
     </div>
@@ -354,18 +399,18 @@ export function ConversationBubble({
 
   return (
     <div className={cn("flex", role === "user" ? "justify-end" : "justify-start")}>
-      <div className={cn("group w-full max-w-[780px]", role === "user" ? "items-end" : "items-start")}>
+      <div className={cn("w-full max-w-3xl", role === "user" ? "items-end" : "items-start")}>
         <div
           className={cn(
             "px-5 py-4",
             role === "user"
-              ? "rounded-none bg-transparent px-0 py-0 text-[#1d2129] shadow-none"
+              ? "rounded-none bg-transparent px-0 py-0 text-foreground shadow-none"
               : tone === "status"
-                ? "rounded-[16px] border border-[#e2e2df] bg-white text-[#4e5969] shadow-none"
-                : "border border-[#e2e2df] bg-white text-[#1d2129]",
+                ? "rounded-panel border border-border bg-bg-surface text-text-secondary shadow-none"
+                : "border border-border bg-bg-surface text-foreground",
           )}
         >
-          <div className="space-y-2 text-[14px] leading-7">
+          <div className="space-y-2 text-body leading-7">
             {lines.map((line) => (
               <p key={line} className="whitespace-pre-wrap break-words">
                 {line}
@@ -373,14 +418,14 @@ export function ConversationBubble({
             ))}
           </div>
           {role === "user" ? (
-            <div className="mt-3 text-right text-[12px] font-normal text-[#4e5969] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            <div className="mt-3 text-right text-caption text-text-disabled">
               {datetime}
             </div>
           ) : null}
         </div>
         {role === "assistant" ? (
-          <div className="mb-2 mt-2 flex items-center gap-2 text-[12px] font-normal justify-start text-[#4e5969] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-            <span className="font-medium text-[#1d2129]">{title}</span>
+          <div className="mb-2 mt-2 flex items-center gap-2 text-caption justify-start text-text-tertiary">
+            <span className="font-medium text-foreground">{title}</span>
             <span>{datetime}</span>
           </div>
         ) : null}
@@ -404,11 +449,11 @@ export function CollapsedStatusRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-between rounded-[16px] border border-[#e2e2df] bg-white px-4 py-3.5 text-left shadow-[0_1px_2px_rgba(17,17,17,0.03)]"
+      className="flex w-full items-center justify-between rounded-panel border border-border bg-bg-surface px-4 py-3.5 text-left shadow-surface"
       data-testid={testId}
     >
-      <div className="text-[14px] font-semibold text-[#1d2129]">{title}</div>
-      <ChevronDown className={cn("h-4 w-4 text-[#8f9692]", expanded ? "rotate-180" : "-rotate-90")} />
+      <div className="text-body font-semibold text-foreground">{title}</div>
+      <ChevronDown className={cn("h-4 w-4 text-text-tertiary", expanded ? "rotate-180" : "-rotate-90")} />
     </button>
   );
 }
@@ -429,20 +474,20 @@ export function ToolCard({
   return (
     <div
       className={cn(
-        "rounded-[16px] border px-4 py-3 shadow-[0_1px_2px_rgba(17,17,17,0.03)]",
+        "rounded-panel border px-4 py-3 shadow-surface",
         tone === "error"
-          ? "border-[#fecaca] bg-[#fef2f2]"
-          : "border-[#e2e2df] bg-white",
+          ? "border-danger-border bg-danger-bg"
+          : "border-border bg-bg-surface",
       )}
     >
       <div className="flex items-center justify-between gap-3">
         <div
           className={cn(
-            "flex items-center gap-2 text-[12px] font-medium",
-            tone === "error" ? "text-[#991b1b]" : "text-[#1d2129]",
+            "flex items-center gap-2 text-caption font-medium",
+            tone === "error" ? "text-danger" : "text-foreground",
           )}
         >
-          <div className="flex h-5 w-5 items-center justify-center rounded-full border border-[#e2e2df] bg-[#f7f7f7]">
+          <div className="flex h-5 w-5 items-center justify-center rounded-full border border-border bg-fill-hover">
             <FileText className="h-3 w-3" />
           </div>
           {title}
@@ -451,14 +496,106 @@ export function ToolCard({
           <button
             type="button"
             onClick={onAction}
-            className="rounded-[8px] border border-[#e2e2df] bg-[#f7f7f7] px-2 py-0.5 text-[12px] font-medium text-[#1d2129]"
+            className="rounded-md border border-border bg-fill-hover px-2 py-0.5 text-caption font-medium text-foreground"
           >
             {actionLabel}
           </button>
         ) : null}
       </div>
-      <div className={cn("mt-2 text-[12px] leading-5", tone === "error" ? "text-[#b91c1c]" : "text-[#4e5969]")}>
+      <div className={cn("mt-2 text-caption leading-5", tone === "error" ? "text-danger" : "text-text-tertiary")}>
         {detail}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 任务失败气泡：保持 Alice 对话语气，只呈现失败原因与可选补救动作，不使用警报式红色块。
+ */
+export function AliceErrorBubble({
+  body,
+  datetime,
+  composerDraft = "",
+  onSuggestionToggle,
+}: {
+  body: string;
+  datetime: string;
+  composerDraft?: string;
+  onSuggestionToggle?: (item: string) => void;
+}) {
+  const errorBody = humanizeTaskErrorMessage(body);
+  const { leading, suggestions } = splitClarificationForDisplay(errorBody);
+  const interactive = typeof onSuggestionToggle === "function" && suggestions.length > 0;
+  // 去重建议列表
+  const uniqueSuggestions = suggestions.filter(
+    (s, i) => suggestions.findIndex((x) => x === s) === i,
+  );
+
+  const displayCause = leading || (uniqueSuggestions.length > 0 ? "" : errorBody);
+
+  return (
+    <div className="flex w-full justify-start">
+      <div className={cn("group flex items-start gap-3", SIMPLE_CHAT_BUBBLE_MAX)}>
+        <AliceAvatar className="mt-1" />
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex items-center gap-3">
+            <div className="text-body font-semibold text-foreground">Alice</div>
+          </div>
+
+          {displayCause ? (
+            <div className="shrink-0 rounded-panel border border-border bg-bg-surface px-4 py-3 shadow-none">
+              <div className="whitespace-pre-wrap text-body leading-7 text-foreground">
+                {displayCause}
+              </div>
+            </div>
+          ) : null}
+
+          {uniqueSuggestions.length > 0 ? (
+            <div className="mt-2 space-y-2.5">
+              <p className="text-caption font-medium text-text-tertiary">可尝试以下操作：</p>
+              <div
+                className="flex flex-row flex-wrap items-start gap-2"
+                role={interactive ? "group" : "list"}
+                aria-label={interactive ? "选择补救操作" : undefined}
+                onKeyDown={interactive ? handleSuggestionOptionKeyDown : undefined}
+              >
+                {uniqueSuggestions.map((item, index) => {
+                  const selected = composerDraftContainsSuggestion(composerDraft, item);
+                  const chipClass = cn(
+                    "inline-flex max-w-full rounded-pill border px-3.5 py-2 text-left text-body leading-5 transition",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/15",
+                    selected
+                      ? "border-primary bg-primary text-primary-foreground shadow-surface-strong"
+                      : "border-border bg-bg-surface text-foreground shadow-surface hover:border-border-strong hover:bg-bg-page",
+                  );
+                  if (interactive) {
+                    return (
+                      <button
+                        key={`err-sug-${index}-${item.slice(0, 24)}`}
+                        type="button"
+                        aria-pressed={selected}
+                        data-clarification-option
+                        className={cn(chipClass, "active-scale-chip")}
+                        onClick={() => onSuggestionToggle(item)}
+                      >
+                        <span className="whitespace-pre-wrap break-words">{item}</span>
+                      </button>
+                    );
+                  }
+                  return (
+                    <div key={`err-sug-${index}-${item.slice(0, 24)}`} role="listitem" className={chipClass}>
+                      <span className="whitespace-pre-wrap break-words">{item}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mt-1 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            {formatTimeForBubble(datetime)}
+          </div>
+        </div>
       </div>
     </div>
   );

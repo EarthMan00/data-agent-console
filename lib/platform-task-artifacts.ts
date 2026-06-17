@@ -1,4 +1,5 @@
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
+import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
 
 /** Alice 内部文本汇总（右侧 sheet 不展示，仅用于其它逻辑兼容） */
 export const ALICE_INTERNAL_RESULT_RE = /^linkfox_result\.txt$/i;
@@ -6,6 +7,8 @@ export const ALICE_INTERNAL_RESULT_RE = /^linkfox_result\.txt$/i;
 export const CHATEXCEL_RESULT_RE = /^chatexcel_result\.txt$/i;
 /** 所有工具输出的 *_result.txt：不在结果 sheet 中展示 */
 export const TASK_RESULT_TXT_RE = /_result\.txt$/i;
+const LINKFOX_REPORT_NAME_RE = /^linkfox_report\.html$/i;
+const DATA_REPORT_NAME_RE = /^data_report\.html$/i;
 const CSV_RE = /\.csv$/i;
 const JSON_RE = /\.(json|jsonl)$/i;
 const MD_RE = /\.(md|markdown)$/i;
@@ -17,6 +20,15 @@ const TABULAR_RE = /\.(csv|json|jsonl|md|markdown|html|htm|pdf)$/i;
 /** 右侧任务结果区不展示任何 *_result.txt（真实表格/报告见 CSV、JSON、PDF 等） */
 export function filterArtifactsForTaskResultPanel(artifacts: PlatformTaskArtifactRef[]): PlatformTaskArtifactRef[] {
   return artifacts.filter((a) => !TASK_RESULT_TXT_RE.test((a.original_name ?? "").trim()));
+}
+
+const ZIP_ARTIFACT_RE = /\.zip$/i;
+
+/** 任务级打包下载纳入的产物（与后端 api_tasks 过滤规则对齐，排除 zip 与 *_result.txt） */
+export function listDownloadableTaskArtifacts(artifacts: PlatformTaskArtifactRef[]): PlatformTaskArtifactRef[] {
+  return filterArtifactsForTaskResultPanel(artifacts).filter(
+    (a) => !ZIP_ARTIFACT_RE.test((a.original_name ?? "").trim()),
+  );
 }
 
 /** 是否存在可预览的表格/结构化文件（不含 *_result.txt） */
@@ -48,4 +60,39 @@ export function pickPrimaryCsvArtifact(artifacts: PlatformTaskArtifactRef[]): Pl
   const p = pickPrimaryTaskDataArtifact(artifacts);
   if (!p) return null;
   return CSV_RE.test((p.original_name ?? "").trim()) ? p : null;
+}
+
+function basenameOnly(name: string): string {
+  const n = (name ?? "").trim();
+  const parts = n.split(/[/\\]/);
+  return parts[parts.length - 1] ?? n;
+}
+
+/** 结果 Tab / 卡片等 UI 展示用文件名（不含内部工具品牌词） */
+export function artifactDisplayLabelForUi(originalName: string): string {
+  const base = basenameOnly(originalName);
+  if (LINKFOX_REPORT_NAME_RE.test(base) || DATA_REPORT_NAME_RE.test(base)) {
+    return "数据报告";
+  }
+  if (ALICE_INTERNAL_RESULT_RE.test(base) || CHATEXCEL_RESULT_RE.test(base)) {
+    return "任务日志";
+  }
+  const stem = base.replace(/\.[^.]+$/, "") || base;
+  const neutral = stripInternalToolNamesForUi(stem).trim();
+  return neutral || stem || "结果";
+}
+
+/** 单文件下载时的建议保存名 */
+export function artifactDownloadNameForUi(originalName: string): string {
+  const base = basenameOnly(originalName);
+  if (LINKFOX_REPORT_NAME_RE.test(base) || DATA_REPORT_NAME_RE.test(base)) {
+    return "数据报告.html";
+  }
+  const extMatch = base.match(/(\.[^.]+)$/);
+  const ext = extMatch?.[1] ?? "";
+  const label = artifactDisplayLabelForUi(base);
+  if (ext && !label.endsWith(ext)) {
+    return `${label}${ext}`;
+  }
+  return base || "download";
 }

@@ -1,5 +1,7 @@
 /** 与后端 model_text_sanitize.strip_model_thinking_for_ui 对齐，防止模型思考块出现在聊天区。 */
 
+import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
+
 const ZW_RE = /[\u200b\u200c\u200d\u2060\ufeff]/g;
 
 const REDACTED_THINKING_OPEN = /<\s*redacted_thinking\b[^>]*>/gi;
@@ -80,17 +82,18 @@ export function stripModelThinkingForStreamPartial(text: string): string {
   return stripModelThinkingBase(text, false).trim();
 }
 
-/** 聊天区可见正文：仅返回脱敏后的内容，不含思考块或原始 markup。 */
+/** 聊天区可见正文：去掉思考块与内部工具名，不含原始 markup。 */
 export function resolveAssistantBodyForUi(text: string, streaming: boolean): string {
   if (!text.trim()) return "";
   const partial = stripModelThinkingForStreamPartial(text).trim();
   const full = stripModelThinkingForUi(text);
   const fullNorm = full === "（无回复）" ? "" : full.trim();
-  return streaming ? partial || fullNorm : fullNorm;
+  const result = streaming ? partial || fullNorm : fullNorm;
+  return stripInternalToolNamesForUi(result);
 }
 
 export function streamSanitizeDeltaClient(prev: string, rawAccum: string): { display: string; delta: string } {
-  const display = stripModelThinkingForStreamPartial(rawAccum);
+  const display = stripInternalToolNamesForUi(stripModelThinkingForStreamPartial(rawAccum));
   if (display.startsWith(prev)) {
     return { display, delta: display.slice(prev.length) };
   }

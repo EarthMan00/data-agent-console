@@ -1,29 +1,36 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { AgentRoutePlaceholder } from "@/components/agent-route-placeholder";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { isPlatformBackendEnabled } from "@/lib/agent-runtime";
+import { isFrontendMockSessionId } from "@/lib/frontend-mock-session";
 
 export function RequirePlatformLogin({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
   const [clientMounted, setClientMounted] = useState(false);
+  const frontendMockSession = isFrontendMockSessionId(searchParams.get("sessionId"));
 
   useEffect(() => {
     setClientMounted(true);
   }, []);
 
   useEffect(() => {
+    if (frontendMockSession) return;
     if (!clientMounted || !isPlatformBackendEnabled() || !platformAgent?.authHydrated) return;
     if (!platformAgent.auth) {
       platformAgent.openLogin("请先登录后再继续操作。");
       router.replace("/");
     }
-  }, [clientMounted, platformAgent, router]);
+  }, [clientMounted, frontendMockSession, platformAgent, router]);
 
+  if (frontendMockSession) {
+    return children;
+  }
   if (!platformAgent) {
     return children;
   }
@@ -35,4 +42,3 @@ export function RequirePlatformLogin({ children }: { children: React.ReactNode }
   }
   return children;
 }
-

@@ -404,6 +404,13 @@ export type AdminPromptTemplate = {
   updated_at: string | null;
 };
 
+export type AdminPromptTemplateListResponse = {
+  templates: AdminPromptTemplate[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
 export type AdminFeedbackEntry = {
   id: string;
   created_at: string;

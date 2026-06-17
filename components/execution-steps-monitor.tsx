@@ -2,22 +2,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { AlertCircle, CheckCircle2, XCircle } from "@/components/ui/tabler-icons";
+import { Check, XCircle } from "@/components/ui/tabler-icons";
 
-import { Button } from "@/components/ui/button";
 import { DotmSquare11 } from "@/components/ui/dotm-square-11";
 import { humanizeStepLabelForUi } from "@/lib/humanize-step-label";
 import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
 import { cn } from "@/lib/utils";
 import type { PlatformSubtaskSnapshot, TaskExecutionStep } from "@/lib/agent-events";
 
-/** 平台多步编排：按时间顺序「步骤 N 执行卡片 → 步骤 N 执行结果 → 步骤 N+1 执行卡片 → …」 */
+/** 平台多步编排：按时间顺序合并执行步骤与结果快照，最终渲染为同一条时间线。 */
 export type PlatformStepTimelineItem =
-  | { kind: "executing"; step: TaskExecutionStep; stepIndex: number }
+  | { kind: "executing"; step: TaskExecutionStep; stepIndex: number; total: number }
   | { kind: "result"; snap: PlatformSubtaskSnapshot }
   | {
       kind: "result_pending";
       stepIndex: number;
+      total: number;
       label: string;
       status: "done" | "error";
     };
@@ -44,13 +44,13 @@ export function buildPlatformStepTimeline(
         items.push({
           kind: "result_pending",
           stepIndex: i,
+          total: n,
           label: step.label,
           status: step.status,
         });
       }
     } else {
-      items.push({ kind: "executing", step, stepIndex: i });
-      break;
+      items.push({ kind: "executing", step, stepIndex: i, total: n });
     }
   }
   return items;
@@ -73,12 +73,18 @@ function runtimeHintWithElapsed(runtimeHint: string | undefined, elapsedSeconds:
   return `${hint} · ${elapsedText}`;
 }
 
-function RunningStepRuntimeHint({ step }: { step: TaskExecutionStep }) {
-  const startedAtMs = useMemo(() => {
-    if (!step.runtimeStartedAt) return null;
-    const parsed = new Date(step.runtimeStartedAt).getTime();
-    return Number.isFinite(parsed) ? parsed : null;
-  }, [step.runtimeStartedAt]);
+export function ExecutionRuntimeTag({ steps }: { steps: TaskExecutionStep[] | undefined }) {
+  const step = useMemo(() => {
+    return [...(steps ?? [])]
+      .sort((a, b) => a.order - b.order)
+      .find((item) => item.status === "running" && (item.runtimeHint || item.runtimeStartedAt));
+  }, [steps]);
+  const startedAtMs = step?.runtimeStartedAt
+    ? (() => {
+        const parsed = new Date(step.runtimeStartedAt).getTime();
+        return Number.isFinite(parsed) ? parsed : null;
+      })()
+    : null;
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -89,7 +95,7 @@ function RunningStepRuntimeHint({ step }: { step: TaskExecutionStep }) {
     return () => window.clearInterval(timer);
   }, [startedAtMs]);
 
-  if (!step.runtimeHint && !startedAtMs) return null;
+  if (!step || (!step.runtimeHint && !startedAtMs)) return null;
 
   const text =
     startedAtMs === null
@@ -99,115 +105,133 @@ function RunningStepRuntimeHint({ step }: { step: TaskExecutionStep }) {
   if (!text.trim()) return null;
 
   return (
-    <p className="mt-2 pl-10 text-[12px] leading-5 text-[#4e5969]">
-      {text}
-    </p>
+    <span
+      className="inline-flex min-w-0 max-w-full shrink items-center rounded-full bg-bg-subtle px-2 py-0.5 text-caption font-medium leading-5 text-text-secondary"
+      data-testid="execution-runtime-tag"
+      title={text}
+    >
+      <span className="min-w-0 truncate">{text}</span>
+    </span>
   );
+}
+
+function StepStatusMark({ status }: { status: TaskExecutionStep["status"] }) {
+  if (status === "running" || status === "awaiting_input") {
+    return (
+      <DotmSquare11
+        ariaLabel="步骤执行中"
+        color="currentColor"
+        dotShape="square"
+        dotSize={2}
+        size={18}
+        speed={1.15}
+        className="text-foreground"
+      />
+    );
+  }
+
+  if (status === "done") {
+    return (
+      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-text-disabled text-bg-surface">
+        <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
+      </span>
+    );
+  }
+
+  if (status === "error") {
+    return <XCircle className="h-5 w-5 text-text-tertiary" strokeWidth={1.8} />;
+  }
+
+  return <span className="mt-1 inline-flex h-3 w-3 rounded-full border border-border-strong bg-bg-surface" />;
+}
+
+export function ExecutionTimelineRow({
+  label,
+  status,
+  isLast,
+  active = false,
+  onSelect,
+}: {
+  label: string;
+  status: TaskExecutionStep["status"];
+  isLast: boolean;
+  active?: boolean;
+  onSelect?: () => void;
+}) {
+  const emphasized = active || status === "running" || status === "awaiting_input" || isLast;
+  const rowClass = cn(
+    "relative flex w-full min-w-0 items-start gap-3 py-1.5 text-left transition-colors",
+    onSelect ? "rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/15" : "",
+  );
+  const content = (
+    <>
+      <span className="relative flex w-5 shrink-0 justify-center pt-0.5" aria-hidden>
+        {!isLast ? (
+          <span className="absolute left-1/2 top-6 h-[calc(100%+10px)] -translate-x-1/2 border-l border-dashed border-border" />
+        ) : null}
+        <StepStatusMark status={status} />
+      </span>
+      <span
+        className={cn(
+          "min-w-0 flex-1 break-words overflow-wrap-anywhere text-body leading-6.5",
+          emphasized ? "font-semibold text-foreground" : "font-medium text-text-secondary",
+        )}
+      >
+        {label}
+      </span>
+    </>
+  );
+
+  if (onSelect) {
+    return (
+      <button type="button" className={rowClass} onClick={onSelect}>
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={rowClass}>{content}</div>;
 }
 
 /** 当前正在排队或执行中的步骤（非终态） */
 export function ExecutionStepCard({
   step,
   stepIndex,
+  total,
 }: {
   step: TaskExecutionStep;
   stepIndex: number;
+  total: number;
 }) {
-  const stepNo = stepIndex + 1;
-  const showStatusIcon = step.status !== "pending";
   return (
-    <div
-      className={cn(
-        "px-0 py-1.5",
-        step.status === "error"
-          ? "text-red-600"
-          : step.status === "awaiting_input"
-            ? "text-amber-700"
-            : "text-[#4e5969]",
-      )}
-      data-testid="execution-step-card"
-      data-step-index={stepIndex}
-    >
-      <div className="mb-2 text-[12px] font-medium uppercase tracking-wide text-[#4e5969]">
-        步骤 {stepNo}
-      </div>
-      <div className={cn("flex", showStatusIcon ? "gap-3" : "gap-0")}>
-        {showStatusIcon ? (
-          <div className="flex w-7 shrink-0 justify-center pt-0.5" aria-hidden>
-            {step.status === "running" ? (
-              <DotmSquare11
-                ariaLabel="步骤执行中"
-                color="#111111"
-                dotShape="square"
-                dotSize={2}
-                size={18}
-                speed={1.15}
-              />
-            ) : step.status === "awaiting_input" ? (
-              <AlertCircle className="h-5 w-5 text-amber-600" />
-            ) : step.status === "done" ? (
-              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-            ) : (
-              <XCircle className="h-5 w-5 text-red-500" />
-            )}
-          </div>
-        ) : null}
-        <p className="min-w-0 flex-1 break-words text-[14px] leading-6.5 [overflow-wrap:anywhere]">
-          {humanizeStepLabelForUi(step.label)}
-        </p>
-      </div>
-      {step.status === "running" ? <RunningStepRuntimeHint step={step} /> : null}
-    </div>
+    <ExecutionTimelineRow
+      label={humanizeStepLabelForUi(step.label)}
+      status={step.status}
+      isLast={stepIndex >= total - 1}
+      active={step.status !== "done" && step.status !== "pending"}
+    />
   );
 }
 
-/** 步骤已终态但尚未拉到结果快照时的占位（与执行结果卡片版式一致，不可点右侧） */
+/** 步骤已终态但尚未拉到结果快照时的占位。 */
 export function StepResultPendingCard({
   stepIndex,
+  total,
   label,
   status,
 }: {
   stepIndex: number;
+  total: number;
   label: string;
   status: "done" | "error";
 }) {
-  const stepNo = stepIndex + 1;
-  const ok = status === "done";
   return (
-    <div
-      className="w-full rounded-[16px] border border-[#eceef1] bg-white px-4 py-3 text-left text-[#4e5969] shadow-none"
-      data-testid="step-result-pending-card"
-      data-step-index={stepIndex}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-[14px] font-semibold text-[#1d2129]">步骤 {stepNo}</p>
-          <p className="mt-1 break-words text-[12px] leading-5.5 text-[#4e5969] [overflow-wrap:anywhere]">
-            {humanizeStepLabelForUi(label)}
-          </p>
-        </div>
-      </div>
-      {ok ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled
-          className="mt-3 h-8 cursor-not-allowed rounded-[10px] px-3 text-xs"
-        >
-          <DotmSquare11
-            ariaLabel="结果加载中"
-            className="mr-1.5 shrink-0"
-            color="#111111"
-            dotShape="square"
-            dotSize={1.6}
-            size={14}
-            speed={1.15}
-          />
-          结果加载中…
-        </Button>
-      ) : null}
-    </div>
+    <ExecutionTimelineRow
+      label={humanizeStepLabelForUi(label)}
+      status={status}
+      isLast={stepIndex >= total - 1}
+      active={status !== "done"}
+    />
   );
 }
 
@@ -218,9 +242,9 @@ export function StepResultPendingCard({
 export function ExecutionStepsHistoryList({ steps }: { steps: TaskExecutionStep[] }) {
   const ordered = [...steps].sort((a, b) => a.order - b.order);
   return (
-    <div className="space-y-3">
+    <div className="space-y-0">
       {ordered.map((step, stepIndex) => (
-        <ExecutionStepCard key={step.id} step={step} stepIndex={stepIndex} />
+        <ExecutionStepCard key={step.id} step={step} stepIndex={stepIndex} total={ordered.length} />
       ))}
     </div>
   );
@@ -230,11 +254,16 @@ export function ExecutionStepsHistoryList({ steps }: { steps: TaskExecutionStep[
 export function ExecutionStepsMonitor({ steps }: { steps: TaskExecutionStep[] }) {
   const items = buildPlatformStepTimeline(steps, undefined);
   return (
-    <div className="space-y-3">
+    <div className="space-y-0">
       {items.map((item) => {
         if (item.kind === "executing") {
           return (
-            <ExecutionStepCard key={`e-${item.step.id}`} step={item.step} stepIndex={item.stepIndex} />
+            <ExecutionStepCard
+              key={`e-${item.step.id}`}
+              step={item.step}
+              stepIndex={item.stepIndex}
+              total={item.total}
+            />
           );
         }
         if (item.kind === "result_pending") {
@@ -242,6 +271,7 @@ export function ExecutionStepsMonitor({ steps }: { steps: TaskExecutionStep[] })
             <StepResultPendingCard
               key={`rp-${item.stepIndex}`}
               stepIndex={item.stepIndex}
+              total={item.total}
               label={item.label}
               status={item.status}
             />

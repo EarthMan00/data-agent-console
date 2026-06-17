@@ -12,20 +12,20 @@ import { parseJsonToTableData } from "@/lib/json-to-table";
 import { shouldRenderTableCellAsImage } from "@/lib/table-image-url-cell";
 
 const jsonHeaderClamp =
-  "max-w-[300px] min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-top";
-const jsonBodyCellTd = "max-w-[300px] min-w-0 align-top p-0";
+  "max-w-panel-sm min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-top";
+const jsonBodyCellTd = "max-w-panel-sm min-w-0 align-top p-0";
 const jsonBodyCellInner =
   "block min-w-0 max-w-full whitespace-normal break-words px-3 py-2 text-xs leading-snug line-clamp-3";
 
 function JsonArtifactDataTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
   const colCount = Math.max(1, columns.length);
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-[#e5e7eb] bg-white">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-control border border-border bg-bg-surface">
       <div className="min-h-0 min-w-0 flex-1 overflow-auto">
         <Table className="w-max min-w-full max-w-full table-auto">
           {columns.length > 0 ? (
-            <TableHeader className="sticky top-0 z-[1] bg-[#f8fafc] shadow-[0_1px_0_#e5e7eb]">
-              <TableRow className="border-[#e5e7eb] hover:bg-transparent">
+            <TableHeader className="sticky top-0 z-layer-base bg-bg-subtle shadow-hairline">
+              <TableRow className="border-border hover:bg-transparent">
                 {columns.map((c, i) => (
                   <TableHead key={`jh-${i}`} className={jsonHeaderClamp} title={c}>
                     {c}
@@ -37,13 +37,13 @@ function JsonArtifactDataTable({ columns, rows }: { columns: string[]; rows: str
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={colCount} className="text-[12px] text-[#64748b]">
+                <TableCell colSpan={colCount} className="text-caption text-text-secondary">
                   （无数据行）
                 </TableCell>
               </TableRow>
             ) : (
               rows.map((row, ri) => (
-                <TableRow key={`jr-${ri}`} className="hover:bg-[#fafafa]">
+                <TableRow key={`jr-${ri}`} className="hover:bg-bg-subtle">
                   {Array.from({ length: colCount }, (_, ci) => {
                     const v = row[ci] ?? "";
                     const columnHeader = columns[ci];
@@ -93,7 +93,7 @@ export function FavoriteSnapshotView({
 
   if (kind === "file" || kind === "pdf") {
     return (
-      <div className="space-y-3 px-4 py-6 text-sm text-[#64748b]">
+      <div className="space-y-3 px-4 py-6 text-sm text-text-secondary">
         <p>
           {kind === "pdf" ? "PDF 报告已保存副本。" : "文件已保存副本。"}
           {typeof snapshot.original_name === "string" ? `（${snapshot.original_name}）` : ""}
@@ -113,17 +113,15 @@ export function FavoriteSnapshotView({
 
   if (kind === "md" && content_text) {
     return (
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-[10px] border border-[#e5e7eb] bg-white px-3 py-2 text-[14px] leading-relaxed text-[#31405a] [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-semibold [&_li]:my-0.5 [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_code]:rounded [&_code]:bg-[#f1f5f9] [&_code]:px-1 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-[#f8fafc] [&_pre]:p-2 [&_table]:w-full [&_th]:border [&_th]:border-[#e5e7eb] [&_th]:bg-[#f8fafc] [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-[#e5e7eb] [&_td]:px-2 [&_td]:py-1">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-control border border-border bg-bg-surface px-3 py-2 text-body leading-relaxed text-foreground [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-semibold [&_li]:my-0.5 [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_code]:rounded [&_code]:bg-bg-subtle [&_code]:px-1 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-bg-subtle [&_pre]:p-2 [&_table]:w-full [&_th]:border [&_th]:border-border [&_th]:bg-bg-subtle [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1">
         <ReactMarkdown>{content_text}</ReactMarkdown>
       </div>
     );
   }
 
-  if (kind === "alice" && content_text) {
+  if (kind === "linkfox") {
     return (
-      <pre className="min-h-0 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-[#e5e7eb] bg-[#f8fafc] p-3 text-[12px] leading-relaxed text-[#31405a]">
-        {content_text}
-      </pre>
+      <p className="px-4 py-8 text-sm text-text-secondary">无法展示该收藏的快照内容。</p>
     );
   }
 
@@ -148,18 +146,18 @@ export function FavoriteSnapshotView({
     const rows = lines.slice(0, 400).map((line) => line.split(","));
     const headerRow = rows[0] ?? [];
     return (
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-[10px] border border-[#e5e7eb] bg-white">
-        <table className="w-full border-collapse text-left text-[14px]">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-control border border-border bg-bg-surface">
+        <table className="w-full border-collapse text-left text-body">
           <tbody>
             {rows.map((row, rowIndex) => (
-              <tr key={`cs-${rowIndex}`} className="border-b border-[#e5eaf2]">
+              <tr key={`cs-${rowIndex}`} className="border-b border-border">
                 {row.map((cell, cellIndex) => {
                   const columnHeader = rowIndex === 0 ? undefined : headerRow[cellIndex];
                   return (
                     <td
                       key={`c-${rowIndex}-${cellIndex}`}
-                      className={`border-r border-[#e5eaf2] align-top ${
-                        rowIndex === 0 ? "bg-[#f8fafc] font-medium text-[#313734]" : "bg-white text-[#6d7c91] p-0"
+                      className={`border-r border-border align-top ${
+                        rowIndex === 0 ? "bg-bg-subtle font-medium text-foreground" : "bg-bg-surface text-text-tertiary p-0"
                       }`}
                     >
                       {rowIndex === 0 ? (
@@ -169,7 +167,7 @@ export function FavoriteSnapshotView({
                           value={cell}
                           columnHeader={columnHeader}
                           sidePanel
-                          textClassName="block min-w-0 max-w-full whitespace-normal break-words px-3 py-2 text-xs leading-snug line-clamp-3 text-[#6d7c91]"
+                          textClassName="block min-w-0 max-w-full whitespace-normal break-words px-3 py-2 text-xs leading-snug line-clamp-3 text-text-tertiary"
                         />
                       )}
                     </td>
@@ -185,11 +183,11 @@ export function FavoriteSnapshotView({
 
   if (content_text) {
     return (
-      <pre className="min-h-0 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-[#e5e7eb] bg-white p-3 text-[12px] text-[#31405a]">
+      <pre className="min-h-0 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-control border border-border bg-bg-surface p-3 text-caption text-foreground">
         {content_text}
       </pre>
     );
   }
 
-  return <p className="px-4 py-8 text-sm text-[#64748b]">无法展示该收藏的快照内容。</p>;
+  return <p className="px-4 py-8 text-sm text-text-secondary">无法展示该收藏的快照内容。</p>;
 }

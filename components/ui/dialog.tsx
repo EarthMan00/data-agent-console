@@ -18,7 +18,7 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn("text-[16px] font-semibold leading-6 text-[#111111]", className)}
+    className={cn("text-title-1 font-semibold text-foreground", className)}
     {...props}
   />
 ));
@@ -30,7 +30,7 @@ const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-[rgba(22,24,28,0.44)] backdrop-blur-[1px]", className)}
+    className={cn("fixed inset-0 z-50 bg-mask-bg-strong backdrop-blur-soft", className)}
     {...props}
   />
 ));
@@ -50,14 +50,14 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid max-h-[calc(100vh-48px)] w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-hidden border border-[#e7e7e8] bg-white p-6 shadow-[0_24px_64px_rgba(15,23,42,0.18)] duration-200 sm:rounded-[14px]",
+        "fixed left-1/2 top-1/2 z-50 grid max-h-dialog-screen w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-hidden border border-border bg-bg-surface p-6 shadow-dialog duration-200 sm:rounded-card",
         className,
       )}
       {...props}
     >
       {children}
       {!hideClose ? (
-        <DialogPrimitive.Close className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-[#34322d] opacity-100 transition-colors hover:bg-[rgba(55,53,47,0.06)]">
+        <DialogPrimitive.Close className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-control text-foreground opacity-100 transition-colors hover:bg-fill-hover">
           <X className="h-4 w-4" />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>

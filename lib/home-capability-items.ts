@@ -8,6 +8,7 @@ export type HomeCapabilityCategory = {
 export type HomeCapabilityItem = HomeCapabilityCategory & {
   promptHint: string;
   promptTemplate?: string;
+  promptTemplates?: string[];
   parentId: string;
   parentLabel: string;
 };
@@ -19,7 +20,7 @@ export type HomeCapabilityGroup = HomeCapabilityCategory & {
 const scenariosCategory: HomeCapabilityCategory = {
   id: "scenarios",
   label: "应用场景",
-  accent: "#8b9bb0",
+  accent: "var(--color-accent-neutral)",
   icon: "grid",
 };
 
@@ -35,6 +36,7 @@ function item(
     label,
     promptHint,
     promptTemplate,
+    promptTemplates: promptTemplate ? [promptTemplate] : undefined,
     parentId: group.id,
     parentLabel: group.label,
     accent: group.accent,
@@ -42,18 +44,18 @@ function item(
   };
 }
 
-const keepaGroup: HomeCapabilityCategory = { id: "keepa-group", label: "Keepa", accent: "#f08a36", icon: "keepa" };
-const amazonGroup: HomeCapabilityCategory = { id: "amazon-group", label: "亚马逊前台", accent: "#ff9900", icon: "amazon" };
-const sifGroup: HomeCapabilityCategory = { id: "sif-group", label: "Sif数据分析工具", accent: "#6ca8ff", icon: "store" };
-const sellerSpriteGroup: HomeCapabilityCategory = { id: "seller-sprite-group", label: "卖家精灵", accent: "#ff6b00", icon: "sprite" };
-const searchGroup: HomeCapabilityCategory = { id: "search-group", label: "实时与全网检索", accent: "#89a7ff", icon: "search" };
-const googleGroup: HomeCapabilityCategory = { id: "google-group", label: "谷歌趋势", accent: "#4285f4", icon: "google" };
-const alibabaGroup: HomeCapabilityCategory = { id: "alibaba-group", label: "店雷达(1688)", accent: "#ff6a00", icon: "alibaba" };
-const tiktokGroup: HomeCapabilityCategory = { id: "tiktok-group", label: "TikTok电商数据助手", accent: "#111111", icon: "tiktok" };
-const jimuGroup: HomeCapabilityCategory = { id: "jimu-group", label: "极目系列", accent: "#8affc8", icon: "jimu" };
-const walmartGroup: HomeCapabilityCategory = { id: "walmart-group", label: "Walmart前台", accent: "#0071ce", icon: "walmart" };
-const ebayGroup: HomeCapabilityCategory = { id: "ebay-group", label: "eBay前台", accent: "#e53238", icon: "ebay" };
-const patentGroup: HomeCapabilityCategory = { id: "patent-group", label: "专利检索", accent: "#7f8b99", icon: "patent" };
+const keepaGroup: HomeCapabilityCategory = { id: "keepa-group", label: "Keepa", accent: "var(--color-accent-keepa)", icon: "keepa" };
+const amazonGroup: HomeCapabilityCategory = { id: "amazon-group", label: "亚马逊前台", accent: "var(--color-accent-amazon)", icon: "amazon" };
+const sifGroup: HomeCapabilityCategory = { id: "sif-group", label: "Sif数据分析工具", accent: "var(--color-accent-sif)", icon: "store" };
+const sellerSpriteGroup: HomeCapabilityCategory = { id: "seller-sprite-group", label: "卖家精灵", accent: "var(--color-accent-seller-sprite)", icon: "sprite" };
+const searchGroup: HomeCapabilityCategory = { id: "search-group", label: "实时与全网检索", accent: "var(--color-accent-search)", icon: "search" };
+const googleGroup: HomeCapabilityCategory = { id: "google-group", label: "谷歌趋势", accent: "var(--color-accent-google)", icon: "google" };
+const alibabaGroup: HomeCapabilityCategory = { id: "alibaba-group", label: "店雷达(1688)", accent: "var(--color-accent-alibaba)", icon: "alibaba" };
+const tiktokGroup: HomeCapabilityCategory = { id: "tiktok-group", label: "TikTok电商数据助手", accent: "var(--color-primary)", icon: "tiktok" };
+const jimuGroup: HomeCapabilityCategory = { id: "jimu-group", label: "极目系列", accent: "var(--color-accent-jimu)", icon: "jimu" };
+const walmartGroup: HomeCapabilityCategory = { id: "walmart-group", label: "Walmart前台", accent: "var(--color-accent-walmart)", icon: "walmart" };
+const ebayGroup: HomeCapabilityCategory = { id: "ebay-group", label: "eBay前台", accent: "var(--color-accent-ebay)", icon: "ebay" };
+const patentGroup: HomeCapabilityCategory = { id: "patent-group", label: "专利检索", accent: "var(--color-accent-patent)", icon: "patent" };
 
 /** 首页/编排器数据源分组（静态样式结构，后续可直接由接口替换 items）。 */
 export const homeCapabilityGroups: HomeCapabilityGroup[] = [

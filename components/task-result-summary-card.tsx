@@ -32,18 +32,18 @@ export function TaskResultSummaryCard({
 
   return (
     <div className="space-y-3" data-testid="agent-result-section">
-      <div className="rounded-[18px] border border-[#e2e2df] bg-white px-4 py-4 shadow-[0_1px_2px_rgba(17,17,17,0.03)]">
+      <div className="rounded-popover border border-border bg-bg-surface px-4 py-4 shadow-surface">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="flex min-w-0 items-center gap-4">
-            <div className="relative flex h-[56px] w-[76px] shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-[#f7f7f7]">
-              <div className="relative flex h-8 w-8 items-center justify-center rounded-[10px] bg-white text-[#1d2129] shadow-none">
+            <div className="relative flex h-14 w-20 shrink-0 items-center justify-center overflow-hidden rounded-field bg-fill-hover">
+              <div className="relative flex h-8 w-8 items-center justify-center rounded-control bg-bg-surface text-foreground shadow-none">
                 <FileText className="h-4 w-4" />
               </div>
             </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[14px] font-semibold text-[#1d2129]">{title}</div>
+              <div className="truncate text-body font-semibold text-foreground">{title}</div>
               {displayTime ? (
-                <div className="mt-[2px] truncate text-[12px] leading-5 text-[#4e5969]">{displayTime}</div>
+                <div className="mt-0.5 truncate text-caption leading-5 text-text-tertiary">{displayTime}</div>
               ) : null}
             </div>
           </div>
@@ -52,8 +52,8 @@ export function TaskResultSummaryCard({
               type="button"
               onClick={onToggle}
               className={cn(
-                "shrink-0 rounded-[10px] border border-transparent bg-[#111111] px-3 py-1.5 text-[12px] font-medium text-white shadow-none",
-                "hover:bg-[#2a2a2a]",
+                "shrink-0 rounded-control border border-transparent bg-primary px-3 py-1.5 text-caption font-medium text-primary-foreground shadow-none",
+                "hover:bg-link-hover",
               )}
             >
               {expanded ? "收起" : "查看"}
@@ -62,7 +62,7 @@ export function TaskResultSummaryCard({
         </div>
       </div>
       {summary ? (
-        <div className="line-clamp-3 max-w-[720px] px-1 text-[14px] leading-6.5 text-[#4e5969]">{summary}</div>
+        <div className="line-clamp-3 max-w-3xl px-1 text-body leading-6.5 text-text-tertiary">{summary}</div>
       ) : null}
     </div>
   );

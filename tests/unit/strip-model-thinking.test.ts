@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  resolveAssistantBodyForUi,
   stripModelThinkingForStreamPartial,
   stripModelThinkingForUi,
   streamSanitizeDeltaClient,
@@ -17,6 +18,12 @@ describe("stripModelThinkingForUi", () => {
   });
 });
 
+describe("resolveAssistantBodyForUi", () => {
+  it("strips internal tool names from assistant visible text", () => {
+    expect(resolveAssistantBodyForUi("LinkFox 已返回数据", false)).toBe("已返回数据");
+  });
+});
+
 describe("streamSanitizeDeltaClient", () => {
   it("keeps previous visible text when strip shrinks display", () => {
     const prev = "美加市场保温杯选品需要关注";
@@ -24,5 +31,10 @@ describe("streamSanitizeDeltaClient", () => {
     const { display, delta } = streamSanitizeDeltaClient(prev, raw);
     expect(display).toBe(prev);
     expect(delta).toBe("");
+  });
+
+  it("strips tool names from streamed display", () => {
+    const { display } = streamSanitizeDeltaClient("", "LinkFox 数据查询中");
+    expect(display).toBe("数据查询中");
   });
 });

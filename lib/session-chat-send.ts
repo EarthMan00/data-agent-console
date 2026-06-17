@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from "react";
 
 import { sendChatMessageStream, uploadSessionAttachments } from "@/lib/agent-api/client";
 import type { ChatSendResult, SessionMessageItem } from "@/lib/agent-api/types";
-import { stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
+import { streamSanitizeDeltaClient, stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 
 export function createStreamingAssistantMessage(id: string, createdAt: string): SessionMessageItem {
   return {
@@ -74,6 +74,10 @@ export function finalizeStreamingAssistantMessage(
   );
 }
 
+function isAbortError(e: unknown): boolean {
+  return e instanceof DOMException && e.name === "AbortError";
+}
+
 export async function sendSessionMessageStream(
   accessToken: string,
   sessionId: string,
@@ -82,43 +86,140 @@ export async function sendSessionMessageStream(
   setMessages: Dispatch<SetStateAction<SessionMessageItem[]>>,
   assistantStreamId: string,
   files: File[] = [],
+  signal?: AbortSignal,
+  onPersist?: (content: string) => void,
+  /** 读取当前已展示的字符数（用于 chunk 兜底追赶） */
+  getDisplayedLen?: () => number,
+  /** 当前会话是否仍活跃（用于 finally 守卫，避免卸载后 setMessages） */
+  isCurrent?: () => boolean,
 ): Promise<ChatSendResult> {
   const attachmentIds =
     files.length > 0
       ? (await uploadSessionAttachments(accessToken, sessionId, files)).map((item) => item.attachment_id)
       : [];
 
-  return sendChatMessageStream(accessToken, sessionId, text, messageId, {
-    onDelta: (chunk) => {
-      if (!chunk) return;
-      setMessages((cur) =>
-        cur.map((m) => (m.id === assistantStreamId ? { ...m, content: `${m.content}${chunk}` } : m)),
-      );
-    },
-    onAssistantComplete: (full) => {
-      const cleaned = stripModelThinkingForUi(full);
+  // 流式 thinking 清洗状态
+  let rawStreamAccum = "";
+  let prevSanitizedStream = "";
+
+  // SSE 完成后的全文
+  let fullCleaned = "";
+
+  try {
+    return await sendChatMessageStream(accessToken, sessionId, text, messageId, {
+      onDelta: (chunk) => {
+        if (!chunk) return;
+        rawStreamAccum += chunk;
+        const { display, delta } = streamSanitizeDeltaClient(prevSanitizedStream, rawStreamAccum);
+        prevSanitizedStream = display;
+        // 仅在有可见增量时写入 manager，减少无效 rAF
+        if (delta) onPersist?.(display);
+      },
+      onAssistantComplete: (full) => {
+        fullCleaned = stripModelThinkingForUi(full);
+      },
+      onError: (message) => {
+        if (isCurrent && !isCurrent()) return;
+        const cleaned = stripModelThinkingForUi(message);
+        setMessages((cur) =>
+          cur.map((m) =>
+            m.id === assistantStreamId
+              ? { ...m, content: cleaned || "任务启动失败，请稍后重试。", meta: { streaming: false, kind: "model_error" } }
+              : m,
+          ),
+        );
+      },
+    }, { attachmentIds, signal });
+  } catch (e) {
+    if (isAbortError(e)) {
+      return { kind: "completed", session_id: sessionId, message: "" };
+    }
+    throw e;
+  } finally {
+    // 会话已切走则跳过 UI 更新（manager + 订阅接管后续展示）
+    if (!isCurrent || isCurrent()) {
+      // 兜底：SSE 已结束但消息内容落后于全文时，由 chunk 机制追赶剩余部分
+      const content = fullCleaned || prevSanitizedStream;
+      if (content) {
+        const displayed = getDisplayedLen?.() ?? 0;
+        if (displayed < [...content].length) {
+          await _feedContentInChunks(setMessages, assistantStreamId, content, displayed, onPersist);
+        } else {
+          onPersist?.(content);
+        }
+      }
+      // 移除 streaming meta
       setMessages((cur) =>
         cur.map((m) => {
-          if (m.id !== assistantStreamId) return m;
-          const merged =
-            cleaned && cleaned !== "（无回复）" ? cleaned : (m.content ?? "");
-          return { ...m, content: merged, meta: { streaming: true } };
+          if (m.id !== assistantStreamId || !isStreamingAssistantMessage(m)) return m;
+          const meta =
+            m.meta && typeof m.meta === "object" && !Array.isArray(m.meta)
+              ? { ...(m.meta as Record<string, unknown>) }
+              : {};
+          delete meta.streaming;
+          return { ...m, meta };
         }),
       );
-    },
-    onError: (message) => {
-      const cleaned = stripModelThinkingForUi(message);
-      setMessages((cur) =>
-        cur.map((m) =>
+    }
+  }
+}
+
+// DEBUG: 在浏览器 Console 中执行 window.__feedContentVersion 验证代码版本（应为 5）
+if (typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__feedContentVersion = 5;
+}
+
+/** 兜底：从 startPos 位置起，按动画帧分块追赶全文剩余部分。 */
+async function _feedContentInChunks(
+  setMessages: Dispatch<SetStateAction<SessionMessageItem[]>>,
+  assistantStreamId: string,
+  fullText: string,
+  startPos: number,
+  onPersist?: (content: string) => void,
+): Promise<void> {
+  const chars = [...fullText];
+  if (startPos >= chars.length) return;
+  const CHUNK = 3;
+
+  const FALLBACK_MS = 2000;
+  let finished = false;
+
+  return new Promise<void>((resolve) => {
+    const fallbackTimer = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      setMessages((cur) => {
+        if (!cur.some((m) => m.id === assistantStreamId)) return cur;
+        return cur.map((m) =>
+          m.id === assistantStreamId ? { ...m, content: fullText, meta: { streaming: true } } : m,
+        );
+      });
+      onPersist?.(fullText);
+      resolve();
+    }, FALLBACK_MS);
+
+    let pos = startPos;
+    const tick = () => {
+      if (finished) return;
+      if (pos >= chars.length) {
+        finished = true;
+        clearTimeout(fallbackTimer);
+        onPersist?.(fullText);
+        resolve();
+        return;
+      }
+      const piece = chars.slice(pos, pos + CHUNK).join("");
+      pos += CHUNK;
+      setMessages((cur) => {
+        if (!cur.some((m) => m.id === assistantStreamId)) return cur;
+        return cur.map((m) =>
           m.id === assistantStreamId
-            ? {
-                ...m,
-                content: cleaned || "任务启动失败，请稍后重试。",
-                meta: { streaming: false, kind: "model_error" },
-              }
+            ? { ...m, content: m.content + piece, meta: { streaming: true } }
             : m,
-        ),
-      );
-    },
-  }, { attachmentIds });
+        );
+      });
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
 }

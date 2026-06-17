@@ -547,6 +547,7 @@ export async function runPlatformRound(
             label: s.label,
             status: "pending" as const,
           })),
+          orchestration_id: orchestrationId,
         });
       }
 
@@ -561,6 +562,7 @@ export async function runPlatformRound(
           round_id: input.roundId,
           task_id: taskIdForMeta ?? acceptedTaskId,
           steps,
+          orchestration_id: orchestrationId,
         };
         await patchTaskExecutionSteps(accessToken, chatSessionId, taskExecutionStepsMessageId, body);
       };

@@ -158,19 +158,19 @@ export function AdminPlansWorkspace() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-[24px] font-semibold leading-8 text-[#111111]">套餐管理</h1>
-          <p className="mt-2 text-sm leading-6 text-[#747571]">
+          <h1 className="text-title-3 font-semibold leading-8 text-foreground">套餐管理</h1>
+          <p className="mt-2 text-sm leading-6 text-text-tertiary">
             管理用户套餐与工具权限配置。每个套餐可独立控制是否启用工具、允许哪些工具，以及附加功能特性。
           </p>
         </div>
-        <Button className="rounded-[10px]" onClick={openCreate}>新增套餐</Button>
+        <Button className="rounded-control" onClick={openCreate}>新增套餐</Button>
       </div>
 
-      {notice ? <p className="mt-4 text-sm text-red-600">{notice}</p> : null}
+      {notice ? <p className="mt-4 text-sm text-danger">{notice}</p> : null}
 
-      <div className="mt-8 overflow-hidden rounded-[18px] border border-[#e2e2df] bg-white shadow-sm">
+      <div className="mt-8 overflow-hidden rounded-popover border border-border bg-bg-surface shadow-sm">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-[#e2e2df] bg-[#f7f7f7] text-xs font-medium uppercase tracking-wide text-[#747571]">
+          <thead className="border-b border-border bg-fill-hover text-xs font-medium uppercase tracking-wide text-text-tertiary">
             <tr>
               <th className="px-4 py-3">套餐名称</th>
               <th className="px-4 py-3">Code</th>
@@ -182,25 +182,25 @@ export function AdminPlansWorkspace() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-[#94a3b8]">加载中…</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-text-disabled">加载中…</td></tr>
             ) : plans.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-[#94a3b8]">暂无套餐</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-text-disabled">暂无套餐</td></tr>
             ) : plans.map((plan) => (
-              <tr key={plan.id} className="border-b border-[#f0f0ef] last:border-0">
-                <td className="px-4 py-3 font-medium text-[#111111]">{plan.name}</td>
-                <td className="px-4 py-3 font-mono text-xs text-[#747571]">{plan.code}</td>
-                <td className="px-4 py-3 text-[#747571]">{plan.level}</td>
+              <tr key={plan.id} className="border-b border-border-subtle last:border-0">
+                <td className="px-4 py-3 font-medium text-foreground">{plan.name}</td>
+                <td className="px-4 py-3 font-mono text-xs text-text-tertiary">{plan.code}</td>
+                <td className="px-4 py-3 text-text-tertiary">{plan.level}</td>
                 <td className="px-4 py-3">
                   {plan.can_use_tools ? (
-                    <span className="rounded-full bg-[#e9f7ef] px-2 py-0.5 text-xs text-[#166534]">允许使用工具</span>
+                    <span className="rounded-full bg-success-bg px-2 py-0.5 text-xs text-success">允许使用工具</span>
                   ) : (
-                    <span className="rounded-full bg-[#f0f0ef] px-2 py-0.5 text-xs text-[#52524f]">仅对话</span>
+                    <span className="rounded-full bg-fill-hover px-2 py-0.5 text-xs text-text-secondary">仅对话</span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-[#747571]">{plan.user_count}</td>
+                <td className="px-4 py-3 text-text-tertiary">{plan.user_count}</td>
                 <td className="px-4 py-3 text-right">
-                  <Button variant="ghost" size="sm" className="h-8 rounded-[8px]" onClick={() => openEdit(plan)}>编辑</Button>
-                  <Button variant="ghost" size="sm" className="h-8 rounded-[8px] text-red-600" onClick={() => setDeleteTarget(plan)}>删除</Button>
+                  <Button variant="ghost" size="sm" className="h-8 rounded-md" onClick={() => openEdit(plan)}>编辑</Button>
+                  <Button variant="ghost" size="sm" className="h-8 rounded-md text-danger" onClick={() => setDeleteTarget(plan)}>删除</Button>
                 </td>
               </tr>
             ))}
@@ -210,62 +210,62 @@ export function AdminPlansWorkspace() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={(o) => !o && setEditOpen(false)}>
-        <DialogContent className="max-w-lg rounded-[14px]">
+        <DialogContent className="max-w-lg rounded-card">
           <DialogTitle>{editTarget ? "编辑套餐" : "新增套餐"}</DialogTitle>
           <div className="grid gap-3 pt-2">
             <div className="grid gap-1">
-              <label className="text-xs text-[#747571]">套餐名称</label>
-              <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="h-9 rounded-[10px]" />
+              <label className="text-xs text-text-tertiary">套餐名称</label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="h-9 rounded-control" />
             </div>
             {!editTarget && (
               <div className="grid gap-1">
-                <label className="text-xs text-[#747571]">Code（唯一标识）</label>
-                <Input value={editCode} onChange={(e) => setEditCode(e.target.value)} className="h-9 rounded-[10px]" placeholder="如: premium" />
+                <label className="text-xs text-text-tertiary">Code（唯一标识）</label>
+                <Input value={editCode} onChange={(e) => setEditCode(e.target.value)} className="h-9 rounded-control" placeholder="如: premium" />
               </div>
             )}
             <div className="grid gap-1">
-              <label className="text-xs text-[#747571]">级别（数字，数值越高优先级越高）</label>
+              <label className="text-xs text-text-tertiary">级别（数字，数值越高优先级越高）</label>
               <Input
                 type="number"
                 value={editLevel}
                 onChange={(e) => setEditLevel(Number(e.target.value))}
-                className="h-9 rounded-[10px]"
+                className="h-9 rounded-control"
               />
             </div>
-            <label className="flex items-center gap-2 text-sm text-[#111111]">
+            <label className="flex items-center gap-2 text-sm text-foreground">
               <Checkbox
                 checked={editCanUseTools}
                 onCheckedChange={(v) => setEditCanUseTools(v === true)}
               />
-              <span className="text-xs text-[#747571]">允许使用工具</span>
+              <span className="text-xs text-text-tertiary">允许使用工具</span>
             </label>
             <div className="grid gap-1">
-              <label className="text-xs text-[#747571]">
+              <label className="text-xs text-text-tertiary">
                 工具白名单
-                <span className="ml-1 text-[#a1a1aa]">（每行一个工具名称）</span>
+                <span className="ml-1 text-text-disabled">（每行一个工具名称）</span>
               </label>
               <Textarea
                 value={editToolAllowlist}
                 onChange={(e) => setEditToolAllowlist(e.target.value)}
-                className="min-h-[80px] rounded-[10px]"
+                className="min-h-20 rounded-control"
                 placeholder={"tool_a\ntool_b\ntool_c"}
               />
             </div>
             <div className="grid gap-1">
-              <label className="text-xs text-[#747571]">
+              <label className="text-xs text-text-tertiary">
                 附加功能配置
-                <span className="ml-1 text-[#a1a1aa]">（JSON 格式）</span>
+                <span className="ml-1 text-text-disabled">（JSON 格式）</span>
               </label>
               <Textarea
                 value={editFeatures}
                 onChange={(e) => setEditFeatures(e.target.value)}
-                className="min-h-[100px] rounded-[10px] font-mono text-xs"
+                className="min-h-25 rounded-control font-mono text-xs"
                 placeholder='{"max_daily_queries": 100, "enable_export": true}'
               />
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" size="sm" className="rounded-[10px]" onClick={() => setEditOpen(false)}>取消</Button>
-              <Button size="sm" className="rounded-[10px]" disabled={editBusy} onClick={submitEdit}>{editBusy ? "保存中…" : "保存"}</Button>
+              <Button variant="outline" size="sm" className="rounded-control" onClick={() => setEditOpen(false)}>取消</Button>
+              <Button size="sm" className="rounded-control" disabled={editBusy} onClick={submitEdit}>{editBusy ? "保存中…" : "保存"}</Button>
             </div>
           </div>
         </DialogContent>
@@ -273,14 +273,14 @@ export function AdminPlansWorkspace() {
 
       {/* Delete Dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent className="max-w-md rounded-[14px]">
+        <DialogContent className="max-w-md rounded-card">
           <DialogTitle>确认删除</DialogTitle>
-          <p className="text-sm text-[#747571]">
+          <p className="text-sm text-text-tertiary">
             确定删除套餐「{deleteTarget?.name}」？若有用户正在使用此套餐，删除将失败。
           </p>
           <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" size="sm" className="rounded-[10px]" onClick={() => setDeleteTarget(null)}>取消</Button>
-            <Button size="sm" className="rounded-[10px] bg-red-600 hover:bg-red-700" disabled={deleteBusy} onClick={submitDelete}>{deleteBusy ? "删除中…" : "确定删除"}</Button>
+            <Button variant="outline" size="sm" className="rounded-control" onClick={() => setDeleteTarget(null)}>取消</Button>
+            <Button size="sm" className="rounded-control bg-danger hover:bg-danger-hover" disabled={deleteBusy} onClick={submitDelete}>{deleteBusy ? "删除中…" : "确定删除"}</Button>
           </div>
         </DialogContent>
       </Dialog>

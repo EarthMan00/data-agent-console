@@ -31,23 +31,29 @@ export function useTypewriterReveal(
 ): TypewriterRevealResult {
   const charIntervalMs = options?.charIntervalMs ?? 22;
 
-  const [display, setDisplay] = useState(() => (enabled ? "" : target));
-  const displayLenRef = useRef(enabled ? 0 : charLen(target));
+  // enabled 时始终从 0 起打打字机；disabled 时直接展示全文
+  const _initDisplayLen = enabled ? 0 : charLen(target);
+  const [display, setDisplay] = useState(() => takeChars(target, _initDisplayLen));
+  const displayLenRef = useRef(_initDisplayLen);
   const targetRef = useRef(target);
   const enabledRef = useRef(enabled);
+  const prevEnabledRef = useRef(enabled);
 
   useEffect(() => {
     targetRef.current = target;
   }, [target]);
 
   useEffect(() => {
+    const wasDisabled = !prevEnabledRef.current;
+    prevEnabledRef.current = enabled;
     enabledRef.current = enabled;
     if (!enabled) {
       displayLenRef.current = charLen(target);
       setDisplay(target);
       return;
     }
-    if (charLen(target) === 0) {
+    // 从 disabled 切到 enabled 时重置打字机
+    if (wasDisabled) {
       displayLenRef.current = 0;
       setDisplay("");
     }

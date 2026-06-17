@@ -63,7 +63,7 @@ describe("AliceShell right rail layout", () => {
   it("renders task results in a drawer on mobile viewports", async () => {
     mockMatchMedia({
       "(max-width: 767px)": true,
-      "(max-width: 1279px)": true,
+      "(max-width: 1023px)": true,
     });
     renderShellWithResultPanel();
 
@@ -72,35 +72,41 @@ describe("AliceShell right rail layout", () => {
     expect(document.querySelector("main aside [data-testid='agent-preview-panel']")).not.toBeInTheDocument();
   });
 
-  it("shows task results in the main pane and chat in a drawer on compact tablet widths", async () => {
+  it("keeps chat in the main pane and shows task results in a right drawer on compact tablet widths", async () => {
     mockMatchMedia({
       "(max-width: 767px)": false,
-      "(max-width: 1279px)": true,
+      "(max-width: 1023px)": true,
     });
     renderShellWithResultPanel();
 
     await waitFor(() => {
-      expect(screen.getByTestId("agent-preview-panel")).toBeInTheDocument();
+      expect(document.querySelector("main [data-testid='chat-content']")).toBeInTheDocument();
     });
-    expect(screen.queryByRole("dialog", { name: "任务执行结果抽屉" })).not.toBeInTheDocument();
+    expect(document.querySelector("main [data-testid='agent-preview-panel']")).not.toBeInTheDocument();
     expect(document.querySelector("main aside [data-testid='agent-preview-panel']")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "查看对话过程" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看任务执行结果" }));
 
-    const drawer = await screen.findByRole("dialog", { name: "对话过程" });
-    expect(drawer).toContainElement(screen.getByTestId("chat-content"));
+    const drawer = await screen.findByRole("dialog", { name: "任务执行结果" });
+    expect(drawer).toContainElement(screen.getByTestId("agent-preview-panel"));
+    expect(drawer).not.toContainElement(screen.getByTestId("chat-content"));
   });
 
   it("keeps task results in the desktop right rail above mobile breakpoint", async () => {
     mockMatchMedia({
       "(max-width: 767px)": false,
-      "(max-width: 1279px)": false,
+      "(max-width: 1023px)": false,
     });
     renderShellWithResultPanel();
 
+    const grid = await screen.findByTestId("workspace-main-grid");
+    expect(grid).toHaveClass("lg:grid-cols-[minmax(360px,42%)_minmax(680px,58%)]");
+    expect(grid).toHaveClass("overflow-hidden");
+    expect(grid).not.toHaveClass("lg:grid-workspace-rail");
     await waitFor(() => {
       expect(document.querySelector("main aside [data-testid='agent-preview-panel']")).toBeInTheDocument();
     });
+    expect(document.querySelector("main > div > div [data-testid='agent-preview-panel']")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "任务执行结果抽屉" })).not.toBeInTheDocument();
   });
 });

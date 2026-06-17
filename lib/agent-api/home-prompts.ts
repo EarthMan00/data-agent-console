@@ -2,22 +2,77 @@ import { AgentApiError, readErrorResponseBody } from "@/lib/agent-api/client";
 import { getAgentHttpApiBase } from "@/lib/agent-api/config";
 import type { HomePromptRecommendationDto } from "@/lib/agent-api/types";
 
+export type PublicPromptCategory = {
+  id: string;
+  name: string;
+  sort_order: number;
+};
+
+/** 拉取公开的 Prompt 分类列表。 */
+export async function fetchPublicPromptCategories(): Promise<PublicPromptCategory[]> {
+  const base = getAgentHttpApiBase();
+  const res = await fetch(`${base}/api/prompt-categories`);
+  const data = await readErrorResponseBody(res);
+  if (!res.ok) {
+    throw new AgentApiError("fetch prompt categories failed", res.status, data);
+  }
+  if (!data || typeof data !== "object" || !Array.isArray((data as { categories?: unknown }).categories)) {
+    throw new AgentApiError("invalid prompt categories response", res.status, data);
+  }
+  const out: PublicPromptCategory[] = [];
+  for (const raw of (data as { categories: unknown[] }).categories) {
+    if (!raw || typeof raw !== "object") continue;
+    const o = raw as Record<string, unknown>;
+    const id = typeof o.id === "string" ? o.id : "";
+    const name = typeof o.name === "string" ? o.name : "";
+    if (!id || !name) continue;
+    out.push({
+      id,
+      name,
+      sort_order: typeof o.sort_order === "number" ? o.sort_order : 0,
+    });
+  }
+  return out;
+}
+
 type FetchHomePromptRecommendationsOptions = {
+  categoryId?: string;
+  capabilityId?: string;
   capabilityIds?: string[];
 };
 
-/** 拉取首页推荐提示词；失败时抛出，由调用方展示错误。 */
+/** 拉取首页推荐提示词；失败时抛出，由调用方展示错误。兼容旧签名与 capabilityIds 查询参数。 */
 export async function fetchHomePromptRecommendations(
-  options: FetchHomePromptRecommendationsOptions = {},
+  categoryId: string,
+  capabilityId?: string,
+): Promise<HomePromptRecommendationDto[]>;
+export async function fetchHomePromptRecommendations(
+  options: FetchHomePromptRecommendationsOptions,
+): Promise<HomePromptRecommendationDto[]>;
+export async function fetchHomePromptRecommendations(
+  categoryIdOrOptions: string | FetchHomePromptRecommendationsOptions,
+  capabilityId?: string,
 ): Promise<HomePromptRecommendationDto[]> {
   const base = getAgentHttpApiBase();
   const params = new URLSearchParams();
-  for (const id of options.capabilityIds ?? []) {
-    const trimmed = id.trim();
-    if (trimmed) params.append("capability_id", trimmed);
-  }
-  const query = params.toString();
-  const res = await fetch(`${base}/api/home-prompt-recommendations${query ? `?${query}` : ""}`);
+  const categoryId =
+    typeof categoryIdOrOptions === "string" ? categoryIdOrOptions : categoryIdOrOptions.categoryId?.trim() ?? "";
+  const singleCapabilityId =
+    typeof categoryIdOrOptions === "string"
+      ? capabilityId?.trim() ?? ""
+      : categoryIdOrOptions.capabilityId?.trim() ?? "";
+  const capabilityIds =
+    typeof categoryIdOrOptions === "string"
+      ? []
+      : (categoryIdOrOptions.capabilityIds ?? [])
+          .map((item) => item.trim())
+          .filter(Boolean);
+
+  if (categoryId) params.set("category_id", categoryId);
+  if (singleCapabilityId) params.set("capability_id", singleCapabilityId);
+  for (const item of capabilityIds) params.append("capability_id", item);
+  const qs = params.toString();
+  const res = await fetch(`${base}/api/home-prompt-recommendations${qs ? `?${qs}` : ""}`);
   const data = await readErrorResponseBody(res);
   if (!res.ok) {
     const detail =

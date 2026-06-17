@@ -8,6 +8,7 @@ type TaskExecutionPanelProps = {
   onExpandedChange: (next: boolean) => void;
   children: React.ReactNode;
   title?: string;
+  titleTag?: React.ReactNode;
   collapsible?: boolean;
   contentClassName?: string;
   testId?: string;
@@ -18,15 +19,22 @@ export function TaskExecutionPanel({
   onExpandedChange,
   children,
   title = "任务执行",
+  titleTag,
   collapsible = true,
   contentClassName = "mt-4 space-y-3",
   testId = "task-execution-panel",
 }: TaskExecutionPanelProps) {
+  const titleContent = (
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="shrink-0 text-title-1 font-semibold text-foreground">{title}</span>
+      {titleTag ? <span className="min-w-0">{titleTag}</span> : null}
+    </span>
+  );
   const header = (
     <>
-      <span className="text-[16px] font-semibold text-[#1d2129]">{title}</span>
+      {titleContent}
       {collapsible ? (
-        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-[#1d2129] transition-colors group-hover:bg-[rgba(55,53,47,0.06)]">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-foreground transition-colors group-hover:bg-fill-hover">
           <ChevronDown
             className={cn(
               "h-5 w-5 transition-transform",
@@ -40,7 +48,7 @@ export function TaskExecutionPanel({
   );
 
   return (
-    <div className="rounded-[18px] border border-[#e2e2df] bg-white px-4 py-4 shadow-none" data-testid={testId}>
+    <div className="rounded-popover border border-border bg-bg-surface px-4 py-4 shadow-none" data-testid={testId}>
       {collapsible ? (
         <button
           type="button"

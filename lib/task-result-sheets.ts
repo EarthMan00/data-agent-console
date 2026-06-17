@@ -1,5 +1,5 @@
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
-import { filterArtifactsForTaskResultPanel } from "@/lib/platform-task-artifacts";
+import { artifactDisplayLabelForUi, filterArtifactsForTaskResultPanel } from "@/lib/platform-task-artifacts";
 
 const CSV_RE = /\.csv$/i;
 const JSON_RE = /\.(json|jsonl)$/i;
@@ -30,7 +30,7 @@ function normalizeResultPairKey(filename: string): string {
 }
 
 function labelFromFilename(name: string): string {
-  return basenameOnly(name).replace(/\.[^.]+$/, "") || basenameOnly(name) || "结果";
+  return artifactDisplayLabelForUi(name);
 }
 
 export type TaskResultSheet = {

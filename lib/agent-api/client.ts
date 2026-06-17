@@ -1,6 +1,11 @@
 import { consumeChatSendStream, type ChatStreamHandlers } from "@/lib/agent-api/chat-stream";
 import { getAgentHttpApiBase, getAgentWsOrigin } from "@/lib/agent-api/config";
 import type { TaskExecutionStepStatus } from "@/lib/agent-events";
+import {
+  createFrontendMockArtifactBlob,
+  getFrontendMockArtifactText,
+  openFrontendMockUtf8TextReader,
+} from "@/lib/frontend-mock-artifacts";
 import type {
   AdminUserRow,
   ChatSendResult,
@@ -24,6 +29,7 @@ import type {
   AdminPlan,
   AdminPromptCategory,
   AdminPromptTemplate,
+  AdminPromptTemplateListResponse,
   AdminFeedbackEntry,
 } from "@/lib/agent-api/types";
 
@@ -31,6 +37,18 @@ function apiUrl(path: string): string {
   const base = getAgentHttpApiBase();
   const p = path.startsWith("/") ? path : `/${path}`;
   return `${base}${p}`;
+}
+
+function triggerBrowserDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /** 读取响应体并解析 JSON；非 JSON（如代理返回 Internal Server Error 纯文本）时返回 `{ _nonJsonBody }`。 */
@@ -475,6 +493,7 @@ export type TaskExecutionStepsPersistBody = {
   round_id: string;
   task_id: string;
   steps: TaskExecutionStepPersistPayload[];
+  orchestration_id?: string | null;
 };
 
 /** 任务受理后尽早插入步骤占位（pending），使 message_index 早于任务结果消息。 */
@@ -740,6 +759,11 @@ export async function downloadAuthorizedFile(
   downloadPath: string,
   fallbackFilename: string,
 ): Promise<void> {
+  const mock = createFrontendMockArtifactBlob(downloadPath, fallbackFilename);
+  if (mock) {
+    triggerBrowserDownload(mock.blob, mock.filename || fallbackFilename);
+    return;
+  }
   const path = downloadPath.startsWith("/") ? downloadPath : `/${downloadPath}`;
   const res = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
@@ -757,19 +781,13 @@ export async function downloadAuthorizedFile(
       filename = m[1].trim();
     }
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  triggerBrowserDownload(blob, filename);
 }
 
 /** 带 Bearer 拉取文本（用于预览 CSV/JSON 等）。 */
 export async function fetchAuthorizedText(accessToken: string, downloadPath: string): Promise<string> {
+  const mock = getFrontendMockArtifactText(downloadPath);
+  if (mock !== null) return mock;
   const path = downloadPath.startsWith("/") ? downloadPath : `/${downloadPath}`;
   const res = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
@@ -918,6 +936,8 @@ export async function openAuthorizedUtf8TextStream(
   accessToken: string,
   downloadPath: string,
 ): Promise<ReadableStreamDefaultReader<string>> {
+  const mockReader = openFrontendMockUtf8TextReader(downloadPath);
+  if (mockReader) return mockReader;
   const path = downloadPath.startsWith("/") ? downloadPath : `/${downloadPath}`;
   const res = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
@@ -1219,18 +1239,24 @@ export async function adminDeletePromptCategory(accessToken: string, categoryId:
 }
 
 export async function adminListPromptTemplates(
-  accessToken: string, categoryId?: string, status?: string,
-): Promise<{ templates: AdminPromptTemplate[] }> {
+  accessToken: string,
+  categoryId: string,
+  status?: string,
+  page?: number,
+  pageSize?: number,
+): Promise<AdminPromptTemplateListResponse> {
   const params = new URLSearchParams();
-  if (categoryId) params.set("category_id", categoryId);
+  params.set("category_id", categoryId);
   if (status) params.set("status", status);
+  if (page != null) params.set("page", String(page));
+  if (pageSize != null) params.set("page_size", String(pageSize));
   const qs = params.toString();
   const res = await fetch(apiUrl(`/admin/prompts${qs ? `?${qs}` : ""}`), {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const data = await safeJson(res);
   if (!res.ok) throw new AgentApiError("list prompt templates failed", res.status, data);
-  return data as { templates: AdminPromptTemplate[] };
+  return data as AdminPromptTemplateListResponse;
 }
 
 export async function adminCreatePromptTemplate(
@@ -1266,6 +1292,34 @@ export async function adminDeletePromptTemplate(accessToken: string, templateId:
   });
   if (res.ok) return;
   throw new AgentApiError("delete prompt template failed", res.status, await safeJson(res));
+}
+
+export type AdminImportPromptsResult = {
+  ok: boolean;
+  categories_created: number;
+  categories_deleted: number;
+  templates_created: number;
+  templates_deleted: number;
+  errors: string[];
+};
+
+export async function adminImportPromptsFromExcel(
+  accessToken: string,
+  file: File,
+): Promise<AdminImportPromptsResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(apiUrl("/admin/prompts/import"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    const detail = parseFastApiDetail(data) || `导入失败 (HTTP ${res.status})`;
+    throw new AgentApiError(detail, res.status, data);
+  }
+  return data as AdminImportPromptsResult;
 }
 
 // --- Feedback ---

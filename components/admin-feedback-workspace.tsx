@@ -14,9 +14,9 @@ import type { AdminFeedbackEntry } from "@/lib/agent-api/types";
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
-    new: "bg-blue-100 text-blue-800",
-    read: "bg-green-100 text-green-800",
-    archived: "bg-gray-100 text-gray-600",
+    new: "bg-info-bg text-info",
+    read: "bg-success-bg text-success",
+    archived: "bg-bg-subtle text-text-tertiary",
   };
   const labels: Record<string, string> = {
     new: "new",
@@ -25,7 +25,7 @@ function StatusBadge({ status }: { status: string }) {
   };
   return (
     <span
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors[status] ?? "bg-gray-100 text-gray-600"}`}
+      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors[status] ?? "bg-bg-subtle text-text-tertiary"}`}
     >
       {labels[status] ?? status}
     </span>
@@ -164,10 +164,10 @@ export function AdminFeedbackWorkspace() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-[24px] font-semibold leading-8 text-[#111111]">
+          <h1 className="text-title-3 font-semibold leading-8 text-foreground">
             反馈管理
           </h1>
-          <p className="mt-2 text-sm leading-6 text-[#747571]">
+          <p className="mt-2 text-sm leading-6 text-text-tertiary">
             查看和管理用户提交的反馈。
           </p>
         </div>
@@ -176,11 +176,11 @@ export function AdminFeedbackWorkspace() {
       {/* Filters */}
       <div className="mt-6 flex flex-wrap items-end gap-3">
         <div className="grid gap-1">
-          <label className="text-xs text-[#747571]">状态</label>
+          <label className="text-xs text-text-tertiary">状态</label>
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="h-9 rounded-[10px] border border-[#e2e2df] bg-white px-3 text-sm text-[#111111] outline-none focus:border-[#111111]"
+            className="h-9 rounded-control border border-border bg-bg-surface px-3 text-sm text-foreground outline-none focus:border-primary"
           >
             <option value="">全部</option>
             <option value="new">new</option>
@@ -189,26 +189,26 @@ export function AdminFeedbackWorkspace() {
           </select>
         </div>
         <div className="grid gap-1">
-          <label className="text-xs text-[#747571]">页面路径</label>
+          <label className="text-xs text-text-tertiary">页面路径</label>
           <input
             value={filterPagePath}
             onChange={(e) => setFilterPagePath(e.target.value)}
-            className="h-9 rounded-[10px] border border-[#e2e2df] bg-white px-3 text-sm text-[#111111] outline-none placeholder:text-[#a1a1aa] focus:border-[#111111]"
+            className="h-9 rounded-control border border-border bg-bg-surface px-3 text-sm text-foreground outline-none placeholder:text-text-disabled focus:border-primary"
             placeholder="如: /chat"
           />
         </div>
-        <Button className="rounded-[10px]" onClick={handleFilter}>
+        <Button className="rounded-control" onClick={handleFilter}>
           筛选
         </Button>
       </div>
 
       {notice ? (
-        <p className="mt-4 text-sm text-red-600">{notice}</p>
+        <p className="mt-4 text-sm text-danger">{notice}</p>
       ) : null}
 
-      <div className="mt-4 overflow-hidden rounded-[18px] border border-[#e2e2df] bg-white shadow-sm">
+      <div className="mt-4 overflow-hidden rounded-popover border border-border bg-bg-surface shadow-sm">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-[#e2e2df] bg-[#f7f7f7] text-xs font-medium uppercase tracking-wide text-[#747571]">
+          <thead className="border-b border-border bg-fill-hover text-xs font-medium uppercase tracking-wide text-text-tertiary">
             <tr>
               <th className="px-4 py-3">ID</th>
               <th className="px-4 py-3">时间</th>
@@ -223,7 +223,7 @@ export function AdminFeedbackWorkspace() {
               <tr>
                 <td
                   colSpan={6}
-                  className="px-4 py-8 text-center text-[#94a3b8]"
+                  className="px-4 py-8 text-center text-text-disabled"
                 >
                   加载中…
                 </td>
@@ -232,7 +232,7 @@ export function AdminFeedbackWorkspace() {
               <tr>
                 <td
                   colSpan={6}
-                  className="px-4 py-8 text-center text-[#94a3b8]"
+                  className="px-4 py-8 text-center text-text-disabled"
                 >
                   暂无反馈
                 </td>
@@ -241,19 +241,19 @@ export function AdminFeedbackWorkspace() {
               entries.map((entry) => (
                 <tr
                   key={entry.id}
-                  className="border-b border-[#f0f0ef] last:border-0"
+                  className="border-b border-border-subtle last:border-0"
                 >
-                  <td className="max-w-[100px] truncate px-4 py-3 font-mono text-xs text-[#747571]">
+                  <td className="max-w-24 truncate px-4 py-3 font-mono text-xs text-text-tertiary">
                     {truncateId(entry.id)}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-[#747571]">
+                  <td className="whitespace-nowrap px-4 py-3 text-text-tertiary">
                     {fmtDate(entry.created_at)}
                   </td>
-                  <td className="max-w-[150px] truncate px-4 py-3 text-[#747571]">
+                  <td className="max-w-36 truncate px-4 py-3 text-text-tertiary">
                     {entry.page_path}
                   </td>
                   <td
-                    className="max-w-[280px] truncate px-4 py-3 text-[#111111]"
+                    className="max-w-72 truncate px-4 py-3 text-foreground"
                     title={entry.message}
                   >
                     {truncateMsg(entry.message)}
@@ -266,7 +266,7 @@ export function AdminFeedbackWorkspace() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-8 rounded-[8px]"
+                        className="h-8 rounded-md"
                         onClick={() => handleStatusChange(entry, "read")}
                       >
                         已读
@@ -276,7 +276,7 @@ export function AdminFeedbackWorkspace() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-8 rounded-[8px]"
+                        className="h-8 rounded-md"
                         onClick={() => handleStatusChange(entry, "archived")}
                       >
                         归档
@@ -285,7 +285,7 @@ export function AdminFeedbackWorkspace() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-8 rounded-[8px]"
+                      className="h-8 rounded-md"
                       onClick={() => openNote(entry)}
                     >
                       备注
@@ -303,27 +303,27 @@ export function AdminFeedbackWorkspace() {
         open={!!noteTarget}
         onOpenChange={(o) => !o && setNoteTarget(null)}
       >
-        <DialogContent className="max-w-md rounded-[14px]">
+        <DialogContent className="max-w-md rounded-card">
           <DialogTitle>编辑备注</DialogTitle>
           <div className="grid gap-3 pt-2">
             <textarea
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
-              className="min-h-[120px] rounded-[10px] border border-[#e2e2df] bg-white p-3 text-sm text-[#111111] outline-none focus:border-[#111111]"
+              className="min-h-30 rounded-control border border-border bg-bg-surface p-3 text-sm text-foreground outline-none focus:border-primary"
               placeholder="管理员备注…"
             />
             <div className="flex justify-end gap-2">
               <Button
                 variant="outline"
                 size="sm"
-                className="rounded-[10px]"
+                className="rounded-control"
                 onClick={() => setNoteTarget(null)}
               >
                 取消
               </Button>
               <Button
                 size="sm"
-                className="rounded-[10px]"
+                className="rounded-control"
                 disabled={noteBusy}
                 onClick={saveNote}
               >

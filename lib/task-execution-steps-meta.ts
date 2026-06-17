@@ -14,7 +14,7 @@ export function parseTaskExecutionStepsFromMeta(
 ): TaskExecutionStep[] | null {
   if (!meta) return null;
   const k = meta.kind;
-  if (k !== TASK_EXECUTION_STEPS_META_KIND) return null;
+  if (k !== TASK_EXECUTION_STEPS_META_KIND && k !== "orchestration_failure") return null;
   const roundId = typeof meta.round_id === "string" ? meta.round_id : "";
   const raw = meta.steps;
   if (!Array.isArray(raw)) return null;
