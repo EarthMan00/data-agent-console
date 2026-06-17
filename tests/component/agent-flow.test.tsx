@@ -97,7 +97,9 @@ describe("agent flow", () => {
     renderSeededAgentWorkspace();
 
     expect(screen.getByTestId("agent-user-input-card")).toBeInTheDocument();
-    expect(await screen.findByTestId("agent-execution-panel")).toBeInTheDocument();
+    const executionPanel = await screen.findByTestId("agent-execution-panel");
+    expect(executionPanel).toHaveTextContent("任务已完成");
+    expect(within(executionPanel).queryByText("任务执行")).not.toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByTestId("agent-result-section")).toBeInTheDocument();
       expect(document.querySelector("main aside [data-testid='agent-preview-panel']")).toBeInTheDocument();

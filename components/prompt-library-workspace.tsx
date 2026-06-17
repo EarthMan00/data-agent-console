@@ -504,17 +504,6 @@ export function PromptLibraryWorkspace() {
                 message={
                   tab.kind === "all" ? "暂无提示词" : tab.kind === "default" ? "默认分组下暂无提示词" : "该分组下暂无提示词"
                 }
-                action={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-auto px-1 py-0 text-body font-medium text-foreground hover:bg-transparent hover:text-foreground"
-                    onClick={openCreate}
-                  >
-                    马上创建提示词
-                  </Button>
-                }
               />
             ) : (
               <EmptyState

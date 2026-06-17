@@ -929,17 +929,17 @@ function MoreDataShellComponent({
                                 <span className="truncate">{getHistoryDisplayTitle(s, effectiveActiveSessionId, activeSessionTitle)}</span>
                               </div>
                             </div>
+                            {createdTime ? (
+                              <span
+                                className={cn(
+                                  "mdata-history-time pointer-events-none",
+                                  historyPurgeConfirmId === s.session_id && "mdata-history-time--visible"
+                                )}
+                              >
+                                {createdTime}
+                              </span>
+                            ) : null}
                           </button>
-                          {createdTime ? (
-                            <span
-                              className={cn(
-                                "mdata-history-time pointer-events-none",
-                                historyPurgeConfirmId === s.session_id && "mdata-history-time--visible"
-                              )}
-                            >
-                              {createdTime}
-                            </span>
-                          ) : null}
                           {!frontendMockHistory ? (
                           <Popover
                             open={historyPurgeConfirmId === s.session_id}
@@ -967,7 +967,7 @@ function MoreDataShellComponent({
                               onCloseAutoFocus={(e) => e.preventDefault()}
                             >
                               <p className="text-body leading-6 text-foreground">
-                                确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
+                                确定删除该任务吗？删除后会话记忆与产出物将不可恢复
                               </p>
                               <div className="mt-4 flex justify-end gap-2">
                                 <Button
@@ -1252,67 +1252,56 @@ function MoreDataShellComponent({
             hideClose
             aria-describedby={undefined}
             overlayClassName="bg-overlay-bg backdrop-blur-soft"
-            className="h-notification-dialog w-notification-dialog max-w-none overflow-hidden rounded-dialog border border-border-subtle bg-bg-surface p-0 shadow-modal sm:rounded-dialog"
+            className="h-message-box w-message-box max-w-none overflow-hidden rounded-composer border border-border-subtle bg-bg-page p-0 shadow-popover"
           >
-            <div className="grid h-full min-h-0 grid-rows-header-content sm:grid-notification-dialog-sm sm:grid-rows-none md:grid-notification-dialog-md">
-              <aside className="min-h-0 border-b border-border-subtle bg-bg-surface px-4 py-4 sm:border-b-0 sm:border-r sm:py-6">
-                <div className="text-lg font-normal leading-7 text-text-tertiary">消息盒子</div>
-                <nav className="mt-3 flex gap-2 overflow-x-auto sm:mt-5 sm:block sm:space-y-2 sm:overflow-visible">
-                  <button
-                    type="button"
-                    className="flex h-12 w-auto shrink-0 items-center gap-3 rounded-control bg-fill-hover px-4 text-left text-foreground sm:w-full sm:px-5"
-                  >
-                    <Bell className="h-5 w-5 shrink-0" strokeWidth={2.2} />
-                    <span className="text-body font-medium leading-5">通知提醒</span>
-                  </button>
-                </nav>
-              </aside>
-              <section className="relative flex min-h-0 flex-col bg-bg-page">
-                <div className="flex h-14 shrink-0 items-center justify-between px-5 sm:px-8">
-                  <DialogTitle className="text-title-1 font-semibold leading-6 text-foreground">通知提醒</DialogTitle>
-                  <button
-                    type="button"
-                    aria-label="关闭消息盒子"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-control text-text-tertiary transition hover:bg-fill-hover hover:text-foreground"
-                    onClick={() => setNotificationOpen(false)}
-                  >
-                    <X className="h-6 w-6" strokeWidth={1.6} />
-                  </button>
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="flex h-16 shrink-0 items-center justify-between border-b border-border-subtle pb-4 pl-6 pr-2 pt-5">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <Bell className="h-6 w-6 shrink-0 text-text-secondary" strokeWidth={1.8} />
+                  <DialogTitle className="truncate text-lg font-normal leading-7 text-foreground">消息盒子</DialogTitle>
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-2 sm:px-8">
-                  {mockNotificationItems.length > 0 ? (
-                    <div className="space-y-4">
-                      {mockNotificationItems.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          className="relative flex min-h-22 w-full items-center gap-4 rounded-dialog bg-bg-surface px-6 py-5 text-left transition hover:bg-bg-surface/85"
-                        >
-                          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-bg-subtle text-primary">
-                            <AlarmFilled className="h-7 w-7" />
+                <button
+                  type="button"
+                  aria-label="关闭消息盒子"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-foreground transition hover:bg-fill-hover hover:text-foreground"
+                  onClick={() => setNotificationOpen(false)}
+                >
+                  <X className="h-6 w-6" strokeWidth={1.6} />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+                {mockNotificationItems.length > 0 ? (
+                  <div className="space-y-3">
+                    {mockNotificationItems.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="relative flex min-h-20 w-full items-center gap-4 rounded-card bg-bg-surface px-4 py-4 text-left transition hover:bg-fill-hover"
+                      >
+                        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-bg-subtle text-primary">
+                          <AlarmFilled className="h-6 w-6" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-body font-semibold leading-5 text-foreground">
+                            {item.title}
                           </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-body font-semibold leading-5 text-foreground">
-                              {item.title}
-                            </span>
-                            <span className="mt-1 block truncate text-caption leading-5 text-text-tertiary">
-                              {item.description}
-                            </span>
+                          <span className="mt-1 block truncate text-caption leading-5 text-text-tertiary">
+                            {item.description}
                           </span>
-                          <span className="shrink-0 text-caption leading-5 text-text-tertiary">{item.time}</span>
-                          {item.unread ? (
-                            <span className="absolute right-4 top-4 h-1.5 w-1.5 rounded-full bg-danger" aria-label="未读" />
-                          ) : null}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex h-full items-center justify-center pb-8">
-                      <EmptyState className="m-0 min-h-0" message="暂无消息" />
-                    </div>
-                  )}
-                </div>
-              </section>
+                        </span>
+                        <span className="shrink-0 text-caption leading-5 text-text-tertiary">{item.time}</span>
+                        {item.unread ? (
+                          <span className="absolute right-4 top-4 h-1.5 w-1.5 rounded-full bg-danger" aria-label="未读" />
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex h-full items-center justify-center pb-8">
+                    <EmptyState className="m-0 min-h-0" message="暂无消息" />
+                  </div>
+                )}
+              </div>
             </div>
           </DialogContent>
         </Dialog>

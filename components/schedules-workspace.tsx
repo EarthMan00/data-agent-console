@@ -1842,7 +1842,7 @@ function ApiScheduledTaskCard({
           >
             <DialogTitle className="sr-only">删除定时任务</DialogTitle>
             <p className="text-body leading-6 text-foreground">
-              确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
+              确定删除该任务吗？删除后会话记忆与产出物将不可恢复
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <Button
@@ -2053,7 +2053,7 @@ function ApiRunRecordRow({
               >
                 <DialogTitle className="sr-only">删除运行记录</DialogTitle>
                 <p className="text-body leading-6 text-foreground">
-                  确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
+                  确定删除该任务吗？删除后会话记忆与产出物将不可恢复
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
                   <Button

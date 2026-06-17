@@ -82,8 +82,8 @@ import {
 import {
   getFrontendMockOrchestrationBundles,
   getFrontendMockResultPanelData,
-  getFrontendMockSessionMessages,
   isFrontendMockSessionId,
+  mergeFrontendMockSessionMessages,
 } from "@/lib/frontend-mock-session";
 import { pollPlatformTaskUntilSettled } from "@/lib/poll-task-until-settled";
 import {
@@ -107,15 +107,14 @@ import {
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import { PostTaskGuidanceBubble } from "./post-task-guidance-bubble";
 import {
+  AssistantOutputFrame,
   AliceErrorBubble,
   AliceMessageBubble,
   SIMPLE_CHAT_COLUMN_MAX,
   SimpleAssistantBubble,
-  SimpleSystemBubble,
   SimpleUserBubble,
 } from "./chat-bubbles";
 import { sanitizeClarificationForUserDisplay } from "@/lib/linkfox-clarification";
-import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { sessionHasOrchestrationFailure } from "@/lib/orchestration-failure-message";
 
 function mergeTaskStepStatuses(
@@ -225,8 +224,7 @@ export function PlatformSessionAgentWorkspace({
     if (frontendMockSession) {
       setMessagesLoaded(false);
       const cached = readSessionMessageCache(sessionId);
-      const baseMessages = getFrontendMockSessionMessages();
-      const source = cached && cached.length >= baseMessages.length ? cached : baseMessages;
+      const source = mergeFrontendMockSessionMessages(cached);
       const fresh = processStreamingMessages(source);
       writeSessionMessageCache(sessionId, fresh);
       setMessages(fresh);
@@ -782,8 +780,7 @@ export function PlatformSessionAgentWorkspace({
     // 在 reset effect 中同步检查缓存：缓存命中则立即展示，不依赖后续 effect 调用时序
     const cached = readSessionMessageCache(sessionId);
     if (frontendMockSession) {
-      const baseMessages = getFrontendMockSessionMessages();
-      const mockMessages = cached && cached.length >= baseMessages.length ? cached : baseMessages;
+      const mockMessages = mergeFrontendMockSessionMessages(cached);
       setMessages(processStreamingMessages(mockMessages));
       setMessagesLoaded(true);
       setBusy(false);
@@ -1502,6 +1499,7 @@ export function PlatformSessionAgentWorkspace({
               ) : null}
               <div className="space-y-3">
                 {messages.map((m, i) => {
+                  if (m.role !== "user" && m.role !== "assistant") return null;
                   const meta = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
                   const taskStepsFromMessage = parseTaskExecutionStepsFromMeta(meta);
                   const tmeta = loadScheduleTrialMeta();
@@ -1578,6 +1576,39 @@ export function PlatformSessionAgentWorkspace({
                     m.role === "assistant" && !showTaskStepsAtThisMessage && !hideAssistantBubble
                       ? resolvePostTaskGuidancePresentation(m, meta)
                       : ({ kind: "none" } as const);
+                  const showThinkingPlaceholder =
+                    m.role === "assistant" &&
+                    !hideAssistantBubble &&
+                    shouldShowAssistantThinkingPlaceholder(
+                      m,
+                      messages,
+                      i,
+                      sending,
+                    );
+                  const taskResultCard =
+                    taskId && meta?.has_artifacts === true ? (
+                      <TaskResultSummaryCard
+                        title="任务结果"
+                        summary=""
+                        expanded={showResultPanel && focusedTaskId === taskId}
+                        onToggle={() => {
+                          if (showResultPanel && focusedTaskId === taskId) {
+                            closeResultPanel();
+                            return;
+                          }
+                          void openResultPanelForMessage(meta, m.id);
+                        }}
+                      />
+                    ) : null;
+                  const taskResultCardInline =
+                    Boolean(taskResultCard) &&
+                    m.role === "assistant" &&
+                    (showTaskStepsAtThisMessage ||
+                      (!isLinkfoxClarification &&
+                        !isOrchestrationFailure &&
+                        !isTaskError &&
+                        !hideAssistantBubble &&
+                        !showThinkingPlaceholder));
                   const key = m.id;
                   return (
                     <div key={key} className="space-y-2">
@@ -1591,6 +1622,9 @@ export function PlatformSessionAgentWorkspace({
                                   ?.created_at ?? m.created_at
                               }
                               composerDraft={m.content}
+                              onSuggestionToggle={
+                                scheduleTrial || scheduledRunRecord ? undefined : toggleGuidanceSuggestion
+                              }
                             />
                           ) : null}
                           <SimpleUserBubble
@@ -1671,6 +1705,7 @@ export function PlatformSessionAgentWorkspace({
                                   focusedSubtaskId: subtaskTaskId,
                                 });
                               }}
+                              afterExecution={taskResultCard}
                             />
                             {isOrchestrationFailure ? (
                               <AliceErrorBubble
@@ -1718,7 +1753,7 @@ export function PlatformSessionAgentWorkspace({
                                 : toggleGuidanceSuggestion
                             }
                           />
-                        ) : guidancePresentation.kind !== "none" && !taskId ? (
+                        ) : isLinkfoxClarification ? null : guidancePresentation.kind !== "none" && !taskId ? (
                           <div className="space-y-2">
                             {guidancePresentation.kind === "embedded" &&
                             guidancePresentation.leading ? (
@@ -1759,42 +1794,21 @@ export function PlatformSessionAgentWorkspace({
                               scheduleTrial || scheduledRunRecord ? undefined : toggleGuidanceSuggestion
                             }
                           />
-                        ) : hideAssistantBubble ? null : shouldShowAssistantThinkingPlaceholder(
-                            m,
-                            messages,
-                            i,
-                            sending,
-                          ) ? (
+                        ) : hideAssistantBubble ? null : showThinkingPlaceholder ? (
                           <AssistantLoadingRow variant="thinking" />
                         ) : (
                           <SimpleAssistantBubble
                             body={m.content}
                             datetime={m.created_at}
                             streaming={isStreamingAssistantMessage(m)}
+                            after={taskResultCard}
                           />
                         )
-                      ) : (
-                        <SimpleSystemBubble message={m.content} />
-                      )}
-                      {taskId && meta?.has_artifacts === true ? (
-                        <TaskResultSummaryCard
-                          title="任务结果"
-                          summary={
-                            meta?.task_status === "FAILED" && typeof meta?.error_message === "string"
-                              ? `任务执行失败：${humanizeTaskErrorMessage(meta!.error_message as string)}`
-                              : meta?.task_status === "FAILED"
-                                ? "任务执行失败，可在右侧查看任务结果详情。"
-                                : "该轮任务已完成，可在右侧查看任务结果与数据文件。"
-                          }
-                          expanded={showResultPanel && focusedTaskId === taskId}
-                          onToggle={() => {
-                            if (showResultPanel && focusedTaskId === taskId) {
-                              closeResultPanel();
-                              return;
-                            }
-                            void openResultPanelForMessage(meta, m.id);
-                          }}
-                        />
+                      ) : null}
+                      {taskResultCard && !taskResultCardInline ? (
+                        <AssistantOutputFrame datetime={m.created_at} wide>
+                          {taskResultCard}
+                        </AssistantOutputFrame>
                       ) : null}
                       {taskId && guidancePresentation.kind !== "none" ? (
                         <div className="space-y-2">
@@ -1906,10 +1920,6 @@ export function PlatformSessionAgentWorkspace({
                   setPendingFiles(files);
                 }}
                 onSubmit={() => void send()}
-                visualStyle="default"
-                containerClassName="overflow-visible rounded-popover border border-border bg-bg-surface shadow-surface"
-                textareaClassName="min-h-composer max-h-composer-chat min-w-44 flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-body leading-6 text-foreground caret-foreground outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-ring-none-important"
-                placeholderClassName="top-2 text-body text-text-tertiary"
               />
             )}
           </div>

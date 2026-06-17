@@ -1,19 +1,11 @@
 "use client";
 
-import Image from "next/image";
 import { useMemo } from "react";
 
+import { AssistantOutputFrame, handleSuggestionOptionKeyDown } from "@/components/agent-workspace/chat-bubbles";
 import { composerDraftContainsSuggestion } from "@/lib/composer-prefill";
 import { parsePostTaskGuidanceSuggestions } from "@/lib/parse-post-task-guidance";
 import { cn } from "@/lib/utils";
-
-const WRAP = "w-full max-w-simple-row";
-
-function formatTime(iso: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString();
-}
 
 export function PostTaskGuidanceBubble({
   content,
@@ -37,31 +29,15 @@ export function PostTaskGuidanceBubble({
   if (suggestions.length === 0) return null;
 
   return (
-    <div className={cn("flex w-full justify-start text-left", WRAP, className)}>
-      <div className="w-full space-y-3">
-        <div className="flex w-full min-w-0 items-center justify-between gap-3 text-body font-medium text-foreground">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center">
-              <Image
-                src="/mdata-logo.png"
-                alt="Alice"
-                width={36}
-                height={36}
-                className="h-9 w-9 shrink-0 object-contain"
-                draggable={false}
-              />
-            </div>
-            <div>
-              <div className="text-body font-semibold text-foreground">Alice</div>
-            </div>
-          </div>
-          <div className="shrink-0 text-caption text-text-tertiary">{formatTime(datetime)}</div>
-        </div>
-
-        <div className="space-y-1 pl-0">
+    <AssistantOutputFrame datetime={datetime} wide className={className}>
+      <div className="w-full text-left">
+        <div className="space-y-2">
           <p className="text-body leading-5 text-text-secondary">接下来您可以试试：</p>
           <div
-            className="flex flex-row flex-wrap items-start gap-1"
+            className="flex flex-row flex-wrap items-start gap-2"
+            role={interactive ? "group" : "list"}
+            aria-label={interactive ? "选择下一步建议" : undefined}
+            onKeyDown={interactive ? handleSuggestionOptionKeyDown : undefined}
           >
             {suggestions.map((item, index) => {
               const selected =
@@ -80,6 +56,7 @@ export function PostTaskGuidanceBubble({
                     key={`${index}-${item.slice(0, 24)}`}
                     type="button"
                     aria-pressed={selected}
+                    data-clarification-option
                     className={cn(chipClass, "active-scale-chip")}
                     onClick={() => onSuggestionToggle(item)}
                   >
@@ -100,6 +77,6 @@ export function PostTaskGuidanceBubble({
           </div>
         </div>
       </div>
-    </div>
+    </AssistantOutputFrame>
   );
 }

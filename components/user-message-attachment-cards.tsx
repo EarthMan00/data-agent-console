@@ -43,7 +43,7 @@ export function UserMessageAttachmentCards({ attachments, className }: UserMessa
         return (
           <div
             key={`${attachment.name}-${attachment.size}`}
-            className="flex min-w-sidebar-admin max-w-72 items-center gap-3 rounded-card border border-border bg-bg-surface px-3 py-2.5 shadow-surface"
+            className="flex min-w-sidebar-admin max-w-72 items-center gap-3 rounded-card border border-border bg-bg-surface px-3 py-2.5 shadow-none"
           >
             <AttachmentIcon extension={attachment.extension} />
             <span className="min-w-0">

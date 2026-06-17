@@ -22,6 +22,7 @@ import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
 import { buildAttachmentItems } from "@/components/agent-workspace/attachment-utils";
 import {
+  AssistantOutputFrame,
   AliceMessageBubble,
   ORCHESTRATION_BLOCK_MAX,
   SIMPLE_CHAT_BUBBLE_MAX,
@@ -1005,6 +1006,11 @@ function AgentRunWorkspaceView({
                       )
                         ? <ExecutionRuntimeTag steps={round.executionSteps} />
                         : undefined;
+                      const executionTitle = round.errorMessage
+                        ? "任务执行失败"
+                        : round.collapseExecution
+                          ? "任务已完成"
+                          : "任务执行";
 
                       const orchestrationBlock = (
                         <TaskOrchestrationBlock
@@ -1045,6 +1051,7 @@ function AgentRunWorkspaceView({
                           }
                           executionCollapsible={round.collapseExecution}
                           executionTestId="agent-execution-panel"
+                          executionTitle={executionTitle}
                           executionTitleTag={executionTitleTag}
                           afterExecution={deferExecution ? undefined : afterExecution}
                         >
@@ -1068,7 +1075,7 @@ function AgentRunWorkspaceView({
                             {guidanceBubble}
                             {supplementBubbles}
                             {splitRevealDone ? (
-                              <>
+                              <AssistantOutputFrame datetime={round.createdAt} wide>
                                 <TaskExecutionPanel
                                   expanded={executionExpanded}
                                   onExpandedChange={(next) =>
@@ -1079,12 +1086,13 @@ function AgentRunWorkspaceView({
                                   }
                                   collapsible={round.collapseExecution}
                                   testId="agent-execution-panel"
+                                  title={executionTitle}
                                   titleTag={executionTitleTag}
                                 >
                                   {executionBody}
                                 </TaskExecutionPanel>
                                 {afterExecution}
-                              </>
+                              </AssistantOutputFrame>
                             ) : null}
                           </>
                         );
@@ -1142,9 +1150,6 @@ function AgentRunWorkspaceView({
               submitVariant={composerShowsStop ? "stop" : "send"}
               onStop={() => void stopCurrentRound()}
               onSubmit={() => void appendNote()}
-              containerClassName="overflow-visible rounded-popover border border-border bg-bg-surface shadow-surface"
-              textareaClassName="min-h-composer max-h-composer-chat min-w-44 flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-body leading-6 text-foreground caret-foreground outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-ring-none-important"
-              sendButtonClassName="h-10 w-10 min-w-0 rounded-full border border-transparent bg-primary p-0 text-primary-foreground shadow-none transition hover:bg-link-hover"
             />
 
             <div className="mt-3 text-center text-xs text-text-tertiary">内容由 AI 大模型生成，请仔细甄别</div>
