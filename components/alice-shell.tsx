@@ -46,10 +46,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { isPlatformBackendEnabled } from "@/lib/agent-runtime";
-import {
-  getFrontendMockHistoryEntry,
-  isFrontendMockSessionId,
-} from "@/lib/frontend-mock-session";
+import { isFrontendMockSessionId } from "@/lib/frontend-mock-session";
 import {
   AgentApiError,
   listSessions,
@@ -725,11 +722,9 @@ function AliceShellComponent({
   );
 
   const filteredHistorySessions = useMemo(() => {
-    const mockEntry: HistoryEntry = getFrontendMockHistoryEntry();
-    const visibleHistorySessions = [
-      mockEntry,
-      ...historySessions.filter((s) => s.session_id !== mockEntry.session_id),
-    ].filter((s) => s.isOptimistic || s.hasMessages !== false);
+    const visibleHistorySessions = historySessions
+      .filter((s) => !isFrontendMockSessionId(s.session_id))
+      .filter((s) => s.isOptimistic || s.hasMessages !== false);
     const q = historySearch.trim().toLowerCase();
     const base = q ? visibleHistorySessions.filter((s) => {
       const haystack = [s.firstMessage, s.session_id, s.firstAt, s.created_at]
