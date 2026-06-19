@@ -58,6 +58,7 @@ import {
   isSupersededTaskExecutionStepsMessage,
   messageIdsEligibleForTaskResultCard,
 } from "@/lib/session-task-result-card-visibility";
+import { resolveStaleTaskExecutionSteps } from "@/lib/session-task-execution-step-resolver";
 import { extractDecompositionLabelsFromMessages, findLatestDecompositionAssistantIndex } from "@/lib/parse-decomposition-labels";
 import { resolvePostTaskGuidancePresentation } from "@/lib/parse-post-task-guidance";
 import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
@@ -125,6 +126,28 @@ function mergeTaskStepStatuses(
 ): TaskExecutionStep[] {
   if (!overlay?.length) return steps;
   return steps.map((s, i) => (overlay[i] ? { ...s, status: overlay[i]! } : s));
+}
+
+function taskIdsFromMessageMeta(meta: Record<string, unknown> | undefined): string[] {
+  if (!meta) return [];
+  const ids = Array.isArray(meta.orchestration_step_task_ids)
+    ? (meta.orchestration_step_task_ids as unknown[])
+        .map((id) => (typeof id === "string" ? id.trim() : ""))
+        .filter(Boolean)
+    : [];
+  const taskId = typeof meta.task_id === "string" ? meta.task_id.trim() : "";
+  if (taskId && !ids.includes(taskId)) ids.push(taskId);
+  return ids;
+}
+
+function bundlesBelongToTaskIds(
+  bundles: TaskOrchestrationBundleRow[] | undefined,
+  expectedTaskIds: string[],
+): bundles is TaskOrchestrationBundleRow[] {
+  if (!bundles?.length) return false;
+  if (expectedTaskIds.length === 0) return true;
+  const expected = new Set(expectedTaskIds);
+  return bundles.some((bundle) => expected.has(bundle.taskId));
 }
 
 export function PlatformSessionAgentWorkspace({
@@ -314,28 +337,40 @@ export function PlatformSessionAgentWorkspace({
 
         try {
           await platformAgent.withFreshToken(async (token) => {
-            const task = await getTask(token, tid);
             if (cancelled) return;
             let resolved: typeof steps | null = null;
+            let shouldPersistResolved = false;
 
-            if (task.status === "SUCCESS") {
-              resolved = steps.map((s) => ({ ...s, status: "done" as TaskExecutionStepStatus }));
-            } else if (task.status === "FAILED") {
-              resolved = steps.map((s) => ({ ...s, status: "error" as TaskExecutionStepStatus }));
-            } else if (task.status === "RUNNING" && steps[0]?.status === "pending") {
-              resolved = steps.map((s, idx) => ({
-                ...s,
-                status: idx === 0 ? ("running" as TaskExecutionStepStatus) : s.status,
-              }));
+            const orchId =
+              typeof meta.orchestration_id === "string" && meta.orchestration_id.trim()
+                ? meta.orchestration_id.trim()
+                : null;
+
+            if (orchId) {
+              try {
+                const orch = await getToolOrchestration(token, orchId);
+                resolved = resolveStaleTaskExecutionSteps(steps, {
+                  orchestrationStatuses: orch.steps.map((s) => s.status),
+                });
+                shouldPersistResolved = Boolean(orch.finished || orch.awaiting_clarification);
+              } catch {
+                return;
+              }
+            }
+
+            if (!orchId && !resolved) {
+              const task = await getTask(token, tid);
+              if (cancelled) return;
+              resolved = resolveStaleTaskExecutionSteps(steps, {
+                taskStatus: task.status,
+                orchestrationStatuses: null,
+              });
+              shouldPersistResolved = task.status === "SUCCESS" || task.status === "FAILED";
             }
 
             if (!resolved) return;
 
-            if (task.status === "SUCCESS" || task.status === "FAILED") {
-              const orchId =
-                typeof meta.orchestration_id === "string" && meta.orchestration_id.trim()
-                  ? meta.orchestration_id.trim()
-                  : null;
+            if (shouldPersistResolved) {
               try {
                 await patchTaskExecutionSteps(token, sessionId, m.id, {
                   round_id: (meta.round_id as string) || "",
@@ -1004,6 +1039,13 @@ export function PlatformSessionAgentWorkspace({
     return null;
   }, [messages]);
 
+  const latestStepsExpectedTaskIds = useMemo(() => {
+    if (!latestStepsMessageId) return [];
+    const m = messages.find((item) => item.id === latestStepsMessageId);
+    const meta = m?.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
+    return taskIdsFromMessageMeta(meta);
+  }, [latestStepsMessageId, messages]);
+
   const latestStepsByTaskId = useMemo(
     () => buildLatestStepsMessageIdByTaskId(messages),
     [messages],
@@ -1594,6 +1636,7 @@ export function PlatformSessionAgentWorkspace({
                     aliceClarificationForSteps?.message ??
                     null;
                   const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+                  const expectedTaskIdsForMessage = taskIdsFromMessageMeta(meta);
                   const trialResultOnFirstAssistant =
                     scheduleTrial &&
                     isThisOrchestrationTurn &&
@@ -1644,9 +1687,12 @@ export function PlatformSessionAgentWorkspace({
                               steps={mergeTaskStepStatuses(
                                 alignStepStatusesWithOrchestrationBundles(
                                   latestExecutionSteps!,
-                                  supplementalBundlesById[m.id]?.length
+                                  bundlesBelongToTaskIds(supplementalBundlesById[m.id], latestStepsExpectedTaskIds)
                                     ? supplementalBundlesById[m.id]!
-                                    : orchestrationBundlesForUi,
+                                    : bundlesBelongToTaskIds(orchestrationBundlesForUi, latestStepsExpectedTaskIds)
+                                      ? orchestrationBundlesForUi
+                                      : [],
+                                  latestStepsExpectedTaskIds,
                                 ),
                                 liveOrchStepStatuses,
                               )}
@@ -1655,9 +1701,14 @@ export function PlatformSessionAgentWorkspace({
                                 (() => {
                                   const supp = supplementalBundlesById[m.id];
                                   if (supp && supp.length > 0) {
-                                    return buildPlatformSubtasksForExecutionSteps(latestExecutionSteps!, supp);
+                                    return bundlesBelongToTaskIds(supp, latestStepsExpectedTaskIds)
+                                      ? buildPlatformSubtasksForExecutionSteps(latestExecutionSteps!, supp)
+                                      : undefined;
                                   }
-                                  if (stepsMessageIdForBundles && orchestrationBundlesForUi.length > 0) {
+                                  if (
+                                    stepsMessageIdForBundles &&
+                                    bundlesBelongToTaskIds(orchestrationBundlesForUi, latestStepsExpectedTaskIds)
+                                  ) {
                                     return buildPlatformSubtasksForExecutionSteps(
                                       latestExecutionSteps!,
                                       orchestrationBundlesForUi,
@@ -1690,11 +1741,13 @@ export function PlatformSessionAgentWorkspace({
                               steps={mergeTaskStepStatuses(
                                 alignStepStatusesWithOrchestrationBundles(
                                   taskStepsToShow!,
-                                  supplementalBundlesById[m.id]?.length
+                                  bundlesBelongToTaskIds(supplementalBundlesById[m.id], expectedTaskIdsForMessage)
                                     ? supplementalBundlesById[m.id]!
-                                    : m.id === stepsMessageIdForBundles
+                                    : m.id === stepsMessageIdForBundles &&
+                                        bundlesBelongToTaskIds(orchestrationBundlesForUi, expectedTaskIdsForMessage)
                                       ? orchestrationBundlesForUi
                                       : [],
+                                  expectedTaskIdsForMessage,
                                 ),
                                 (m.id === latestStepsMessageId || isThisOrchestrationTurn) &&
                                   liveOrchStepStatuses
@@ -1706,9 +1759,14 @@ export function PlatformSessionAgentWorkspace({
                                 (() => {
                                   const supp = supplementalBundlesById[m.id];
                                   if (supp && supp.length > 0) {
-                                    return buildPlatformSubtasksForExecutionSteps(taskStepsToShow!, supp);
+                                    return bundlesBelongToTaskIds(supp, expectedTaskIdsForMessage)
+                                      ? buildPlatformSubtasksForExecutionSteps(taskStepsToShow!, supp)
+                                      : undefined;
                                   }
-                                  if (m.id === stepsMessageIdForBundles && orchestrationBundlesForUi.length > 0) {
+                                  if (
+                                    m.id === stepsMessageIdForBundles &&
+                                    bundlesBelongToTaskIds(orchestrationBundlesForUi, expectedTaskIdsForMessage)
+                                  ) {
                                     return buildPlatformSubtasksForExecutionSteps(
                                       taskStepsToShow!,
                                       orchestrationBundlesForUi,
@@ -1822,7 +1880,7 @@ export function PlatformSessionAgentWorkspace({
                             i,
                             sending,
                           ) ? (
-                          <AssistantLoadingRow variant="thinking" />
+                          <AssistantLoadingRow variant="thinking" withIdentity />
                         ) : (
                           <SimpleAssistantBubble
                             body={m.content}
@@ -1893,7 +1951,7 @@ export function PlatformSessionAgentWorkspace({
                 {sending &&
                 !sessionHasVisibleInFlightAssistant(messages) &&
                 !sessionHasAssistantThinkingPlaceholder(messages, sending) ? (
-                  <AssistantLoadingRow variant="thinking" />
+                  <AssistantLoadingRow variant="thinking" withIdentity />
                 ) : null}
                 {showTrialRunFooterLine ? <AssistantLoadingRow variant="task" /> : null}
               </div>

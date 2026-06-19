@@ -136,6 +136,19 @@ describe("alignStepStatusesWithOrchestrationBundles / buildPlatformSubtasksForEx
     const snaps = buildPlatformSubtasksForExecutionSteps(steps, bundles);
     expect(snaps[1]!.taskId).toBe("task-b");
   });
+
+  it("不使用上一轮任务的 bundle 将新追问的运行中步骤推断为 done", () => {
+    const steps: TaskExecutionStep[] = [
+      { id: "x0", label: "查询 computer desktop", order: 1, status: "running", roundId: "r2" },
+    ];
+    const staleBundles = [
+      { taskId: "previous-task", stepIndex: 0, label: "上一轮结果", artifacts: [] },
+    ];
+
+    const aligned = alignStepStatusesWithOrchestrationBundles(steps, staleBundles, ["current-task"]);
+
+    expect(aligned[0]?.status).toBe("running");
+  });
 });
 
 describe("buildBundleDownloadApiForPanel", () => {

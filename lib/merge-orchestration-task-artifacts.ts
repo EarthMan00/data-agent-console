@@ -227,9 +227,14 @@ export function resolvePanelAnchorForStepsMessage(
 export function alignStepStatusesWithOrchestrationBundles(
   steps: TaskExecutionStep[],
   bundles: TaskOrchestrationBundleRow[],
+  expectedTaskIds?: string[] | null,
 ): TaskExecutionStep[] {
   if (steps.length === 0 || bundles.length === 0) return steps;
   if (steps.every((s) => s.status === "done" || s.status === "error")) return steps;
+  const expected = new Set((expectedTaskIds ?? []).map((id) => id.trim()).filter(Boolean));
+  if (expected.size > 0 && !bundles.some((bundle) => expected.has(bundle.taskId))) {
+    return steps;
+  }
 
   const bundleByIdx = new Map<number, TaskOrchestrationBundleRow>();
   for (const b of bundles) {
