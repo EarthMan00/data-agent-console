@@ -1,30 +1,11 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { MoreDataHomePage } from "@/components/more-data-home-page";
-import { MoreDataShellStateProvider } from "@/components/more-data-shell";
+import { AliceHomePage } from "@/components/alice-home-page";
 
 const replace = vi.fn();
-const homePromptApiMocks = vi.hoisted(() => ({
-  fetchHomePromptRecommendations: vi.fn(),
-  fetchPublicPromptCategories: vi.fn(),
-}));
-
-const platformAgentMock = vi.hoisted(() => ({
-  auth: null,
-  authHydrated: true,
-  authValidated: false,
-  platformSessionId: null,
-  openLogin: vi.fn(),
-  closeLogin: vi.fn(),
-  loginWithPassword: vi.fn(),
-  logout: vi.fn(),
-  beginNewHomeTaskSession: vi.fn(),
-  ensurePlatformSession: vi.fn(),
-  setActivePlatformSession: vi.fn(),
-  clearActivePlatformSession: vi.fn(),
-  withFreshToken: vi.fn(),
-}));
+const mockFetchHomePromptRecommendations = vi.hoisted(() => vi.fn());
 
 vi.mock("@/components/agent-workspace", () => ({
   AgentWorkspace: () => <div>agent workspace</div>,
@@ -32,6 +13,28 @@ vi.mock("@/components/agent-workspace", () => ({
 
 vi.mock("@/components/ui/flickering-grid", () => ({
   FlickeringGrid: () => <div data-testid="flickering-grid" />,
+}));
+
+vi.mock("@/components/platform-agent-provider", () => ({
+  useOptionalPlatformAgent: () => ({
+    auth: null,
+    authHydrated: true,
+    authValidated: true,
+    platformSessionId: null,
+    openLogin: vi.fn(),
+    closeLogin: vi.fn(),
+    loginWithPassword: vi.fn(),
+    logout: vi.fn(),
+    beginNewHomeTaskSession: vi.fn(),
+    ensurePlatformSession: vi.fn(),
+    setActivePlatformSession: vi.fn(),
+    clearActivePlatformSession: vi.fn(),
+    withFreshToken: vi.fn(),
+  }),
+}));
+
+vi.mock("@/lib/agent-api/home-prompts", () => ({
+  fetchHomePromptRecommendations: mockFetchHomePromptRecommendations,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -50,48 +53,28 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-vi.mock("@/components/platform-agent-provider", () => ({
-  useOptionalPlatformAgent: () => platformAgentMock,
-}));
-
-vi.mock("@/lib/agent-api/home-prompts", () => ({
-  fetchHomePromptRecommendations: homePromptApiMocks.fetchHomePromptRecommendations,
-  fetchPublicPromptCategories: homePromptApiMocks.fetchPublicPromptCategories,
-}));
-
-function renderHomePage() {
-  return render(
-    <MoreDataShellStateProvider>
-      <MoreDataHomePage />
-    </MoreDataShellStateProvider>,
-  );
-}
-
 describe("home flow", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    homePromptApiMocks.fetchPublicPromptCategories.mockResolvedValue([
-      { id: "cat-scenarios", name: "应用场景", sort_order: 1 },
-    ]);
-    homePromptApiMocks.fetchHomePromptRecommendations.mockResolvedValue([
+    replace.mockClear();
+    mockFetchHomePromptRecommendations.mockResolvedValue([
       {
-        id: "card-1",
-        title: "竞品 ASIN 流量词库",
-        description: "利用 SIF 工具调取目标 ASIN 的核心流量词库",
-        prompt: "@Keepa 请分析竞品 ASIN 的流量词库",
+        id: "web-card",
+        title: "站外评论洞察",
+        description: "通过网页检索汇总站外评论。",
+        prompt: "@实时与全网检索 搜索 Anker 评论",
         meta: "",
-        capability_ids: ["Keepa"],
+        capability_ids: ["web-search"],
         replay_run_id: null,
         replay_share_id: null,
         sort_order: 1,
       },
       {
-        id: "card-2",
-        title: "关键词市场供需比",
-        description: "通过计算关键词月搜索量与竞品存量比，构建供需价值模型",
-        prompt: "@Sif数据分析工具 请计算关键词市场供需比",
+        id: "keepa-card",
+        title: "Keepa 价格历史",
+        description: "查看价格历史。",
+        prompt: "@Keepa-亚马逊价格历史 查询价格变化",
         meta: "",
-        capability_ids: ["Sif数据分析工具"],
+        capability_ids: ["keepa-price-history"],
         replay_run_id: null,
         replay_share_id: null,
         sort_order: 2,
@@ -100,12 +83,13 @@ describe("home flow", () => {
   });
 
   it("keeps prompt cards stable when selecting datasource tokens", async () => {
-    renderHomePage();
+    render(<AliceHomePage />);
 
-    const initialCount = (await screen.findAllByLabelText(/^使用示例任务 /)).length;
+    await screen.findByLabelText("使用示例任务 站外评论洞察");
+    const initialCount = screen.getAllByLabelText(/^使用示例任务 /).length;
     const editor = screen.getByTestId("task-composer-editor");
-    editor.textContent = "@";
-    fireEvent.input(editor);
+    await userEvent.click(editor);
+    await userEvent.type(editor, "@");
 
     const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
     const option = within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ });
@@ -117,14 +101,45 @@ describe("home flow", () => {
     expect(screen.getAllByLabelText(/^使用示例任务 /)).toHaveLength(initialCount);
   });
 
-  it("applies a sample task to the composer", async () => {
-    renderHomePage();
+  it("switches prompt cards when selecting a browse category", async () => {
+    render(<AliceHomePage />);
 
-    fireEvent.click((await screen.findAllByLabelText(/^使用示例任务 /))[0]);
+    await screen.findByLabelText("使用示例任务 站外评论洞察");
+
+    fireEvent.click(screen.getByRole("button", { name: /^Keepa$/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("使用示例任务 Keepa 价格历史")).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText("使用示例任务 站外评论洞察")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /实时与全网检索/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("使用示例任务 站外评论洞察")).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText("使用示例任务 Keepa 价格历史")).not.toBeInTheDocument();
+  });
+
+  it("keeps the selected category active after applying a visible prompt card", async () => {
+    render(<AliceHomePage />);
+
+    const keepaCategory = screen.getByRole("button", { name: /^Keepa$/ });
+    fireEvent.click(keepaCategory);
+    expect(keepaCategory).toHaveClass("text-[#111111]");
+
+    fireEvent.click(await screen.findByLabelText("使用示例任务 Keepa 价格历史"));
+
+    expect(keepaCategory).toHaveClass("text-[#111111]");
+    expect(screen.getByLabelText("移除数据源 Keepa-亚马逊价格历史")).toBeInTheDocument();
+  });
+
+  it("applies a sample task directly into the composer", async () => {
+    render(<AliceHomePage />);
+
+    fireEvent.click(await screen.findByLabelText("使用示例任务 站外评论洞察"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("task-composer-editor")).toHaveTextContent("请分析竞品 ASIN 的流量词库");
+      expect(screen.getByText("搜索 Anker 评论")).toBeInTheDocument();
     });
-    expect(screen.getByText("已载入示例任务「竞品 ASIN 流量词库」，可继续补充要求后发送。")).toBeInTheDocument();
+    expect(screen.getByLabelText("移除数据源 站外实时信息检索")).toBeInTheDocument();
   });
 });

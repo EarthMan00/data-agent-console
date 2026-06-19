@@ -19,7 +19,7 @@ import {
 
 import { AutoToast } from "@/components/auto-toast";
 import { EmptyState } from "@/components/empty-state";
-import { MoreDataShell } from "@/components/more-data-shell";
+import { AliceShell } from "@/components/alice-shell";
 import { PageLostState } from "@/components/page-lost-state";
 import { RequiredAsterisk } from "@/components/required-mark";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
@@ -393,7 +393,7 @@ export function PromptLibraryWorkspace() {
   };
 
   return (
-    <MoreDataShell currentPath="/prompt-library" showTopHeader={false}>
+    <AliceShell currentPath="/prompt-library" showTopHeader={false}>
       <AutoToast
         message={toastMessage}
         variant={toastVariant}
@@ -503,17 +503,6 @@ export function PromptLibraryWorkspace() {
                 className="min-h-prompt-list"
                 message={
                   tab.kind === "all" ? "暂无提示词" : tab.kind === "default" ? "默认分组下暂无提示词" : "该分组下暂无提示词"
-                }
-                action={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-auto px-1 py-0 text-body font-medium text-foreground hover:bg-transparent hover:text-foreground"
-                    onClick={openCreate}
-                  >
-                    马上创建提示词
-                  </Button>
                 }
               />
             ) : (
@@ -873,7 +862,7 @@ export function PromptLibraryWorkspace() {
         </DialogContent>
       </Dialog>
 
-    </MoreDataShell>
+    </AliceShell>
   );
 }
 

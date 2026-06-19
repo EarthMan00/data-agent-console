@@ -35,12 +35,42 @@ export async function fetchPublicPromptCategories(): Promise<PublicPromptCategor
   return out;
 }
 
-/** 拉取首页推荐提示词；失败时抛出，由调用方展示错误。capabilityId 可为逗号分隔多个 ID。categoryId 必填。 */
-export async function fetchHomePromptRecommendations(categoryId: string, capabilityId?: string): Promise<HomePromptRecommendationDto[]> {
+type FetchHomePromptRecommendationsOptions = {
+  categoryId?: string;
+  capabilityId?: string;
+  capabilityIds?: string[];
+};
+
+/** 拉取首页推荐提示词；失败时抛出，由调用方展示错误。兼容旧签名与 capabilityIds 查询参数。 */
+export async function fetchHomePromptRecommendations(
+  categoryId: string,
+  capabilityId?: string,
+): Promise<HomePromptRecommendationDto[]>;
+export async function fetchHomePromptRecommendations(
+  options: FetchHomePromptRecommendationsOptions,
+): Promise<HomePromptRecommendationDto[]>;
+export async function fetchHomePromptRecommendations(
+  categoryIdOrOptions: string | FetchHomePromptRecommendationsOptions,
+  capabilityId?: string,
+): Promise<HomePromptRecommendationDto[]> {
   const base = getAgentHttpApiBase();
   const params = new URLSearchParams();
-  params.set("category_id", categoryId);
-  if (capabilityId) params.set("capability_id", capabilityId);
+  const categoryId =
+    typeof categoryIdOrOptions === "string" ? categoryIdOrOptions : categoryIdOrOptions.categoryId?.trim() ?? "";
+  const singleCapabilityId =
+    typeof categoryIdOrOptions === "string"
+      ? capabilityId?.trim() ?? ""
+      : categoryIdOrOptions.capabilityId?.trim() ?? "";
+  const capabilityIds =
+    typeof categoryIdOrOptions === "string"
+      ? []
+      : (categoryIdOrOptions.capabilityIds ?? [])
+          .map((item) => item.trim())
+          .filter(Boolean);
+
+  if (categoryId) params.set("category_id", categoryId);
+  if (singleCapabilityId) params.set("capability_id", singleCapabilityId);
+  for (const item of capabilityIds) params.append("capability_id", item);
   const qs = params.toString();
   const res = await fetch(`${base}/api/home-prompt-recommendations${qs ? `?${qs}` : ""}`);
   const data = await readErrorResponseBody(res);

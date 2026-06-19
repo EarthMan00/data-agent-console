@@ -138,7 +138,7 @@ function isBrowserNetworkError(e: unknown): boolean {
 export function formatAgentApiErrorForUser(e: unknown): string {
   if (isBrowserNetworkError(e)) {
     return (
-      "无法连接服务：请确认本机前端开发服务（npm run dev）与后端（data-agent-server）均已启动后再试。" +
+      "无法连接服务：请确认本机前端开发服务（npm run dev）与后端（Alice 后端服务）均已启动后再试。" +
       "若刚执行完长任务，可先刷新页面。"
     );
   }

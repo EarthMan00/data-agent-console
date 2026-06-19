@@ -1,10 +1,10 @@
 import { Suspense } from "react";
-import { MoreDataHomePage } from "@/components/more-data-home-page";
+import { AliceHomePage } from "@/components/alice-home-page";
 
 export default function Home() {
   return (
       <Suspense fallback={null}>
-      <MoreDataHomePage />
+      <AliceHomePage />
     </Suspense>
   );
 }

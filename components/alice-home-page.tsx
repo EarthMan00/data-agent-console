@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type WheelEvent,
+} from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatedArrowUpIcon } from "@/components/ui/animated-arrow-up-icon";
@@ -19,7 +26,7 @@ import {
 } from "@/lib/home-capability-items";
 import { AgentWorkspace } from "@/components/agent-workspace";
 import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
-import { MoreDataShell, useMoreDataShellState } from "@/components/more-data-shell";
+import { AliceShell, useAliceShellState } from "@/components/alice-shell";
 import { PlatformLogo } from "@/components/platform-logo";
 import { sanitizeObjective } from "@/lib/agent-attachments";
 import { parseComposerPrefillStorageValue, parseDatasourceMentions } from "@/lib/composer-prefill";
@@ -34,7 +41,7 @@ import {
 import { cn } from "@/lib/utils";
 import { TaskComposer } from "@/components/task-composer";
 
-const PENDING_HOME_TASK_STORAGE_KEY = "mdata:pending-home-task-after-login";
+const PENDING_HOME_TASK_STORAGE_KEY = "alice:pending-home-task-after-login";
 const PENDING_HOME_TASK_MAX_AGE_MS = 30 * 60 * 1000;
 
 type PendingHomeTask = {
@@ -67,17 +74,33 @@ function mapHomePromptCards(rows: Awaited<ReturnType<typeof fetchHomePromptRecom
   }));
 }
 
+function getHomePromptCardFilterKey(capabilityIds: string[]) {
+  return capabilityIds.length > 0 ? capabilityIds.slice().sort().join(",") : "all";
+}
+
+function filterHomePromptCardsByCapability(cards: HomePromptCard[], capabilityIds: string[]) {
+  if (capabilityIds.length === 0) return cards;
+  const filterSet = new Set(capabilityIds);
+  return cards.filter((card) => card.capabilityIds.some((id) => filterSet.has(id)));
+}
+
 function getCachedHomePromptCards(cacheKey: string) {
   return homePromptCardCache.get(cacheKey)?.cards ?? null;
 }
 
-function loadHomePromptCardsOnce(cacheKey: string, categoryId: string, capabilityId?: string) {
+function loadHomePromptCardsOnce(
+  cacheKey: string,
+  categoryId: string,
+  capabilityId?: string,
+  capabilityIds: string[] = [],
+) {
   const cached = homePromptCardCache.get(cacheKey);
   if (cached?.cards) return Promise.resolve(cached.cards);
   if (cached?.promise) return cached.promise;
 
   const promise = fetchHomePromptRecommendations(categoryId, capabilityId)
     .then(mapHomePromptCards)
+    .then((cards) => filterHomePromptCardsByCapability(cards, capabilityIds))
     .then((cards) => {
       homePromptCardCache.set(cacheKey, { cards, promise: null });
       return cards;
@@ -203,7 +226,7 @@ function consumePendingHomeTaskAfterLogin(): PendingHomeTask | null {
   }
 }
 
-export function MoreDataHomePage() {
+export function AliceHomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
@@ -211,7 +234,7 @@ export function MoreDataHomePage() {
     refreshHistoryNow,
     setActiveSessionTitle,
     upsertOptimisticHistorySession,
-  } = useMoreDataShellState();
+  } = useAliceShellState();
   const [query, setQuery] = useState("");
   const [activeCapabilityId, setActiveCapabilityId] = useState("scenarios");
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
@@ -235,6 +258,7 @@ export function MoreDataHomePage() {
   const [remotePromptCards, setRemotePromptCards] = useState<HomePromptCard[]>(() => cachedPromptCards ?? []);
   const [promptCardsLoading, setPromptCardsLoading] = useState(() => !cachedPromptCards);
   const [dynamicDataSourceGroups, setDynamicDataSourceGroups] = useState<HomeCapabilityGroup[]>([]);
+  const promptGridScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setCanPersonalizeGreeting(true);
@@ -384,7 +408,7 @@ export function MoreDataHomePage() {
           pendingFiles: pending?.pendingFiles ?? pendingHomeFiles,
         });
         setPendingHomeFiles([]);
-        setNotice("已连接 Data Agent Server，正在执行任务。");
+        setNotice("已连接 Alice 后端服务，正在执行任务。");
         router.replace(`/?runId=${runId}`);
       } finally {
         setLaunching(false);
@@ -471,7 +495,6 @@ export function MoreDataHomePage() {
     const selectedIds = Array.from(new Set([...card.capabilityIds, ...prefill.selectedSourceIds]));
     setQuery(prefill.text);
     setSelectedSourceIds(selectedIds);
-    setActiveCapabilityId(selectedIds[0] ?? "scenarios");
     setNotice(`已载入示例任务「${card.title}」，可继续补充要求后发送。`);
   };
 
@@ -485,22 +508,57 @@ export function MoreDataHomePage() {
     window.setTimeout(() => setComposerPulse(false), 520);
     window.requestAnimationFrame(() => {
       const composerRoot = document.getElementById("sym:TaskComposer");
-      composerRoot?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      if (typeof composerRoot?.scrollIntoView === "function") {
+        composerRoot.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
       composerRoot?.querySelector<HTMLElement>('[data-testid="task-composer-editor"]')?.focus();
     });
   };
+
+  const handleHomeWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+    const grid = promptGridScrollRef.current;
+    if (!grid || event.deltaY === 0) return;
+
+    const target = event.target;
+    if (target instanceof Node && grid.contains(target)) return;
+
+    let current = target instanceof Element ? target : null;
+    while (current && current !== event.currentTarget) {
+      const style = window.getComputedStyle(current);
+      const canScrollY =
+        (style.overflowY === "auto" || style.overflowY === "scroll") &&
+        current.scrollHeight > current.clientHeight;
+      if (canScrollY) return;
+      current = current.parentElement;
+    }
+
+    const maxScrollTop = grid.scrollHeight - grid.clientHeight;
+    if (maxScrollTop <= 0) return;
+
+    const deltaY =
+      event.deltaMode === 1
+        ? event.deltaY * 16
+        : event.deltaMode === 2
+          ? event.deltaY * grid.clientHeight
+          : event.deltaY;
+    const nextScrollTop = Math.max(0, Math.min(maxScrollTop, grid.scrollTop + deltaY));
+    if (nextScrollTop === grid.scrollTop) return;
+
+    event.preventDefault();
+    grid.scrollTop = nextScrollTop;
+  }, []);
 
   if (activeRunId) {
     return <AgentWorkspace />;
   }
 
   return (
-    <MoreDataShell currentPath="/" showTopHeader={false} mainClassName="bg-transparent">
+    <AliceShell currentPath="/" showTopHeader={false} mainClassName="bg-transparent">
       <div className="flex min-h-screen flex-col bg-background pb-10 sm:pb-14">
         <section className="mx-auto w-full max-w-page-content px-4 pt-44 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 sm:gap-5">
             <Image
-              src="/mdata-logo.png"
+              src="/alice-logo.png"
               alt="Alice"
               width={76}
               height={76}
@@ -583,8 +641,11 @@ export function MoreDataHomePage() {
             ))}
           </div>
 
-          <div className="pt-5 sm:pt-7">
-            <div className="grid gap-3 pb-6 sm:gap-5 md:grid-cols-2 xl:grid-cols-3">
+          <div className="min-h-0 flex-1 pt-5 sm:pt-7">
+            <div
+              ref={promptGridScrollRef}
+              className="grid h-full content-start gap-3 overflow-y-auto pr-1 pb-6 scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 sm:gap-5 md:grid-cols-2 xl:grid-cols-3"
+            >
               {promptCardsLoading ? (
                 Array.from({ length: 6 }).map((_, index) => (
                   <div
@@ -602,6 +663,10 @@ export function MoreDataHomePage() {
                     </div>
                   </div>
                 ))
+              ) : cards.length === 0 ? (
+                <div className="col-span-full flex min-h-[132px] items-center justify-center rounded-[18px] border border-dashed border-[#dededc] bg-white/60 px-5 text-center text-[14px] leading-6 text-[#8b8c87]">
+                  当前分类暂无示例任务。
+                </div>
               ) : cards.map((card) => {
                 const capability =
                   card.capabilityIds.map((id) => composerDataSourceItems.find((item) => item.id === id)).find(Boolean) ??
@@ -660,6 +725,6 @@ export function MoreDataHomePage() {
         </section>
       </div>
 
-    </MoreDataShell>
+    </AliceShell>
   );
 }

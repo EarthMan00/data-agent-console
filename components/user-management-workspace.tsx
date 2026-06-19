@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { MoreDataShell } from "@/components/more-data-shell";
+import { AliceShell } from "@/components/alice-shell";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -141,7 +141,7 @@ export function UserManagementWorkspace() {
   };
 
   return (
-    <MoreDataShell currentPath="/user-management" currentRunLabel="用户管理">
+    <AliceShell currentPath="/user-management" currentRunLabel="用户管理">
       <div className="mx-auto max-w-admin-content px-8 pb-12 pt-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -338,6 +338,6 @@ export function UserManagementWorkspace() {
           </div>
         </DialogContent>
       </Dialog>
-    </MoreDataShell>
+    </AliceShell>
   );
 }

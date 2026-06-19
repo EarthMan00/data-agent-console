@@ -21,8 +21,8 @@ const navigationMocks = vi.hoisted(() => ({
   replace: vi.fn(),
 }));
 
-vi.mock("@/components/more-data-shell", () => ({
-  MoreDataShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+vi.mock("@/components/alice-shell", () => ({
+  AliceShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock("@/components/ui/dropdown-menu", () => ({

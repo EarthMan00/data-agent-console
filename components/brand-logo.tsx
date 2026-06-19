@@ -9,14 +9,9 @@ export function BrandLogo({ compact = false, className }: BrandLogoProps) {
   return (
     <div className={className}>
       <div className="flex items-center gap-2">
-        <Image
-          src="/mdata-logo.png"
-          alt="Alice"
-          width={24}
-          height={24}
-          className="h-6 w-6 shrink-0 object-contain"
-          draggable={false}
-        />
+        <span className="relative block h-6 w-6 shrink-0">
+          <Image src="/mdata-logo.png" alt="Alice" fill sizes="24px" className="object-contain" draggable={false} />
+        </span>
         {compact ? (
           null
         ) : (

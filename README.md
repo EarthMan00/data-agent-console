@@ -1,12 +1,12 @@
-# More Data Agent 前端 Console
+# Alice 前端 Console
 
 ## 这是什么
 
-这是 `取数 Agent Console` 的前端工程，对接 `data-agent-server` 真实 API，用于跨境运营助手的产品交互。
+这是 `Alice Console` 的前端工程，对接 `Alice 后端服务` 真实 API，用于跨境运营助手的产品交互。
 
 ## 代码位置
 
-- 工程目录：`data-agent-console/`
+- 工程目录：`alice-console/`
 
 ## 当前能力
 

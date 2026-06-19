@@ -11,12 +11,20 @@ type ChatMarkdownProps = {
   children: string;
 };
 
+function normalizeChatMarkdown(text: string) {
+  return text
+    .trim()
+    .replace(/([?？:：。；])\s+(\d+[.、)\]]\s+)/g, "$1\n\n$2")
+    .replace(/([^\n])\n(?=\d+[.、)\]]\s+)/g, "$1\n\n");
+}
+
 /** 聊天气泡内 Markdown（GFM），与 app-demo 对齐。 */
 export function ChatMarkdown({ className, children }: ChatMarkdownProps) {
   const text = children ?? "";
   if (!text.trim()) {
     return null;
   }
+  const markdownText = normalizeChatMarkdown(text);
 
   return (
     <div className={cn("chat-md text-body leading-7 text-inherit [&_a]:break-all", className)}>
@@ -72,7 +80,7 @@ export function ChatMarkdown({ className, children }: ChatMarkdownProps) {
           td: ({ children: c }) => <td className="border border-border px-2 py-1.5">{c}</td>,
         }}
       >
-        {text}
+        {markdownText}
       </ReactMarkdown>
     </div>
   );

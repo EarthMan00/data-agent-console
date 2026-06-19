@@ -1,8 +1,8 @@
 const NUMBERED_ITEM = /^\s*\d+[.、)\]]\s*(.+)$/;
 const BULLET_ITEM = /^\s*[-•*]\s+(.+)$/;
 
-/** 从 linkfox_result 文本或会话正文中解析 ShareURL（仅内部使用，不展示给用户）。 */
-export function parseLinkfoxShareUrl(text: string): string | null {
+/** 从内部结果文本或会话正文中解析 ShareURL（仅内部使用，不展示给用户）。 */
+export function parseAliceShareUrl(text: string): string | null {
   const m = /ShareURL:\s*(\S+)/i.exec(text || "");
   return m?.[1]?.trim() || null;
 }
@@ -10,18 +10,18 @@ export function parseLinkfoxShareUrl(text: string): string | null {
 const SHARE_URL_LINE_RE = /ShareURL:\s*(\S+)/gi;
 const MESSAGE_ID_LINE_RE = /^messageId:\s*\S+\s*$/gim;
 const STATUS_LINE_RE = /^Status:\s*\S+\s*$/gim;
-const LINKFOX_SECTION_RE = /^---\s*LinkFox\s*说明\s*---\s*$/gim;
-const LINKFOX_URL_RE = /https?:\/\/agent\.linkfox\.com\S*/gi;
-const LINKFOX_LINK_MD_RE = /\[在\s*LinkFox[^\]]*\]\([^)]+\)/gi;
-const LINKFOX_PROMPT_RE = /请在\s*LinkFox[^。\n]*[：:]\s*/gi;
+const INTERNAL_CLARIFICATION_SECTION_RE = /^---\s*(?:Alice|LinkFox)\s*说明\s*---\s*$/gim;
+const LEGACY_SHARE_URL_RE = /https?:\/\/agent\.linkfox\.com\S*/gi;
+const LEGACY_LINK_MD_RE = /\[在\s*LinkFox[^\]]*\]\([^)]+\)/gi;
+const LEGACY_PROMPT_RE = /请在\s*LinkFox[^。\n]*[：:]\s*/gi;
 
-export function resolveLinkfoxShareUrl(
+export function resolveAliceShareUrl(
   meta: Record<string, unknown> | null | undefined,
   messageContent: string,
 ): string | null {
   const fromMeta = meta && typeof meta.share_url === "string" ? meta.share_url.trim() : "";
   if (fromMeta) return fromMeta;
-  return parseLinkfoxShareUrl(messageContent);
+  return parseAliceShareUrl(messageContent);
 }
 
 /** 面向用户的澄清文案：去掉工具名、外链、状态行与内部标记。 */
@@ -29,29 +29,29 @@ export function sanitizeClarificationForUserDisplay(message: string): string {
   let text = (message || "").trim();
   if (!text) return "";
 
-  text = text.replace(LINKFOX_SECTION_RE, "\n");
+  text = text.replace(INTERNAL_CLARIFICATION_SECTION_RE, "\n");
   text = text.replace(SHARE_URL_LINE_RE, "");
   text = text.replace(MESSAGE_ID_LINE_RE, "");
   text = text.replace(STATUS_LINE_RE, "");
-  text = text.replace(LINKFOX_URL_RE, "");
-  text = text.replace(LINKFOX_LINK_MD_RE, "");
-  text = text.replace(LINKFOX_PROMPT_RE, "");
+  text = text.replace(LEGACY_SHARE_URL_RE, "");
+  text = text.replace(LEGACY_LINK_MD_RE, "");
+  text = text.replace(LEGACY_PROMPT_RE, "");
   text = text.replace(/请在下方输入补充信息后发送[^。]*。?/g, "");
   text = text.replace(/\n{3,}/g, "\n\n");
   return text.trim();
 }
 
 /** @deprecated 使用 sanitizeClarificationForUserDisplay */
-export function linkfoxClarificationBodyForDisplay(body: string, _shareUrl: string | null): string {
+export function aliceClarificationBodyForDisplay(body: string, _shareUrl: string | null): string {
   return sanitizeClarificationForUserDisplay(body);
 }
 
 /** 澄清内容写入助手流式回复（仅自然语言，无工具信息）。 */
-export function formatLinkfoxClarificationForStream(message: string, _shareUrl: string | null): string {
+export function formatAliceClarificationForStream(message: string, _shareUrl: string | null): string {
   return sanitizeClarificationForUserDisplay(message);
 }
 
-/** 是否为 LinkFox 二次确认/关键词选择类追问（用于持久化到对话历史）。 */
+/** 是否为 Alice 二次确认/关键词选择类追问（用于持久化到对话历史）。 */
 export function looksLikeClarificationPrompt(message: string): boolean {
   const text = sanitizeClarificationForUserDisplay(message);
   if (!text) return false;

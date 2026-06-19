@@ -14,7 +14,7 @@ import type {
   PlatformTaskArtifactRef,
 } from "@/lib/agent-events";
 import { AgentRoutePlaceholder } from "@/components/agent-route-placeholder";
-import { MoreDataShell, useMoreDataShellState } from "@/components/more-data-shell";
+import { AliceShell, useAliceShellState } from "@/components/alice-shell";
 import { AssistantAttachmentList } from "@/components/assistant-attachment-list";
 import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
@@ -22,6 +22,7 @@ import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
 import { buildAttachmentItems } from "@/components/agent-workspace/attachment-utils";
 import {
+  AssistantOutputFrame,
   AliceMessageBubble,
   ORCHESTRATION_BLOCK_MAX,
   SIMPLE_CHAT_BUBBLE_MAX,
@@ -124,7 +125,7 @@ export function AgentWorkspace() {
   const runId = urlRunId || currentRunId;
   const run = runId ? (runs.find((item) => item.id === runId) ?? null) : null;
   const report = run ? (reports.find((item) => item.id === run.reportId) ?? null) : null;
-  const { refreshHistory } = useMoreDataShellState();
+  const { refreshHistory } = useAliceShellState();
   const frontendMockSession = isFrontendMockSessionId(historySessionId);
 
   // Ensure the session list reflects newly-created sessions as soon as we
@@ -164,9 +165,9 @@ export function AgentWorkspace() {
 
   if (awaitingAgentRouteParams) {
     return (
-      <MoreDataShell currentPath="/agent" contentScrollMode="child" currentRunLabel="历史对话" mainDecoration={null}>
+      <AliceShell currentPath="/agent" contentScrollMode="child" currentRunLabel="历史对话" mainDecoration={null}>
         <div className="flex h-full min-h-0 flex-1 items-center justify-center text-sm text-text-tertiary">加载中…</div>
-      </MoreDataShell>
+      </AliceShell>
     );
   }
 
@@ -185,9 +186,9 @@ export function AgentWorkspace() {
 
   if (!run || !report) {
     return (
-      <MoreDataShell currentPath="/agent" contentScrollMode="child" currentRunLabel="未找到任务" mainDecoration={null}>
+      <AliceShell currentPath="/agent" contentScrollMode="child" currentRunLabel="未找到任务" mainDecoration={null}>
         <div className="p-6 text-sm text-text-secondary">未在本地状态中找到该任务。请从首页发起研究，或确认 URL 中 runId 有效。</div>
-      </MoreDataShell>
+      </AliceShell>
     );
   }
 
@@ -207,7 +208,7 @@ function AgentRunWorkspaceView({
   platformAgent: ReturnType<typeof useOptionalPlatformAgent>;
 }) {
   const { currentRunId } = useWorkspaceState();
-  const { refreshHistoryNow } = useMoreDataShellState();
+  const { refreshHistoryNow } = useAliceShellState();
   const [previewOverrides, setPreviewOverrides] = useState<Record<string, string | null>>({});
   const [panelVisibility, setPanelVisibility] = useState<Record<string, boolean>>({});
   /** 右侧任务结果区：点击某张步骤结果卡片时锁定该步产物；新一轮步骤快照到达时自动清除以跟随最新一步 */
@@ -275,14 +276,14 @@ function AgentRunWorkspaceView({
         splitStreamEndedByRound: run.splitStreamEndedByRound,
         splitRevealCompleteByRound: run.splitRevealCompleteByRound,
         postTaskGuidanceByRound: run.postTaskGuidanceByRound,
-        linkfoxClarificationByRound: run.linkfoxClarificationByRound,
+        aliceClarificationByRound: run.aliceClarificationByRound,
         clarificationDialogByRound: run.clarificationDialogByRound,
       }),
     [
       run.chains,
       run.clarificationDialogByRound,
       run.latestRoundId,
-      run.linkfoxClarificationByRound,
+      run.aliceClarificationByRound,
       run.objective,
       run.platformSubtasksByRound,
       run.platformTaskArtifacts,
@@ -626,16 +627,18 @@ function AgentRunWorkspaceView({
     const latestHasGuidance = Boolean(latestRoundModel?.postTaskGuidance);
     const awaitingRound = latestHasGuidance ? undefined : roundModels.find((r) => isRoundAwaitingUserInput(r));
     if (awaitingRound && run.platformSessionId) {
+      const attachments = queuedAttachments[run.id] ?? [];
+      const attachmentFiles = queuedAttachmentFiles[run.id] ?? [];
       const orchId = resolveClarificationOrchestrationId(run, awaitingRound, acceptedToolRef.current.orchestrationId);
-      workspaceActions.appendUserMessageOnRound(run.id, awaitingRound.roundId, value);
+      workspaceActions.appendUserMessageOnRound(run.id, awaitingRound.roundId, value, attachments);
       setDraft("");
       setNotice("");
       await executeRound({
         roundId: awaitingRound.roundId,
         prompt: value,
         selectedCapabilities: selectedSourceIds,
-        attachments: queuedAttachments[run.id] ?? [],
-        attachmentFiles: queuedAttachmentFiles[run.id] ?? [],
+        attachments,
+        attachmentFiles,
         ...(orchId
           ? {
               clarificationResume: {
@@ -643,7 +646,7 @@ function AgentRunWorkspaceView({
                 stepDefs: (awaitingRound.executionSteps ?? []).map((s) => ({ id: s.id, label: s.label })),
                 clarificationStepIndex:
                   awaitingRound.clarificationDialog?.stepIndex ??
-                  awaitingRound.linkfoxClarification?.stepIndex ??
+                  awaitingRound.aliceClarification?.stepIndex ??
                   awaitingRound.executionSteps?.findIndex((s) => s.status === "awaiting_input") ??
                   0,
               },
@@ -749,7 +752,7 @@ function AgentRunWorkspaceView({
   );
 
   return (
-    <MoreDataShell
+    <AliceShell
       currentPath="/agent"
       contentScrollMode="child"
       currentRunLabel={run.title}
@@ -825,7 +828,7 @@ function AgentRunWorkspaceView({
                 const executionExpanded =
                   executionCardExpandedByRound[round.roundId] ??
                   (!round.collapseExecution ||
-                    Boolean(round.linkfoxClarification) ||
+                    Boolean(round.aliceClarification) ||
                     Boolean(round.clarificationDialog && !round.clarificationDialog.answered));
                 const splitRevealDone = true;
 
@@ -979,7 +982,6 @@ function AgentRunWorkspaceView({
                         <AliceMessageBubble
                           body={clarificationDialogBodyForDisplay(
                             round.clarificationDialog.message,
-                            round.clarificationDialog.answered,
                           )}
                           datetime={round.clarificationDialog.datetime}
                           streaming={round.assistantStreaming && !round.clarificationDialog.answered}
@@ -1000,6 +1002,13 @@ function AgentRunWorkspaceView({
                           key={`${round.roundId}-supplement-${idx}`}
                           text={m.text}
                           datetime={m.createdAt}
+                          attachments={m.attachments.map((attachment) => ({
+                            name: attachment.name,
+                            size: attachment.size ?? 0,
+                            extension: attachment.name.includes(".")
+                              ? attachment.name.split(".").pop()?.toLowerCase()
+                              : undefined,
+                          }))}
                         />
                       ));
                       const executionTitleTag = round.executionSteps?.some(
@@ -1007,6 +1016,11 @@ function AgentRunWorkspaceView({
                       )
                         ? <ExecutionRuntimeTag steps={round.executionSteps} />
                         : undefined;
+                      const executionTitle = round.errorMessage
+                        ? "任务执行失败"
+                        : round.collapseExecution
+                          ? "任务已完成"
+                          : "任务执行";
 
                       const orchestrationBlock = (
                         <TaskOrchestrationBlock
@@ -1043,6 +1057,7 @@ function AgentRunWorkspaceView({
                           }
                           executionCollapsible={round.collapseExecution}
                           executionTestId="agent-execution-panel"
+                          executionTitle={executionTitle}
                           executionTitleTag={executionTitleTag}
                           afterExecution={deferExecution ? undefined : afterExecution}
                         >
@@ -1066,7 +1081,7 @@ function AgentRunWorkspaceView({
                             {guidanceBubble}
                             {supplementBubbles}
                             {splitRevealDone ? (
-                              <>
+                              <AssistantOutputFrame datetime={round.createdAt} wide>
                                 <TaskExecutionPanel
                                   expanded={executionExpanded}
                                   onExpandedChange={(next) =>
@@ -1077,12 +1092,13 @@ function AgentRunWorkspaceView({
                                   }
                                   collapsible={round.collapseExecution}
                                   testId="agent-execution-panel"
+                                  title={executionTitle}
                                   titleTag={executionTitleTag}
                                 >
                                   {executionBody}
                                 </TaskExecutionPanel>
                                 {afterExecution}
-                              </>
+                              </AssistantOutputFrame>
                             ) : null}
                           </>
                         );
@@ -1140,9 +1156,6 @@ function AgentRunWorkspaceView({
               submitVariant={composerShowsStop ? "stop" : "send"}
               onStop={() => void stopCurrentRound()}
               onSubmit={() => void appendNote()}
-              containerClassName="overflow-visible rounded-popover border border-border bg-bg-surface shadow-surface"
-              textareaClassName="min-h-composer max-h-composer-chat min-w-44 flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-body leading-6 text-foreground caret-foreground outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-ring-none-important"
-              sendButtonClassName="h-10 w-10 min-w-0 rounded-full border border-transparent bg-primary p-0 text-primary-foreground shadow-none transition hover:bg-link-hover"
             />
 
             <div className="mt-3 text-center text-xs text-text-tertiary">
@@ -1151,6 +1164,6 @@ function AgentRunWorkspaceView({
           </div>
         </div>
       </AssistantThreadFrame>
-    </MoreDataShell>
+    </AliceShell>
   );
 }

@@ -2,7 +2,7 @@ import type { SessionMessageItem } from "@/lib/agent-api/types";
 import {
   looksLikeClarificationPrompt,
   sanitizeClarificationForUserDisplay,
-} from "@/lib/linkfox-clarification";
+} from "@/lib/alice-clarification";
 
 export type SessionClarificationFlow = {
   /** 归档的 Alice 二次确认文案 */

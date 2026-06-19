@@ -2,7 +2,7 @@
 
 
 
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 
 import { useState } from "react";
 
@@ -12,15 +12,11 @@ import { PlatformRoundStepTimeline } from "@/components/agent-workspace/platform
 
 import { TaskOrchestrationBlock } from "@/components/agent-workspace/task-orchestration-block";
 
-import { ORCHESTRATION_BLOCK_MAX } from "@/components/agent-workspace/chat-bubbles";
-
 import { ExecutionStepsHistoryList } from "@/components/execution-steps-monitor";
 
 import type { PlatformSubtaskSnapshot, PlatformTaskArtifactRef, TaskExecutionStep } from "@/lib/agent-events";
 
 import { humanizeStepLabelForUi } from "@/lib/humanize-step-label";
-
-import { cn } from "@/lib/utils";
 
 
 
@@ -36,6 +32,12 @@ function hasActiveExecutionStep(steps: TaskExecutionStep[]) {
 
 }
 
+function getExecutionTitle(steps: TaskExecutionStep[]) {
+  if (steps.some((step) => step.status === "error")) return "任务执行失败";
+  if (steps.length > 0 && steps.every((step) => step.status === "done")) return "任务已完成";
+  return "任务执行";
+}
+
 function formatTime(iso: string) {
   const d = new Date(iso);
 
@@ -44,10 +46,6 @@ function formatTime(iso: string) {
   return d.toLocaleString();
 
 }
-
-
-
-const WRAP = ORCHESTRATION_BLOCK_MAX;
 
 
 
@@ -75,6 +73,8 @@ export function TaskExecutionStepsAssistantBubble({
 
   onOpenSubtaskResult,
 
+  afterExecution,
+
 }: {
 
   steps: TaskExecutionStep[];
@@ -97,11 +97,16 @@ export function TaskExecutionStepsAssistantBubble({
 
   onOpenSubtaskResult?: (taskId: string) => void;
 
+  /** 附属于同一条任务执行消息的后续内容，例如任务结果卡片。 */
+
+  afterExecution?: ReactNode;
+
 }) {
 
   const ordered = [...steps].sort((a, b) => a.order - b.order);
 
   const executionActive = hasActiveExecutionStep(ordered);
+  const executionTitle = getExecutionTitle(ordered);
 
   const awaitingUserInput = ordered.some((s) => s.status === "awaiting_input");
 
@@ -137,8 +142,6 @@ export function TaskExecutionStepsAssistantBubble({
 
   return (
 
-    <div className={cn("flex w-full justify-start pb-1", WRAP)}>
-
       <TaskOrchestrationBlock
 
         datetime={formatTime(datetime)}
@@ -154,6 +157,8 @@ export function TaskExecutionStepsAssistantBubble({
         executionContentClassName="mt-4 space-y-0"
 
         executionTestId="platform-task-execution-panel"
+        executionTitle={executionTitle}
+        afterExecution={afterExecution}
       >
 
         {useLiveTimeline ? (
@@ -184,9 +189,6 @@ export function TaskExecutionStepsAssistantBubble({
 
       </TaskOrchestrationBlock>
 
-    </div>
-
   );
 
 }
-

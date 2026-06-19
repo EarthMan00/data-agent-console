@@ -397,7 +397,7 @@ describe("agent view model helpers", () => {
     };
     const round = {
       roundId: "round-1",
-      linkfoxClarification: {
+      aliceClarification: {
         message: "请确认关键词",
         shareUrl: null,
         stepIndex: 0,
@@ -409,7 +409,7 @@ describe("agent view model helpers", () => {
     expect(
       resolveClarificationOrchestrationId(
         { platformOrchestrationIdByRound: { "round-1": "orch-from-run" } },
-        { roundId: "round-1", linkfoxClarification: undefined },
+        { roundId: "round-1", aliceClarification: undefined },
         null,
       ),
     ).toBe("orch-from-run");
@@ -450,7 +450,7 @@ describe("agent view model helpers", () => {
     expect(round.clarificationDialog?.message).toContain("insulated tumbler");
   });
 
-  it("treats linkfox clarification as awaiting user input", () => {
+  it("treats alice clarification as awaiting user input", () => {
     expect(
       isRoundAwaitingUserInput({
         executionSteps: [{ id: "s1", roundId: "r1", order: 0, label: "步骤1", status: "running" }],

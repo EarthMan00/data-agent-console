@@ -1,18 +1,16 @@
 "use client";
 
-import Image from "next/image";
 import { useMemo } from "react";
 
+import { AssistantOutputFrame, handleSuggestionOptionKeyDown } from "@/components/agent-workspace/chat-bubbles";
 import { composerDraftContainsSuggestion } from "@/lib/composer-prefill";
 import { parsePostTaskGuidanceSuggestions } from "@/lib/parse-post-task-guidance";
 import { cn } from "@/lib/utils";
 
-const WRAP = "w-full max-w-simple-row";
-
-function formatTime(iso: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString();
+function formatTime(datetime: string) {
+  const date = new Date(datetime);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString();
 }
 
 export function PostTaskGuidanceBubble({
@@ -37,21 +35,15 @@ export function PostTaskGuidanceBubble({
   if (suggestions.length === 0) return null;
 
   return (
-    <div className={cn("flex w-full justify-start text-left", WRAP, className)}>
-      <div className="flex w-full items-start gap-3">
-        <Image
-          src="/mdata-logo.png"
-          alt="Alice"
-          width={36}
-          height={36}
-          className="mt-1 h-9 w-9 shrink-0 object-contain"
-          draggable={false}
-        />
-        <div className="min-w-0 flex-1 space-y-3">
-          <div className="text-body font-semibold text-foreground">Alice</div>
+    <AssistantOutputFrame datetime={datetime} wide className={className}>
+      <div className="w-full text-left">
+        <div className="space-y-2">
           <p className="text-body leading-5 text-text-secondary">接下来您可以试试：</p>
           <div
-            className="flex flex-row flex-wrap items-start gap-1"
+            className="flex flex-row flex-wrap items-start gap-2"
+            role={interactive ? "group" : "list"}
+            aria-label={interactive ? "选择下一步建议" : undefined}
+            onKeyDown={interactive ? handleSuggestionOptionKeyDown : undefined}
           >
             {suggestions.map((item, index) => {
               const selected =
@@ -70,6 +62,7 @@ export function PostTaskGuidanceBubble({
                     key={`${index}-${item.slice(0, 24)}`}
                     type="button"
                     aria-pressed={selected}
+                    data-clarification-option
                     className={cn(chipClass, "active-scale-chip")}
                     onClick={() => onSuggestionToggle(item)}
                   >
@@ -88,9 +81,11 @@ export function PostTaskGuidanceBubble({
               );
             })}
           </div>
-          <div className="mt-1 text-left text-caption text-text-tertiary">{formatTime(datetime)}</div>
+        </div>
+        <div className="!mt-1 text-[12px] font-normal text-[#4e5969] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          {formatTime(datetime)}
         </div>
       </div>
-    </div>
+    </AssistantOutputFrame>
   );
 }

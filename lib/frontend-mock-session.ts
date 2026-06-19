@@ -19,6 +19,7 @@ const TASK_IDS = [
 
 const RUNNING_TASK_ID = "22222222-2222-4222-8222-222222222201";
 const ERROR_TASK_ID = "33333333-3333-4333-8333-333333333301";
+const LOADING_SHOWCASE_TASK_ID = "44444444-4444-4444-8444-444444444401";
 
 function artifact(id: string, type: string, name: string) {
   return {
@@ -165,8 +166,7 @@ export function getFrontendMockSessionMessages(): SessionMessageItem[] {
     {
       id: "mock-assistant-split",
       role: "assistant",
-      content:
-        "任务拆分\n1. 查询竞品商品详情与销量\n2. 整理关键词价值打分\n3. 生成竞品分析报告\n4. 生成标题与五点描述版本\n5. 汇总 QA 检查项",
+      content: "已收到筛选条件，开始执行。",
       created_at: "2026-06-14T10:12:30.000+08:00",
       message_index: 3,
       meta: {},
@@ -245,23 +245,60 @@ export function getFrontendMockSessionMessages(): SessionMessageItem[] {
       },
     },
     {
+      id: "mock-assistant-loading-showcase",
+      role: "assistant",
+      content: "用于检查 loading / pending / awaiting_input 的任务执行状态。",
+      created_at: "2026-06-14T10:25:55.000+08:00",
+      message_index: 8,
+      meta: {
+        kind: "task_execution_steps",
+        round_id: "mock-round-loading-showcase",
+        task_id: LOADING_SHOWCASE_TASK_ID,
+        orchestration_id: "mock-orchestration-loading-showcase",
+        orchestration_step_task_ids: [LOADING_SHOWCASE_TASK_ID],
+        steps: [
+          { id: "showcase-step-1", label: "读取附件并校验字段", status: "done" },
+          {
+            id: "showcase-step-2",
+            label: "抓取实时样例结果",
+            status: "running",
+            runtime_hint: "正在获取数据",
+            runtime_started_at: "2026-06-14T10:25:46.000+08:00",
+          },
+          { id: "showcase-step-3", label: "等待用户确认价格区间", status: "awaiting_input" },
+          { id: "showcase-step-4", label: "生成可视化结果", status: "pending" },
+        ],
+      },
+    },
+    {
       id: "mock-assistant-guidance",
       role: "assistant",
       content:
         "1. 查看结果数据详情，并生成销售分析报告\n2. 对比不同竞品的关键词价值打分表现\n3. 优化生成的五点描述，调整关键词嵌入效果\n4. 生成商品标题的详细优化建议",
       created_at: "2026-06-14T10:26:20.000+08:00",
-      message_index: 8,
+      message_index: 9,
       meta: {
         kind: "post_task_guidance",
       },
     },
-    {
-      id: "mock-system-1",
-      role: "system",
-      content: "Mock 系统消息：用于检查系统提示样式，不会发送到后端。",
-      created_at: "2026-06-14T10:27:00.000+08:00",
-      message_index: 9,
-      meta: {},
-    },
+  ];
+}
+
+export function mergeFrontendMockSessionMessages(
+  cached: SessionMessageItem[] | null | undefined,
+): SessionMessageItem[] {
+  const baseMessages = getFrontendMockSessionMessages();
+  if (!cached?.length) return baseMessages;
+
+  const baseIds = new Set(baseMessages.map((message) => message.id));
+  const cachedExtras = cached.filter((message) => !baseIds.has(message.id) && message.role !== "system");
+  if (cachedExtras.length === 0) return baseMessages;
+
+  return [
+    ...baseMessages,
+    ...cachedExtras.map((message, index) => ({
+      ...message,
+      message_index: baseMessages.length + index,
+    })),
   ];
 }

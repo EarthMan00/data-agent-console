@@ -1,7 +1,7 @@
 import { listSessionMessages } from "@/lib/agent-api/client";
-import { sanitizeClarificationForUserDisplay } from "@/lib/linkfox-clarification";
+import { sanitizeClarificationForUserDisplay } from "@/lib/alice-clarification";
 
-export type SessionLinkfoxClarification = {
+export type SessionAliceClarification = {
   message: string;
   stepIndex: number | null;
   orchestrationId: string | null;
@@ -11,7 +11,7 @@ export type SessionLinkfoxClarification = {
 function parseClarificationMessage(
   m: { role?: string; content?: string; meta?: unknown },
   opts?: { taskId?: string; orchestrationId?: string | null },
-): SessionLinkfoxClarification | null {
+): SessionAliceClarification | null {
   if (m.role !== "assistant") return null;
   const meta =
     m.meta && typeof m.meta === "object" && !Array.isArray(m.meta)
@@ -32,8 +32,8 @@ function parseClarificationMessage(
   };
 }
 
-/** 任务/编排结束后，从 session_messages 拉取 LinkFox 二次确认（后端异步写入，需短暂重试）。 */
-export async function resolvePendingLinkfoxClarificationFromSession(
+/** 任务/编排结束后，从 session_messages 拉取 Alice 二次确认（后端异步写入，需短暂重试）。 */
+export async function resolvePendingAliceClarificationFromSession(
   token: string,
   sessionId: string,
   opts?: {
@@ -42,7 +42,7 @@ export async function resolvePendingLinkfoxClarificationFromSession(
     maxAttempts?: number;
     intervalMs?: number;
   },
-): Promise<SessionLinkfoxClarification | null> {
+): Promise<SessionAliceClarification | null> {
   const maxAttempts = opts?.maxAttempts ?? 16;
   const intervalMs = opts?.intervalMs ?? 250;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {

@@ -23,7 +23,7 @@ export type TaskExecutionStep = {
   label: string;
   order: number;
   status: TaskExecutionStepStatus;
-  /** 运行中时的可读进度（如 LinkFox 已等待时长） */
+  /** 运行中时的可读进度（如 Alice 已等待时长） */
   runtimeHint?: string;
   /** 后端任务实际开始时间；用于前端本地秒表展示，避免跟随轮询间隔跳秒。 */
   runtimeStartedAt?: string;
@@ -223,7 +223,7 @@ export type AgentRoundRuntimeEvent =
       runtimeStartedAt?: string;
     }
   | {
-      type: "linkfox_clarification_pending";
+      type: "alice_clarification_pending";
       roundId: string;
       message: string;
       shareUrl: string | null;
@@ -236,7 +236,7 @@ export type AgentRoundRuntimeEvent =
       orchestrationId: string;
     }
   | {
-      type: "linkfox_clarification_cleared";
+      type: "alice_clarification_cleared";
       roundId: string;
     }
   | {
@@ -245,7 +245,7 @@ export type AgentRoundRuntimeEvent =
       roundId: string;
     };
 
-/** 与 Data Agent Server TaskResponse.artifacts 对齐，供右侧任务结果区拉取预览 */
+/** 与 Alice 后端服务 TaskResponse.artifacts 对齐，供右侧任务结果区拉取预览 */
 export type PlatformTaskArtifactRef = {
   artifact_id: string;
   artifact_type: string;

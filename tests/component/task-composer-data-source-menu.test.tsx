@@ -1,9 +1,13 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskComposer } from "@/components/task-composer";
+
+afterEach(() => {
+  cleanup();
+});
 
 function ComposerHarness({
   onToolSelect = vi.fn(),

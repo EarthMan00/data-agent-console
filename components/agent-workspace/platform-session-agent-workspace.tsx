@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { TaskExecutionStepsAssistantBubble } from "@/components/task-execution-steps-assistant-bubble";
-import { MoreDataShell } from "@/components/more-data-shell";
+import { AliceShell } from "@/components/alice-shell";
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
 import { TaskResultSummaryCard } from "@/components/task-result-summary-card";
 import { TaskComposer } from "@/components/task-composer";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
-import { useMoreDataShellState } from "@/components/more-data-shell";
+import { useAliceShellState } from "@/components/alice-shell";
 import { compactText } from "@/components/agent-workspace-view-models";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -83,8 +83,8 @@ import {
 import {
   getFrontendMockOrchestrationBundles,
   getFrontendMockResultPanelData,
-  getFrontendMockSessionMessages,
   isFrontendMockSessionId,
+  mergeFrontendMockSessionMessages,
 } from "@/lib/frontend-mock-session";
 import { pollAcceptedPlatformTaskInSession } from "@/lib/session-accepted-task-poll";
 import {
@@ -108,14 +108,14 @@ import {
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import { PostTaskGuidanceBubble } from "./post-task-guidance-bubble";
 import {
+  AssistantOutputFrame,
   AliceErrorBubble,
   AliceMessageBubble,
   SIMPLE_CHAT_COLUMN_MAX,
   SimpleAssistantBubble,
-  SimpleSystemBubble,
   SimpleUserBubble,
 } from "./chat-bubbles";
-import { sanitizeClarificationForUserDisplay } from "@/lib/linkfox-clarification";
+import { sanitizeClarificationForUserDisplay } from "@/lib/alice-clarification";
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { sessionHasOrchestrationFailure } from "@/lib/orchestration-failure-message";
 
@@ -135,7 +135,7 @@ export function PlatformSessionAgentWorkspace({
   fallbackTaskId,
 }: {
   sessionId: string;
-  /** 从定时任务立即运行进入：隐藏输入框，展示保存/终止。 */
+  /** 从定时任务「试跑」进入：隐藏输入框，展示上一步/保存/终止。 */
   scheduleTrial?: boolean;
   /** 从定时任务「运行记录-查看过程」进入：只读回放，样式与正常对话一致，不可追问。 */
   scheduledRunRecord?: boolean;
@@ -144,7 +144,7 @@ export function PlatformSessionAgentWorkspace({
   fallbackTaskId?: string;
 }) {
   const platformAgent = useOptionalPlatformAgent();
-  const { refreshHistoryNow, setActiveSessionTitle, bumpHistorySessionActivity } = useMoreDataShellState();
+  const { refreshHistoryNow, setActiveSessionTitle, bumpHistorySessionActivity } = useAliceShellState();
   const router = useRouter();
   const frontendMockSession = isFrontendMockSessionId(sessionId);
   const isMounted = useRef(true);
@@ -226,8 +226,7 @@ export function PlatformSessionAgentWorkspace({
     if (frontendMockSession) {
       setMessagesLoaded(false);
       const cached = readSessionMessageCache(sessionId);
-      const baseMessages = getFrontendMockSessionMessages();
-      const source = cached && cached.length >= baseMessages.length ? cached : baseMessages;
+      const source = mergeFrontendMockSessionMessages(cached);
       const fresh = processStreamingMessages(source);
       writeSessionMessageCache(sessionId, fresh);
       setMessages(fresh);
@@ -470,7 +469,7 @@ export function PlatformSessionAgentWorkspace({
     };
   }, [sessionId, reload]);
 
-  /** 立即运行首条在会话页发送：进入页面后再发，避免在定时页等接口导致进页时对话已过半。 */
+  /** 试跑首条在会话页发送：进入页面后再发，避免在定时页等接口导致进页时对话已过半。 */
   useEffect(() => {
     if (!scheduleTrial || !platformAgent?.auth) return;
     if (!tryClaimScheduleTrialFirstSend(sessionId)) return;
@@ -669,7 +668,7 @@ export function PlatformSessionAgentWorkspace({
     return clearPoll;
   }, [scheduleTrial, trialTaskId, platformAgent, trialOrchestrationId, trialIsMultiStep, reload]);
 
-  const linkfoxClarificationForSteps = useMemo(() => {
+  const aliceClarificationForSteps = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i]!;
       if (m.role !== "assistant") continue;
@@ -717,11 +716,12 @@ export function PlatformSessionAgentWorkspace({
   }, [firstUserMessageTitle, setActiveSessionTitle]);
 
   const headerLabel = scheduleTrial
-    ? (loadScheduleCreateDraft()?.title?.trim() || "立即运行")
+    ? (loadScheduleCreateDraft()?.title?.trim() || "试跑")
     : scheduledRunRecord
       ? (runLabel?.trim() || "定时任务记录")
       : firstUserMessageTitle || "历史对话";
-  /** 立即运行须执行结束且会话已有内容后，才允许人工确认保存（不会运行结束自动落库） */
+  const scheduleControlsLocked = scheduleTrial && (busy || trialRunInFlight || saveBusy);
+  /** 试跑须执行结束且会话已有内容后，才允许人工确认保存（不会试跑结束自动落库） */
   const trialSaveReady =
     scheduleTrial &&
     !busy &&
@@ -729,8 +729,19 @@ export function PlatformSessionAgentWorkspace({
     !trialRunInFlight &&
     !saveBusy &&
     messages.length > 0;
-  /** 立即运行页：除保存提交中外都允许点「终止」，避免 404/轮询异常时无法离开 */
+  /** 试跑页：除保存提交中外都允许点「终止」并回到配置，避免 404/轮询异常时无法离开 */
   const terminateEnabled = scheduleTrial && !saveBusy;
+
+  const goBackToSchedule = useCallback(() => {
+    const d = loadScheduleCreateDraft();
+    const gq = d?.createGroupIdFromUrl?.trim()
+      ? `&groupId=${encodeURIComponent(d.createGroupIdFromUrl.trim())}`
+      : "";
+    const editQ = d?.editingTaskId?.trim()
+      ? `&edit=${encodeURIComponent(d.editingTaskId.trim())}`
+      : "";
+    router.push(`/schedules?create=1&restore=1${editQ}${gq}`);
+  }, [router]);
 
   const onSaveSchedules = useCallback(async () => {
     if (!platformAgent) return;
@@ -760,8 +771,8 @@ export function PlatformSessionAgentWorkspace({
     }
     setTrialRunInFlight(false);
     setLastTaskSnapshot(null);
-    router.push("/schedules");
-  }, [platformAgent, router, trialTaskId]);
+    goBackToSchedule();
+  }, [platformAgent, trialTaskId, goBackToSchedule]);
 
   useChatStickToBottom(messagesScrollRef, messagesInnerRef, [busy, error, messages, sending], {
     resetKey: sessionId,
@@ -771,8 +782,7 @@ export function PlatformSessionAgentWorkspace({
     // 在 reset effect 中同步检查缓存：缓存命中则立即展示，不依赖后续 effect 调用时序
     const cached = readSessionMessageCache(sessionId);
     if (frontendMockSession) {
-      const baseMessages = getFrontendMockSessionMessages();
-      const mockMessages = cached && cached.length >= baseMessages.length ? cached : baseMessages;
+      const mockMessages = mergeFrontendMockSessionMessages(cached);
       setMessages(processStreamingMessages(mockMessages));
       setMessagesLoaded(true);
       setBusy(false);
@@ -1452,7 +1462,7 @@ export function PlatformSessionAgentWorkspace({
         <DialogContent className="max-w-md rounded-panel">
           <DialogTitle>保存定时任务？</DialogTitle>
           <DialogDescription className="text-sm leading-relaxed text-text-tertiary">
-            立即运行结束后不会自动写入定时任务列表。请确认运行结果符合预期后再保存。
+            试跑结束后不会自动写入定时任务列表。请确认运行结果符合预期后再保存。
           </DialogDescription>
           <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button
@@ -1479,7 +1489,7 @@ export function PlatformSessionAgentWorkspace({
         </DialogContent>
       </Dialog>
     ) : null}
-    <MoreDataShell
+    <AliceShell
       currentPath="/agent/history"
       contentScrollMode="child"
       currentRunLabel={headerLabel}
@@ -1581,7 +1591,7 @@ export function PlatformSessionAgentWorkspace({
                     Boolean(latestExecutionSteps?.length);
                   const archivedClarifyText =
                     sessionClarificationFlow.archivedClarification ??
-                    linkfoxClarificationForSteps?.message ??
+                    aliceClarificationForSteps?.message ??
                     null;
                   const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
                   const trialResultOnFirstAssistant =
@@ -1730,7 +1740,7 @@ export function PlatformSessionAgentWorkspace({
                               />
                             ) : null}
                             {(m.id === latestStepsMessageId || isThisOrchestrationTurn) &&
-                            linkfoxClarificationForSteps &&
+                            aliceClarificationForSteps &&
                             !deferStepsToUserId &&
                             !messages.some(
                               (item) =>
@@ -1740,7 +1750,7 @@ export function PlatformSessionAgentWorkspace({
                                 (item.meta as Record<string, unknown>).kind === "linkfox_clarification",
                             ) ? (
                               <AliceMessageBubble
-                                body={linkfoxClarificationForSteps.message}
+                                body={aliceClarificationForSteps.message}
                                 datetime={m.created_at}
                                 composerDraft={draft}
                                 onSuggestionToggle={scheduledRunRecord ? undefined : toggleGuidanceSuggestion}
@@ -1820,10 +1830,9 @@ export function PlatformSessionAgentWorkspace({
                             streaming={isStreamingAssistantMessage(m)}
                           />
                         )
-                      ) : (
-                        <SimpleSystemBubble message={m.content} />
-                      )}
+                      ) : null}
                       {taskId ? (
+                        <AssistantOutputFrame datetime={m.created_at} wide>
                         <TaskResultSummaryCard
                           title="任务结果"
                           className="ml-12 w-[calc(100%-3rem)]"
@@ -1852,6 +1861,7 @@ export function PlatformSessionAgentWorkspace({
                             void openResultPanelForMessage(meta, m.id);
                           }}
                         />
+                        </AssistantOutputFrame>
                       ) : null}
                       {taskId && guidancePresentation.kind !== "none" ? (
                         <div className="space-y-3.5">
@@ -1898,11 +1908,21 @@ export function PlatformSessionAgentWorkspace({
             ) : scheduleTrial ? (
               <div className="flex flex-col gap-3">
                 {trialRunInFlight ? (
-                  <p className="text-center text-xs text-text-disabled">立即运行中，完成后可手动保存（不会自动写入定时任务）</p>
+                  <p className="text-center text-xs text-text-disabled">试跑进行中，完成后可手动保存（不会自动写入定时任务）</p>
                 ) : trialSaveReady ? (
-                  <p className="text-center text-xs text-text-tertiary">立即运行已结束，请确认结果后点击「保存」</p>
+                  <p className="text-center text-xs text-text-tertiary">试跑已结束，请确认结果后点击「保存」</p>
                 ) : null}
-                <div className="flex w-full min-w-0 items-center justify-end gap-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full min-w-0 rounded-control sm:w-auto"
+                  disabled={scheduleControlsLocked}
+                  onClick={goBackToSchedule}
+                >
+                  上一步
+                </Button>
+                <div className="flex w-full min-w-0 items-center justify-end gap-2 sm:max-w-sm">
                   <Button
                     type="button"
                     variant="ghost"
@@ -1920,6 +1940,7 @@ export function PlatformSessionAgentWorkspace({
                   >
                     保存
                   </Button>
+                </div>
                 </div>
               </div>
             ) : (
@@ -1966,7 +1987,7 @@ export function PlatformSessionAgentWorkspace({
           </div>
         </div>
       </div>
-    </MoreDataShell>
+    </AliceShell>
     </>
   );
 }

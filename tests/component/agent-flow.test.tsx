@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 
 import { AgentWorkspace } from "@/components/agent-workspace";
-import { MoreDataShellRoot } from "@/components/more-data-shell";
+import { AliceShellRoot } from "@/components/alice-shell";
 import { workspaceActions, workspaceStore } from "@/lib/workspace-store";
 
 const routeState = vi.hoisted(() => ({ runId: "" }));
@@ -86,9 +86,9 @@ function seedCompletedAgentRun() {
 function renderSeededAgentWorkspace() {
   seedCompletedAgentRun();
   return render(
-    <MoreDataShellRoot>
+    <AliceShellRoot>
       <AgentWorkspace />
-    </MoreDataShellRoot>,
+    </AliceShellRoot>,
   );
 }
 
@@ -97,8 +97,9 @@ describe("agent flow", () => {
     renderSeededAgentWorkspace();
 
     expect(screen.getByTestId("agent-user-input-card")).toBeInTheDocument();
-    expect(await screen.findByTestId("agent-execution-panel")).toBeInTheDocument();
-    expect(screen.getByText("AI 可能产生不准确的信息。请核实重要细节。")).toBeInTheDocument();
+    const executionPanel = await screen.findByTestId("agent-execution-panel");
+    expect(executionPanel).toHaveTextContent("任务已完成");
+    expect(within(executionPanel).queryByText("任务执行")).not.toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByTestId("agent-result-section")).toBeInTheDocument();
       expect(document.querySelector("main aside [data-testid='agent-preview-panel']")).toBeInTheDocument();

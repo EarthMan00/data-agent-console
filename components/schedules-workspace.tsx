@@ -23,7 +23,7 @@ import {
 
 import { AutoToast } from "@/components/auto-toast";
 import { EmptyState } from "@/components/empty-state";
-import { MoreDataShell } from "@/components/more-data-shell";
+import { AliceShell } from "@/components/alice-shell";
 import { PageLostState } from "@/components/page-lost-state";
 import { ScheduleResultPushSection, validateResultPushBlocks, type ResultPushBlock } from "@/components/schedule-result-push";
 import { TaskComposer } from "@/components/task-composer";
@@ -1352,16 +1352,16 @@ export function SchedulesWorkspace() {
 
   if (!isPlatformBackendEnabled() || !platformAgent) {
     return (
-      <MoreDataShell currentPath="/schedules">
+      <AliceShell currentPath="/schedules">
         <div className="px-8 py-12 text-sm text-text-tertiary">当前未启用平台后端，无法管理定时任务。</div>
-      </MoreDataShell>
+      </AliceShell>
     );
   }
 
   const searchPlaceholder = primaryTab === "已定时" ? "搜索定时任务" : "搜索运行记录";
 
   return (
-    <MoreDataShell currentPath="/schedules" showTopHeader={false}>
+    <AliceShell currentPath="/schedules" showTopHeader={false}>
       <AutoToast
         message={toastMessage}
         variant={toastVariant}
@@ -1816,7 +1816,7 @@ export function SchedulesWorkspace() {
           </div>
         </DialogContent>
       </Dialog>
-    </MoreDataShell>
+    </AliceShell>
   );
 }
 
@@ -1957,7 +1957,7 @@ function ApiScheduledTaskCard({
           >
             <DialogTitle className="sr-only">删除定时任务</DialogTitle>
             <p className="text-body leading-6 text-foreground">
-              确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
+              确定删除该任务吗？删除后会话记忆与产出物将不可恢复
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <Button
@@ -2168,7 +2168,7 @@ function ApiRunRecordRow({
               >
                 <DialogTitle className="sr-only">删除运行记录</DialogTitle>
                 <p className="text-body leading-6 text-foreground">
-                  确定删除该任务吗？删除后会话记忆与产出物将永久删除且不可恢复
+                  确定删除该任务吗？删除后会话记忆与产出物将不可恢复
                 </p>
                 <div className="mt-4 flex justify-end gap-2">
                   <Button

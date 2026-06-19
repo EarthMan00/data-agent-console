@@ -43,14 +43,14 @@ async function resolveOrchestrationFailureUserMessage(
 }
 import { safeRandomUUID } from "@/lib/random-uuid";
 import { streamSanitizeDeltaClient, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
-import { sanitizeClarificationForUserDisplay, formatLinkfoxClarificationForStream } from "@/lib/linkfox-clarification";
+import { sanitizeClarificationForUserDisplay, formatAliceClarificationForStream } from "@/lib/alice-clarification";
 import {
   buildTaskCompletionSummary,
   extractPostTaskGuidance,
 } from "@/lib/task-chat-summary";
 
-import { resolvePendingLinkfoxClarificationFromSession } from "@/lib/agent-runtime/session-linkfox-clarification";
-import type { SessionLinkfoxClarification } from "@/lib/agent-runtime/session-linkfox-clarification";
+import { resolvePendingAliceClarificationFromSession } from "@/lib/agent-runtime/session-alice-clarification";
+import type { SessionAliceClarification } from "@/lib/agent-runtime/session-alice-clarification";
 import { PlatformAuthExpiredError } from "./auth";
 import { capabilityLabelMap } from "./constants";
 import { buildReportPatch } from "./report-helpers";
@@ -184,10 +184,10 @@ async function emitPlatformTaskRoundOutcome(
   handlers.onEvent({ type: "round_completed", roundId: input.roundId });
 }
 
-async function finishRoundAwaitingLinkfoxClarification(input: {
+async function finishRoundAwaitingAliceClarification(input: {
   handlers: { onEvent: (event: AgentRoundRuntimeEvent) => void };
   roundInput: AgentRoundInput;
-  clarify: SessionLinkfoxClarification;
+  clarify: SessionAliceClarification;
   stepDefs: Array<{ id: string; label: string }>;
   orchestrationId: string | null;
   rowStatuses: TaskExecutionStepStatus[];
@@ -206,7 +206,7 @@ async function finishRoundAwaitingLinkfoxClarification(input: {
     clarify.message.trim() ||
     sanitizeClarificationForUserDisplay("为了继续完成当前任务，请直接在对话中补充所需信息。");
   handlers.onEvent({
-    type: "linkfox_clarification_pending",
+    type: "alice_clarification_pending",
     roundId: roundInput.roundId,
     message: clarifyMessage,
     shareUrl: null,
@@ -442,7 +442,7 @@ export async function runPlatformRound(
         orchestrationId = clarificationResume.orchestrationId;
         stepDefs = clarificationResume.stepDefs;
         acceptedTaskId = "";
-        handlers.onEvent({ type: "linkfox_clarification_cleared", roundId: input.roundId });
+        handlers.onEvent({ type: "alice_clarification_cleared", roundId: input.roundId });
         handlers.onEvent({
           type: "round_ui_layout",
           roundId: input.roundId,
@@ -688,9 +688,9 @@ export async function runPlatformRound(
               lastOrch.clarification_message?.trim() ||
                 "为了继续完成当前任务，请直接在对话中补充所需信息。",
             );
-            const clarifyText = formatLinkfoxClarificationForStream(clarifyMessage, null);
+            const clarifyText = formatAliceClarificationForStream(clarifyMessage, null);
             handlers.onEvent({
-              type: "linkfox_clarification_pending",
+              type: "alice_clarification_pending",
               roundId: input.roundId,
               message: clarifyMessage,
               shareUrl: null,
@@ -799,9 +799,9 @@ export async function runPlatformRound(
 
       const task = sharedTask;
 
-      let pendingClarifyFromSession: SessionLinkfoxClarification | null = null;
+      let pendingClarifyFromSession: SessionAliceClarification | null = null;
       if (!orchAwaitingClarification && task.finished_at && task.status === "SUCCESS") {
-        pendingClarifyFromSession = await resolvePendingLinkfoxClarificationFromSession(
+        pendingClarifyFromSession = await resolvePendingAliceClarificationFromSession(
           accessToken,
           chatSessionId,
           {
@@ -833,7 +833,7 @@ export async function runPlatformRound(
           );
           if (!clarificationAnnounced) {
             handlers.onEvent({
-              type: "linkfox_clarification_pending",
+              type: "alice_clarification_pending",
               roundId: input.roundId,
               message: clarifyMessage,
               shareUrl: null,
@@ -977,7 +977,7 @@ export async function runPlatformRound(
           stepDefs.length,
           pendingClarifyFromSession.stepIndex ?? 0,
         );
-        await finishRoundAwaitingLinkfoxClarification({
+        await finishRoundAwaitingAliceClarification({
           handlers,
           roundInput: input,
           clarify: pendingClarifyFromSession,

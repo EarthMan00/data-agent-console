@@ -7,7 +7,7 @@ export async function createSingleWindowSession(browser: Browser, baseURL: strin
   await baselinePage.setContent(`
     <!doctype html>
     <html lang="en">
-      <head><title>linkfoxAgent</title></head>
+      <head><title>Alice</title></head>
       <body><main>baseline tab</main></body>
     </html>
   `);
@@ -22,12 +22,12 @@ export async function createSingleWindowSession(browser: Browser, baseURL: strin
 export async function closeSingleWindowSession(context: BrowserContext, baselinePage: Page, appPage: Page) {
   await appPage.close();
   expect(context.pages()).toHaveLength(1);
-  await expect(baselinePage).toHaveTitle("linkfoxAgent");
+  await expect(baselinePage).toHaveTitle("Alice");
   await context.close();
 }
 
 export async function expectSingleWindowModel(context: BrowserContext) {
   const pages = context.pages();
   expect(pages).toHaveLength(2);
-  await expect(pages[0]).toHaveTitle("linkfoxAgent");
+  await expect(pages[0]).toHaveTitle("Alice");
 }

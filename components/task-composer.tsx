@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ArrowUp, ChevronDown, CornerDownLeft, Paperclip, X } from "@/components/ui/tabler-icons";
 
@@ -16,7 +16,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 
 type ComposerMode = "普通模式" | "深度模式";
-type MentionMenuKeyboardEvent = ReactKeyboardEvent<HTMLElement> | globalThis.KeyboardEvent;
 
 type TaskComposerProps = {
   value: string;
@@ -40,6 +39,7 @@ type TaskComposerProps = {
   showAttachmentButton?: boolean;
   visualStyle?: "default" | "heroMinimal";
   containerClassName?: string;
+  editorRowClassName?: string;
   textareaClassName?: string;
   placeholderClassName?: string;
   sendButtonClassName?: string;
@@ -118,6 +118,13 @@ function isImageAttachment(file: File, extension: string) {
   return file.type.startsWith("image/") || IMAGE_ATTACHMENT_EXTENSIONS.has(extension);
 }
 
+function imageExtensionFromMime(type: string) {
+  const subtype = type.toLowerCase().replace(/^image\//, "").replace("+xml", "");
+  if (!subtype || subtype === type.toLowerCase()) return "png";
+  if (subtype === "jpeg") return "jpg";
+  return subtype;
+}
+
 function formatComposerAttachmentSize(size: number) {
   if (!Number.isFinite(size) || size <= 0) return "0KB";
   if (size < 1024) return `${size}B`;
@@ -156,6 +163,48 @@ function createComposerAttachment(file: File, index: number): ComposerAttachment
     isImage,
     previewUrl: isImage ? URL.createObjectURL(file) : undefined,
   };
+}
+
+function ensurePastedImageName(file: File, index: number) {
+  if (file.name.trim()) return file;
+  const extension = getAttachmentExtension(file.name) || imageExtensionFromMime(file.type);
+  return new File([file], `pasted-image-${index + 1}.${extension}`, {
+    type: file.type || `image/${extension}`,
+    lastModified: file.lastModified || Date.now(),
+  });
+}
+
+function getClipboardImageFiles(data: DataTransfer) {
+  const found: File[] = [];
+  const seen = new Set<string>();
+  const add = (file: File | null) => {
+    if (!file) return;
+    const extension = getAttachmentExtension(file.name);
+    if (!isImageAttachment(file, extension)) return;
+    const key = `${file.name}:${file.type}:${file.size}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push(file);
+  };
+
+  Array.from(data.files ?? []).forEach(add);
+  Array.from(data.items ?? []).forEach((item) => {
+    if (item.kind !== "file") return;
+    add(item.getAsFile());
+  });
+
+  return found.map((file, index) => ensurePastedImageName(file, index));
+}
+
+function createFileListFromFiles(files: File[]) {
+  if (typeof DataTransfer === "undefined") return null;
+  try {
+    const transfer = new DataTransfer();
+    files.forEach((file) => transfer.items.add(file));
+    return transfer.files;
+  } catch {
+    return null;
+  }
 }
 
 function getSelectionOffsets(container: HTMLElement) {
@@ -317,49 +366,14 @@ function getToolTokenNearCaret(container: HTMLElement, direction: "backward" | "
   return resolveTokenFromNode(seed, direction === "backward" ? "previousSibling" : "nextSibling");
 }
 
-function moveCaretAfterToolToken(token: HTMLElement) {
+function moveCaretAfterNode(node: Node) {
   const selection = window.getSelection();
   if (!selection) return;
-
   const range = document.createRange();
-  const next = token.nextSibling;
-  if (next?.nodeType === Node.TEXT_NODE && next.textContent?.startsWith(" ")) {
-    range.setStart(next, 1);
-  } else {
-    range.setStartAfter(token);
-  }
+  range.setStartAfter(node);
   range.collapse(true);
   selection.removeAllRanges();
   selection.addRange(range);
-}
-
-function deleteRangeContentsWithUndo(range: Range) {
-  const selection = window.getSelection();
-  if (!selection) return false;
-
-  selection.removeAllRanges();
-  selection.addRange(range);
-  if (typeof document.execCommand === "function" && document.execCommand("delete")) {
-    return true;
-  }
-
-  range.deleteContents();
-  range.collapse(true);
-  selection.removeAllRanges();
-  selection.addRange(range);
-  return false;
-}
-
-function createToolTokenDeletionRange(token: HTMLElement) {
-  const range = document.createRange();
-  range.setStartBefore(token);
-  const next = token.nextSibling;
-  if (next?.nodeType === Node.TEXT_NODE && next.textContent?.startsWith(" ")) {
-    range.setEnd(next, 1);
-  } else {
-    range.setEndAfter(token);
-  }
-  return range;
 }
 
 function placeCaretAtEditorEnd(editor: HTMLElement) {
@@ -386,7 +400,11 @@ function normalizeSelectionOutsideToolToken(container: HTMLElement) {
   const token = anchorElement?.closest<HTMLElement>("[data-tool-token='true']");
   if (!token || !container.contains(token)) return;
 
-  moveCaretAfterToolToken(token);
+  const spacer =
+    token.nextSibling?.nodeType === Node.TEXT_NODE && token.nextSibling.textContent?.startsWith(" ")
+      ? token.nextSibling
+      : token;
+  moveCaretAfterNode(spacer);
 }
 
 function normalizeEditorContent(container: HTMLElement) {
@@ -396,12 +414,6 @@ function normalizeEditorContent(container: HTMLElement) {
       node.remove();
     }
   });
-}
-
-function removeTemplateGhostNodes(container: HTMLElement) {
-  container.querySelectorAll("[data-template-ghost='true']").forEach((node) => node.remove());
-  delete container.dataset.templateGhostToolId;
-  delete container.dataset.templateGhostRenderKey;
 }
 
 function insertPlainTextAtSelection(text: string) {
@@ -420,30 +432,6 @@ function insertPlainTextAtSelectionWithUndo(text: string) {
   insertPlainTextAtSelection(text);
 }
 
-function normalizeClipboardImageFile(file: File, index: number) {
-  if (file.name.trim()) return file;
-  const extension = CLIPBOARD_IMAGE_EXTENSION_BY_TYPE[file.type] ?? file.type.split("/")[1]?.split("+")[0] ?? "png";
-  return new File([file], `pasted-image-${index + 1}.${extension}`, {
-    type: file.type || "image/png",
-    lastModified: file.lastModified || Date.now(),
-  });
-}
-
-function getClipboardImageFiles(data: DataTransfer) {
-  const addImageFiles = (files: File[]) =>
-    files
-      .filter((file) => isImageAttachment(file, getAttachmentExtension(file.name)))
-      .map(normalizeClipboardImageFile);
-
-  const itemFiles = Array.from(data.items ?? [])
-    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-    .map((item) => item.getAsFile())
-    .filter((file): file is File => Boolean(file));
-
-  if (itemFiles.length > 0) return addImageFiles(itemFiles);
-  return addImageFiles(Array.from(data.files ?? []));
-}
-
 function handleEditorPaste(
   event: React.ClipboardEvent<HTMLElement>,
   syncValue: () => string,
@@ -458,7 +446,6 @@ function handleEditorPaste(
   }
 
   event.preventDefault();
-  removeTemplateGhostNodes(event.currentTarget);
   const plain = event.clipboardData.getData("text/plain");
   if (!plain) return;
   insertPlainTextAtSelectionWithUndo(plain);
@@ -636,6 +623,7 @@ export function TaskComposer({
   showAttachmentButton = true,
   visualStyle = "default",
   containerClassName,
+  editorRowClassName,
   textareaClassName,
   placeholderClassName,
   sendButtonClassName,
@@ -658,16 +646,12 @@ export function TaskComposer({
   const toolListRef = useRef<HTMLDivElement | null>(null);
   const mentionOptionPaneRef = useRef<HTMLDivElement | null>(null);
   const highlightedToolIndexRef = useRef(-1);
-  const pendingMentionItemFocusRef = useRef<number | null>(null);
-  const handleMentionMenuKeyDownRef = useRef<(event: MentionMenuKeyboardEvent) => void>(() => {});
-  const selectDataSourceRef = useRef<(capabilityId: string, origin: "button" | "mention") => void>(() => {});
   const mentionRangeRef = useRef<{ start: number; end: number } | null>(null);
   const suppressExternalSyncRef = useRef(false);
   const pendingEditorEndPlacementRef = useRef(false);
   const syncEditorInteractionStateRef = useRef<(editor: HTMLElement) => void>(() => {});
   const onAttachmentsChangeRef = useRef(onAttachmentsChange);
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
-  const selectedSourceIdsRef = useRef(selectedSourceIds);
 
   const [sourceButtonOpen, setSourceButtonOpen] = useState(false);
   const [sourceButtonHighlightedIndex, setSourceButtonHighlightedIndex] = useState(0);
@@ -936,13 +920,17 @@ export function TaskComposer({
   }, [onAttachmentsChange]);
 
   useEffect(() => {
-    selectedSourceIdsRef.current = selectedSourceIds;
-  }, [selectedSourceIds]);
-
-  useEffect(() => {
     attachmentsRef.current = attachments;
     onAttachmentsChangeRef.current?.(attachments.map((attachment) => attachment.file));
   }, [attachments]);
+
+  useEffect(() => {
+    highlightedToolIndexRef.current = highlightedToolIndex;
+  }, [highlightedToolIndex]);
+
+  useEffect(() => {
+    sourceButtonHighlightedIndexRef.current = sourceButtonHighlightedIndex;
+  }, [sourceButtonHighlightedIndex]);
 
   const removeAttachment = useCallback((id: string) => {
     setAttachments((current) => {
@@ -960,24 +948,26 @@ export function TaskComposer({
     ]);
   }, []);
 
+  const addAttachmentFiles = useCallback((files: File[], sourceFileList?: FileList | null) => {
+    if (files.length === 0) return;
+    setAttachments((current) => [
+      ...current,
+      ...files.map((file, index) => createComposerAttachment(file, current.length + index)),
+    ]);
+
+    const fileList = sourceFileList && sourceFileList.length === files.length ? sourceFileList : createFileListFromFiles(files);
+    if (fileList) onFilesSelected(fileList);
+  }, [onFilesSelected]);
+
   useEffect(() => {
     if (!mentionOpen) return;
     const container = isMentionSearchMode ? toolListRef.current : mentionOptionPaneRef.current;
     const item = toolItemRefs.current[highlightedToolIndex];
-    if (!container || !item || highlightedToolIndex < 0) {
-      pendingMentionItemFocusRef.current = null;
-      return;
-    }
+    if (!container || !item || highlightedToolIndex < 0) return;
 
-    const frame = requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
       scrollItemIntoPane(item, container);
-      if (pendingMentionItemFocusRef.current === highlightedToolIndex) {
-        preserveMentionFocusRef.current = true;
-        item.focus({ preventScroll: true });
-        pendingMentionItemFocusRef.current = null;
-      }
     });
-    return () => cancelAnimationFrame(frame);
   }, [highlightedToolIndex, isMentionSearchMode, mentionOpen]);
 
   useEffect(() => {
@@ -1067,19 +1057,12 @@ export function TaskComposer({
   const updateHighlightedToolIndex = (nextIndex: number, focusItem = false) => {
     highlightedToolIndexRef.current = nextIndex;
     setHighlightedToolIndex(nextIndex);
-    if (!focusItem || nextIndex < 0) {
-      pendingMentionItemFocusRef.current = null;
-      return;
-    }
-    pendingMentionItemFocusRef.current = nextIndex;
+    if (!focusItem || nextIndex < 0) return;
     preserveMentionFocusRef.current = true;
     toolItemRefs.current[nextIndex]?.focus({ preventScroll: true });
     requestAnimationFrame(() => {
       toolItemRefs.current[nextIndex]?.focus({ preventScroll: true });
     });
-    window.setTimeout(() => {
-      toolItemRefs.current[nextIndex]?.focus({ preventScroll: true });
-    }, 0);
   };
 
   const getSafeSourceButtonIndex = (index: number) => {
@@ -1132,14 +1115,20 @@ export function TaskComposer({
     if (focusTarget === "category") focusSourceButtonCategory(safeGroupIndex);
   };
 
-  const handleMentionMenuKeyDown = (event: MentionMenuKeyboardEvent) => {
+  const handleMentionMenuKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (!DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) return;
+    event.stopPropagation();
+
     if (event.key === "Escape") {
       event.preventDefault();
       closeMentionMenu();
       focusEditor(false);
       return;
     }
-    if (mentionTools.length === 0) return;
+    if (mentionTools.length === 0) {
+      event.preventDefault();
+      return;
+    }
     const currentIndex = highlightedToolIndexRef.current < 0 ? 0 : highlightedToolIndexRef.current;
     const getSafeMentionIndex = (index: number) =>
       ((index % mentionTools.length) + mentionTools.length) % mentionTools.length;
@@ -1225,16 +1214,6 @@ export function TaskComposer({
       }
 
       if (!activeOption && eventFromEditor) {
-        if (event.key === "ArrowDown") {
-          event.preventDefault();
-          updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 1));
-          return;
-        }
-        if (event.key === "ArrowUp") {
-          event.preventDefault();
-          updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 1));
-          return;
-        }
         if (event.key === "ArrowRight") {
           event.preventDefault();
           updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 1));
@@ -1242,7 +1221,7 @@ export function TaskComposer({
         }
         if (event.key === "ArrowLeft") {
           event.preventDefault();
-          updateMentionGroupHighlight(safeCurrentGroupIndex, "category");
+          updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 1));
           return;
         }
         if (event.key === "Home") {
@@ -1314,55 +1293,55 @@ export function TaskComposer({
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 1), true);
+      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 1));
       return;
     }
     if (event.key === "ArrowRight") {
       event.preventDefault();
-      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 1), true);
+      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 1));
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 1), true);
+      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 1));
       return;
     }
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 1), true);
+      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 1));
       return;
     }
     if (event.key === "Home") {
       event.preventDefault();
-      updateHighlightedToolIndex(0, true);
+      updateHighlightedToolIndex(0);
       return;
     }
     if (event.key === "End") {
       event.preventDefault();
-      updateHighlightedToolIndex(mentionTools.length - 1, true);
+      updateHighlightedToolIndex(mentionTools.length - 1);
       return;
     }
     if (event.key === "PageDown") {
       event.preventDefault();
-      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 4), true);
+      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex + 4));
       return;
     }
     if (event.key === "PageUp") {
       event.preventDefault();
-      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 4), true);
+      updateHighlightedToolIndex(getSafeMentionIndex(currentIndex - 4));
       return;
     }
     if (event.key === "Enter" || event.key === " " || event.key === "Tab") {
       event.preventDefault();
-      const selectedTool = mentionTools[getSafeMentionIndex(currentIndex)];
-      if (selectedTool) selectDataSourceRef.current(selectedTool.id, "mention");
+      const selectedOption = toolListRef.current?.querySelector<HTMLElement>('[role="option"][aria-selected="true"]');
+      const selectedToolId = selectedOption?.dataset.mentionToolId;
+      const selectedTool =
+        (selectedToolId ? mentionTools.find((tool) => tool.id === selectedToolId) : undefined) ??
+        mentionTools[getSafeMentionIndex(currentIndex)];
+      if (selectedTool) selectDataSource(selectedTool.id, "mention");
       return;
     }
   };
-
-  useEffect(() => {
-    handleMentionMenuKeyDownRef.current = handleMentionMenuKeyDown;
-  });
 
   const updateMentionMenuPosition = useCallback((anchorTop: number, compact: boolean) => {
     const textbox = textboxRef.current;
@@ -1404,9 +1383,14 @@ export function TaskComposer({
       return;
     }
 
+    const nextQuery = match[1] ?? "";
+    const previousRange = mentionRangeRef.current;
+    const previousQuery = previousRange
+      ? nextValue.slice(previousRange.start + 1, previousRange.end)
+      : null;
     const editor = editorRef.current;
     const anchorTop = editor ? getCaretAnchorTop(editor) : 36;
-    updateMentionMenuPosition(anchorTop, Boolean(match[1]?.trim()));
+    updateMentionMenuPosition(anchorTop, Boolean(nextQuery.trim()));
     setSourceButtonOpen(false);
     setModeOpen(false);
     const nextMentionRange = { start: prefix.lastIndexOf("@"), end: caret };
@@ -1414,7 +1398,31 @@ export function TaskComposer({
     setMentionRange(nextMentionRange);
     setMentionAnchorTop(anchorTop);
     setMentionOpen(true);
-    updateHighlightedToolIndex(filteredTools.length > 0 ? 0 : -1);
+    const normalizedNextQuery = nextQuery.trim().toLowerCase();
+    const nextToolCount = normalizedNextQuery
+      ? filteredTools.filter((item) => {
+        const haystack = [item.label, item.parentLabel, item.promptHint, item.promptTemplate, item.id]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(normalizedNextQuery);
+      }).length
+      : filteredTools.length;
+    if (nextToolCount === 0) {
+      updateHighlightedToolIndex(-1);
+      return;
+    }
+    const sameMentionQuery =
+      previousRange?.start === nextMentionRange.start &&
+      previousRange?.end === nextMentionRange.end &&
+      previousQuery === nextQuery;
+    if (!sameMentionQuery || highlightedToolIndexRef.current < 0) {
+      updateHighlightedToolIndex(0);
+      return;
+    }
+    updateHighlightedToolIndex(
+      ((highlightedToolIndexRef.current % nextToolCount) + nextToolCount) % nextToolCount,
+    );
   };
 
   useEffect(() => {
@@ -1450,28 +1458,6 @@ export function TaskComposer({
     const offsets = getSelectionOffsets(editor);
     syncMentionState(nextValue, offsets?.start ?? nextValue.length);
   };
-
-  const syncEditorSourceState = useCallback((editor: HTMLElement) => {
-    const domTokenIds = Array.from(new Set(getTokenIds(editor).filter(Boolean)));
-    const validDomTokenIds = domTokenIds.filter(
-      (id) => selectedSourceIdsRef.current.includes(id) || filteredTools.some((tool) => tool.id === id),
-    );
-    const currentIds = selectedSourceIdsRef.current;
-
-    currentIds
-      .filter((id) => !validDomTokenIds.includes(id))
-      .forEach((id) => {
-        onSourceRemove(id);
-      });
-
-    validDomTokenIds
-      .filter((id) => !currentIds.includes(id) && filteredTools.some((tool) => tool.id === id))
-      .forEach((id) => {
-        onToolSelect(id);
-      });
-
-    selectedSourceIdsRef.current = validDomTokenIds;
-  }, [filteredTools, onSourceRemove, onToolSelect]);
 
   useEffect(() => {
     syncEditorInteractionStateRef.current = syncEditorInteractionState;
@@ -1509,12 +1495,11 @@ export function TaskComposer({
     if (!selection || !range) return false;
 
     suppressExternalSyncRef.current = true;
-    deleteRangeContentsWithUndo(range);
+    range.deleteContents();
     selectedToolIds.forEach((id) => {
       editor.querySelector<HTMLElement>(`[data-tool-token='true'][data-tool-id='${id}']`)?.remove();
       onSourceRemove(id);
     });
-    selectedSourceIdsRef.current = selectedSourceIdsRef.current.filter((id) => !selectedToolIds.includes(id));
     normalizeEditorContent(editor);
     syncEditorValue();
     closeMentionMenu();
@@ -1532,13 +1517,16 @@ export function TaskComposer({
     if (!editor) return;
     const token = editor.querySelector<HTMLElement>(`[data-tool-token='true'][data-tool-id='${capabilityId}']`);
     if (!token) return;
-    const deletionRange = createToolTokenDeletionRange(token);
-    deleteRangeContentsWithUndo(deletionRange);
+    const trailingSpace =
+      token.nextSibling?.nodeType === Node.TEXT_NODE && token.nextSibling.textContent?.startsWith(" ")
+        ? token.nextSibling
+        : null;
+    token.remove();
+    trailingSpace?.remove();
     normalizeEditorContent(editor);
     suppressExternalSyncRef.current = true;
     syncEditorValue();
     onSourceRemove(capabilityId);
-    selectedSourceIdsRef.current = selectedSourceIdsRef.current.filter((id) => id !== capabilityId);
     if (acceptedTemplateToolId === capabilityId) {
       setAcceptedTemplateToolId(null);
     }
@@ -1679,37 +1667,9 @@ export function TaskComposer({
         ...current,
         [capabilityId]: 0,
       }));
-      if (!selectedSourceIdsRef.current.includes(capabilityId)) {
-        selectedSourceIdsRef.current = [...selectedSourceIdsRef.current, capabilityId];
-      }
       onToolSelect(capabilityId);
     }
   };
-
-  useEffect(() => {
-    selectDataSourceRef.current = selectDataSource;
-  });
-
-  useEffect(() => {
-    if (!mentionOpen) return;
-
-    const handleNativeEditorMentionKeyDown = (event: globalThis.KeyboardEvent) => {
-      const editor = editorRef.current;
-      if (!editor || document.activeElement !== editor) return;
-      if (!DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) return;
-
-      handleMentionMenuKeyDownRef.current(event);
-      if (event.defaultPrevented) {
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-      }
-    };
-
-    document.addEventListener("keydown", handleNativeEditorMentionKeyDown, true);
-    return () => {
-      document.removeEventListener("keydown", handleNativeEditorMentionKeyDown, true);
-    };
-  }, [mentionOpen]);
 
   const acceptTemplateSuggestion = () => {
     if (!templateGhostRender) return false;
@@ -1740,7 +1700,7 @@ export function TaskComposer({
     });
   };
 
-  const handleSourceButtonMenuKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+  const handleSourceButtonMenuKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
       setSourceButtonOpen(false);
@@ -1923,6 +1883,11 @@ export function TaskComposer({
                       focusEditor();
                     }
                   }}
+                  onKeyDown={(event) => {
+                    if (mentionOpen && DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) {
+                      handleMentionMenuKeyDown(event);
+                    }
+                  }}
                   onFocus={() => focusEditor(false)}
                   className={cn("relative overflow-visible", isHeroMinimal ? "min-h-composer-compact" : "min-h-composer")}
                 >
@@ -1936,35 +1901,20 @@ export function TaskComposer({
                       suppressContentEditableWarning
                       onKeyDownCapture={(event) => {
                         if (!mentionOpen || !DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) return;
-                        if (document.activeElement === event.currentTarget) return;
                         handleMentionMenuKeyDown(event);
                         event.stopPropagation();
                       }}
                       onBeforeInput={(event) => {
                         normalizeSelectionOutsideToolToken(event.currentTarget);
-                        removeTemplateGhostNodes(event.currentTarget);
                       }}
                       onPaste={(event) => {
                         handleEditorPaste(event, syncEditorValue, showAttachmentButton ? appendAttachmentFiles : undefined);
                       }}
                       onInput={(event) => {
                         syncEditorInteractionState(event.currentTarget);
-                        syncEditorSourceState(event.currentTarget);
                       }}
                       onKeyDown={(event) => {
                         normalizeSelectionOutsideToolToken(event.currentTarget);
-                        if (
-                          (event.metaKey || event.ctrlKey) &&
-                          (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y")
-                        ) {
-                          requestAnimationFrame(() => {
-                            const editor = editorRef.current;
-                            if (!editor) return;
-                            syncEditorInteractionState(editor);
-                            syncEditorSourceState(editor);
-                          });
-                          return;
-                        }
                         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
                           event.preventDefault();
                           const selection = window.getSelection();
@@ -2102,6 +2052,7 @@ export function TaskComposer({
                                     toolItemRefs.current[index] = node;
                                   }}
                                   type="button"
+                                  data-mention-tool-id={item.id}
                                   role="option"
                                   aria-selected={index === highlightedToolIndex}
                                   data-mention-option-index={index}
@@ -2201,6 +2152,7 @@ export function TaskComposer({
                                             if (index >= 0) toolItemRefs.current[index] = node;
                                           }}
                                           type="button"
+                                          data-mention-tool-id={item.id}
                                           role="option"
                                           aria-selected={index === highlightedToolIndex}
                                           data-mention-option-index={index}
@@ -2261,11 +2213,11 @@ export function TaskComposer({
                       {attachment.previewUrl ? (
                         <span
                           aria-label={`图片预览 ${attachment.name}`}
-                          className="size-attachment-thumb flex shrink-0 overflow-hidden rounded-control border border-border-subtle bg-cover bg-center bg-no-repeat"
+                          className="flex h-attachment-thumb w-attachment-thumb shrink-0 rounded-control border border-border-subtle bg-cover bg-center bg-no-repeat"
                           style={{ backgroundImage: `url(${attachment.previewUrl})` }}
                         />
                       ) : (
-                        <span className="size-attachment-thumb flex shrink-0 items-center justify-center rounded-control bg-bg-surface text-caption font-semibold text-text-tertiary">
+                        <span className="flex h-attachment-thumb w-attachment-thumb shrink-0 items-center justify-center rounded-control bg-bg-surface text-caption font-semibold text-text-tertiary">
                           {typeLabel.slice(0, 4)}
                         </span>
                       )}

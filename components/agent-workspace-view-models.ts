@@ -10,7 +10,6 @@ import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { humanizeStepLabelForUi } from "@/lib/humanize-step-label";
 import {
   resolveAssistantBodyForUi,
-  stripModelThinkingForStreamPartial,
   stripModelThinkingForUi,
 } from "@/lib/strip-model-thinking";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
@@ -18,15 +17,14 @@ import { splitEmbeddedPostTaskGuidance } from "@/lib/parse-post-task-guidance";
 import {
   looksLikeClarificationPrompt,
   sanitizeClarificationForUserDisplay,
-  splitClarificationForDisplay,
-} from "@/lib/linkfox-clarification";
+} from "@/lib/alice-clarification";
 
 export type RoundViewModel = {
   roundId: string;
   createdAt: string;
   userMessage?: string;
   /** 同轮内二次确认等后续用户回复 */
-  supplementalUserMessages?: Array<{ text: string; createdAt: string }>;
+  supplementalUserMessages?: Array<{ text: string; createdAt: string; attachments: AgentAttachment[] }>;
   attachments: AgentAttachment[];
   intentText: string;
   splitItems: string[];
@@ -61,8 +59,8 @@ export type RoundViewModel = {
   roundTerminal?: boolean;
   /** 任务完成后的可点击引导（Alice 气泡区） */
   postTaskGuidance?: string;
-  /** LinkFox 二次确认：待用户在对话或 ShareURL 中补充信息 */
-  linkfoxClarification?: {
+  /** Alice 二次确认：待用户在对话或 ShareURL 中补充信息 */
+  aliceClarification?: {
     message: string;
     shareUrl: string | null;
     stepIndex: number | null;
@@ -98,7 +96,7 @@ export type TaskRunLike = {
   splitRevealCompleteByRound?: Record<string, boolean>;
   platformTaskArtifacts?: PlatformTaskArtifactRef[];
   postTaskGuidanceByRound?: Record<string, string>;
-  linkfoxClarificationByRound?: Record<
+  aliceClarificationByRound?: Record<
     string,
     { message: string; shareUrl: string | null; stepIndex: number | null; orchestrationId?: string | null }
   >;
@@ -150,7 +148,7 @@ function buildClarificationDialogForRound(input: {
     createdAt: string;
     answeredAt?: string;
   };
-  linkfoxClarifyRaw?: {
+  aliceClarifyRaw?: {
     message: string;
     stepIndex: number | null;
   };
@@ -172,11 +170,11 @@ function buildClarificationDialogForRound(input: {
     };
   }
 
-  if (input.linkfoxClarifyRaw?.message && stepAwaiting) {
+  if (input.aliceClarifyRaw?.message && stepAwaiting) {
     return {
-      message: sanitizeClarificationForUserDisplay(input.linkfoxClarifyRaw.message),
+      message: sanitizeClarificationForUserDisplay(input.aliceClarifyRaw.message),
       answered: false,
-      stepIndex: input.linkfoxClarifyRaw.stepIndex,
+      stepIndex: input.aliceClarifyRaw.stepIndex,
       datetime: input.createdAt,
     };
   }
@@ -210,6 +208,25 @@ export function shouldDeferExecutionPanelAfterClarification(
   const hasSupplement = (round.supplementalUserMessages?.length ?? 0) > 0;
   if (!hasSupplement) return false;
   return Boolean(round.clarificationDialog?.message);
+}
+
+function collectAttachmentsAfterUserNode(
+  roundNodes: ConversationNode[],
+  userNode?: ConversationNode,
+): AgentAttachment[] {
+  if (!userNode) return [];
+  const startIndex = roundNodes.findIndex((item) => item === userNode);
+  if (startIndex < 0) return [];
+
+  const attachments: AgentAttachment[] = [];
+  for (let index = startIndex + 1; index < roundNodes.length; index += 1) {
+    const item = roundNodes[index];
+    if (item.kind === "user_message") break;
+    if (item.kind === "attachment_group" && "attachments" in item) {
+      attachments.push(...item.attachments);
+    }
+  }
+  return attachments;
 }
 
 function buildExecutionSummaryFallback(objective: string, sourceLabels: string[]) {
@@ -247,13 +264,14 @@ export function buildRoundViewModels(run: TaskRunLike) {
     const supplementalUserMessages = userNodes.slice(1).map((n) => ({
       text: n.text,
       createdAt: n.createdAt,
+      attachments: collectAttachmentsAfterUserNode(roundNodes, n),
     }));
     const finalNode = roundNodes.find((item) => item.kind === "assistant_final" && "text" in item);
     const streamNode = roundNodes.find(
       (item): item is ConversationNode & { kind: "assistant_stream"; text: string; status: "streaming" | "complete" } =>
         item.kind === "assistant_stream" && "text" in item,
     );
-    const attachmentNode = roundNodes.find((item) => item.kind === "attachment_group" && "attachments" in item);
+    const userAttachments = collectAttachmentsAfterUserNode(roundNodes, userNode);
     const patchNode = roundNodes.find((item) => item.kind === "report_patch" && "summary" in item);
     const errorNode = roundNodes.find((item): item is ConversationNode & { kind: "error"; message: string } => item.kind === "error");
     const errorMessage = errorNode?.message ? humanizeTaskErrorMessage(errorNode.message) : undefined;
@@ -281,7 +299,7 @@ export function buildRoundViewModels(run: TaskRunLike) {
     const finalNorm =
       (stripModelThinkingForUi(finalRaw) === "（无回复）" ? "" : stripModelThinkingForUi(finalRaw)).trim();
     let assistantReplyText = (finalNorm || streamBodyForUi).trim();
-    const clarifyFromRound = run.linkfoxClarificationByRound?.[node.roundId];
+    const clarifyFromRound = run.aliceClarificationByRound?.[node.roundId];
     const clarificationDialogRaw = run.clarificationDialogByRound?.[node.roundId];
     if (!assistantReplyText && clarifyFromRound?.message) {
       assistantReplyText = sanitizeClarificationForUserDisplay(clarifyFromRound.message);
@@ -299,7 +317,7 @@ export function buildRoundViewModels(run: TaskRunLike) {
       createdAt,
       execStepsSorted,
       clarificationDialogRaw,
-      linkfoxClarifyRaw: clarifyFromRound,
+      aliceClarifyRaw: clarifyFromRound,
       assistantReplyCandidate: assistantReplyText,
       timelineClarifyText: extractClarificationPromptFromTimeline(roundNodes),
       supplementalCount: supplementalUserMessages.length,
@@ -442,7 +460,7 @@ export function buildRoundViewModels(run: TaskRunLike) {
       userMessage: userNode?.text,
       supplementalUserMessages:
         supplementalUserMessages.length > 0 ? supplementalUserMessages : undefined,
-      attachments: attachmentNode?.attachments ?? [],
+      attachments: userAttachments,
       intentText,
       splitItems,
       executionGroups,
@@ -467,7 +485,7 @@ export function buildRoundViewModels(run: TaskRunLike) {
       splitStreamEnded: Boolean(run.splitStreamEndedByRound?.[node.roundId]),
       splitRevealComplete: Boolean(run.splitRevealCompleteByRound?.[node.roundId]),
       postTaskGuidance,
-      linkfoxClarification: run.linkfoxClarificationByRound?.[node.roundId],
+      aliceClarification: run.aliceClarificationByRound?.[node.roundId],
       clarificationDialog,
     });
   }
@@ -495,32 +513,29 @@ export function isExecutionStepActivelyBusy(status: string | undefined): boolean
 }
 
 export function isRoundAwaitingUserInput(
-  round: Pick<RoundViewModel, "executionSteps" | "linkfoxClarification" | "clarificationDialog">,
+  round: Pick<RoundViewModel, "executionSteps" | "aliceClarification" | "clarificationDialog">,
 ): boolean {
   if (round.clarificationDialog && !round.clarificationDialog.answered) return true;
-  if (round.linkfoxClarification) return true;
+  if (round.aliceClarification) return true;
   return Boolean(round.executionSteps?.some((s) => s.status === "awaiting_input"));
 }
 
 export function resolveClarificationOrchestrationId(
   run: Pick<TaskRunLike, "platformOrchestrationIdByRound" | "clarificationDialogByRound">,
-  round: Pick<RoundViewModel, "roundId" | "linkfoxClarification" | "clarificationDialog">,
+  round: Pick<RoundViewModel, "roundId" | "aliceClarification" | "clarificationDialog">,
   refOrchId?: string | null,
 ): string | null {
   const fromRef = (refOrchId ?? "").trim();
   if (fromRef) return fromRef;
   const fromDialog = (run.clarificationDialogByRound?.[round.roundId]?.orchestrationId ?? "").trim();
   if (fromDialog) return fromDialog;
-  const fromClarify = (round.linkfoxClarification?.orchestrationId ?? "").trim();
+  const fromClarify = (round.aliceClarification?.orchestrationId ?? "").trim();
   if (fromClarify) return fromClarify;
   const fromRun = (run.platformOrchestrationIdByRound?.[round.roundId] ?? "").trim();
   return fromRun || null;
 }
 
-export function clarificationDialogBodyForDisplay(
-  message: string,
-  _answered: boolean,
-): string {
+export function clarificationDialogBodyForDisplay(message: string): string {
   return sanitizeClarificationForUserDisplay(message);
 }
 

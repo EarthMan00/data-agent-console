@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Ellipsis, Menu, Star, X } from "@/components/ui/tabler-icons";
+import { Download, Menu, Star, X } from "@/components/ui/tabler-icons";
 
+import { AutoToast } from "@/components/auto-toast";
 import { TaskResultSheetBody } from "@/components/task-result-sheet-body";
 import { TaskSingleDataArtifactPreview } from "@/components/task-single-data-preview";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,6 @@ import {
   createUserFavorite,
   deleteUserFavorite,
   downloadAuthorizedFile,
-  formatAgentApiErrorForUser,
   getFavoriteByTask,
 } from "@/lib/agent-api/client";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
@@ -50,6 +50,8 @@ type AgentTaskResultPanelProps = {
   /** 任务状态（如 FAILED / SUCCESS） */
   taskStatus?: string | null;
 };
+
+const FRONTEND_MOCK_TOKEN = "__frontend_mock_token__";
 
 function effectiveBundleDownloadPath(p: {
   bundleDownloadApi?: string | null;
@@ -287,12 +289,19 @@ export function AgentTaskResultPanel({
   const [favorited, setFavorited] = useState(false);
   const [favoriteId, setFavoriteId] = useState<string | null>(null);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastVariant, setToastVariant] = useState<"default" | "error">("default");
+
+  const showToast = useCallback((message: string, variant: "default" | "error" = "default") => {
+    setToastVariant(variant);
+    setToastMessage(message);
+  }, []);
 
   const refreshFavoriteState = useCallback(async () => {
     if (!withFreshToken || !tid) return;
     try {
       await withFreshToken(async (token) => {
+        if (token === FRONTEND_MOCK_TOKEN) return;
         const r = await getFavoriteByTask(token, tid);
         setFavorited(r.favorited);
         setFavoriteId(r.favorite_id);
@@ -309,36 +318,43 @@ export function AgentTaskResultPanel({
 
   const toggleFavorite = async () => {
     if (!withFreshToken || !tid || !primaryForFavorite) {
-      setNotice("当前无可收藏的结果文件。");
+      showToast("当前无可收藏的结果文件。", "error");
       return;
     }
     setFavoriteBusy(true);
-    setNotice("");
     try {
       if (favorited && favoriteId) {
         await withFreshToken(async (token) => {
+          if (token === FRONTEND_MOCK_TOKEN) return;
           await deleteUserFavorite(token, favoriteId);
         });
         setFavorited(false);
         setFavoriteId(null);
-        setNotice("已取消收藏。");
+        showToast("已取消收藏");
         return;
       }
       const built = await buildFavoriteSnapshotFromArtifacts(withFreshToken, {
         artifacts: artifacts ?? [],
       });
+      let createdFavoriteId: string | null = null;
       await withFreshToken(async (token) => {
-        await createUserFavorite(token, {
+        if (token === FRONTEND_MOCK_TOKEN) {
+          createdFavoriteId = `mock-favorite-${tid}`;
+          return;
+        }
+        const created = await createUserFavorite(token, {
           title: built.title,
           source_task_id: tid,
           snapshot: built.snapshot,
           copy_artifact_id: built.copy_artifact_id ?? null,
         });
+        createdFavoriteId = created.id || null;
       });
-      await refreshFavoriteState();
-      setNotice("已加入收藏夹。");
-    } catch (e) {
-      setNotice(formatAgentApiErrorForUser(e));
+      setFavorited(true);
+      setFavoriteId(createdFavoriteId);
+      showToast("收藏成功，可前往收藏夹查看");
+    } catch {
+      showToast("收藏失败，请稍后重试", "error");
     } finally {
       setFavoriteBusy(false);
     }
@@ -350,6 +366,15 @@ export function AgentTaskResultPanel({
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-bg-surface" data-testid="agent-preview-panel">
+      <AutoToast
+        message={toastMessage}
+        variant={toastVariant}
+        onDismiss={() => {
+          setToastMessage(null);
+          setToastVariant("default");
+        }}
+        durationMs={2200}
+      />
       <div className="flex shrink-0 flex-col gap-1 border-b border-border bg-bg-surface px-3 py-2 sm:px-4">
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -399,30 +424,23 @@ export function AgentTaskResultPanel({
                 <Download className="h-4 w-4" />
               </Button>
             ) : null}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  aria-label="更多"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-control text-text-tertiary"
-                >
-                  <Ellipsis className="h-4 w-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-52 p-1">
-                <button
-                  type="button"
-                  disabled={favoriteBusy || !tid}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-fill-hover disabled:opacity-50"
-                  onClick={() => void toggleFavorite()}
-                >
-                  <Star className={`h-4 w-4 shrink-0 ${favorited ? "fill-warning text-warning" : ""}`} />
-                  {favorited ? "取消收藏" : "收藏报告"}
-                </button>
-              </PopoverContent>
-            </Popover>
+            <Button
+              type="button"
+              aria-label={favorited ? "取消收藏报告" : "收藏报告"}
+              variant="outline"
+              size="sm"
+              disabled={favoriteBusy || !tid}
+              className="h-8 shrink-0 gap-1.5 rounded-control border-border bg-bg-surface px-2.5 text-xs text-foreground hover:bg-fill-hover"
+              onClick={() => void toggleFavorite()}
+            >
+              <Star
+                className={cn(
+                  "h-4 w-4 shrink-0",
+                  favorited ? "fill-warning text-warning" : "text-text-tertiary",
+                )}
+              />
+              <span>{favorited ? "取消收藏" : "收藏报告"}</span>
+            </Button>
             <Button
               type="button"
               aria-label="关闭任务结果"
@@ -436,10 +454,6 @@ export function AgentTaskResultPanel({
           </div>
         </div>
       </div>
-
-      {notice ? (
-        <div className="border-b border-border-subtle bg-bg-page px-3 py-2 text-xs text-text-tertiary">{notice}</div>
-      ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {(taskStatus === "FAILED" && displayErrorMessage) ? (

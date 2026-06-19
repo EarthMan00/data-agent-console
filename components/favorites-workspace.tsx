@@ -17,7 +17,7 @@ import {
   X,
 } from "@/components/ui/tabler-icons";
 import { EmptyState } from "@/components/empty-state";
-import { MoreDataShell } from "@/components/more-data-shell";
+import { AliceShell } from "@/components/alice-shell";
 import { PageLostState } from "@/components/page-lost-state";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
@@ -314,7 +314,7 @@ export function FavoritesWorkspace() {
   };
 
   return (
-    <MoreDataShell currentPath="/artifacts" showTopHeader={false}>
+    <AliceShell currentPath="/artifacts" showTopHeader={false}>
       <AutoToast
         message={toastMessage}
         onDismiss={() => setToastMessage(null)}
@@ -733,6 +733,6 @@ export function FavoritesWorkspace() {
 
         </div>
       </div>
-    </MoreDataShell>
+    </AliceShell>
   );
 }

@@ -23,7 +23,7 @@ export type AgentRoundInput = {
   attachmentFiles?: File[];
   objective?: string;
   isInitialRound?: boolean;
-  /** Data Agent Server 的会话 id，对应 TaskRun.platformSessionId */
+  /** Alice 后端服务 的会话 id，对应 TaskRun.platformSessionId */
   platformChatSessionId?: string;
   /** 二次确认后在同轮继续多步编排 */
   clarificationResume?: {
