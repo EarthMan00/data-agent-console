@@ -233,6 +233,10 @@ function bundleTaskSnapshot(bundle: TaskOrchestrationBundleRow): TaskResponse | 
     task_id: bundle.taskId,
     tool_name: "",
     status: bundle.taskStatus,
+    started_at: "",
+    zip_download_api: null,
+    events: [],
+    artifacts: [],
     finished_at: bundle.finishedAt ?? null,
   };
 }
