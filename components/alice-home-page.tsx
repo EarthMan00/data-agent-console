@@ -357,7 +357,7 @@ export function AliceHomePage() {
   const composerDataSourceItems = dynamicDataSourceItems.length > 0 ? dynamicDataSourceItems : homeDataSourceItems;
   const composerCanSubmit = sanitizeObjective(query).length > 0 && !launching;
 
-  const launchAgent = useCallback(async (seed?: string, pending?: PendingHomeTask) => {
+  const launchAgent = useCallback(async (seed?: string, pending?: PendingHomeTask, attachmentFilesOverride?: File[]) => {
     const nextQuery = sanitizeObjective(seed ?? pending?.text ?? query);
     if (!nextQuery) {
       setNotice("请先输入一个研究目标，或从下方示例任务中直接发起。");
@@ -366,6 +366,7 @@ export function AliceHomePage() {
     const effectiveSelectedSourceIds = pending?.selectedSourceIds ?? selectedSourceIds;
     const effectiveActiveCapabilityId = pending?.activeCapabilityId ?? activeCapabilityId;
     const effectiveComposerMode = pending?.composerMode ?? composerMode;
+    const effectivePendingFiles = attachmentFilesOverride ?? pending?.pendingFiles ?? pendingHomeFiles;
     const selectedCapabilities = effectiveSelectedSourceIds.length > 0
       ? effectiveSelectedSourceIds
       : effectiveActiveCapabilityId === "scenarios"
@@ -387,7 +388,7 @@ export function AliceHomePage() {
           selectedSourceIds: effectiveSelectedSourceIds,
           activeCapabilityId: effectiveActiveCapabilityId,
           composerMode: effectiveComposerMode,
-          pendingFiles: pendingHomeFiles,
+          pendingFiles: effectivePendingFiles,
         });
         platformAgent.openLogin("登录后将继续发送当前任务。");
         return;
@@ -405,7 +406,7 @@ export function AliceHomePage() {
           objective: nextQuery,
           mode: effectiveComposerMode === "深度模式" ? "专业模式" : "轻量模式",
           selectedCapabilities,
-          pendingFiles: pending?.pendingFiles ?? pendingHomeFiles,
+          pendingFiles: effectivePendingFiles,
         });
         setPendingHomeFiles([]);
         setNotice("已连接 Alice 后端服务，正在执行任务。");
@@ -467,26 +468,13 @@ export function AliceHomePage() {
     setSelectedSourceIds((current) => current.filter((id) => id !== capabilityId));
   };
 
-  const mergePendingHomeFiles = useCallback((incoming: File[]) => {
-    if (incoming.length === 0) return;
-    setPendingHomeFiles((prev) => {
-      const seen = new Set(prev.map((f) => `${f.name}:${f.size}:${f.lastModified}`));
-      const merged = [...prev];
-      for (const f of incoming) {
-        const key = `${f.name}:${f.size}:${f.lastModified}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          merged.push(f);
-        }
-      }
-      return merged;
-    });
+  const syncPendingHomeFiles = useCallback((incoming: File[]) => {
+    setPendingHomeFiles(incoming);
   }, []);
 
   const handleFilesSelected = (files: FileList) => {
     const picked = Array.from(files);
     if (picked.length === 0) return;
-    mergePendingHomeFiles(picked);
     setNotice(`已选择附件：${picked.map((file) => file.name).join("、")}。`);
   };
 
@@ -591,10 +579,10 @@ export function AliceHomePage() {
                   onToolSelect={applyComposerTool}
                   onSourceRemove={removeComposerTool}
                   onFilesSelected={handleFilesSelected}
-                  onAttachmentsChange={mergePendingHomeFiles}
-                  onSubmit={() => {
+                  onAttachmentsChange={syncPendingHomeFiles}
+                  onSubmit={(files) => {
                     if (!launching) {
-                      void launchAgent();
+                      void launchAgent(undefined, undefined, files);
                     }
                   }}
                   visualStyle="heroMinimal"

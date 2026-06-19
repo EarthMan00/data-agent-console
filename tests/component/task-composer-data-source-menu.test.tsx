@@ -425,6 +425,44 @@ describe("task composer data source menu", () => {
     }
   });
 
+  it("submits only attachments still visible in the composer", async () => {
+    const onSubmit = vi.fn();
+    const first = new File(["first"], "first.csv", { type: "text/csv" });
+    const second = new File(["second"], "second.csv", { type: "text/csv" });
+    const third = new File(["third"], "third.csv", { type: "text/csv" });
+
+    const { container } = render(
+      <TaskComposer
+        value="分析附件"
+        onValueChange={vi.fn()}
+        placeholder="输入任务"
+        mode="普通模式"
+        onModeChange={vi.fn()}
+        selectedSourceIds={[]}
+        onToolSelect={vi.fn()}
+        onSourceRemove={vi.fn()}
+        onFilesSelected={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    const fileInput = container.querySelector<HTMLInputElement>("input[type='file']");
+    expect(fileInput).not.toBeNull();
+    fireEvent.change(fileInput!, { target: { files: [first, second, third] } });
+
+    await waitFor(() => {
+      expect(screen.getByText("first.csv")).toBeInTheDocument();
+      expect(screen.getByText("second.csv")).toBeInTheDocument();
+      expect(screen.getByText("third.csv")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByLabelText("删除附件 second.csv"));
+    await userEvent.click(screen.getByLabelText("删除附件 third.csv"));
+    await userEvent.click(screen.getByTestId("task-composer-submit"));
+
+    expect(onSubmit).toHaveBeenCalledWith([first]);
+  });
+
   it("uses the native undoable edit command for pasted text", () => {
     const originalExecCommand = document.execCommand;
     const onValueChange = vi.fn();

@@ -30,7 +30,7 @@ type TaskComposerProps = {
   onSourceRemove: (capabilityId: string) => void;
   onFilesSelected: (files: FileList) => void;
   onAttachmentsChange?: (files: File[]) => void;
-  onSubmit: () => void;
+  onSubmit: (attachmentFiles: File[]) => void;
   /** 任务执行中显示为停止按钮 */
   submitVariant?: "send" | "stop";
   onStop?: () => void;
@@ -674,7 +674,7 @@ export function TaskComposer({
       return;
     }
     if (!canSubmit) return;
-    onSubmit();
+    onSubmit(attachments.map((attachment) => attachment.file));
     setAttachments((current) => {
       current.forEach((attachment) => {
         if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);

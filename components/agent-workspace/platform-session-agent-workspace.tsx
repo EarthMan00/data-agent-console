@@ -1315,9 +1315,9 @@ export function PlatformSessionAgentWorkspace({
     openResultPanelFromAnchor,
   ]);
 
-  const send = useCallback(async (textOverride?: string) => {
+  const send = useCallback(async (textOverride?: string, attachmentFilesOverride?: File[]) => {
     const text = (textOverride ?? draft).trim();
-    const filesToSend = textOverride === undefined ? pendingFiles : [];
+    const filesToSend = attachmentFilesOverride ?? (textOverride === undefined ? pendingFiles : []);
     if ((!text && filesToSend.length === 0) || sending) return;
     const maxChars = getChatMessageMaxChars();
     if (text.length > maxChars) {
@@ -1973,7 +1973,7 @@ export function PlatformSessionAgentWorkspace({
                   onAttachmentsChange={(files) => {
                     setPendingFiles(files);
                   }}
-                  onSubmit={() => void send()}
+                  onSubmit={(files) => void send(undefined, files)}
                   visualStyle="default"
                   containerClassName="overflow-visible rounded-popover border border-border bg-bg-surface shadow-surface"
                   textareaClassName="min-h-composer max-h-composer-chat min-w-44 flex-1 overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-2 pr-2 text-body leading-6 text-foreground caret-foreground outline-none shadow-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 focus-visible:outline-none focus-visible:ring-0 focus-ring-none-important"
