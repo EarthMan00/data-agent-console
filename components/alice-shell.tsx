@@ -872,7 +872,7 @@ function AliceShellComponent({
         ) : null}
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-sidebar flex h-dvh min-h-0 w-mobile-sidebar max-w-mobile-sidebar flex-col overflow-hidden border-r border-border bg-bg-surface shadow-side transition-transform duration-200 md:sticky md:top-0 md:z-auto md:h-screen md:w-auto md:self-start md:translate-x-0 md:shadow-none",
+            "fixed inset-y-0 left-0 z-sidebar flex h-dvh min-h-0 w-mobile-sidebar max-w-mobile-sidebar flex-col overflow-hidden border-r border-border bg-bg-surface shadow-side transition-transform duration-200 md:sticky md:top-0 md:z-auto md:h-screen md:!w-[var(--sidebar-width)] md:!max-w-[var(--sidebar-width)] md:self-start md:translate-x-0 md:shadow-none",
             mobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
           )}
         >

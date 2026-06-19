@@ -60,6 +60,20 @@ describe("AliceShell right rail layout", () => {
     vi.clearAllMocks();
   });
 
+  it("keeps the desktop sidebar element aligned to the collapsed grid width", async () => {
+    mockMatchMedia({
+      "(max-width: 767px)": false,
+      "(max-width: 1023px)": false,
+    });
+    renderShellWithResultPanel();
+
+    fireEvent.click(await screen.findByRole("button", { name: "收起侧边栏" }));
+
+    const sidebar = screen.getByRole("button", { name: "展开侧边栏" }).closest("aside");
+    expect(sidebar).toHaveClass("md:!w-[var(--sidebar-width)]");
+    expect(sidebar).toHaveClass("md:!max-w-[var(--sidebar-width)]");
+  });
+
   it("renders task results in a drawer on mobile viewports", async () => {
     mockMatchMedia({
       "(max-width: 767px)": true,
