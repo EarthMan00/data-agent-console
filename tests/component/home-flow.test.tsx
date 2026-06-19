@@ -89,6 +89,28 @@ describe("home flow", () => {
       replay_share_id: null,
       sort_order: 2,
     };
+    const excelCard = {
+      id: "excel-card",
+      title: "处理Excel新增列",
+      description: "批量读取 Excel 表格中图片列的商品视觉信息。",
+      prompt: "请批量读取 Excel 中图片列的视觉信息，提取主体、场景、材质、颜色和关键卖点。",
+      meta: "@智能Excel处理",
+      capability_ids: ["scenarios", "web-search"],
+      replay_run_id: null,
+      replay_share_id: null,
+      sort_order: 3,
+    };
+    const jimuCard = {
+      id: "jimu-card",
+      title: "细分市场机会分析",
+      description: "评估关键词细分市场的竞争格局。",
+      prompt: "请分析目标关键词的细分市场竞争格局、品牌集中度和机会窗口。",
+      meta: "@极目-亚马逊-关键词细分市场信息",
+      capability_ids: ["jimu", "amazon"],
+      replay_run_id: null,
+      replay_share_id: null,
+      sort_order: 4,
+    };
     mockFetchPublicPromptCategories.mockResolvedValue([
       { id: "scenarios", name: "应用场景", sort_order: 0, is_active: true },
       { id: "web", name: "实时与全网检索", sort_order: 1, is_active: true },
@@ -97,7 +119,7 @@ describe("home flow", () => {
     mockFetchHomePromptRecommendations.mockImplementation((categoryId: string) => {
       if (categoryId === "web") return Promise.resolve([webCard]);
       if (categoryId === "keepa") return Promise.resolve([keepaCard]);
-      return Promise.resolve([webCard, keepaCard]);
+      return Promise.resolve([webCard, keepaCard, excelCard, jimuCard]);
     });
   });
 
@@ -160,5 +182,27 @@ describe("home flow", () => {
       expect(screen.getByText("搜索 Anker 评论")).toBeInTheDocument();
     });
     expect(screen.getByLabelText("移除数据源 站外实时信息检索")).toBeInTheDocument();
+  });
+
+  it("uses meta mentions as datasource tokens when applying a prompt card", async () => {
+    render(<AliceHomePage />);
+
+    fireEvent.click(await screen.findByLabelText("使用示例任务 处理Excel新增列"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/请批量读取 Excel 中图片列的视觉信息/)).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText("移除数据源 智能Excel处理")).toBeInTheDocument();
+  });
+
+  it("recognizes Jimu keyword niche market meta mentions as datasource tokens", async () => {
+    render(<AliceHomePage />);
+
+    fireEvent.click(await screen.findByLabelText("使用示例任务 细分市场机会分析"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/请分析目标关键词的细分市场竞争格局/)).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText("移除数据源 极目-亚马逊-关键词细分市场信息")).toBeInTheDocument();
   });
 });

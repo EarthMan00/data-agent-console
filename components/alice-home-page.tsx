@@ -84,6 +84,17 @@ function filterHomePromptCardsByCapability(cards: HomePromptCard[], capabilityId
   return cards.filter((card) => card.capabilityIds.some((id) => filterSet.has(id)));
 }
 
+function mergeCapabilityItems(primary: HomeCapabilityItem[], fallback: HomeCapabilityItem[]) {
+  const seen = new Set<string>();
+  const merged: HomeCapabilityItem[] = [];
+  for (const item of [...primary, ...fallback]) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    merged.push(item);
+  }
+  return merged;
+}
+
 function getCachedHomePromptCards(cacheKey: string) {
   return homePromptCardCache.get(cacheKey)?.cards ?? null;
 }
@@ -354,7 +365,10 @@ export function AliceHomePage() {
     [dynamicDataSourceGroups],
   );
   const composerDataSourceGroups = dynamicDataSourceGroups.length > 0 ? dynamicDataSourceGroups : homeCapabilityGroups;
-  const composerDataSourceItems = dynamicDataSourceItems.length > 0 ? dynamicDataSourceItems : homeDataSourceItems;
+  const composerDataSourceItems = useMemo(
+    () => (dynamicDataSourceItems.length > 0 ? mergeCapabilityItems(dynamicDataSourceItems, homeDataSourceItems) : homeDataSourceItems),
+    [dynamicDataSourceItems],
+  );
   const composerCanSubmit = sanitizeObjective(query).length > 0 && !launching;
 
   const launchAgent = useCallback(async (seed?: string, pending?: PendingHomeTask, attachmentFilesOverride?: File[]) => {
@@ -480,7 +494,8 @@ export function AliceHomePage() {
 
   const applyPromptCard = (card: HomePromptCard) => {
     const prefill = parseDatasourceMentions(card.prompt, composerDataSourceItems);
-    const selectedIds = Array.from(new Set([...card.capabilityIds, ...prefill.selectedSourceIds]));
+    const metaPrefill = parseDatasourceMentions(card.meta, composerDataSourceItems);
+    const selectedIds = Array.from(new Set([...card.capabilityIds, ...prefill.selectedSourceIds, ...metaPrefill.selectedSourceIds]));
     setQuery(prefill.text);
     setSelectedSourceIds(selectedIds);
     setNotice(`已载入示例任务「${card.title}」，可继续补充要求后发送。`);

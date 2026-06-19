@@ -56,6 +56,7 @@ const jimuGroup: HomeCapabilityCategory = { id: "jimu-group", label: "极目系�
 const walmartGroup: HomeCapabilityCategory = { id: "walmart-group", label: "Walmart前台", accent: "var(--color-accent-walmart)", icon: "walmart" };
 const ebayGroup: HomeCapabilityCategory = { id: "ebay-group", label: "eBay前台", accent: "var(--color-accent-ebay)", icon: "ebay" };
 const patentGroup: HomeCapabilityCategory = { id: "patent-group", label: "专利检索", accent: "var(--color-accent-patent)", icon: "patent" };
+const sandboxGroup: HomeCapabilityCategory = { id: "sandbox-group", label: "沙箱", accent: "var(--color-primary)", icon: "grid" };
 
 /** 首页/编排器数据源分组（静态样式结构，后续可直接由接口替换 items）。 */
 export const homeCapabilityGroups: HomeCapabilityGroup[] = [
@@ -120,6 +121,10 @@ export const homeCapabilityGroups: HomeCapabilityGroup[] = [
   {
     ...jimuGroup,
     items: [
+      item(jimuGroup, "极目-亚马逊-细分市场评论", "极目-亚马逊-细分市场评论", "提取细分市场评论中的真实需求、痛点和负反馈。"),
+      item(jimuGroup, "极目-亚马逊-细分市场信息", "极目-亚马逊-细分市场信息", "评估细分市场竞争格局、品牌集中度和机会空间。"),
+      item(jimuGroup, "极目-亚马逊-关键词细分市场信息", "极目-亚马逊-关键词细分市场信息", "按关键词评估细分市场格局、垄断程度和潜在机会。"),
+      item(jimuGroup, "极目-亚马逊-产品挖掘", "极目-亚马逊-产品挖掘", "结合关键词和筛选条件挖掘潜力产品。"),
       item(jimuGroup, "jimu", "细分市场结构化分析", "调用细分市场、评论和竞品工具，做结构化行业分析。"),
     ],
   },
@@ -139,6 +144,12 @@ export const homeCapabilityGroups: HomeCapabilityGroup[] = [
     ...patentGroup,
     items: [
       item(patentGroup, "patent", "专利风险检索", "在推进前先补一轮专利检索，避开高风险方向。"),
+    ],
+  },
+  {
+    ...sandboxGroup,
+    items: [
+      item(sandboxGroup, "智能Excel处理", "智能Excel处理", "处理 Excel/CSV 文件，生成新增列或处理后的 Excel 结果。"),
     ],
   },
 ];
