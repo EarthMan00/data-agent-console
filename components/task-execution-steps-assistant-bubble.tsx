@@ -12,7 +12,7 @@ import { PlatformRoundStepTimeline } from "@/components/agent-workspace/platform
 
 import { TaskOrchestrationBlock } from "@/components/agent-workspace/task-orchestration-block";
 
-import { ExecutionStepsHistoryList } from "@/components/execution-steps-monitor";
+import { ExecutionRuntimeTag, ExecutionStepsHistoryList } from "@/components/execution-steps-monitor";
 
 import type { PlatformSubtaskSnapshot, PlatformTaskArtifactRef, TaskExecutionStep } from "@/lib/agent-events";
 
@@ -114,7 +114,11 @@ export function TaskExecutionStepsAssistantBubble({
 
   const executionExpanded = executionActive || manualExecutionExpanded || awaitingUserInput;
 
-
+  const executionTitleTag = ordered.some(
+    (step) => step.status === "running" && (step.runtimeHint || step.runtimeStartedAt),
+  )
+    ? <ExecutionRuntimeTag steps={ordered} />
+    : undefined;
 
   const useLiveTimeline = Boolean(
 
@@ -158,6 +162,7 @@ export function TaskExecutionStepsAssistantBubble({
 
         executionTestId="platform-task-execution-panel"
         executionTitle={executionTitle}
+        executionTitleTag={executionTitleTag}
         afterExecution={afterExecution}
       >
 

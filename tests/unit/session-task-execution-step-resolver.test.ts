@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { TaskExecutionStep } from "@/lib/agent-events";
-import { resolveStaleTaskExecutionSteps } from "@/lib/session-task-execution-step-resolver";
+import {
+  enrichTaskExecutionStepsRuntime,
+  resolveStaleTaskExecutionSteps,
+} from "@/lib/session-task-execution-step-resolver";
 
 const steps: TaskExecutionStep[] = [
   { id: "s1", label: "步骤一", order: 1, status: "running", roundId: "round-1" },
@@ -22,11 +25,68 @@ describe("resolveStaleTaskExecutionSteps", () => {
   });
 
   it("keeps single-task fallback behavior when no orchestration status exists", () => {
+    const singleStep = [steps[0]!];
+    const resolved = resolveStaleTaskExecutionSteps(singleStep, {
+      taskStatus: "SUCCESS",
+      orchestrationStatuses: null,
+    });
+
+    expect(resolved?.map((step) => step.status)).toEqual(["done"]);
+  });
+
+  it("does not mark an entire multi-step run done from a single task status", () => {
     const resolved = resolveStaleTaskExecutionSteps(steps, {
       taskStatus: "SUCCESS",
       orchestrationStatuses: null,
     });
 
-    expect(resolved?.map((step) => step.status)).toEqual(["done", "done"]);
+    expect(resolved?.map((step) => step.status)).toEqual(["done", "pending"]);
+  });
+
+  it("reopens an incorrectly completed single step when the task is still running", () => {
+    const resolved = resolveStaleTaskExecutionSteps([{ ...steps[0]!, status: "done" }], {
+      taskStatus: "RUNNING",
+      orchestrationStatuses: null,
+    });
+
+    expect(resolved?.map((step) => step.status)).toEqual(["running"]);
+  });
+});
+
+describe("enrichTaskExecutionStepsRuntime", () => {
+  it("adds runtimeStartedAt from in-flight task started_at for the first running step", () => {
+    const steps: TaskExecutionStep[] = [
+      { id: "s1", label: "步骤一", order: 1, status: "running", roundId: "round-1" },
+    ];
+    const enriched = enrichTaskExecutionStepsRuntime(steps, {
+      task: {
+        id: "task-1",
+        status: "RUNNING",
+        started_at: "2026-06-20T00:00:00.000Z",
+      } as never,
+    });
+
+    expect(enriched[0]?.runtimeStartedAt).toBe("2026-06-20T00:00:00.000Z");
+  });
+
+  it("merges orchestration runtime_hint and task_started_at into running steps", () => {
+    const steps: TaskExecutionStep[] = [
+      { id: "s1", label: "步骤一", order: 1, status: "running", roundId: "round-1" },
+      { id: "s2", label: "步骤二", order: 2, status: "pending", roundId: "round-1" },
+    ];
+    const enriched = enrichTaskExecutionStepsRuntime(steps, {
+      orchestrationSteps: [
+        {
+          status: "RUNNING",
+          runtime_hint: "正在搜索亚马逊",
+          task_started_at: "2026-06-20T00:01:00.000Z",
+        } as never,
+        { status: "PENDING" } as never,
+      ],
+    });
+
+    expect(enriched[0]?.runtimeHint).toBe("正在搜索亚马逊");
+    expect(enriched[0]?.runtimeStartedAt).toBe("2026-06-20T00:01:00.000Z");
+    expect(enriched[1]?.runtimeHint).toBeUndefined();
   });
 });

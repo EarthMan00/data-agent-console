@@ -1,6 +1,7 @@
 import { AgentApiError, getTask, getToolOrchestration } from "@/lib/agent-api/client";
 import type { SessionMessageItem, TaskResponse } from "@/lib/agent-api/types";
 import type { PlatformSubtaskSnapshot, PlatformTaskArtifactRef, TaskExecutionStep } from "@/lib/agent-events";
+import { isTaskInFlight } from "@/lib/task-status-poll";
 
 /** 编排消息里 step0..stepN-1 的顺序；合并时保持该顺序，使「后执行的子任务」产物在列表末尾 → sheet 排序更靠前。 */
 export function dedupeOrchestrationTaskIds(primaryTaskId: string, bundleTaskIds: string[] | undefined): string[] {
@@ -72,6 +73,9 @@ export type TaskOrchestrationBundleRow = {
   stepIndex: number;
   label: string;
   artifacts: PlatformTaskArtifactRef[];
+  /** 子任务平台状态；用于区分「已有产物但仍在执行」与真正完成。 */
+  taskStatus?: string;
+  finishedAt?: string | null;
 };
 
 /** 从历史消息里选「最全」的编排引用：避免命中仅含 task_id 的 task_execution_steps 导致只拉一步 */
@@ -223,7 +227,28 @@ export function resolvePanelAnchorForStepsMessage(
   return direct;
 }
 
-/** 历史时间线：步骤 meta 未全部终态时，按已拉到的 bundle 索引推断 done，以渲染可点的结果卡。 */
+function bundleTaskSnapshot(bundle: TaskOrchestrationBundleRow): TaskResponse | null {
+  if (!bundle.taskStatus) return null;
+  return {
+    task_id: bundle.taskId,
+    tool_name: "",
+    status: bundle.taskStatus,
+    finished_at: bundle.finishedAt ?? null,
+  };
+}
+
+function resolvedStepStatusFromBundleTask(bundle: TaskOrchestrationBundleRow): TaskExecutionStep["status"] | null {
+  const snapshot = bundleTaskSnapshot(bundle);
+  if (!snapshot || isTaskInFlight(snapshot)) return null;
+  const s = (snapshot.status || "").toUpperCase();
+  if (s === "SUCCESS" || s === "SUCCEEDED") return "done";
+  if (s === "FAILED" || s === "CANCELLED" || s === "CANCEL" || s === "TIMEOUT" || s === "ERROR") {
+    return "error";
+  }
+  return null;
+}
+
+/** 历史时间线：步骤 meta 未全部终态时，按已结束子任务的 bundle 推断 done，以渲染可点的结果卡。 */
 export function alignStepStatusesWithOrchestrationBundles(
   steps: TaskExecutionStep[],
   bundles: TaskOrchestrationBundleRow[],
@@ -245,7 +270,8 @@ export function alignStepStatusesWithOrchestrationBundles(
     const b = bundleByIdx.get(i);
     if (!b?.taskId || b.taskId.startsWith("__no_task_")) return step;
     if (step.status === "pending" || step.status === "running") {
-      return { ...step, status: "done" as const };
+      const resolved = resolvedStepStatusFromBundleTask(b);
+      return resolved ? { ...step, status: resolved } : step;
     }
     return step;
   });
@@ -382,6 +408,8 @@ export async function fetchTaskOrchestrationForResultPanel(
       stepIndex: i,
       label: labelForOrchestrationStep(task, i),
       artifacts: arts,
+      taskStatus: task.status,
+      finishedAt: task.finished_at ?? null,
     });
   }
 

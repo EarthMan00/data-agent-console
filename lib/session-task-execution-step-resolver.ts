@@ -1,5 +1,7 @@
+import type { TaskResponse, ToolOrchestrationStepApi } from "@/lib/agent-api/types";
 import type { TaskExecutionStep, TaskExecutionStepStatus } from "@/lib/agent-events";
 import { mapServerOrchestrationStepStatus } from "@/lib/agent-runtime/task-mapping";
+import { isTaskInFlight } from "@/lib/task-status-poll";
 
 function taskStatusToResolvedStepStatus(status: string | null | undefined): TaskExecutionStepStatus | null {
   const s = (status || "").toUpperCase();
@@ -32,8 +34,47 @@ export function resolveStaleTaskExecutionSteps(
   if (!taskStatus) return null;
   if (taskStatus === "running") {
     return steps.map((step, index) =>
-      index === 0 && step.status === "pending" ? { ...step, status: "running" } : step,
+      index === 0 && step.status !== "error" ? { ...step, status: "running" } : step,
     );
   }
+  if (steps.length > 1) {
+    return steps.map((step, index) => (index === 0 ? { ...step, status: taskStatus } : step));
+  }
   return steps.map((step) => ({ ...step, status: taskStatus }));
+}
+
+/** 为运行中步骤补上 runtime 字段，供 ExecutionRuntimeTag 在会话重进后继续计时。 */
+export function enrichTaskExecutionStepsRuntime(
+  steps: TaskExecutionStep[],
+  options?: {
+    task?: TaskResponse | null;
+    orchestrationSteps?: ToolOrchestrationStepApi[] | null;
+  },
+): TaskExecutionStep[] {
+  if (!options) return steps;
+  const { task, orchestrationSteps } = options;
+  return steps.map((step, index) => {
+    const orchStep = orchestrationSteps?.[index];
+    const orchStatus = (orchStep?.status || "").toUpperCase();
+    const orchActive = orchStatus === "RUNNING" || orchStatus === "AWAITING_INPUT";
+    if (orchStep && (orchActive || step.status === "running")) {
+      const runtimeStartedAt = orchStep.task_started_at ?? step.runtimeStartedAt;
+      const runtimeHint = orchStep.runtime_hint ?? step.runtimeHint;
+      if (runtimeStartedAt || runtimeHint) {
+        return { ...step, runtimeStartedAt, runtimeHint };
+      }
+    }
+    if (
+      index === 0 &&
+      task &&
+      isTaskInFlight(task) &&
+      (step.status === "running" || step.status === "pending")
+    ) {
+      return {
+        ...step,
+        runtimeStartedAt: step.runtimeStartedAt ?? task.started_at,
+      };
+    }
+    return step;
+  });
 }

@@ -128,8 +128,8 @@ describe("alignStepStatusesWithOrchestrationBundles / buildPlatformSubtasksForEx
       { id: "x1", label: "B", order: 2, status: "pending", roundId: "r" },
     ];
     const bundles = [
-      { taskId: "task-a", stepIndex: 0, label: "A", artifacts: [] },
-      { taskId: "task-b", stepIndex: 1, label: "B", artifacts: [] },
+      { taskId: "task-a", stepIndex: 0, label: "A", artifacts: [], taskStatus: "SUCCESS", finishedAt: "2026-01-01T00:00:00Z" },
+      { taskId: "task-b", stepIndex: 1, label: "B", artifacts: [], taskStatus: "SUCCESS", finishedAt: "2026-01-01T00:00:00Z" },
     ];
     const aligned = alignStepStatusesWithOrchestrationBundles(steps, bundles);
     expect(aligned[1]?.status).toBe("done");
@@ -146,6 +146,26 @@ describe("alignStepStatusesWithOrchestrationBundles / buildPlatformSubtasksForEx
     ];
 
     const aligned = alignStepStatusesWithOrchestrationBundles(steps, staleBundles, ["current-task"]);
+
+    expect(aligned[0]?.status).toBe("running");
+  });
+
+  it("does not infer done from bundles while the subtask is still running", () => {
+    const steps: TaskExecutionStep[] = [
+      { id: "x0", label: "查询 cup", order: 1, status: "running", roundId: "r" },
+    ];
+    const bundles = [
+      {
+        taskId: "current-task",
+        stepIndex: 0,
+        label: "查询 cup",
+        artifacts: [{ artifact_id: "a1", artifact_type: "log", original_name: "linkfox_result.txt", download_api: "/x" }],
+        taskStatus: "RUNNING",
+        finishedAt: null,
+      },
+    ];
+
+    const aligned = alignStepStatusesWithOrchestrationBundles(steps, bundles, ["current-task"]);
 
     expect(aligned[0]?.status).toBe("running");
   });
