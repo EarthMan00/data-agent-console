@@ -2004,10 +2004,10 @@ export function TaskComposer({
                   {!value && selectedSources.length === 0 ? (
                     <div
                       className={cn(
-                        "pointer-events-none absolute left-px max-w-lg leading-7",
+                        "pointer-events-none absolute max-w-lg leading-7",
                         isHeroMinimal
-                          ? "top-2 text-body text-text-tertiary"
-                          : "top-1 text-body text-text-disabled",
+                          ? "left-px top-2 text-body text-text-tertiary"
+                          : "left-1.5 top-1 text-body text-text-disabled",
                         placeholderClassName,
                       )}
                     >
@@ -2423,7 +2423,7 @@ export function TaskComposer({
                       "h-8 rounded-control border px-3 text-body font-medium",
                       isHeroMinimal
                         ? "border-transparent text-foreground hover:border-border hover:bg-fill-hover hover:text-foreground"
-                        : "border-transparent text-text-tertiary hover:border-border hover:bg-bg-subtle hover:text-foreground",
+                        : "border-transparent text-foreground hover:border-border hover:bg-fill-hover hover:text-foreground",
                     )}
                     onClick={() => {
                       setSourceButtonOpen(false);

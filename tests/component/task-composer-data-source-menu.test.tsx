@@ -45,6 +45,19 @@ function ComposerHarness({
 }
 
 describe("task composer data source menu", () => {
+  it("uses the home attachment button color in the default composer style", () => {
+    render(<ComposerHarness />);
+
+    const attachmentButton = screen.getByRole("button", { name: "添加附件" });
+    expect(attachmentButton).toHaveClass("text-foreground", "hover:bg-fill-hover", "hover:text-foreground");
+  });
+
+  it("keeps the default placeholder offset from the empty editor caret", () => {
+    render(<ComposerHarness />);
+
+    expect(screen.getByText("输入任务")).toHaveClass("left-1.5");
+  });
+
   it("uses first-level categories to navigate second-level datasource cards", async () => {
     const onToolSelect = vi.fn();
     render(<ComposerHarness onToolSelect={onToolSelect} />);
