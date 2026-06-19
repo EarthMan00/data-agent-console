@@ -25,7 +25,12 @@ import { AutoToast } from "@/components/auto-toast";
 import { EmptyState } from "@/components/empty-state";
 import { AliceShell } from "@/components/alice-shell";
 import { PageLostState } from "@/components/page-lost-state";
-import { ScheduleResultPushSection, validateResultPushBlocks, type ResultPushBlock } from "@/components/schedule-result-push";
+import {
+  ScheduleResultPushSection,
+  getResultPushValidationError,
+  type ResultPushBlock,
+  type ResultPushValidationError,
+} from "@/components/schedule-result-push";
 import { TaskComposer } from "@/components/task-composer";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { RequiredAsterisk } from "@/components/required-mark";
@@ -290,6 +295,7 @@ export function SchedulesWorkspace() {
   const [runOnceDate, setRunOnceDate] = useState("");
   const [taskEnabled, setTaskEnabled] = useState(true);
   const [resultPushFormKey, setResultPushFormKey] = useState(0);
+  const [resultPushValidationError, setResultPushValidationError] = useState<ResultPushValidationError | null>(null);
   const fromRestore = useRef(false);
   const editFormHydratedForId = useRef<string | null>(null);
   /** 进入编辑时从服务器装填的提示词，用于判断「保存」前是否需先立即运行 */
@@ -383,6 +389,7 @@ export function SchedulesWorkspace() {
     setSelectedMonthDays(new Set());
     setRunOnceDate("");
     applyResultPushBlocks([]);
+    setResultPushValidationError(null);
     setNotice("");
     editPromptBaselineRef.current = null;
     setEditPromptChangedSaveGateOpen(false);
@@ -695,9 +702,11 @@ export function SchedulesWorkspace() {
       setNotice("无法排程，请检查周期、星期/日期或时间。");
       return;
     }
-    const pushErr = validateResultPushBlocks(resultPushRef.current);
+    const pushErr = getResultPushValidationError(resultPushRef.current);
     if (pushErr) {
-      setNotice(pushErr);
+      setNotice("");
+      setResultPushValidationError(pushErr);
+      setAdvancedOpen(true);
       return;
     }
     if (!isPlatformBackendEnabled() || !platformAgent) {
@@ -778,9 +787,11 @@ export function SchedulesWorkspace() {
       setNotice("无法排程，请检查周期、星期/日期或时间。");
       return;
     }
-    const pushErr = validateResultPushBlocks(resultPushRef.current);
+    const pushErr = getResultPushValidationError(resultPushRef.current);
     if (pushErr) {
-      setNotice(pushErr);
+      setNotice("");
+      setResultPushValidationError(pushErr);
+      setAdvancedOpen(true);
       return;
     }
     if (!platformAgent) {
@@ -862,9 +873,11 @@ export function SchedulesWorkspace() {
       setNotice("无法排程，请检查周期、星期/日期或时间。");
       return;
     }
-    const pushErr = validateResultPushBlocks(resultPushRef.current);
+    const pushErr = getResultPushValidationError(resultPushRef.current);
     if (pushErr) {
-      setNotice(pushErr);
+      setNotice("");
+      setResultPushValidationError(pushErr);
+      setAdvancedOpen(true);
       return;
     }
     if (!platformAgent) {
@@ -1241,9 +1254,13 @@ export function SchedulesWorkspace() {
                         key={resultPushFormKey}
                         headerLabel="结果推送"
                         inlineAddTrigger
+                        validationError={resultPushValidationError}
                         defaultBlocks={resultPushRef.current.length > 0 ? resultPushRef.current : undefined}
                         onConfigSnapshot={({ blocks }) => {
                           resultPushRef.current = blocks;
+                          setResultPushValidationError((current) =>
+                            current && !getResultPushValidationError(blocks) ? null : current,
+                          );
                           if (editId) {
                             persistResultPushBlocksForTask(editId, blocks);
                           }

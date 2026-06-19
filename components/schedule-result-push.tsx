@@ -34,6 +34,12 @@ type FeishuBlock = { id: string; type: "feishu"; webhook: string; signSecret: st
 
 export type ResultPushBlock = EmailBlock | DingTalkBlock | FeishuBlock;
 type PushBlock = ResultPushBlock;
+export type ResultPushValidationError = {
+  blockId: string;
+  type: ChannelKey;
+  field: "address" | "webhook" | "secret";
+  message: string;
+};
 
 function ChannelLogo({ type, className = "h-5 w-5" }: { type: ChannelKey; className?: string }) {
   if (type === "email") {
@@ -84,28 +90,33 @@ type ScheduleResultPushProps = {
   /** 弹窗表单内使用：标题与「添加提醒」放在同一行 */
   headerLabel?: string;
   inlineAddTrigger?: boolean;
+  validationError?: ResultPushValidationError | null;
   /** 配置变更时回传当前 blocks（定时任务草稿等） */
   onConfigSnapshot?: (payload: { blocks: ResultPushBlock[] }) => void;
 };
 
-export function validateResultPushBlocks(blocks: ResultPushBlock[]): string | null {
+export function getResultPushValidationError(blocks: ResultPushBlock[]): ResultPushValidationError | null {
   for (const b of blocks) {
     if (b.type === "email" && !b.address.trim()) {
-      return "请填写所有结果推送的邮箱地址。";
+      return { blockId: b.id, type: "email", field: "address", message: "请填写所有结果推送的邮箱地址。" };
     }
     if (b.type === "dingtalk") {
       if (!b.webhook.trim()) {
-        return "请填写钉钉的 Webhook 地址。";
+        return { blockId: b.id, type: "dingtalk", field: "webhook", message: "请填写钉钉的 Webhook 地址。" };
       }
       if (!b.secret.trim()) {
-        return "请填写钉钉的签名密钥。";
+        return { blockId: b.id, type: "dingtalk", field: "secret", message: "请填写钉钉的签名密钥。" };
       }
     }
     if (b.type === "feishu" && !b.webhook.trim()) {
-      return "请填写飞书的 Webhook 地址。";
+      return { blockId: b.id, type: "feishu", field: "webhook", message: "请填写飞书的 Webhook 地址。" };
     }
   }
   return null;
+}
+
+export function validateResultPushBlocks(blocks: ResultPushBlock[]): string | null {
+  return getResultPushValidationError(blocks)?.message ?? null;
 }
 
 /**
@@ -116,6 +127,7 @@ export function ScheduleResultPushSection({
   defaultBlocks,
   headerLabel,
   inlineAddTrigger = false,
+  validationError,
   onConfigSnapshot,
 }: ScheduleResultPushProps) {
   const [blocks, setBlocks] = useState<PushBlock[]>(defaultBlocks != null ? defaultBlocks : []);
@@ -230,6 +242,7 @@ export function ScheduleResultPushSection({
             <EmailCard
               key={b.id}
               b={b}
+              validationError={validationError?.blockId === b.id ? validationError : null}
               onUpdate={(p) => updateBlock(b.id, p)}
               onTouch={() => {
                 setBlocksWithNotify((prev) =>
@@ -244,6 +257,7 @@ export function ScheduleResultPushSection({
             <DingTalkCard
               key={b.id}
               b={b}
+              validationError={validationError?.blockId === b.id ? validationError : null}
               onUpdate={(p) => updateBlock(b.id, p)}
               onRemove={() => removeBlock(b.id)}
             />
@@ -252,6 +266,7 @@ export function ScheduleResultPushSection({
           <FeishuCard
             key={b.id}
             b={b}
+            validationError={validationError?.blockId === b.id ? validationError : null}
             onUpdate={(p) => updateBlock(b.id, p)}
             onRemove={() => removeBlock(b.id)}
           />
@@ -339,16 +354,19 @@ function HowToLink({ id, href }: { id: string; href: string }) {
 
 function EmailCard({
   b,
+  validationError,
   onUpdate,
   onTouch,
   onRemove,
 }: {
   b: EmailBlock;
+  validationError?: ResultPushValidationError | null;
   onUpdate: (p: Partial<EmailBlock>) => void;
   onTouch: () => void;
   onRemove: () => void;
 }) {
   const emailId = useId();
+  const addressError = !b.address.trim() ? validationError?.message : null;
   return (
     <div className="rounded-field border border-border bg-bg-surface p-4 shadow-none">
       <div className="flex items-center justify-between gap-2 border-b border-border-subtle pb-3">
@@ -377,10 +395,17 @@ function EmailCard({
           onChange={(e) => onUpdate({ address: e.target.value, touched: true })}
           onBlur={onTouch}
           placeholder="请输入邮箱地址"
-          className="h-10 rounded-control border-border text-sm"
+          aria-invalid={Boolean(addressError)}
+          className={cn("h-10 rounded-control border-border text-sm", addressError && "!border-danger")}
           autoComplete="email"
         />
-        {b.touched && !b.address.trim() ? <p className="mt-1.5 text-sm text-danger">地址不能为空</p> : null}
+        {addressError ? (
+          <p className="mt-1.5 text-sm text-danger" role="alert">
+            {addressError}
+          </p>
+        ) : b.touched && !b.address.trim() ? (
+          <p className="mt-1.5 text-sm text-danger">地址不能为空</p>
+        ) : null}
       </div>
     </div>
   );
@@ -388,15 +413,19 @@ function EmailCard({
 
 function DingTalkCard({
   b,
+  validationError,
   onUpdate,
   onRemove,
 }: {
   b: DingTalkBlock;
+  validationError?: ResultPushValidationError | null;
   onUpdate: (p: Partial<DingTalkBlock>) => void;
   onRemove: () => void;
 }) {
   const hWebhook = useId();
   const hSec = useId();
+  const webhookError = validationError?.field === "webhook" && !b.webhook.trim() ? validationError.message : null;
+  const secretError = validationError?.field === "secret" && !b.secret.trim() ? validationError.message : null;
   return (
     <div className="rounded-field border border-border bg-bg-surface p-4 shadow-none">
       <div className="flex items-center justify-between gap-2 border-b border-border-subtle pb-3">
@@ -420,15 +449,20 @@ function DingTalkCard({
           <label className="text-sm text-text-secondary" htmlFor={hWebhook}>
             Webhook 地址
           </label>
-          <HowToLink id={`${hWebhook}-help`} href="https://open.dingtalk.com/document/dingstart/obtain-the-webhook-address-of-a-custom-robot" />
+          <HowToLink
+            id={`${hWebhook}-help`}
+            href="https://open.dingtalk.com/document/dingstart/obtain-the-webhook-address-of-a-custom-robot"
+          />
         </div>
         <Input
           id={hWebhook}
           value={b.webhook}
           onChange={(e) => onUpdate({ webhook: e.target.value })}
           placeholder="请粘贴webhook地址"
-          className="h-10 rounded-control border-border text-sm"
+          aria-invalid={Boolean(webhookError)}
+          className={cn("h-10 rounded-control border-border text-sm", webhookError && "!border-danger")}
         />
+        {webhookError ? <p className="mt-1.5 text-sm text-danger" role="alert">{webhookError}</p> : null}
       </div>
       <div className="mt-3">
         <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -441,9 +475,11 @@ function DingTalkCard({
           value={b.secret}
           onChange={(e) => onUpdate({ secret: e.target.value, security: "signature", keyword: "" })}
           placeholder="请粘贴签名密钥"
-          className="h-10 rounded-control border-border text-sm"
+          aria-invalid={Boolean(secretError)}
+          className={cn("h-10 rounded-control border-border text-sm", secretError && "!border-danger")}
           autoComplete="off"
         />
+        {secretError ? <p className="mt-1.5 text-sm text-danger" role="alert">{secretError}</p> : null}
       </div>
     </div>
   );
@@ -451,15 +487,18 @@ function DingTalkCard({
 
 function FeishuCard({
   b,
+  validationError,
   onUpdate,
   onRemove,
 }: {
   b: FeishuBlock;
+  validationError?: ResultPushValidationError | null;
   onUpdate: (p: Partial<FeishuBlock>) => void;
   onRemove: () => void;
 }) {
   const wId = useId();
   const sId = useId();
+  const webhookError = validationError?.field === "webhook" && !b.webhook.trim() ? validationError.message : null;
   return (
     <div className="rounded-field border border-border bg-bg-surface p-4 shadow-none">
       <div className="flex items-center justify-between gap-2 border-b border-border-subtle pb-3">
@@ -490,8 +529,10 @@ function FeishuCard({
           value={b.webhook}
           onChange={(e) => onUpdate({ webhook: e.target.value })}
           placeholder="请粘贴webhook地址"
-          className="min-h-22 rounded-control border-border text-sm"
+          aria-invalid={Boolean(webhookError)}
+          className={cn("min-h-22 rounded-control border-border text-sm", webhookError && "!border-danger")}
         />
+        {webhookError ? <p className="mt-1.5 text-sm text-danger" role="alert">{webhookError}</p> : null}
       </div>
       <div className="mt-3">
         <div className="mb-1.5 flex items-center justify-between gap-2">

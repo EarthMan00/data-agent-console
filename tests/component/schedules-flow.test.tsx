@@ -55,11 +55,30 @@ vi.mock("@/components/task-composer", () => ({
 }));
 
 vi.mock("@/components/schedule-result-push", () => ({
-  ScheduleResultPushSection: ({ onConfigSnapshot }: { onConfigSnapshot?: (payload: { blocks: Array<{ id: string; type: string; webhook: string; signSecret: string }> }) => void }) => {
+  ScheduleResultPushSection: ({
+    onConfigSnapshot,
+    validationError,
+  }: {
+    onConfigSnapshot?: (payload: { blocks: Array<{ id: string; type: string; webhook: string; signSecret: string }> }) => void;
+    validationError?: { blockId: string; field: string; message: string } | null;
+  }) => {
     onConfigSnapshot?.({
       blocks: [{ id: "feishu-1", type: "feishu", webhook: "", signSecret: "" }],
     });
-    return <div>结果推送</div>;
+    return (
+      <section aria-label="结果推送">
+        <div>结果推送</div>
+        {validationError?.blockId === "feishu-1" && validationError.field === "webhook" ? (
+          <p role="alert">{validationError.message}</p>
+        ) : null}
+      </section>
+    );
+  },
+  getResultPushValidationError: (blocks: Array<{ id: string; type: string; webhook?: string }>) => {
+    const invalid = blocks.find((block) => block.type === "feishu" && !block.webhook?.trim());
+    return invalid
+      ? { blockId: invalid.id, type: "feishu", field: "webhook", message: "请填写飞书的 Webhook 地址。" }
+      : null;
   },
   validateResultPushBlocks: (blocks: Array<{ type: string; webhook?: string }>) =>
     blocks.some((block) => block.type === "feishu" && !block.webhook?.trim())
@@ -122,7 +141,7 @@ describe("schedules flow", () => {
     expect(await screen.findByText("美国站平板键盘套周监控")).toBeInTheDocument();
   });
 
-  it("shows webhook validation notice inside the create dialog", async () => {
+  it("shows webhook validation near the result push field", async () => {
     searchParamsValue.current = "create=1";
     render(<SchedulesWorkspace />);
 
@@ -136,9 +155,9 @@ describe("schedules flow", () => {
     await waitFor(() => expect(submit).not.toBeDisabled());
     fireEvent.click(submit);
 
-    const dialog = screen.getByRole("dialog", { name: "创建定时任务" });
+    const resultPush = screen.getByRole("region", { name: "结果推送" });
     await waitFor(() => {
-      expect(within(dialog).getByRole("alert")).toHaveTextContent("请填写飞书的 Webhook 地址。");
+      expect(within(resultPush).getByRole("alert")).toHaveTextContent("请填写飞书的 Webhook 地址。");
     });
     expect(screen.getAllByText("请填写飞书的 Webhook 地址。")).toHaveLength(1);
   });
