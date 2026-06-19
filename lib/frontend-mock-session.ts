@@ -1,5 +1,6 @@
 import type { SessionListItem, SessionMessageItem } from "@/lib/agent-api/types";
 import type { TaskOrchestrationBundleRow } from "@/lib/merge-orchestration-task-artifacts";
+import { ALICE_LOGO_SRC } from "@/lib/brand-assets";
 import { FRONTEND_MOCK_ARTIFACT_PREFIX } from "@/lib/frontend-mock-artifacts";
 
 export const FRONTEND_MOCK_SESSION_ID = "mock-sensen-frontend-qa";
@@ -139,7 +140,7 @@ export function getFrontendMockSessionMessages(): SessionMessageItem[] {
             name: "reference-image.png",
             size: 284912,
             extension: "png",
-            previewUrl: "/mdata-logo.png",
+            previewUrl: ALICE_LOGO_SRC,
           },
         ],
       },

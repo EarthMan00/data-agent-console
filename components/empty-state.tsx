@@ -1,6 +1,7 @@
 import Image from "next/image";
 import type { ReactNode } from "react";
 
+import { ALICE_LOGO_SRC } from "@/lib/brand-assets";
 import { cn } from "@/lib/utils";
 
 type EmptyStateProps = {
@@ -13,7 +14,7 @@ export function EmptyState({ message, action, className }: EmptyStateProps) {
   return (
     <div className={cn("mt-8 flex min-h-empty-page flex-col items-center justify-center px-4 text-center", className)}>
       <Image
-        src="/alice-logo.png"
+        src={ALICE_LOGO_SRC}
         alt=""
         width={48}
         height={48}

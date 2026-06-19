@@ -4,6 +4,7 @@ import Image from "next/image";
 
 import { cn } from "@/lib/utils";
 import { DotmSquare11 } from "@/components/ui/dotm-square-11";
+import { ALICE_LOGO_SRC } from "@/lib/brand-assets";
 
 const SIMPLE_CHAT_BUBBLE_MAX = "max-w-simple-bubble";
 const SIMPLE_CHAT_ROW_MAX = "max-w-simple-row";
@@ -11,7 +12,7 @@ const SIMPLE_CHAT_ROW_MAX = "max-w-simple-row";
 function AliceAvatar() {
   return (
     <span className="relative mt-1 block h-9 w-9 shrink-0">
-      <Image src="/mdata-logo.png" alt="Alice" fill sizes="36px" className="object-contain" draggable={false} />
+      <Image src={ALICE_LOGO_SRC} alt="Alice" fill sizes="36px" className="object-contain" draggable={false} />
     </span>
   );
 }

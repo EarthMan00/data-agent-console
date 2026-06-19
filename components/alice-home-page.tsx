@@ -29,6 +29,7 @@ import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
 import { AliceShell, useAliceShellState } from "@/components/alice-shell";
 import { PlatformLogo } from "@/components/platform-logo";
 import { sanitizeObjective } from "@/lib/agent-attachments";
+import { ALICE_LOGO_SRC } from "@/lib/brand-assets";
 import { parseComposerPrefillStorageValue, parseDatasourceMentions } from "@/lib/composer-prefill";
 import { workspaceActions } from "@/lib/workspace-store";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
@@ -561,7 +562,7 @@ export function AliceHomePage() {
         <section className="mx-auto w-full max-w-page-content px-4 pt-44 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 sm:gap-5">
             <Image
-              src="/alice-logo.png"
+              src={ALICE_LOGO_SRC}
               alt="Alice"
               width={76}
               height={76}

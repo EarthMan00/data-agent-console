@@ -17,6 +17,7 @@ import { sanitizeClarificationForUserDisplay, splitClarificationForDisplay } fro
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
 import { composerDraftContainsSuggestion } from "@/lib/composer-prefill";
+import { ALICE_LOGO_SRC } from "@/lib/brand-assets";
 import type { UserMessageAttachment } from "@/lib/user-message-attachments";
 import { UserMessageAttachmentCards } from "@/components/user-message-attachment-cards";
 
@@ -47,7 +48,7 @@ function formatTimeForBubble(iso: string) {
 function AliceAvatar({ className }: { className?: string }) {
   return (
     <span className={cn("relative block h-9 w-9 shrink-0", className)}>
-      <Image src="/mdata-logo.png" alt="Alice" fill sizes="36px" className="object-contain" draggable={false} />
+      <Image src={ALICE_LOGO_SRC} alt="Alice" fill sizes="36px" className="object-contain" draggable={false} />
     </span>
   );
 }

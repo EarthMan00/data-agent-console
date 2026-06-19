@@ -41,6 +41,7 @@ import {
   type AgentSessionSnapshot,
 } from "@/lib/agent-api/session";
 import { invalidateSessionAndRequestLogin } from "@/lib/agent-runtime/auth";
+import { ALICE_LOGO_SRC } from "@/lib/brand-assets";
 import { ArrowLeft, ArrowRight, Power } from "@/components/ui/tabler-icons";
 
 const LOGIN_INTRO_TEXT = "我是 Alice，欢迎回来。";
@@ -1070,7 +1071,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
                     }
                   >
                     <Image
-                      src="/alice-logo.png"
+                      src={ALICE_LOGO_SRC}
                       alt="Alice"
                       width={52}
                       height={52}
