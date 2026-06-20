@@ -56,7 +56,7 @@ vi.mock("@/lib/use-data-source-menu", async () => {
       items: menu.mockDataSourceItems,
       loading: false,
       error: null,
-      ensureMenuLoaded: async () => menu.mockDataSourceGroups,
+      ensureMenuLoaded: async () => {},
       refreshMenu: async () => menu.mockDataSourceGroups,
       loadCategoryTools: async () => {},
     }),

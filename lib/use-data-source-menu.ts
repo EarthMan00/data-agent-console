@@ -60,7 +60,9 @@ export function useDataSourceMenu(options?: UseDataSourceMenuOptions) {
   }, []);
 
   /** 每次打开 @数据源 菜单时调用，始终重新拉取最新数据。 */
-  const ensureMenuLoaded = refreshMenu;
+  const ensureMenuLoaded = useCallback(async () => {
+    await refreshMenu();
+  }, [refreshMenu]);
 
   const loadCategoryTools = useCallback(
     async (_categoryId: string) => {
