@@ -40,7 +40,13 @@ import {
   removeFromComposerDraft,
 } from "@/lib/composer-prefill";
 import type { TaskExecutionStep, TaskExecutionStepStatus } from "@/lib/agent-events";
+import { resolveCapabilityLabelsForApi } from "@/lib/agent-runtime/report-helpers";
 import { mapServerOrchestrationStepStatus } from "@/lib/agent-runtime/task-mapping";
+import {
+  getHomeCapabilityItem,
+  homeCapabilityGroups,
+  homeDataSourceItems,
+} from "@/lib/home-capability-items";
 import type { ScheduleTrialSendState } from "@/lib/schedule-create-draft";
 import {
   isScheduleTrialAwaitingFirstMessage,
@@ -183,12 +189,21 @@ export function PlatformSessionAgentWorkspace({
   const [error, setError] = useState("");
   const [draft, setDraft] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const toggleGuidanceSuggestion = useCallback((item: string) => {
     setDraft((current) =>
       composerDraftContainsSuggestion(current, item)
         ? removeFromComposerDraft(current, item)
         : appendToComposerDraft(current, item),
     );
+  }, []);
+  const applyComposerSource = useCallback((capabilityId: string) => {
+    const item = getHomeCapabilityItem(capabilityId) ?? homeDataSourceItems.find((source) => source.id === capabilityId);
+    if (!item || item.id === "scenarios") return;
+    setSelectedSourceIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
+  }, []);
+  const removeComposerSource = useCallback((capabilityId: string) => {
+    setSelectedSourceIds((current) => current.filter((id) => id !== capabilityId));
   }, []);
   const [messages, setMessages] = useState<SessionMessageItem[]>([]);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
@@ -1493,6 +1508,7 @@ export function PlatformSessionAgentWorkspace({
     setMessages((cur) => [...cur, optimistic, createStreamingAssistantMessage(assistantStreamId, nowIso)]);
     setDraft("");
     setPendingFiles([]);
+    const capabilityIdsForApi = resolveCapabilityLabelsForApi(selectedSourceIds);
     try {
       await platformAgent.withFreshToken(async (token) => {
         const sendResult: ChatSendResult = await sendSessionMessageStream(
@@ -1507,6 +1523,7 @@ export function PlatformSessionAgentWorkspace({
           (content) => updateStreamContent(sessionId, content),
           () => contentLenRef.current,
           () => sessionGenRef.current === sendGen,
+          capabilityIdsForApi,
         );
         completeStream(sessionId);
         if (sessionGenRef.current !== sendGen) return;
@@ -1555,6 +1572,7 @@ export function PlatformSessionAgentWorkspace({
     bumpHistorySessionActivity,
     sending,
     sessionId,
+    selectedSourceIds,
   ]);
 
   const submitGuidanceSuggestion = useCallback((item: string) => {
@@ -2081,9 +2099,11 @@ export function PlatformSessionAgentWorkspace({
                   placeholder="您可以继续追问或者让我做其他工作哦～"
                   mode="普通模式"
                   onModeChange={() => {}}
-                  selectedSourceIds={[]}
-                  onToolSelect={() => {}}
-                  onSourceRemove={() => {}}
+                  selectedSourceIds={selectedSourceIds}
+                  dataSourceGroups={homeCapabilityGroups}
+                  dataSourceItems={homeDataSourceItems}
+                  onToolSelect={applyComposerSource}
+                  onSourceRemove={removeComposerSource}
                   onFilesSelected={(files) => {
                     setPendingFiles((prev) => {
                       const picked = Array.from(files);

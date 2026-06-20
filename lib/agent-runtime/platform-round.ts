@@ -53,7 +53,7 @@ import { resolvePendingAliceClarificationFromSession } from "@/lib/agent-runtime
 import type { SessionAliceClarification } from "@/lib/agent-runtime/session-alice-clarification";
 import { PlatformAuthExpiredError } from "./auth";
 import { capabilityLabelMap } from "./constants";
-import { buildReportPatch } from "./report-helpers";
+import { buildReportPatch, resolveCapabilityLabelsForApi } from "./report-helpers";
 import { mapServerOrchestrationStepStatus, mapTaskResponseToSubtaskEvent } from "./task-mapping";
 import {
   clearSplitRevealWait,
@@ -253,6 +253,7 @@ export async function runPlatformRound(
     input.selectedCapabilities.length > 0
       ? input.selectedCapabilities.map((id) => capabilityLabelMap.get(id) ?? id)
       : [];
+  const capabilityIdsForApi = resolveCapabilityLabelsForApi(input.selectedCapabilities);
 
   const isClarificationResume = Boolean(platformOptions.clarificationResume?.orchestrationId);
 
@@ -359,7 +360,7 @@ export async function runPlatformRound(
           }
         },
       },
-      { attachmentIds },
+      { attachmentIds, capabilityIds: capabilityIdsForApi },
     );
 
     if (result.kind === "accepted") {

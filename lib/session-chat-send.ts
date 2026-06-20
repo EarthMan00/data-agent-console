@@ -92,6 +92,7 @@ export async function sendSessionMessageStream(
   getDisplayedLen?: () => number,
   /** 当前会话是否仍活跃（用于 finally 守卫，避免卸载后 setMessages） */
   isCurrent?: () => boolean,
+  capabilityIds: string[] = [],
 ): Promise<ChatSendResult> {
   const attachmentIds =
     files.length > 0
@@ -129,7 +130,7 @@ export async function sendSessionMessageStream(
           ),
         );
       },
-    }, { attachmentIds, signal });
+    }, { attachmentIds, signal, capabilityIds });
   } catch (e) {
     if (isAbortError(e)) {
       return { kind: "completed", session_id: sessionId, message: "" };

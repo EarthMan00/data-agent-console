@@ -635,9 +635,10 @@ export async function sendChatMessageStream(
   message: string,
   messageId: string,
   handlers: ChatStreamHandlers = {},
-  init?: { signal?: AbortSignal; attachmentIds?: string[] },
+  init?: { signal?: AbortSignal; attachmentIds?: string[]; capabilityIds?: string[] },
 ): Promise<ChatSendResult> {
   const attachmentIds = init?.attachmentIds?.filter((id) => id.trim().length > 0) ?? [];
+  const capabilityIds = init?.capabilityIds?.filter((id) => id.trim().length > 0) ?? [];
   const res = await fetch(apiUrl(`/api/chat/${sessionId}/send/stream`), {
     method: "POST",
     headers: {
@@ -651,6 +652,7 @@ export async function sendChatMessageStream(
       message,
       message_id: messageId,
       attachment_ids: attachmentIds,
+      capability_ids: capabilityIds,
     }),
     signal: init?.signal,
   });
@@ -663,6 +665,7 @@ export async function sendChatMessage(
   message: string,
   messageId: string,
   attachmentIds: string[] = [],
+  capabilityIds: string[] = [],
 ): Promise<ChatSendResult> {
   const res = await fetch(apiUrl(`/api/chat/${sessionId}/send`), {
     method: "POST",
@@ -676,6 +679,7 @@ export async function sendChatMessage(
       message,
       message_id: messageId,
       attachment_ids: attachmentIds.filter((id) => id.trim().length > 0),
+      capability_ids: capabilityIds.filter((id) => id.trim().length > 0),
     }),
   });
   const raw = await parseJson(res);

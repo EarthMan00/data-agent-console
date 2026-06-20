@@ -8,6 +8,20 @@ export function getSourceLabel(sourceId: string) {
   return capabilityLabelMap.get(sourceId) ?? sourceId;
 }
 
+/** 将界面选中的 capability id 解析为 LinkFox @工具中文名，供 API capability_ids 使用。 */
+export function resolveCapabilityLabelsForApi(ids: string[]) {
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  for (const id of ids) {
+    if (!id || id === "scenarios") continue;
+    const label = getSourceLabel(id).replace(/^@+/, "").trim();
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    labels.push(label);
+  }
+  return labels;
+}
+
 function formatDate(date = new Date()) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
