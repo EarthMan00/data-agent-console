@@ -1,11 +1,10 @@
 import type { AgentAttachment } from "@/lib/agent-events";
 import type { ResultPreview } from "@/lib/workspace-domain-types";
 import { DEFAULT_RESULT_PREVIEW_KEY } from "@/lib/report-defaults";
-
-import { capabilityLabelMap } from "./constants";
+import { getHomeCapabilityItem } from "@/lib/home-capability-items";
 
 export function getSourceLabel(sourceId: string) {
-  return capabilityLabelMap.get(sourceId) ?? sourceId;
+  return getHomeCapabilityItem(sourceId)?.label ?? sourceId;
 }
 
 /** 将界面选中的 capability id 解析为 LinkFox @工具中文名，供 API capability_ids 使用。 */

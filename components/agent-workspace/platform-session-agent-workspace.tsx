@@ -44,9 +44,8 @@ import { resolveCapabilityLabelsForApi } from "@/lib/agent-runtime/report-helper
 import { mapServerOrchestrationStepStatus } from "@/lib/agent-runtime/task-mapping";
 import {
   getHomeCapabilityItem,
-  homeCapabilityGroups,
-  homeDataSourceItems,
 } from "@/lib/home-capability-items";
+import { useDataSourceMenu } from "@/lib/use-data-source-menu";
 import type { ScheduleTrialSendState } from "@/lib/schedule-create-draft";
 import {
   isScheduleTrialAwaitingFirstMessage,
@@ -176,6 +175,7 @@ export function PlatformSessionAgentWorkspace({
   const platformAgent = useOptionalPlatformAgent();
   const { refreshHistoryNow, setActiveSessionTitle, bumpHistorySessionActivity } = useAliceShellState();
   const router = useRouter();
+  const { groups: dataSourceGroups, items: dataSourceItems, loading: dataSourceLoading, ensureMenuLoaded } = useDataSourceMenu();
   const frontendMockSession = isFrontendMockSessionId(sessionId);
   const isMounted = useRef(true);
   const abortPollRef = useRef(false);
@@ -198,7 +198,7 @@ export function PlatformSessionAgentWorkspace({
     );
   }, []);
   const applyComposerSource = useCallback((capabilityId: string) => {
-    const item = getHomeCapabilityItem(capabilityId) ?? homeDataSourceItems.find((source) => source.id === capabilityId);
+    const item = getHomeCapabilityItem(capabilityId);
     if (!item || item.id === "scenarios") return;
     setSelectedSourceIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
   }, []);
@@ -2100,8 +2100,10 @@ export function PlatformSessionAgentWorkspace({
                   mode="普通模式"
                   onModeChange={() => {}}
                   selectedSourceIds={selectedSourceIds}
-                  dataSourceGroups={homeCapabilityGroups}
-                  dataSourceItems={homeDataSourceItems}
+                  dataSourceGroups={dataSourceGroups}
+                  dataSourceItems={dataSourceItems}
+                  onDataSourceMenuRequest={ensureMenuLoaded}
+                  dataSourceLoading={dataSourceLoading}
                   onToolSelect={applyComposerSource}
                   onSourceRemove={removeComposerSource}
                   onFilesSelected={(files) => {

@@ -18,7 +18,7 @@ import type {
 import { stripModelThinkingForUi, stripModelThinkingForStreamPartial } from "@/lib/strip-model-thinking";
 import { upsertReportCollection, upsertRunCollection } from "@/lib/workspace-upsert";
 import { DEFAULT_RESULT_PREVIEW_KEY } from "@/lib/report-defaults";
-import { homeCapabilityItems } from "@/lib/home-capability-items";
+import { getDataSourceItems, getHomeCapabilityItem } from "@/lib/home-capability-items";
 import { DEFAULT_RESULT_SUMMARY_TITLE, WORKSPACE_DISPLAY_NAME } from "@/lib/workspace-constants";
 import { stashRoundAttachmentFiles } from "@/lib/round-attachment-files";
 import { inferAttachmentType } from "@/lib/agent-attachments";
@@ -172,8 +172,8 @@ function toRunTitle(objective: string) {
 
 function toCapabilityIds(objective: string) {
   const lower = objective.toLowerCase();
-  return homeCapabilityItems
-    .filter((item) => lower.includes(item.label.toLowerCase()) || lower.includes(item.id))
+  return getDataSourceItems()
+    .filter((item) => lower.includes(item.label.toLowerCase()) || lower.includes(item.id.toLowerCase()))
     .slice(0, 3)
     .map((item) => item.id);
 }

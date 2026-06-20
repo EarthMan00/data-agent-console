@@ -49,7 +49,7 @@ import { Button } from "@/components/ui/button";
 import { sanitizeObjective } from "@/lib/agent-attachments";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { isPlatformBackendEnabled, streamAgentRound } from "@/lib/agent-runtime";
-import { homeCapabilityItems } from "@/lib/home-capability-items";
+import { getHomeCapabilityItem } from "@/lib/home-capability-items";
 import { takeRoundAttachmentFiles } from "@/lib/round-attachment-files";
 import { workspaceActions, useWorkspaceState, type Report, type TaskRun } from "@/lib/workspace-store";
 import { displayLabelForIndexedSubtask } from "@/lib/merge-orchestration-task-artifacts";
@@ -684,7 +684,7 @@ function AgentRunWorkspaceView({
   };
 
   const applyCapability = (capabilityId: string) => {
-    const item = homeCapabilityItems.find((entry) => entry.id === capabilityId);
+    const item = getHomeCapabilityItem(capabilityId);
     if (!item) return;
     setSelectedSourceOverrides((current) => {
       const currentSources = current[run.id] ?? [];

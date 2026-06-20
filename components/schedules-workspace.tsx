@@ -93,7 +93,8 @@ import {
 import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
 import { parseComposerPrefillStorageValue } from "@/lib/composer-prefill";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
-import { homeCapabilityItems } from "@/lib/home-capability-items";
+import { getDataSourceItems, getHomeCapabilityItem } from "@/lib/home-capability-items";
+import { useDataSourceMenu } from "@/lib/use-data-source-menu";
 import {
   persistResultPushBlocksForTask,
   resultPushBlocksForEditingTask,
@@ -113,7 +114,7 @@ const DEFAULT_GROUP_VALUE = "__default__";
 
 function serializeScheduleComposerPrompt(text: string, sourceIds: string[]) {
   const sourceText = sourceIds
-    .map((id) => homeCapabilityItems.find((item) => item.id === id && item.id !== "scenarios")?.label)
+    .map((id) => getDataSourceItems().find((item) => item.id === id && item.id !== "scenarios")?.label)
     .filter((label): label is string => Boolean(label))
     .map((label) => `@${label}`)
     .join(" ");
@@ -227,6 +228,12 @@ export function SchedulesWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
+  const {
+    groups: scheduleDataSourceGroups,
+    items: scheduleDataSourceItems,
+    loading: scheduleDataSourceLoading,
+    ensureMenuLoaded: ensureScheduleDataSourceMenu,
+  } = useDataSourceMenu();
 
   const [primaryTab, setPrimaryTab] = useState<(typeof PRIMARY_TABS)[number]>("已定时");
   const [activeChip, setActiveChip] = useState("全部");
@@ -525,8 +532,8 @@ export function SchedulesWorkspace() {
     [prompt, scheduleSourceIds],
   );
   const addScheduleComposerSource = useCallback((capabilityId: string) => {
-    const item = homeCapabilityItems.find((entry) => entry.id === capabilityId && entry.id !== "scenarios");
-    if (!item) return;
+    const item = getHomeCapabilityItem(capabilityId);
+    if (!item || item.id === "scenarios") return;
     setScheduleSourceIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
   }, []);
   const removeScheduleComposerSource = useCallback((capabilityId: string) => {
@@ -1047,6 +1054,10 @@ export function SchedulesWorkspace() {
                       mode={scheduleComposerMode}
                       onModeChange={setScheduleComposerMode}
                       selectedSourceIds={scheduleSourceIds}
+                      dataSourceGroups={scheduleDataSourceGroups}
+                      dataSourceItems={scheduleDataSourceItems}
+                      onDataSourceMenuRequest={ensureScheduleDataSourceMenu}
+                      dataSourceLoading={scheduleDataSourceLoading}
                       onToolSelect={addScheduleComposerSource}
                       onSourceRemove={removeScheduleComposerSource}
                       onFilesSelected={() => {}}

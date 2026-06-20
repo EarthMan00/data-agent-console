@@ -48,6 +48,21 @@ vi.mock("@/lib/agent-api/home-prompts", () => ({
   fetchPublicPromptCategories: mockFetchPublicPromptCategories,
 }));
 
+vi.mock("@/lib/use-data-source-menu", async () => {
+  const menu = await import("../fixtures/mock-data-source-menu");
+  return {
+    useDataSourceMenu: () => ({
+      groups: menu.mockDataSourceGroups,
+      items: menu.mockDataSourceItems,
+      loading: false,
+      error: null,
+      ensureMenuLoaded: async () => menu.mockDataSourceGroups,
+      refreshMenu: async () => menu.mockDataSourceGroups,
+      loadCategoryTools: async () => {},
+    }),
+  };
+});
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     replace,

@@ -1,0 +1,194 @@
+import type { HomeCapabilityGroup, HomeCapabilityItem } from "@/lib/home-capability-items";
+
+function item(
+  group: Pick<HomeCapabilityGroup, "id" | "label" | "accent" | "icon">,
+  id: string,
+  label: string,
+  promptHint: string,
+  promptTemplate?: string,
+): HomeCapabilityItem {
+  return {
+    id,
+    label,
+    promptHint,
+    promptTemplate,
+    promptTemplates: promptTemplate ? [promptTemplate] : undefined,
+    parentId: group.id,
+    parentLabel: group.label,
+    accent: group.accent,
+    icon: group.icon,
+  };
+}
+
+const keepaGroup = {
+  id: "keepa-group",
+  label: "Keepa",
+  accent: "var(--color-accent-keepa)",
+  icon: "keepa",
+} as const;
+
+const amazonGroup = {
+  id: "amazon-group",
+  label: "亚马逊前台",
+  accent: "var(--color-accent-amazon)",
+  icon: "amazon",
+} as const;
+
+const sifGroup = {
+  id: "sif-group",
+  label: "Sif数据分析工具",
+  accent: "var(--color-accent-sif)",
+  icon: "store",
+} as const;
+
+const sellerSpriteGroup = {
+  id: "seller-sprite-group",
+  label: "卖家精灵",
+  accent: "var(--color-accent-seller-sprite)",
+  icon: "sprite",
+} as const;
+
+const searchGroup = {
+  id: "search-group",
+  label: "实时与全网检索",
+  accent: "var(--color-accent-search)",
+  icon: "search",
+} as const;
+
+const googleGroup = {
+  id: "google-group",
+  label: "谷歌趋势",
+  accent: "var(--color-accent-google)",
+  icon: "google",
+} as const;
+
+const alibabaGroup = {
+  id: "alibaba-group",
+  label: "店雷达(1688)",
+  accent: "var(--color-accent-alibaba)",
+  icon: "alibaba",
+} as const;
+
+const tiktokGroup = {
+  id: "tiktok-group",
+  label: "TikTok电商数据助手",
+  accent: "var(--color-primary)",
+  icon: "tiktok",
+} as const;
+
+const jimuGroup = {
+  id: "jimu-group",
+  label: "极目系列",
+  accent: "var(--color-accent-jimu)",
+  icon: "jimu",
+} as const;
+
+const walmartGroup = {
+  id: "walmart-group",
+  label: "Walmart前台",
+  accent: "var(--color-accent-walmart)",
+  icon: "walmart",
+} as const;
+
+const ebayGroup = {
+  id: "ebay-group",
+  label: "eBay前台",
+  accent: "var(--color-accent-ebay)",
+  icon: "ebay",
+} as const;
+
+const patentGroup = {
+  id: "patent-group",
+  label: "专利检索",
+  accent: "var(--color-accent-patent)",
+  icon: "patent",
+} as const;
+
+const sandboxGroup = {
+  id: "sandbox-group",
+  label: "沙箱",
+  accent: "var(--color-primary)",
+  icon: "grid",
+} as const;
+
+export const mockDataSourceGroups: HomeCapabilityGroup[] = [
+  {
+    ...keepaGroup,
+    items: [
+      item(
+        keepaGroup,
+        "keepa",
+        "Keepa-亚马逊-商品搜索",
+        "逆向筛选、条件过滤",
+        "亚马逊{{美国站}},搜索关键词 “{{Sports Water Bottles}}” 产品，配送方式{{FBA}},按销量倒序的前{{50}}个",
+      ),
+      item(keepaGroup, "keepa-product-detail", "Keepa-亚马逊-商品详情", "商品详情，一键获取"),
+      item(keepaGroup, "keepa-price-history", "Keepa-亚马逊价格历史", "定价策略、价格历史记录"),
+    ],
+  },
+  {
+    ...amazonGroup,
+    items: [
+      item(amazonGroup, "amazon", "亚马逊前端搜索模拟", "全域覆盖、极速获取"),
+      item(amazonGroup, "amazon-product-detail", "亚马逊前端-商品详情", "获取五点 附图 A+"),
+      item(amazonGroup, "amazon-review", "亚马逊-商品评论", "获取评论、洞察优缺"),
+    ],
+  },
+  {
+    ...sifGroup,
+    items: [item(sifGroup, "store-scan", "店铺商品结构扫描", "先扫描店铺商品结构、主卖点与价格带，再做机会判断。")],
+  },
+  {
+    ...sellerSpriteGroup,
+    items: [item(sellerSpriteGroup, "seller-sprite", "关键词与竞品监控", "结合关键词和竞品监控能力做一轮赛道摸底。")],
+  },
+  {
+    ...searchGroup,
+    items: [item(searchGroup, "web-search", "站外实时信息检索", "补全站外信息、趋势证据与竞品背景。")],
+  },
+  {
+    ...googleGroup,
+    items: [item(googleGroup, "google", "关键词趋势热度", "先验证关键词趋势与区域热度，再决定是否继续深挖。")],
+  },
+  {
+    ...alibabaGroup,
+    items: [item(alibabaGroup, "alibaba", "1688供给与货源分析", "从 1688 供给与货源变化判断款式成熟度和价格空间。")],
+  },
+  {
+    ...tiktokGroup,
+    items: [item(tiktokGroup, "tiktok", "热门视频与达人线索", "先看 TikTok 热门视频和达人线索，确认内容热度。")],
+  },
+  {
+    ...jimuGroup,
+    items: [
+      item(jimuGroup, "极目-亚马逊-细分市场评论", "极目-亚马逊-细分市场评论", "提取细分市场评论中的真实需求、痛点和负反馈。"),
+      item(jimuGroup, "极目-亚马逊-细分市场信息", "极目-亚马逊-细分市场信息", "评估细分市场竞争格局、品牌集中度和机会空间。"),
+      item(
+        jimuGroup,
+        "极目-亚马逊-关键词细分市场信息",
+        "极目-亚马逊-关键词细分市场信息",
+        "按关键词评估细分市场格局、垄断程度和潜在机会。",
+      ),
+      item(jimuGroup, "极目-亚马逊-产品挖掘", "极目-亚马逊-产品挖掘", "结合关键词和筛选条件挖掘潜力产品。"),
+      item(jimuGroup, "jimu", "细分市场结构化分析", "调用细分市场、评论和竞品工具，做结构化行业分析。"),
+    ],
+  },
+  {
+    ...walmartGroup,
+    items: [item(walmartGroup, "walmart", "Walmart竞品验证", "切到 Walmart 前台验证站外迁移机会和竞品差异。")],
+  },
+  {
+    ...ebayGroup,
+    items: [item(ebayGroup, "ebay", "eBay供需结构验证", "补充 eBay 前台结果，验证多平台供给与需求结构。")],
+  },
+  {
+    ...patentGroup,
+    items: [item(patentGroup, "patent", "专利风险检索", "在推进前先补一轮专利检索，避开高风险方向。")],
+  },
+  {
+    ...sandboxGroup,
+    items: [item(sandboxGroup, "智能Excel处理", "智能Excel处理", "处理 Excel/CSV 文件，生成新增列或处理后的 Excel 结果。")],
+  },
+];
+
+export const mockDataSourceItems = mockDataSourceGroups.flatMap((group) => group.items);

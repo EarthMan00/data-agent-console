@@ -4,6 +4,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskComposer } from "@/components/task-composer";
+import { mockDataSourceGroups, mockDataSourceItems } from "@/tests/fixtures/mock-data-source-menu";
 
 afterEach(() => {
   cleanup();
@@ -29,8 +30,8 @@ function ComposerHarness({
       mode="普通模式"
       onModeChange={vi.fn()}
       selectedSourceIds={selectedSourceIds}
-      dataSourceGroups={dataSourceGroups}
-      dataSourceItems={dataSourceItems}
+      dataSourceGroups={dataSourceGroups ?? mockDataSourceGroups}
+      dataSourceItems={dataSourceItems ?? mockDataSourceItems}
       onToolSelect={(capabilityId) => {
         onToolSelect(capabilityId);
         setSelectedSourceIds((current) => (current.includes(capabilityId) ? current : [...current, capabilityId]));

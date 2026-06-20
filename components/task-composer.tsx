@@ -4,12 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type Keyboard
 import { createPortal } from "react-dom";
 import { ArrowUp, ChevronDown, CornerDownLeft, Paperclip, X } from "@/components/ui/tabler-icons";
 
-import {
-  homeCapabilityGroups,
-  homeDataSourceItems,
-  type HomeCapabilityGroup,
-  type HomeCapabilityItem,
-} from "@/lib/home-capability-items";
+import type { HomeCapabilityGroup, HomeCapabilityItem } from "@/lib/home-capability-items";
 import { getPlatformLogoSvgMarkup, PlatformLogo } from "@/components/platform-logo";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -26,6 +21,9 @@ type TaskComposerProps = {
   selectedSourceIds?: string[];
   dataSourceGroups?: HomeCapabilityGroup[];
   dataSourceItems?: HomeCapabilityItem[];
+  onDataSourceMenuRequest?: () => void | Promise<void>;
+  onDataSourceCategoryRequest?: (categoryId: string) => void | Promise<void>;
+  dataSourceLoading?: boolean;
   onToolSelect: (capabilityId: string) => void;
   onSourceRemove: (capabilityId: string) => void;
   onFilesSelected: (files: FileList) => void;
@@ -609,8 +607,11 @@ export function TaskComposer({
   onValueChange,
   placeholder,
   selectedSourceIds = [],
-  dataSourceGroups = homeCapabilityGroups,
-  dataSourceItems = homeDataSourceItems,
+  dataSourceGroups = [],
+  dataSourceItems = [],
+  onDataSourceMenuRequest,
+  onDataSourceCategoryRequest,
+  dataSourceLoading = false,
   onToolSelect,
   onSourceRemove,
   onFilesSelected,
@@ -1397,6 +1398,7 @@ export function TaskComposer({
     mentionRangeRef.current = nextMentionRange;
     setMentionRange(nextMentionRange);
     setMentionAnchorTop(anchorTop);
+    requestDataSourceMenu();
     setMentionOpen(true);
     const normalizedNextQuery = nextQuery.trim().toLowerCase();
     const nextToolCount = normalizedNextQuery
@@ -1682,9 +1684,21 @@ export function TaskComposer({
     return true;
   };
 
+  const requestDataSourceMenu = useCallback(() => {
+    void onDataSourceMenuRequest?.();
+  }, [onDataSourceMenuRequest]);
+
+  const requestDataSourceCategory = useCallback(
+    (categoryId: string) => {
+      void onDataSourceCategoryRequest?.(categoryId);
+    },
+    [onDataSourceCategoryRequest],
+  );
+
   const openSourceButtonMenu = (initialIndex = 0) => {
     closeMentionMenu();
     setModeOpen(false);
+    requestDataSourceMenu();
     updateSourceButtonHighlightedIndex(initialIndex);
     setSourceButtonOpen(true);
   };
@@ -1692,6 +1706,7 @@ export function TaskComposer({
   const openSourceButtonMenuAndFocusItem = (initialIndex = 0) => {
     closeMentionMenu();
     setModeOpen(false);
+    requestDataSourceMenu();
     updateSourceButtonHighlightedIndex(initialIndex);
     setSourceButtonOpen(true);
     requestAnimationFrame(() => {
@@ -2300,6 +2315,11 @@ export function TaskComposer({
                   <div className="flex items-center border-b border-border-subtle px-4 py-3">
                     <div className="text-body font-medium text-foreground">@数据源</div>
                   </div>
+                  {dataSourceLoading && sourceButtonToolGroups.length === 0 ? (
+                    <div className="px-4 py-6 text-body text-text-tertiary">正在加载数据源…</div>
+                  ) : sourceButtonToolGroups.length === 0 ? (
+                    <div className="px-4 py-6 text-body text-text-tertiary">暂无可用数据源</div>
+                  ) : (
 	                  <div
 	                    ref={sourceButtonListRef}
 	                    role="listbox"
@@ -2395,6 +2415,7 @@ export function TaskComposer({
 	                      ))}
 	                    </div>
 	                  </div>
+                  )}
                 </PopoverContent>
               </Popover>
 

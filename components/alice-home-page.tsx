@@ -19,11 +19,8 @@ import {
 import type { HomePromptCard } from "@/lib/workspace-domain-types";
 import {
   getHomeCapabilityItem,
-  homeCapabilityGroups,
-  homeDataSourceItems,
-  type HomeCapabilityGroup,
-  type HomeCapabilityItem,
 } from "@/lib/home-capability-items";
+import { useDataSourceMenu } from "@/lib/use-data-source-menu";
 import { AgentWorkspace } from "@/components/agent-workspace";
 import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
 import { AliceShell, useAliceShellState } from "@/components/alice-shell";
@@ -85,17 +82,6 @@ function filterHomePromptCardsByCapability(cards: HomePromptCard[], capabilityId
   return cards.filter((card) => card.capabilityIds.some((id) => filterSet.has(id)));
 }
 
-function mergeCapabilityItems(primary: HomeCapabilityItem[], fallback: HomeCapabilityItem[]) {
-  const seen = new Set<string>();
-  const merged: HomeCapabilityItem[] = [];
-  for (const item of [...primary, ...fallback]) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    merged.push(item);
-  }
-  return merged;
-}
-
 function getCachedHomePromptCards(cacheKey: string) {
   return homePromptCardCache.get(cacheKey)?.cards ?? null;
 }
@@ -128,83 +114,6 @@ function loadHomePromptCardsOnce(
 
 function capabilityLabelFromId(capabilityId: string) {
   return capabilityId.trim().replace(/^@+/, "");
-}
-
-function staticCapabilityMeta(categoryName: string, capabilityLabel: string) {
-  const staticItem = homeDataSourceItems.find(
-    (item) => item.id === capabilityLabel || item.label === capabilityLabel,
-  );
-  const staticGroup = homeCapabilityGroups.find((group) => group.label === categoryName);
-  return {
-    icon: staticItem?.icon ?? staticGroup?.icon ?? "grid",
-    accent: staticItem?.accent ?? staticGroup?.accent ?? "var(--color-accent-neutral)",
-  };
-}
-
-function buildDataSourceGroupsFromPromptCards(
-  categories: PublicPromptCategory[],
-  cardsByCategoryId: Record<string, HomePromptCard[]>,
-): HomeCapabilityGroup[] {
-  const groupsByCategoryId = new Map<string, HomeCapabilityGroup>();
-  const itemsByCapabilityId = new Map<string, HomeCapabilityItem>();
-  const promptsByCapabilityId = new Map<string, Set<string>>();
-
-  categories.filter((category) => category.name !== "应用场景").forEach((category) => {
-    const cards = cardsByCategoryId[category.id] ?? [];
-
-    for (const card of cards) {
-      const prompt = card.prompt.trim();
-      for (const rawId of card.capabilityIds) {
-        const capabilityId = rawId.trim();
-        const label = capabilityLabelFromId(capabilityId);
-        if (!capabilityId || !label) continue;
-
-        let item = itemsByCapabilityId.get(capabilityId);
-        if (!item) {
-          const meta = staticCapabilityMeta(category.name, label);
-          const groupMeta = staticCapabilityMeta(category.name, "");
-          let group = groupsByCategoryId.get(category.id);
-          if (!group) {
-            group = {
-              id: category.id,
-              label: category.name,
-              accent: groupMeta.accent,
-              icon: groupMeta.icon,
-              items: [],
-            };
-            groupsByCategoryId.set(category.id, group);
-          }
-
-          item = {
-            id: capabilityId,
-            label,
-            promptHint: category.name,
-            parentId: category.id,
-            parentLabel: category.name,
-            accent: meta.accent,
-            icon: meta.icon,
-            promptTemplates: [],
-          };
-          itemsByCapabilityId.set(capabilityId, item);
-          group.items.push(item);
-        }
-
-        if (prompt) {
-          const existingPrompts = promptsByCapabilityId.get(capabilityId) ?? new Set<string>();
-          if (!existingPrompts.has(prompt)) {
-            existingPrompts.add(prompt);
-            promptsByCapabilityId.set(capabilityId, existingPrompts);
-            item.promptTemplates = [...(item.promptTemplates ?? []), prompt];
-            item.promptTemplate ??= prompt;
-          }
-        }
-      }
-    }
-  });
-
-  return categories
-    .map((category) => groupsByCategoryId.get(category.id))
-    .filter((group): group is HomeCapabilityGroup => Boolean(group && group.items.length > 0));
 }
 
 function savePendingHomeTaskAfterLogin(task: Omit<PendingHomeTask, "createdAt">) {
@@ -269,7 +178,7 @@ export function AliceHomePage() {
   const [composerPulse, setComposerPulse] = useState(false);
   const [remotePromptCards, setRemotePromptCards] = useState<HomePromptCard[]>(() => cachedPromptCards ?? []);
   const [promptCardsLoading, setPromptCardsLoading] = useState(() => !cachedPromptCards);
-  const [dynamicDataSourceGroups, setDynamicDataSourceGroups] = useState<HomeCapabilityGroup[]>([]);
+  const { groups: composerDataSourceGroups, items: composerDataSourceItems, loading: composerDataSourceLoading, ensureMenuLoaded } = useDataSourceMenu();
   const promptGridScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -338,38 +247,7 @@ export function AliceHomePage() {
     };
   }, [userCachePrefix, activeCategoryId]);
 
-  useEffect(() => {
-    if (promptCategories.length === 0) return;
-    let cancelled = false;
-    void Promise.all(
-      promptCategories.map(async (category) => {
-        const cards = await loadHomePromptCardsOnce(`source-menu:cat:${category.id}`, category.id);
-        return [category.id, cards] as const;
-      }),
-    )
-      .then((entries) => {
-        if (cancelled) return;
-        const cardsByCategoryId = Object.fromEntries(entries);
-        setDynamicDataSourceGroups(buildDataSourceGroupsFromPromptCards(promptCategories, cardsByCategoryId));
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) console.warn("[source-menu-capabilities]", err);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [promptCategories]);
-
   const cards = remotePromptCards;
-  const dynamicDataSourceItems = useMemo(
-    () => dynamicDataSourceGroups.flatMap((group) => group.items),
-    [dynamicDataSourceGroups],
-  );
-  const composerDataSourceGroups = dynamicDataSourceGroups.length > 0 ? dynamicDataSourceGroups : homeCapabilityGroups;
-  const composerDataSourceItems = useMemo(
-    () => (dynamicDataSourceItems.length > 0 ? mergeCapabilityItems(dynamicDataSourceItems, homeDataSourceItems) : homeDataSourceItems),
-    [dynamicDataSourceItems],
-  );
   const composerCanSubmit = sanitizeObjective(query).length > 0 && !launching;
 
   const launchAgent = useCallback(async (seed?: string, pending?: PendingHomeTask, attachmentFilesOverride?: File[]) => {
@@ -592,6 +470,8 @@ export function AliceHomePage() {
                   selectedSourceIds={selectedSourceIds}
                   dataSourceGroups={composerDataSourceGroups}
                   dataSourceItems={composerDataSourceItems}
+                  onDataSourceMenuRequest={ensureMenuLoaded}
+                  dataSourceLoading={composerDataSourceLoading}
                   onToolSelect={applyComposerTool}
                   onSourceRemove={removeComposerTool}
                   onFilesSelected={handleFilesSelected}
