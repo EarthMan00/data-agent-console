@@ -49,13 +49,13 @@ export function useTypewriterReveal(
     enabledRef.current = enabled;
     if (!enabled) {
       displayLenRef.current = charLen(target);
-      setDisplay(target);
       return;
     }
     // 从 disabled 切到 enabled 时重置打字机
     if (wasDisabled) {
       displayLenRef.current = 0;
-      setDisplay("");
+      const raf = requestAnimationFrame(() => setDisplay(""));
+      return () => cancelAnimationFrame(raf);
     }
   }, [enabled, target]);
 

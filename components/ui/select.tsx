@@ -39,7 +39,7 @@ const SelectContent = React.forwardRef<
       ref={ref}
       position={position}
       className={cn(
-        "z-50 max-h-72 min-w-select-menu overflow-hidden rounded-control border border-border bg-bg-elevated text-foreground shadow-floating",
+        "z-modal-floating max-h-72 min-w-select-menu overflow-hidden rounded-control border border-border bg-bg-elevated text-foreground shadow-floating",
         className,
       )}
       {...props}

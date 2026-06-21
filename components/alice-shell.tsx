@@ -12,12 +12,12 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent,
   type ReactNode,
 } from "react";
 import {
   AlarmFilled,
   Bell,
-  Bookmark,
   BookOpen,
   Clock3,
   FolderHeart,
@@ -60,7 +60,6 @@ import { workspaceActions, useWorkspaceState } from "@/lib/workspace-store";
 
 const navItems = [
   { href: "/", label: "新的对话", icon: SparkleHighlight },
-  { href: "/prompt-library", label: "提示词库", icon: Bookmark },
   { href: "/schedules", label: "定时任务", icon: Clock3 },
   { href: "/artifacts", label: "收藏夹", icon: FolderHeart },
 ];
@@ -126,9 +125,12 @@ type HistoryEntry = SessionListItem & {
 
 const HISTORY_PAGE_SIZE = 20;
 const HISTORY_TITLE_OVERRIDES_KEY = "alice:history-title-overrides";
+const HISTORY_ORDER_OVERRIDES_KEY = "alice:history-order-overrides";
 const OPTIMISTIC_HISTORY_TITLE = "正在规划工作...";
 const LEGACY_OPTIMISTIC_HISTORY_TITLE = "正在思考...";
 const ACCOUNT_AVATAR_CLASSES = ["bg-avatar-1", "bg-avatar-2", "bg-avatar-3", "bg-avatar-4", "bg-avatar-5", "bg-avatar-6", "bg-avatar-7", "bg-avatar-8"];
+type HistoryDropPosition = "before" | "after";
+type HistoryDragTarget = { sessionId: string; position: HistoryDropPosition };
 
 function readHistoryTitleOverrides(): Record<string, string> {
   if (typeof window === "undefined") return {};
@@ -152,6 +154,26 @@ function writeHistoryTitleOverrides(next: Record<string, string>) {
   window.localStorage.setItem(HISTORY_TITLE_OVERRIDES_KEY, JSON.stringify(next));
 }
 
+function readHistoryOrderOverrides(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(HISTORY_ORDER_OVERRIDES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function writeHistoryOrderOverrides(next: string[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(HISTORY_ORDER_OVERRIDES_KEY, JSON.stringify(next));
+}
+
 function historyTimestampMs(entry: HistoryEntry) {
   const times = [entry.last_active_at, entry.lastMessageAt, entry.created_at]
     .map((iso) => {
@@ -161,7 +183,7 @@ function historyTimestampMs(entry: HistoryEntry) {
   return Math.max(...times);
 }
 
-function getHistoryDisplayTitle(entry: HistoryEntry, effectiveActiveSessionId: string | null | undefined, activeSessionTitle: string) {
+function resolveHistoryDisplayTitle(entry: HistoryEntry, effectiveActiveSessionId: string | null | undefined, activeSessionTitle: string) {
   if (entry.isOptimistic && (!entry.firstMessage || entry.firstMessage === LEGACY_OPTIMISTIC_HISTORY_TITLE)) {
     return OPTIMISTIC_HISTORY_TITLE;
   }
@@ -174,6 +196,38 @@ function sortHistoryEntries(entries: HistoryEntry[]) {
     if (timeDelta !== 0) return timeDelta;
     return b.session_id.localeCompare(a.session_id);
   });
+}
+
+function applyHistoryOrder(entries: HistoryEntry[], orderedSessionIds: string[]) {
+  const sorted = sortHistoryEntries(entries);
+  if (orderedSessionIds.length === 0) return sorted;
+  const bySessionId = new Map(sorted.map((entry) => [entry.session_id, entry]));
+  const ordered = orderedSessionIds
+    .map((sessionId) => bySessionId.get(sessionId))
+    .filter((entry): entry is HistoryEntry => Boolean(entry));
+  const orderedSet = new Set(ordered.map((entry) => entry.session_id));
+  return [
+    ...ordered,
+    ...sorted.filter((entry) => !orderedSet.has(entry.session_id)),
+  ];
+}
+
+function moveHistorySessionId(
+  sessionIds: string[],
+  draggedId: string,
+  targetId: string,
+  position: HistoryDropPosition,
+) {
+  if (draggedId === targetId) return sessionIds;
+  const withoutDragged = sessionIds.filter((sessionId) => sessionId !== draggedId);
+  const targetIndex = withoutDragged.indexOf(targetId);
+  if (targetIndex < 0) return sessionIds;
+  const insertIndex = position === "after" ? targetIndex + 1 : targetIndex;
+  return [
+    ...withoutDragged.slice(0, insertIndex),
+    draggedId,
+    ...withoutDragged.slice(insertIndex),
+  ];
 }
 
 function getAccountAvatarMeta(name: string) {
@@ -581,6 +635,9 @@ function AliceShellComponent({
   const [renamingHistory, setRenamingHistory] = useState<HistoryEntry | null>(null);
   const [renameHistoryValue, setRenameHistoryValue] = useState("");
   const [historyTitleOverrides, setHistoryTitleOverrides] = useState<Record<string, string>>({});
+  const [historyOrderOverrides, setHistoryOrderOverrides] = useState<string[]>([]);
+  const [draggingHistoryId, setDraggingHistoryId] = useState<string | null>(null);
+  const [historyDragTarget, setHistoryDragTarget] = useState<HistoryDragTarget | null>(null);
   const [historySearch, setHistorySearch] = useState("");
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -593,6 +650,7 @@ function AliceShellComponent({
   const renameHistoryInputRef = useRef<HTMLInputElement | null>(null);
   const historyListScrollRef = useRef<HTMLDivElement | null>(null);
   const historyLoadSentinelRef = useRef<HTMLDivElement | null>(null);
+  const historyDragSuppressClickRef = useRef(false);
   /** 首屏与服务端 HTML 一致：认证态来自客户端存储，仅在 mount 后再按登录态渲染侧栏，避免 hydration mismatch */
   const [clientMounted, setClientMounted] = useState(false);
   useEffect(() => {
@@ -602,6 +660,7 @@ function AliceShellComponent({
   useEffect(() => {
     if (!clientMounted) return;
     setHistoryTitleOverrides(readHistoryTitleOverrides());
+    setHistoryOrderOverrides(readHistoryOrderOverrides());
   }, [clientMounted]);
 
   const childManagedScroll = contentScrollMode === "child";
@@ -715,9 +774,7 @@ function AliceShellComponent({
   const getHistoryDisplayTitle = useCallback(
     (entry: HistoryEntry) =>
       historyTitleOverrides[entry.session_id]?.trim() ||
-      entry.firstMessage ||
-      (entry.session_id === effectiveActiveSessionId ? activeSessionTitle : null) ||
-      "新对话",
+      resolveHistoryDisplayTitle(entry, effectiveActiveSessionId, activeSessionTitle),
     [activeSessionTitle, effectiveActiveSessionId, historyTitleOverrides],
   );
 
@@ -727,14 +784,67 @@ function AliceShellComponent({
       .filter((s) => s.isOptimistic || s.hasMessages !== false);
     const q = historySearch.trim().toLowerCase();
     const base = q ? visibleHistorySessions.filter((s) => {
-      const haystack = [s.firstMessage, s.session_id, s.firstAt, s.created_at]
+      const haystack = [getHistoryDisplayTitle(s), s.firstMessage, s.session_id, s.firstAt, s.created_at]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return haystack.includes(q);
     }) : visibleHistorySessions;
-    return sortHistoryEntries(base);
-  }, [activeSessionTitle, effectiveActiveSessionId, historySearch, historySessions, historyTitleOverrides]);
+    if (q) return sortHistoryEntries(base);
+    return applyHistoryOrder(base, historyOrderOverrides);
+  }, [getHistoryDisplayTitle, historyOrderOverrides, historySearch, historySessions]);
+
+  const historyDragDisabled = Boolean(historySearch.trim());
+
+  const persistHistoryOrder = useCallback((nextSessionIds: string[]) => {
+    setHistoryOrderOverrides(nextSessionIds);
+    writeHistoryOrderOverrides(nextSessionIds);
+  }, []);
+
+  const reorderHistorySessions = useCallback(
+    (draggedId: string, targetId: string, position: HistoryDropPosition) => {
+      if (historyDragDisabled) return;
+      const visibleSessionIds = filteredHistorySessions.map((entry) => entry.session_id);
+      const nextVisibleSessionIds = moveHistorySessionId(visibleSessionIds, draggedId, targetId, position);
+      if (nextVisibleSessionIds.join("\u0000") === visibleSessionIds.join("\u0000")) return;
+
+      const visibleSet = new Set(visibleSessionIds);
+      const hiddenOrderedSessionIds = historyOrderOverrides.filter((sessionId) => !visibleSet.has(sessionId));
+      persistHistoryOrder([...nextVisibleSessionIds, ...hiddenOrderedSessionIds]);
+    },
+    [filteredHistorySessions, historyDragDisabled, historyOrderOverrides, persistHistoryOrder],
+  );
+
+  const handleHistoryDragOver = useCallback(
+    (event: DragEvent<HTMLDivElement>, targetSessionId: string) => {
+      if (historyDragDisabled || !draggingHistoryId || draggingHistoryId === targetSessionId) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      const rect = event.currentTarget.getBoundingClientRect();
+      const position: HistoryDropPosition = event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+      setHistoryDragTarget((current) => {
+        if (current?.sessionId === targetSessionId && current.position === position) return current;
+        return { sessionId: targetSessionId, position };
+      });
+    },
+    [draggingHistoryId, historyDragDisabled],
+  );
+
+  const handleHistoryDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>, targetSessionId: string) => {
+      if (historyDragDisabled || !draggingHistoryId) return;
+      event.preventDefault();
+      const position = historyDragTarget?.sessionId === targetSessionId ? historyDragTarget.position : "before";
+      reorderHistorySessions(draggingHistoryId, targetSessionId, position);
+      setDraggingHistoryId(null);
+      setHistoryDragTarget(null);
+      historyDragSuppressClickRef.current = true;
+      window.setTimeout(() => {
+        historyDragSuppressClickRef.current = false;
+      }, 120);
+    },
+    [draggingHistoryId, historyDragDisabled, historyDragTarget, reorderHistorySessions],
+  );
 
   const formatShortDate = (iso: string | null | undefined) => {
     if (!iso) return "";
@@ -792,6 +902,11 @@ function AliceShellComponent({
 
         const sid = (sessionId || "").trim();
         removeOptimisticHistorySession(sid);
+        setHistoryOrderOverrides((current) => {
+          const next = current.filter((id) => id !== sid);
+          writeHistoryOrderOverrides(next);
+          return next;
+        });
         const matchingRunIds = runs
           .filter((r) => ((r.platformSessionId ?? "").trim() === sid))
           .map((r) => r.id);
@@ -979,7 +1094,7 @@ function AliceShellComponent({
                   <span className="text-body font-medium leading-5 text-text-tertiary">所有任务</span>
                 </div>
                 <div ref={historyListScrollRef} className="mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                  <div className="space-y-1">
+                  <div className="space-y-1" data-testid="sidebar-history-list" aria-label="所有任务列表">
                   {historyBusy && historySessions.length === 0 ? (
                     <SidebarHistorySkeleton />
                   ) : historyError ? (
@@ -997,8 +1112,38 @@ function AliceShellComponent({
                       return (
                         <div
                           key={s.session_id}
+                          data-testid="sidebar-history-item"
+                          data-session-id={s.session_id}
+                          draggable={!historyDragDisabled && deletingId !== s.session_id}
+                          aria-grabbed={draggingHistoryId === s.session_id}
+                          onDragStart={(event) => {
+                            if (historyDragDisabled) return;
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData("text/plain", s.session_id);
+                            setDraggingHistoryId(s.session_id);
+                            setHistoryDragTarget(null);
+                          }}
+                          onDragOver={(event) => handleHistoryDragOver(event, s.session_id)}
+                          onDragLeave={(event) => {
+                            const relatedTarget = event.relatedTarget;
+                            if (relatedTarget instanceof Node && event.currentTarget.contains(relatedTarget)) return;
+                            setHistoryDragTarget((current) => (current?.sessionId === s.session_id ? null : current));
+                          }}
+                          onDrop={(event) => handleHistoryDrop(event, s.session_id)}
+                          onDragEnd={() => {
+                            setDraggingHistoryId(null);
+                            setHistoryDragTarget(null);
+                          }}
                           className={cn(
                             "mdata-history-item group relative flex w-full items-stretch rounded-control text-title-1 font-normal leading-6 transition-colors",
+                            !historyDragDisabled && "cursor-grab active:cursor-grabbing",
+                            draggingHistoryId === s.session_id && "opacity-45",
+                            historyDragTarget?.sessionId === s.session_id &&
+                              historyDragTarget.position === "before" &&
+                              "before:absolute before:left-2 before:right-2 before:top-0 before:h-0.5 before:rounded-full before:bg-foreground before:content-['']",
+                            historyDragTarget?.sessionId === s.session_id &&
+                              historyDragTarget.position === "after" &&
+                              "after:absolute after:bottom-0 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-foreground after:content-['']",
                             historyItemActive
                               ? "bg-fill-hover text-foreground"
                               : "text-foreground hover:bg-fill-hover"
@@ -1007,6 +1152,7 @@ function AliceShellComponent({
                           <button
                             type="button"
                             onClick={() => {
+                              if (historyDragSuppressClickRef.current) return;
                               platformAgent?.setActivePlatformSession(s.session_id);
                               router.push(`/agent?sessionId=${encodeURIComponent(s.session_id)}`);
                               setMobileSidebarOpen(false);
@@ -1210,7 +1356,7 @@ function AliceShellComponent({
               }}
             />
             <div className="pointer-events-none fixed left-1/2 top-1/2 w-message-box -translate-x-1/2 -translate-y-1/2">
-              <div className="pointer-events-auto flex h-message-box flex-col overflow-hidden rounded-composer border border-border-subtle bg-bg-page shadow-popover">
+              <div className="pointer-events-auto flex h-message-box flex-col overflow-hidden rounded-composer border border-border-subtle bg-white shadow-popover-strong">
                 <div className="flex h-16 shrink-0 items-center gap-2.5 border-b border-border-subtle pb-4 pl-6 pr-2 pt-5">
                   <Search className="h-6 w-6 shrink-0 text-text-secondary" strokeWidth={1.8} />
                   <input

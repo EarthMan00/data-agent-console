@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { AgentRoutePlaceholder } from "@/components/agent-route-placeholder";
@@ -8,16 +8,16 @@ import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { isPlatformBackendEnabled } from "@/lib/agent-runtime";
 import { isFrontendMockSessionId } from "@/lib/frontend-mock-session";
 
+const subscribeToClientSnapshot = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
 export function RequirePlatformLogin({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
-  const [clientMounted, setClientMounted] = useState(false);
+  const clientMounted = useSyncExternalStore(subscribeToClientSnapshot, getClientSnapshot, getServerSnapshot);
   const frontendMockSession = isFrontendMockSessionId(searchParams.get("sessionId"));
-
-  useEffect(() => {
-    setClientMounted(true);
-  }, []);
 
   useEffect(() => {
     if (frontendMockSession) return;

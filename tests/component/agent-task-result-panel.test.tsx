@@ -32,6 +32,21 @@ const artifacts: PlatformTaskArtifactRef[] = [
   },
 ];
 
+const multiSheetArtifacts: PlatformTaskArtifactRef[] = [
+  {
+    artifact_id: "artifact-1",
+    artifact_type: "csv",
+    original_name: "汇总 QA 检查项.csv",
+    download_api: "/api/tasks/mock/artifacts/qa.csv",
+  },
+  {
+    artifact_id: "artifact-2",
+    artifact_type: "csv",
+    original_name: "生成标题与五点描述版本.csv",
+    download_api: "/api/tasks/mock/artifacts/title.csv",
+  },
+];
+
 function renderPanel(token = "__frontend_mock_token__") {
   return render(
     <AgentTaskResultPanel
@@ -77,5 +92,26 @@ describe("agent task result panel favorite feedback", () => {
 
     expect(await screen.findByText("收藏失败，请稍后重试")).toBeInTheDocument();
     expect(within(panel).queryByText("create user favorite failed (HTTP 401)")).not.toBeInTheDocument();
+  });
+
+  it("uses primary styling for active result sheets and a stronger header divider", () => {
+    render(
+      <AgentTaskResultPanel
+        onClose={vi.fn()}
+        artifacts={multiSheetArtifacts}
+        taskId="mock-task"
+        withFreshToken={async (run) => {
+          await run("__frontend_mock_token__");
+        }}
+      />,
+    );
+
+    const panel = screen.getByTestId("agent-preview-panel");
+    const header = within(panel).getByText("任务执行结果").closest(".border-b");
+    expect(header).toHaveClass("border-border-strong", "shadow-hairline");
+
+    const activeTab = within(panel).getByRole("tab", { selected: true });
+    expect(activeTab).toHaveClass("text-primary");
+    expect(activeTab.querySelector(".bg-primary")).toBeInTheDocument();
   });
 });

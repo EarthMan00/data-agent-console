@@ -39,12 +39,14 @@ import {
   deleteUserFavorite,
   downloadAuthorizedFile,
   formatAgentApiErrorForUser,
+  getUserFavorite,
   listFavoriteFolders,
   listUserFavorites,
   moveUserFavorite,
   patchUserFavoriteTitle,
 } from "@/lib/agent-api/client";
 import type { FavoriteFolderDto, UserFavoriteListItemDto } from "@/lib/agent-api/types";
+import { favoriteCardPreviewText, favoritePreviewLooksLikeSource } from "@/lib/favorite-card-preview";
 import { cn } from "@/lib/utils";
 import { AutoToast } from "@/components/auto-toast";
 
@@ -74,6 +76,7 @@ export function FavoritesWorkspace() {
   const platformAgent = useOptionalPlatformAgent();
   const [folders, setFolders] = useState<FavoriteFolderDto[]>([]);
   const [items, setItems] = useState<UserFavoriteListItemDto[]>([]);
+  const [cardPreviewOverrides, setCardPreviewOverrides] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -130,7 +133,33 @@ export function FavoritesWorkspace() {
           page: 1,
           pageSize: 100,
         });
-        setItems(list.items ?? []);
+        const nextItems = list.items ?? [];
+        const sourcePreviewItems = nextItems.filter((item) => favoritePreviewLooksLikeSource(item.card_preview));
+        const previewEntries = await Promise.all(
+          sourcePreviewItems.map(async (item) => {
+            try {
+              const detail = await getUserFavorite(token, item.id);
+              return [
+                item.id,
+                favoriteCardPreviewText({
+                  cardPreview: item.card_preview,
+                  snapshot: detail.snapshot,
+                  fallback: item.title,
+                }),
+              ] as const;
+            } catch {
+              return [
+                item.id,
+                favoriteCardPreviewText({
+                  cardPreview: item.card_preview,
+                  fallback: item.title,
+                }),
+              ] as const;
+            }
+          }),
+        );
+        setCardPreviewOverrides(Object.fromEntries(previewEntries));
+        setItems(nextItems);
       });
     } catch (e) {
       const msg = formatAgentApiErrorForUser(e);
@@ -138,6 +167,7 @@ export function FavoritesWorkspace() {
       setLoadError(msg);
       setFolders([]);
       setItems([]);
+      setCardPreviewOverrides({});
     } finally {
       setBusy(false);
     }
@@ -153,15 +183,29 @@ export function FavoritesWorkspace() {
     router.replace(`/favorite/report/${encodeURIComponent(favoriteIdFromUrl)}`);
   }, [favoriteIdFromUrl, router]);
 
+  const cardPreviewById = useMemo(
+    () =>
+      Object.fromEntries(
+        items.map((item) => [
+          item.id,
+          favoriteCardPreviewText({
+            cardPreview: cardPreviewOverrides[item.id] ?? item.card_preview,
+            fallback: item.title,
+          }),
+        ]),
+      ),
+    [cardPreviewOverrides, items],
+  );
+
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return items;
     return items.filter(
       (it) =>
         it.title.toLowerCase().includes(q) ||
-        (it.card_preview ?? "").toLowerCase().includes(q),
+        (cardPreviewById[it.id] ?? "").toLowerCase().includes(q),
     );
-  }, [items, search]);
+  }, [cardPreviewById, items, search]);
   const showLoadError = Boolean(loadError && !busy && folders.length === 0 && items.length === 0);
 
   const formatCardTime = (iso: string) => {
@@ -477,7 +521,7 @@ export function FavoritesWorkspace() {
                         </div>
                       </div>
                       <p className="mt-3 line-clamp-4 text-body leading-6 text-text-tertiary">
-                        {(item.card_preview ?? "").slice(0, 600) || "（无预览摘要）"}
+                        {(cardPreviewById[item.id] ?? "（无预览摘要）").slice(0, 600)}
                       </p>
                     </CardContent>
                   </Button>
@@ -565,7 +609,7 @@ export function FavoritesWorkspace() {
                 ) : null}
                 <Button
                   type="button"
-                  className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-link-hover"
+                  className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-primary/85"
                   onClick={() => setSearchDialogOpen(false)}
                 >
                   完成

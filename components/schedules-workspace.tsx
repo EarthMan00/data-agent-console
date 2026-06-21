@@ -24,14 +24,10 @@ import {
 import { AutoToast } from "@/components/auto-toast";
 import { EmptyState } from "@/components/empty-state";
 import { AliceShell } from "@/components/alice-shell";
+import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { PageLostState } from "@/components/page-lost-state";
-import {
-  ScheduleResultPushSection,
-  getResultPushValidationError,
-  type ResultPushBlock,
-  type ResultPushValidationError,
-} from "@/components/schedule-result-push";
-import { TaskComposer } from "@/components/task-composer";
+import { ScheduleResultPushSection, validateResultPushBlocks, type ResultPushBlock } from "@/components/schedule-result-push";
+import { NewConversationTaskComposer } from "@/components/new-conversation-task-composer";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { RequiredAsterisk } from "@/components/required-mark";
 import { Button } from "@/components/ui/button";
@@ -52,6 +48,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { downloadAuthorizedFile, formatAgentApiErrorForUser, parseFastApiDetail } from "@/lib/agent-api/client";
 import {
   createUserScheduledTaskGroup,
+  createUserScheduledTask,
   deleteUserScheduledTaskGroup,
   deleteUserScheduledTask,
   fetchAllScheduledTaskRuns,
@@ -91,14 +88,16 @@ import {
   type ScheduleKind,
 } from "@/lib/schedule-payloads";
 import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
-import { parseComposerPrefillStorageValue } from "@/lib/composer-prefill";
+import { parseComposerPrefillStorageValue, parseDatasourceMentions, type ComposerSourcePlacement } from "@/lib/composer-prefill";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
-import { getDataSourceItems, getHomeCapabilityItem } from "@/lib/home-capability-items";
-import { useDataSourceMenu } from "@/lib/use-data-source-menu";
+import { type HomeCapabilityItem } from "@/lib/home-capability-items";
+import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
+import { stashScheduleTrialAttachmentFiles } from "@/lib/schedule-trial-attachment-files";
 import {
   persistResultPushBlocksForTask,
   resultPushBlocksForEditingTask,
 } from "@/lib/schedule-result-push-storage";
+import { resultPushBlocksToApiConfig } from "@/lib/schedule-result-push-api";
 import type {
   ScheduledTaskRunItemApi,
   UserScheduledTaskGroupDto,
@@ -112,9 +111,9 @@ const WORKFLOW_STATUS_OPTIONS = ["全部状态", "生效中", "已暂停", "已�
 const RUN_STATUS_OPTIONS = ["全部状态", "运行成功", "运行失败", "运行超时"] as const;
 const DEFAULT_GROUP_VALUE = "__default__";
 
-function serializeScheduleComposerPrompt(text: string, sourceIds: string[]) {
+function serializeScheduleComposerPrompt(text: string, sourceIds: string[], dataSourceItems: HomeCapabilityItem[]) {
   const sourceText = sourceIds
-    .map((id) => getDataSourceItems().find((item) => item.id === id && item.id !== "scenarios")?.label)
+    .map((id) => dataSourceItems.find((item) => item.id === id && item.id !== "scenarios")?.label)
     .filter((label): label is string => Boolean(label))
     .map((label) => `@${label}`)
     .join(" ");
@@ -205,22 +204,17 @@ function filterRunsBySearch(runs: ScheduledTaskRunItemApi[], q: string) {
   );
 }
 
-function ScheduleEmptyState({ onCreate }: { onCreate: () => void }) {
+function ScheduleEmptyState() {
+  return <EmptyState message="暂无定时任务" />;
+}
+
+function ScheduleContentLoading({ label }: { label: string }) {
   return (
-    <EmptyState
-      message="暂无定时任务"
-      action={
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-auto px-1 py-0 text-body font-medium text-foreground hover:bg-transparent hover:text-foreground"
-          onClick={onCreate}
-        >
-          立即创建
-        </Button>
-      }
-    />
+    <div className="flex min-h-[calc(100vh-18rem)] w-full items-center justify-center">
+      <div className="w-fit">
+        <AssistantLoadingRow label={label} />
+      </div>
+    </div>
   );
 }
 
@@ -228,12 +222,6 @@ export function SchedulesWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const platformAgent = useOptionalPlatformAgent();
-  const {
-    groups: scheduleDataSourceGroups,
-    items: scheduleDataSourceItems,
-    loading: scheduleDataSourceLoading,
-    ensureMenuLoaded: ensureScheduleDataSourceMenu,
-  } = useDataSourceMenu();
 
   const [primaryTab, setPrimaryTab] = useState<(typeof PRIMARY_TABS)[number]>("已定时");
   const [activeChip, setActiveChip] = useState("全部");
@@ -289,10 +277,23 @@ export function SchedulesWorkspace() {
     () => null,
   );
 
+  const {
+    dataSourceGroups: scheduleDataSourceGroups,
+    dataSourceItems: scheduleDataSourceItems,
+    loaded: scheduleDataSourceMenuLoaded,
+  } = useHomeDataSourceMenu({
+    enabled: createMode,
+    logLabel: "[schedule-source-menu-capabilities]",
+  });
+
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
   const [scheduleSourceIds, setScheduleSourceIds] = useState<string[]>([]);
+  const [scheduleSourcePlacements, setScheduleSourcePlacements] = useState<ComposerSourcePlacement[]>([]);
+  const [schedulePendingFiles, setSchedulePendingFiles] = useState<File[]>([]);
   const [scheduleComposerMode, setScheduleComposerMode] = useState<"普通模式" | "深度模式">("深度模式");
+  const [scheduleSuppressTemplateCompletion, setScheduleSuppressTemplateCompletion] = useState(false);
+  const [runImmediately, setRunImmediately] = useState(true);
   /** 定时任务所在分组，null 为「默认」；与 `UserScheduledTaskItemApi.group_id` 一致 */
   const [formGroupId, setFormGroupId] = useState<string | null>(null);
   const [scheduleKind, setScheduleKind] = useState<ScheduleKind>("每天");
@@ -302,10 +303,9 @@ export function SchedulesWorkspace() {
   const [runOnceDate, setRunOnceDate] = useState("");
   const [taskEnabled, setTaskEnabled] = useState(true);
   const [resultPushFormKey, setResultPushFormKey] = useState(0);
-  const [resultPushValidationError, setResultPushValidationError] = useState<ResultPushValidationError | null>(null);
   const fromRestore = useRef(false);
   const editFormHydratedForId = useRef<string | null>(null);
-  /** 进入编辑时从服务器装填的提示词，用于判断「保存」前是否需先立即运行 */
+  /** 进入编辑时从服务器装填的提示词，用于判断「保存」前是否需先试跑 */
   const editPromptBaselineRef = useRef<string | null>(null);
   const resultPushRef = useRef<ResultPushBlock[]>([]);
 
@@ -336,19 +336,21 @@ export function SchedulesWorkspace() {
     return () => window.clearTimeout(timer);
   }, [searchDialogOpen]);
 
-  /** 带 restore=1 时从 sessionStorage 还原表单。其它进入创建页时若仅保留内存/草稿（例如上次未保存就离开），则恢复为干净默认态。 */
+  /** 从试跑「上一步」回配置：带 restore=1 时从 sessionStorage 还原表单。其它进入创建页时若仅保留内存/草稿（例如上次未保存就离开），则恢复为干净默认态。 */
   useEffect(() => {
     if (!createMode) {
       fromRestore.current = false;
       return;
     }
+    if (!scheduleDataSourceMenuLoaded) return;
     if (restoreParam) {
       const d = loadScheduleCreateDraft();
       if (d) {
         setTitle(d.title);
-        const restoredPrompt = parseComposerPrefillStorageValue(d.prompt);
+        const restoredPrompt = parseComposerPrefillStorageValue(d.prompt, scheduleDataSourceItems);
         setPrompt(restoredPrompt.text);
         setScheduleSourceIds(restoredPrompt.selectedSourceIds);
+        setScheduleSourcePlacements(restoredPrompt.sourcePlacements);
         setTaskEnabled(d.taskEnabled);
         setScheduleKind(normalizeScheduleKind(String(d.scheduleKind)));
         setTimeHhmm(d.timeHhmm);
@@ -380,14 +382,27 @@ export function SchedulesWorkspace() {
       return;
     }
     setTimeHhmm(defaultNearestHalfHourHhmm(HALF_HOUR_TIME_OPTIONS));
-  }, [createMode, restoreParam, createGroupIdQ, router, searchParams, applyResultPushBlocks]);
+  }, [
+    createMode,
+    restoreParam,
+    createGroupIdQ,
+    router,
+    searchParams,
+    applyResultPushBlocks,
+    scheduleDataSourceItems,
+    scheduleDataSourceMenuLoaded,
+  ]);
 
-  /** 放弃/重新进入空新建：清空 memory 与 session 草稿。restore=1 会由上方 effect 还原，不调用此项。 */
+  /** 放弃/重新进入空新建：清空 memory 与 session 草稿。试跑上一步会带 restore=1 且由上方 effect 还原，不调用此项。 */
   const resetCreateFormToDefaults = useCallback(() => {
     setTitle("");
     setPrompt("");
     setScheduleSourceIds([]);
+    setScheduleSourcePlacements([]);
+    setSchedulePendingFiles([]);
     setScheduleComposerMode("深度模式");
+    setScheduleSuppressTemplateCompletion(false);
+    setRunImmediately(true);
     setFormGroupId(null);
     setTaskEnabled(true);
     setScheduleKind("每天");
@@ -396,7 +411,6 @@ export function SchedulesWorkspace() {
     setSelectedMonthDays(new Set());
     setRunOnceDate("");
     applyResultPushBlocks([]);
-    setResultPushValidationError(null);
     setNotice("");
     editPromptBaselineRef.current = null;
     setEditPromptChangedSaveGateOpen(false);
@@ -415,24 +429,28 @@ export function SchedulesWorkspace() {
   }, [createMode, restoreParam, resetCreateFormToDefaults, searchParams]);
 
   useEffect(() => {
-    if (!createMode || restoreParam || searchParams.get("edit")) return;
+    if (!createMode || restoreParam || searchParams.get("edit") || !scheduleDataSourceMenuLoaded) return;
     if (typeof sessionStorage === "undefined") return;
     const raw = sessionStorage.getItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
     if (!raw) return;
 
-    const prefill = parseComposerPrefillStorageValue(raw);
+    const prefill = parseComposerPrefillStorageValue(raw, scheduleDataSourceItems);
     if (prefill.text.trim()) {
       setPrompt(prefill.text);
     }
     setScheduleSourceIds(prefill.selectedSourceIds);
+    setScheduleSourcePlacements(prefill.sourcePlacements);
+    setScheduleSuppressTemplateCompletion(false);
     sessionStorage.removeItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
-  }, [createMode, restoreParam, searchParams]);
+  }, [createMode, restoreParam, searchParams, scheduleDataSourceItems, scheduleDataSourceMenuLoaded]);
 
   const applyTaskToScheduleForm = useCallback((t: UserScheduledTaskItemApi) => {
-    const taskPrompt = parseComposerPrefillStorageValue(t.prompt_text);
+    const taskPrompt = parseComposerPrefillStorageValue(t.prompt_text, scheduleDataSourceItems);
     setTitle(t.title);
     setPrompt(taskPrompt.text);
     setScheduleSourceIds(taskPrompt.selectedSourceIds);
+    setScheduleSourcePlacements(taskPrompt.sourcePlacements);
+    setScheduleSuppressTemplateCompletion(false);
     setTaskEnabled(t.enabled);
     const r = String(t.recurrence || "daily");
     if (r === "daily") {
@@ -466,8 +484,12 @@ export function SchedulesWorkspace() {
     }
     setTimeHhmm(toHhmm(t.time_hhmm));
     setFormGroupId(t.group_id ?? null);
-    editPromptBaselineRef.current = serializeScheduleComposerPrompt(taskPrompt.text, taskPrompt.selectedSourceIds);
-  }, []);
+    editPromptBaselineRef.current = serializeScheduleComposerPrompt(
+      taskPrompt.text,
+      taskPrompt.selectedSourceIds,
+      scheduleDataSourceItems,
+    );
+  }, [scheduleDataSourceItems]);
 
   useEffect(() => {
     if (!createMode || !editId) {
@@ -475,6 +497,7 @@ export function SchedulesWorkspace() {
       editPromptBaselineRef.current = null;
       return;
     }
+    if (!scheduleDataSourceMenuLoaded) return;
     if (editFormHydratedForId.current === editId) {
       return;
     }
@@ -501,7 +524,15 @@ export function SchedulesWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [createMode, editId, tasks, platformAgent, applyTaskToScheduleForm, restoreResultPushForEdit]);
+  }, [
+    createMode,
+    editId,
+    tasks,
+    platformAgent,
+    applyTaskToScheduleForm,
+    restoreResultPushForEdit,
+    scheduleDataSourceMenuLoaded,
+  ]);
 
   /** 新建时：用 URL 的 `groupId` 初始化（从列表点「创建」会带上与筛选胶囊一致的分组；编辑态由 `applyTaskToScheduleForm` 从任务装填，此处跳过） */
   useEffect(() => {
@@ -515,7 +546,7 @@ export function SchedulesWorkspace() {
     setFormGroupId(q || null);
   }, [createMode, createGroupIdQ, editId, restoreParam]);
 
-  /** 与 `scheduled_task_schedule.initial_next_run` 对齐的首次执行判定（用于本页提示与立即运行前拦截） */
+  /** 与 `scheduled_task_schedule.initial_next_run` 对齐的首次执行判定（用于本页提示与试跑前拦截） */
   const scheduleBodiesForNext = useMemo(
     () => buildCreatePayloads("·", "·", null, true, scheduleKind, timeHhmm, selectedWeekdays, selectedMonthDays, runOnceDate),
     [scheduleKind, timeHhmm, selectedWeekdays, selectedMonthDays, runOnceDate],
@@ -528,20 +559,30 @@ export function SchedulesWorkspace() {
   );
   const tryRunSubmitBlocked = taskEnabled && !hasValidNextExecution;
   const serializedPrompt = useMemo(
-    () => serializeScheduleComposerPrompt(prompt, scheduleSourceIds),
-    [prompt, scheduleSourceIds],
+    () => serializeScheduleComposerPrompt(prompt, scheduleSourceIds, scheduleDataSourceItems),
+    [prompt, scheduleSourceIds, scheduleDataSourceItems],
   );
   const addScheduleComposerSource = useCallback((capabilityId: string) => {
-    const item = getHomeCapabilityItem(capabilityId);
-    if (!item || item.id === "scenarios") return;
+    const item = scheduleDataSourceItems.find((entry) => entry.id === capabilityId && entry.id !== "scenarios");
+    if (!item) return;
+    setScheduleSuppressTemplateCompletion(false);
     setScheduleSourceIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
-  }, []);
+  }, [scheduleDataSourceItems]);
   const removeScheduleComposerSource = useCallback((capabilityId: string) => {
+    setScheduleSuppressTemplateCompletion(false);
     setScheduleSourceIds((current) => current.filter((id) => id !== capabilityId));
+    setScheduleSourcePlacements((current) => current.filter((placement) => placement.sourceId !== capabilityId));
   }, []);
+  const applySchedulePromptLibraryPrompt = useCallback((promptText: string) => {
+    const prefill = parseDatasourceMentions(promptText, scheduleDataSourceItems);
+    setPrompt(prefill.text.slice(0, SCHEDULE_PROMPT_MAX_LENGTH));
+    setScheduleSourceIds(prefill.selectedSourceIds);
+    setScheduleSourcePlacements(prefill.sourcePlacements);
+    setScheduleSuppressTemplateCompletion(true);
+    setNotice("已载入提示词，可继续补充定时任务配置。");
+  }, [scheduleDataSourceItems]);
   const requiredFieldsMissing = !title.trim() || !serializedPrompt.trim();
-  const promptTooLong = serializedPrompt.length > SCHEDULE_PROMPT_MAX_LENGTH;
-  const formSubmitDisabled = busy || requiredFieldsMissing || tryRunSubmitBlocked || promptTooLong;
+  const formSubmitDisabled = busy || requiredFieldsMissing || tryRunSubmitBlocked;
 
   const refreshGroupsAndTasks = useCallback(async () => {
     if (!platformAgent?.auth) return;
@@ -592,12 +633,6 @@ export function SchedulesWorkspace() {
     if (!isPlatformBackendEnabled() || !platformAgent?.auth || primaryTab !== "运行记录") return;
     void refreshRuns();
   }, [platformAgent, primaryTab, refreshRuns]);
-
-  const groupIdForCreate: string | null = useMemo(() => {
-    if (activeChip === "全部" || activeChip === "默认") return null;
-    const g = groups.find((x) => x.name === activeChip);
-    return g?.id ?? null;
-  }, [activeChip, groups]);
 
   const createGroupIdForChip = useCallback((): string => {
     if (activeChip === "全部" || activeChip === "默认") return "";
@@ -688,10 +723,6 @@ export function SchedulesWorkspace() {
       setNotice("请先补全标题和提示词。");
       return;
     }
-    if (serializedPrompt.length > SCHEDULE_PROMPT_MAX_LENGTH) {
-      setNotice(`提示词不能超过 ${SCHEDULE_PROMPT_MAX_LENGTH} 字。`);
-      return;
-    }
     if (scheduleKind === "每周" && selectedWeekdays.size === 0) {
       setNotice("请选择星期。");
       return;
@@ -709,15 +740,13 @@ export function SchedulesWorkspace() {
       setNotice("无法排程，请检查周期、星期/日期或时间。");
       return;
     }
-    const pushErr = getResultPushValidationError(resultPushRef.current);
+    const pushErr = validateResultPushBlocks(resultPushRef.current);
     if (pushErr) {
-      setNotice("");
-      setResultPushValidationError(pushErr);
-      setAdvancedOpen(true);
+      setNotice(pushErr);
       return;
     }
     if (!isPlatformBackendEnabled() || !platformAgent) {
-      setNotice("立即运行需启用平台并登录。当前无法连接会话服务。");
+      setNotice("试跑需启用平台并登录。当前无法连接会话服务。");
       return;
     }
     setBusy(true);
@@ -739,15 +768,16 @@ export function SchedulesWorkspace() {
       });
       const sid = await platformAgent.beginNewHomeTaskSession();
       if (!sid) {
-        setNotice("无法创建立即运行会话，请登录后重试。");
+        setNotice("无法创建试跑会话，请登录后重试。");
         return;
       }
-      /** 首条消息在 agent 立即运行页内发送，避免在定时页阻塞 2–3s 后已进入对话的割裂感 */
+      /** 首条消息在 agent 试跑页内发送，避免在定时页阻塞 2–3s 后已进入对话的割裂感 */
+      stashScheduleTrialAttachmentFiles(sid, schedulePendingFiles);
       saveScheduleTrialMeta({ v: 1, sessionId: sid, taskId: null, sendKind: "pending" });
       platformAgent.setActivePlatformSession(sid);
       router.push(`/agent?sessionId=${encodeURIComponent(sid)}&scheduleTrial=1`);
     } catch (e) {
-      setNotice(formatAgentApiErrorForUser(e) || "立即运行发起失败。");
+      setNotice(formatAgentApiErrorForUser(e) || "试跑发起失败。");
     } finally {
       setBusy(false);
     }
@@ -755,6 +785,7 @@ export function SchedulesWorkspace() {
     title,
     serializedPrompt,
     platformAgent,
+    schedulePendingFiles,
     createGroupIdQ,
     formGroupId,
     taskEnabled,
@@ -768,14 +799,12 @@ export function SchedulesWorkspace() {
     editId,
   ]);
 
-  const saveNewScheduleOnly = useCallback(async () => {
-    if (editId) return;
-    if (!title.trim() || !serializedPrompt.trim()) {
-      setNotice("请先补全标题和提示词。");
+  const createSchedule = useCallback(async () => {
+    if (editId) {
       return;
     }
-    if (serializedPrompt.length > SCHEDULE_PROMPT_MAX_LENGTH) {
-      setNotice(`提示词不能超过 ${SCHEDULE_PROMPT_MAX_LENGTH} 字。`);
+    if (!title.trim() || !serializedPrompt.trim()) {
+      setNotice("请先补全标题和提示词。");
       return;
     }
     if (scheduleKind === "每周" && selectedWeekdays.size === 0) {
@@ -790,46 +819,68 @@ export function SchedulesWorkspace() {
       setNotice("请选择执行日期。");
       return;
     }
-    if (taskEnabled && !hasValidNextExecution) {
+    if (!hasValidNextExecution) {
       setNotice("无法排程，请检查周期、星期/日期或时间。");
       return;
     }
-    const pushErr = getResultPushValidationError(resultPushRef.current);
+    const pushErr = validateResultPushBlocks(resultPushRef.current);
     if (pushErr) {
-      setNotice("");
-      setResultPushValidationError(pushErr);
-      setAdvancedOpen(true);
+      setNotice(pushErr);
       return;
     }
     if (!platformAgent) {
-      setNotice("请登录后保存。");
+      setNotice("请登录后创建。");
       return;
     }
+
+    const payloads = buildCreatePayloads(
+      title.trim(),
+      serializedPrompt,
+      formGroupId,
+      true,
+      scheduleKind,
+      timeHhmm,
+      selectedWeekdays,
+      selectedMonthDays,
+      runOnceDate,
+    );
+    if (payloads.length === 0) {
+      setNotice("无有效的定时任务可创建。");
+      return;
+    }
+
     setBusy(true);
     setNotice("");
+    let runErrorMessage = "";
     try {
-      saveScheduleCreateDraft({
-        title: title.trim(),
-        prompt: serializedPrompt,
-        taskEnabled,
-        scheduleKind,
-        timeHhmm,
-        selectedWeekdayValues: Array.from(selectedWeekdays).sort((a, b) => a - b),
-        selectedMonthDayValues: Array.from(selectedMonthDays).sort((a, b) => a - b),
-        runOnceDate,
-        groupId: formGroupId,
-        resultPushBlocks: resultPushRef.current,
-        createGroupIdFromUrl: createGroupIdQ,
-        editingTaskId: null,
+      const pushCfg = resultPushBlocksToApiConfig(resultPushRef.current);
+      await platformAgent.withFreshToken(async (token) => {
+        for (const payload of payloads) {
+          const created = await createUserScheduledTask(token, { ...payload, result_push_config: pushCfg });
+          if (!runImmediately) continue;
+          try {
+            await runUserScheduledTaskNow(token, created.id);
+          } catch (e) {
+            runErrorMessage = formatAgentApiErrorForUser(e) || "立即运行失败";
+          }
+        }
       });
-      const saved = await saveScheduleTasksWithDraft(platformAgent.withFreshToken, { requireEnabledNext: true });
+      clearScheduleTrialStorage();
       await refreshGroupsAndTasks();
       resetCreateFormToDefaults();
       router.push("/schedules");
-      setToastMessage(saved.count > 1 ? `已保存 ${saved.count} 个定时任务` : "定时任务已保存");
-      setToastVariant("default");
+      if (runImmediately && primaryTab === "运行记录") {
+        void refreshRuns();
+      }
+      if (runErrorMessage) {
+        setToastMessage(`定时任务已创建，但${runErrorMessage}`);
+        setToastVariant("error");
+      } else {
+        setToastMessage(runImmediately ? "定时任务已创建，并已加入执行队列" : "定时任务已创建");
+        setToastVariant("default");
+      }
     } catch (e) {
-      setNotice(formatAgentApiErrorForUser(e) || "保存失败");
+      setNotice(formatAgentApiErrorForUser(e) || "创建失败");
     } finally {
       setBusy(false);
     }
@@ -837,19 +888,20 @@ export function SchedulesWorkspace() {
     editId,
     title,
     serializedPrompt,
-    taskEnabled,
     scheduleKind,
-    timeHhmm,
     selectedWeekdays,
     selectedMonthDays,
     runOnceDate,
-    formGroupId,
-    createGroupIdQ,
-    platformAgent,
     hasValidNextExecution,
+    platformAgent,
+    formGroupId,
+    timeHhmm,
+    runImmediately,
     refreshGroupsAndTasks,
     resetCreateFormToDefaults,
     router,
+    primaryTab,
+    refreshRuns,
   ]);
 
   const saveEditedSchedule = useCallback(async () => {
@@ -860,10 +912,6 @@ export function SchedulesWorkspace() {
       setNotice("请先补全标题和提示词。");
       return;
     }
-    if (serializedPrompt.length > SCHEDULE_PROMPT_MAX_LENGTH) {
-      setNotice(`提示词不能超过 ${SCHEDULE_PROMPT_MAX_LENGTH} 字。`);
-      return;
-    }
     if (scheduleKind === "每周" && selectedWeekdays.size === 0) {
       setNotice("请选择星期。");
       return;
@@ -880,11 +928,9 @@ export function SchedulesWorkspace() {
       setNotice("无法排程，请检查周期、星期/日期或时间。");
       return;
     }
-    const pushErr = getResultPushValidationError(resultPushRef.current);
+    const pushErr = validateResultPushBlocks(resultPushRef.current);
     if (pushErr) {
-      setNotice("");
-      setResultPushValidationError(pushErr);
-      setAdvancedOpen(true);
+      setNotice(pushErr);
       return;
     }
     if (!platformAgent) {
@@ -1008,7 +1054,7 @@ export function SchedulesWorkspace() {
       }}
     >
       <DialogContent
-        className="flex max-h-schedule-dialog max-w-lg flex-col overflow-hidden rounded-panel border-transparent p-0 shadow-popover-strong [&>button]:right-5 [&>button]:top-5"
+        className="flex h-schedule-dialog max-w-lg flex-col overflow-hidden rounded-panel border-transparent p-0 shadow-popover-strong [&>button]:right-5 [&>button]:top-5"
         overlayClassName="bg-mask-bg-strong backdrop-blur-soft"
       >
         <div className="shrink-0 bg-bg-surface px-6 pb-3 pt-5">
@@ -1020,14 +1066,7 @@ export function SchedulesWorkspace() {
           </DialogDescription>
         </div>
         <div className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto px-6 pb-3">
-            {notice ? (
-              <div
-                className="mt-3 rounded-control bg-danger-bg px-3 py-2 text-sm font-medium leading-5 text-danger"
-                role="alert"
-              >
-                {notice}
-              </div>
-            ) : null}
+            {notice ? <p className="mt-3 text-sm text-text-secondary">{notice}</p> : null}
 
             <div className="mt-4 space-y-4">
                 <Field label="标题" required>
@@ -1046,33 +1085,43 @@ export function SchedulesWorkspace() {
                 </Field>
                 <Field label="提示词" required>
                   <div className="relative">
-                    <TaskComposer
+                    <NewConversationTaskComposer
                       key={editId ?? "create"}
                       value={prompt}
-                      onValueChange={setPrompt}
+                      onValueChange={(value) => setPrompt(value.slice(0, SCHEDULE_PROMPT_MAX_LENGTH))}
                       placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
                       mode={scheduleComposerMode}
                       onModeChange={setScheduleComposerMode}
-                      selectedSourceIds={scheduleSourceIds}
                       dataSourceGroups={scheduleDataSourceGroups}
                       dataSourceItems={scheduleDataSourceItems}
-                      onDataSourceMenuRequest={ensureScheduleDataSourceMenu}
-                      dataSourceLoading={scheduleDataSourceLoading}
+                      selectedSourceIds={scheduleSourceIds}
+                      sourcePlacements={scheduleSourcePlacements}
+                      suppressTemplateCompletion={scheduleSuppressTemplateCompletion}
                       onToolSelect={addScheduleComposerSource}
                       onSourceRemove={removeScheduleComposerSource}
-                      onFilesSelected={() => {}}
-                      showAttachmentButton={false}
+                      onPromptUse={applySchedulePromptLibraryPrompt}
+                      onFilesSelected={(files) => {
+                        setSchedulePendingFiles((prev) => {
+                          const picked = Array.from(files);
+                          if (picked.length === 0) return prev;
+                          const seen = new Set(prev.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
+                          const merged = [...prev];
+                          for (const file of picked) {
+                            const key = `${file.name}:${file.size}:${file.lastModified}`;
+                            if (!seen.has(key)) {
+                              seen.add(key);
+                              merged.push(file);
+                            }
+                          }
+                          return merged;
+                        });
+                      }}
+                      onAttachmentsChange={setSchedulePendingFiles}
                       onSubmit={() => undefined}
                       showSubmitButton={false}
                       submitOnEnter={false}
-                      visualStyle="heroMinimal"
-                      containerClassName="relative z-30 w-full rounded-control border border-transparent bg-fill-hover shadow-none"
-                      textareaClassName="min-h-composer max-h-composer-compact min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-1 py-2 pr-2 text-body font-normal leading-6 text-foreground caret-foreground outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300"
-                      placeholderClassName="left-1 top-2 text-body leading-6 text-text-tertiary"
-                      sendButtonClassName={cn(
-                        "h-8 w-8 min-w-0 rounded-full border border-transparent p-0 text-primary-foreground shadow-none transition",
-                        serializedPrompt ? "bg-primary hover:bg-link-hover" : "bg-fill-active hover:bg-fill-active",
-                      )}
+                      sourceMenuSide="top"
+                      containerClassName="!rounded-[10px] !shadow-none sm:!rounded-[10px]"
                     />
                     <span className="pointer-events-none absolute bottom-3 right-3 text-xs text-text-tertiary">
                       {serializedPrompt.length}/{SCHEDULE_PROMPT_MAX_LENGTH}
@@ -1265,13 +1314,9 @@ export function SchedulesWorkspace() {
                         key={resultPushFormKey}
                         headerLabel="结果推送"
                         inlineAddTrigger
-                        validationError={resultPushValidationError}
                         defaultBlocks={resultPushRef.current.length > 0 ? resultPushRef.current : undefined}
                         onConfigSnapshot={({ blocks }) => {
                           resultPushRef.current = blocks;
-                          setResultPushValidationError((current) =>
-                            current && !getResultPushValidationError(blocks) ? null : current,
-                          );
                           if (editId) {
                             persistResultPushBlocksForTask(editId, blocks);
                           }
@@ -1283,8 +1328,19 @@ export function SchedulesWorkspace() {
             </div>
         </div>
         <div className="shrink-0 border-t border-border bg-bg-surface px-6 py-3">
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            {editId ? <span className="mr-auto" aria-hidden /> : null}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {editId ? (
+              <span className="mr-auto" aria-hidden />
+            ) : (
+              <label className="mr-auto flex cursor-pointer items-center gap-2 text-body text-foreground">
+                <Checkbox
+                  checked={runImmediately}
+                  onCheckedChange={(checked) => setRunImmediately(checked === true)}
+                  aria-label="立即运行"
+                />
+                <span>立即运行</span>
+              </label>
+            )}
             <div className="relative z-10 flex flex-shrink-0 items-center justify-end gap-3">
               {editId ? (
                 <Popover open={editPromptChangedSaveGateOpen} onOpenChange={setEditPromptChangedSaveGateOpen}>
@@ -1292,7 +1348,7 @@ export function SchedulesWorkspace() {
                     <span className="inline-flex">
                       <Button
                         type="button"
-                        className="h-9 shrink-0 rounded-control bg-primary px-4 text-sm text-primary-foreground hover:bg-link-hover"
+                        className="h-9 shrink-0 rounded-control bg-primary px-4 text-sm text-primary-foreground hover:bg-primary/85"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -1313,7 +1369,7 @@ export function SchedulesWorkspace() {
                   >
                     <p className="text-sm font-semibold text-foreground">提示词已修改</p>
                     <p className="mt-2 text-xs leading-relaxed text-text-tertiary">
-                      修改提示词后需要立即运行验证，才能保存
+                      修改提示词后需要重新试运行才能保存
                     </p>
                     <div className="mt-4 flex justify-end gap-2">
                       <Button
@@ -1328,49 +1384,33 @@ export function SchedulesWorkspace() {
                       <Button
                         type="button"
                         size="sm"
-                        className="rounded-control bg-primary text-primary-foreground hover:bg-link-hover"
+                        className="rounded-control bg-primary text-primary-foreground hover:bg-primary/85"
                         disabled={busy}
                         onClick={() => {
                           setEditPromptChangedSaveGateOpen(false);
                           void startScheduleTrial();
                         }}
                       >
-                        立即运行
+                        试运行
                       </Button>
                     </div>
                   </PopoverContent>
                 </Popover>
-              ) : (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-9 shrink-0 rounded-control border-border px-4 text-sm"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (formSubmitDisabled) return;
-                      void saveNewScheduleOnly();
-                    }}
-                    disabled={formSubmitDisabled}
-                  >
-                    仅保存
-                  </Button>
-                  <Button
-                    type="button"
-                    className="h-9 shrink-0 rounded-control bg-primary px-4 text-sm text-primary-foreground hover:bg-link-hover"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (formSubmitDisabled) return;
-                      void startScheduleTrial();
-                    }}
-                    disabled={formSubmitDisabled}
-                  >
-                    立即运行
-                  </Button>
-                </>
-              )}
+                  ) : (
+                    <Button
+                      type="button"
+                      className="h-9 shrink-0 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-primary/85"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (formSubmitDisabled) return;
+                        void createSchedule();
+                      }}
+                      disabled={formSubmitDisabled}
+                    >
+                      创建
+                    </Button>
+                  )}
             </div>
           </div>
         </div>
@@ -1451,7 +1491,7 @@ export function SchedulesWorkspace() {
                 </Button>
                 <Button
                   type="button"
-                  className="h-9 shrink-0 whitespace-nowrap rounded-control bg-primary px-3 text-primary-foreground hover:bg-link-hover sm:px-4"
+                  className="h-9 shrink-0 whitespace-nowrap rounded-control bg-primary px-3 text-primary-foreground hover:bg-primary/85 sm:px-4"
                   onClick={() => {
                     const g = createGroupIdForChip();
                     const q = g ? `&groupId=${encodeURIComponent(g)}` : "";
@@ -1617,20 +1657,18 @@ export function SchedulesWorkspace() {
             )}
           </div>
 
-          {!createMode && notice ? <p className="mt-4 text-sm text-text-secondary">{notice}</p> : null}
-          {busy && primaryTab === "已定时" && tasks.length === 0 ? <p className="mt-6 text-sm text-text-tertiary">加载中…</p> : null}
-          {busy && primaryTab === "运行记录" && runs.length === 0 ? <p className="mt-6 text-sm text-text-tertiary">加载中…</p> : null}
+          {notice ? <p className="mt-4 text-sm text-text-secondary">{notice}</p> : null}
+          {busy && primaryTab === "已定时" && tasks.length === 0 ? (
+            <ScheduleContentLoading label="正在加载定时任务…" />
+          ) : null}
+          {busy && primaryTab === "运行记录" && runs.length === 0 ? (
+            <ScheduleContentLoading label="正在加载运行记录…" />
+          ) : null}
 
           {showScheduledLoadError ? (
             <PageLostState onRetry={() => void refreshGroupsAndTasks()} />
           ) : primaryTab === "已定时" && !busy && displayTasks.length === 0 ? (
-            <ScheduleEmptyState
-              onCreate={() =>
-                router.push(
-                  `/schedules?create=1${groupIdForCreate ? `&groupId=${encodeURIComponent(groupIdForCreate)}` : ""}`,
-                )
-              }
-            />
+            <ScheduleEmptyState />
           ) : null}
           {primaryTab === "已定时" && displayTasks.length > 0 ? (
             <div className="mt-8 flex flex-wrap content-start items-start justify-start gap-5">
@@ -1707,7 +1745,7 @@ export function SchedulesWorkspace() {
             ) : null}
             <Button
               type="button"
-              className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-link-hover"
+              className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-primary/85"
               onClick={() => setSearchDialogOpen(false)}
             >
               完成
@@ -1777,7 +1815,7 @@ export function SchedulesWorkspace() {
             </Button>
             <Button
               type="button"
-              className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-link-hover"
+              className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-primary/85"
               disabled={newGroupCreateDisabled}
               onClick={() => void commitNewGroup()}
             >
@@ -1821,7 +1859,7 @@ export function SchedulesWorkspace() {
                 取消
               </Button>
               <Button
-                className="bg-primary text-primary-foreground hover:bg-link-hover"
+                className="bg-primary text-primary-foreground hover:bg-primary/85"
                 onClick={() => {
                   if (!moveTask || !platformAgent) return;
                   const gid = moveGroupId || null;

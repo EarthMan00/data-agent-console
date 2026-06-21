@@ -4,6 +4,7 @@ import { useEffect, useId, useState } from "react";
 import { Plus, Trash2 } from "@/components/ui/tabler-icons";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -146,6 +147,28 @@ export function ScheduleResultPushSection({
     };
   }, [defaultBlocks]);
 
+  useEffect(() => {
+    if (!inlineAddTrigger || !pickerOpen) return;
+
+    const preventVerticalScroll = (event: WheelEvent | TouchEvent) => {
+      if ("deltaY" in event && event.deltaY === 0) {
+        return;
+      }
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+    };
+    const listenerOptions = { capture: true } as const;
+
+    window.addEventListener("wheel", preventVerticalScroll, { ...listenerOptions, passive: false });
+    window.addEventListener("touchmove", preventVerticalScroll, { ...listenerOptions, passive: false });
+
+    return () => {
+      window.removeEventListener("wheel", preventVerticalScroll, listenerOptions);
+      window.removeEventListener("touchmove", preventVerticalScroll, listenerOptions);
+    };
+  }, [inlineAddTrigger, pickerOpen]);
+
   const hasEmail = blocks.some((b) => b.type === "email");
   const hasDing = blocks.some((b) => b.type === "dingtalk");
   const hasFei = blocks.some((b) => b.type === "feishu");
@@ -198,29 +221,50 @@ export function ScheduleResultPushSection({
     );
   };
 
-  const addTrigger = (
+  const channelPicker = (
+    <ChannelPickerBody
+      hasEmail={hasEmail}
+      hasDing={hasDing}
+      hasFei={hasFei}
+      onToggle={toggleChannel}
+    />
+  );
+
+  const addTrigger = inlineAddTrigger ? (
     <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
       <PopoverTrigger asChild>
         <Button
           type="button"
-          variant={inlineAddTrigger ? "ghost" : "outline"}
-          className={cn(
-            inlineAddTrigger
-              ? "h-auto gap-1 rounded-md px-0 py-0 text-body font-medium text-foreground hover:bg-transparent hover:text-foreground"
-              : "h-11 w-full justify-center gap-1.5 rounded-field border-border text-text-secondary shadow-sm",
-          )}
+          variant="ghost"
+          className="h-auto gap-1 rounded-md px-0 py-0 text-body font-medium text-foreground hover:bg-transparent hover:text-foreground"
+        >
+          <Plus className="h-4 w-4" />
+          添加提醒
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-responsive-popover-xs p-0"
+        align="end"
+        side="bottom"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        {channelPicker}
+      </PopoverContent>
+    </Popover>
+  ) : (
+    <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 w-full justify-center gap-1.5 rounded-field border-border text-text-secondary shadow-sm"
         >
           <Plus className="h-4 w-4" />
           添加提醒
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-responsive-popover-xs p-0" align="end" onOpenAutoFocus={(e) => e.preventDefault()}>
-        <ChannelPickerBody
-          hasEmail={hasEmail}
-          hasDing={hasDing}
-          hasFei={hasFei}
-          onToggle={toggleChannel}
-        />
+        {channelPicker}
       </PopoverContent>
     </Popover>
   );
@@ -315,25 +359,32 @@ function ChannelPickerBody({
     { key: "dingtalk", label: CHANNEL_LABEL.dingtalk, checked: hasDing },
     { key: "feishu", label: CHANNEL_LABEL.feishu, checked: hasFei },
   ];
+  const pickerId = useId();
 
   return (
-    <ul className="max-h-60 space-y-0.5 p-1 py-2">
-      {rows.map((row) => (
-        <li key={row.key}>
-          <label className="flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm hover:bg-fill-active">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-border-strong accent-primary"
-              checked={row.checked}
-              onChange={(e) => {
-                onToggle(row.key, e.target.checked);
-              }}
-            />
-            <ChannelLogo type={row.key} className="h-5 w-5 shrink-0" />
-            <span className="text-foreground">{row.label}</span>
-          </label>
-        </li>
-      ))}
+    <ul className="flex max-h-60 flex-col gap-0.5 p-1 py-2">
+      {rows.map((row) => {
+        const checkboxId = `${pickerId}-${row.key}`;
+        return (
+          <li key={row.key}>
+            <label
+              className="flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm hover:bg-fill-active"
+              htmlFor={checkboxId}
+            >
+              <Checkbox
+                id={checkboxId}
+                checked={row.checked}
+                onCheckedChange={(checked) => {
+                  onToggle(row.key, checked === true);
+                }}
+                aria-label={`选择${row.label}推送`}
+              />
+              <ChannelLogo type={row.key} className="h-5 w-5 shrink-0" />
+              <span className="text-foreground">{row.label}</span>
+            </label>
+          </li>
+        );
+      })}
     </ul>
   );
 }

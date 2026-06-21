@@ -1,11 +1,13 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentWorkspace } from "@/components/agent-workspace";
 import { AliceShellRoot } from "@/components/alice-shell";
 import { workspaceActions, workspaceStore } from "@/lib/workspace-store";
 
 const routeState = vi.hoisted(() => ({ runId: "" }));
+const mockFetchPublicPromptCategories = vi.hoisted(() => vi.fn());
+const mockFetchHomePromptRecommendations = vi.hoisted(() => vi.fn());
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(routeState.runId ? `runId=${routeState.runId}` : ""),
@@ -15,6 +17,11 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/components/platform-agent-provider", () => ({
   useOptionalPlatformAgent: () => null,
+}));
+
+vi.mock("@/lib/agent-api/home-prompts", () => ({
+  fetchPublicPromptCategories: mockFetchPublicPromptCategories,
+  fetchHomePromptRecommendations: mockFetchHomePromptRecommendations,
 }));
 
 function seedCompletedAgentRun() {
@@ -93,6 +100,13 @@ function renderSeededAgentWorkspace() {
 }
 
 describe("agent flow", () => {
+  beforeEach(() => {
+    mockFetchPublicPromptCategories.mockReset();
+    mockFetchPublicPromptCategories.mockResolvedValue([]);
+    mockFetchHomePromptRecommendations.mockReset();
+    mockFetchHomePromptRecommendations.mockResolvedValue([]);
+  });
+
   it("renders the current /agent structure with execution card, result section, and right rail preview", async () => {
     renderSeededAgentWorkspace();
 

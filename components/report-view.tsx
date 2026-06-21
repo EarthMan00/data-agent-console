@@ -6,7 +6,7 @@ import { Download, Ellipsis, Expand, Share2 } from "@/components/ui/tabler-icons
 
 import { AliceShell } from "@/components/alice-shell";
 import { Button } from "@/components/ui/button";
-import { useWorkspaceState } from "@/lib/workspace-store";
+import { workspaceActions, useWorkspaceState } from "@/lib/workspace-store";
 
 const standaloneReportTabs = [
   { id: "overview", label: "报告摘要" },
@@ -26,6 +26,12 @@ export function ReportView() {
 
   const [activeTab, setActiveTab] = useState(standaloneReportTabs[0].id);
   const [notice, setNotice] = useState("");
+
+  const saveAsTemplate = () => {
+    if (!run) return;
+    const templateId = workspaceActions.saveTemplateFromRun(run.id);
+    setNotice(templateId ? "已保存为模板。" : "保存模板失败，请稍后重试。");
+  };
 
   if (!report || !run) {
     return (
@@ -79,6 +85,11 @@ export function ReportView() {
               ))}
             </div>
             <div className="flex items-center gap-3">
+              {activeTab === "sheet" ? (
+                <Button variant="secondary" onClick={saveAsTemplate}>
+                  保存为模板
+                </Button>
+              ) : null}
               <Button onClick={() => router.push(`/agent?runId=${run.id}`)}>
                 返回任务页
               </Button>

@@ -121,7 +121,7 @@ export function FavoriteSheetsResultView({
                 className={cn(
                   "rounded-md px-2.5 py-1 text-xs font-medium transition",
                   viewMode === "table"
-                    ? "bg-bg-surface text-success shadow-sm"
+                    ? "bg-bg-surface text-primary shadow-sm"
                     : "text-text-secondary hover:text-text-secondary",
                 )}
                 onClick={() => setViewMode("table")}
@@ -133,7 +133,7 @@ export function FavoriteSheetsResultView({
                 className={cn(
                   "rounded-md px-2.5 py-1 text-xs font-medium transition",
                   viewMode === "code"
-                    ? "bg-bg-surface text-success shadow-sm"
+                    ? "bg-bg-surface text-primary shadow-sm"
                     : "text-text-secondary hover:text-text-secondary",
                 )}
                 onClick={() => setViewMode("code")}
@@ -167,7 +167,7 @@ export function FavoriteSheetsResultView({
               className={cn(
                 "shrink-0 rounded-lg px-3 py-2 text-left text-xs transition",
                 activeSheet?.id === s.id
-                  ? "border-b-2 border-success-border font-medium text-success"
+                  ? "border-b-2 border-primary font-medium text-primary"
                   : "border-b-2 border-transparent text-text-secondary hover:bg-fill-hover",
               )}
             >
