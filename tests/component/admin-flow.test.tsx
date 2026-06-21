@@ -6,6 +6,10 @@ import { FeedbackDialog } from "@/components/feedback-dialog";
 describe("admin and feedback flow", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.stubEnv("NEXT_PUBLIC_AGENT_API_ORIGIN", "http://agent.test");
+    vi.stubEnv("NEXT_PUBLIC_AGENT_API_USE_PROXY", "0");
   });
 
   it("validates empty feedback submissions", async () => {
@@ -52,5 +56,9 @@ describe("admin and feedback flow", () => {
       expect(onOpenChange).toHaveBeenCalledWith(false);
       expect(onSuccess).toHaveBeenCalledWith("问题反馈已提交。");
     });
+    expect(fetch).toHaveBeenCalledWith(
+      "http://agent.test/api/feedback",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });

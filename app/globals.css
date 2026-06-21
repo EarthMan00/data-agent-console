@@ -48,8 +48,8 @@ body {
   --color-border-strong: var(--color-border-3);
   --color-fill-hover: var(--color-fill-2);
   --color-fill-active: var(--color-fill-3);
-  --color-link: var(--primary);
-  --color-link-hover: rgb(var(--gray-9));
+  --color-link: rgb(var(--arcoblue-2));
+  --color-link-hover: rgb(var(--arcoblue-3));
   --color-success: rgb(var(--success-6));
   --color-success-hover: rgb(var(--success-7));
   --color-success-bg: rgba(var(--success-1), 1);
@@ -216,12 +216,15 @@ body {
   --size-prompt-list-height: calc(100vh - 260px);
   --size-table-cell-fluid: min(280px, 28vw);
   --size-task-label-fluid: min(220px, 52vw);
-  --size-schedule-dialog-max-height: min(calc(100vh - 48px), 680px);
+  --size-schedule-dialog-height: min(calc(100dvh - 48px), 680px);
+  --size-schedule-dialog-max-height: var(--size-schedule-dialog-height);
   --size-dialog-screen-max-height: calc(100vh - 48px);
   --size-html-artifact-min-height: min(72vh, 960px);
   --size-platform-session-main-height: calc(100dvh - 58px);
   --z-toast: 10000;
   --z-auth-overlay: 200;
+  --z-modal: 300;
+  --z-modal-floating: 320;
   --z-composer-menu: 140;
   --z-popover: 120;
   --z-layer-base: 1;
@@ -241,16 +244,16 @@ body {
   --primary-8: var(--gray-10);
   --primary-9: var(--gray-10);
   --primary-10: var(--gray-10);
-  --link-1: var(--primary-1);
-  --link-2: var(--primary-2);
-  --link-3: var(--primary-3);
-  --link-4: var(--primary-4);
-  --link-5: var(--primary-5);
-  --link-6: var(--primary-6);
-  --link-7: var(--primary-7);
-  --link-8: var(--primary-8);
-  --link-9: var(--primary-9);
-  --link-10: var(--primary-10);
+  --link-1: var(--arcoblue-1);
+  --link-2: var(--arcoblue-2);
+  --link-3: var(--arcoblue-3);
+  --link-4: var(--arcoblue-4);
+  --link-5: var(--arcoblue-5);
+  --link-6: var(--arcoblue-6);
+  --link-7: var(--arcoblue-7);
+  --link-8: var(--arcoblue-8);
+  --link-9: var(--arcoblue-9);
+  --link-10: var(--arcoblue-10);
   --font-size-display-1: 36px;
   --font-size-title-2: 20px;
   --font-size-title-3: 24px;
@@ -283,16 +286,16 @@ body[arco-theme="dark"] {
   --primary-8: var(--gray-10);
   --primary-9: var(--gray-10);
   --primary-10: var(--gray-10);
-  --link-1: var(--primary-1);
-  --link-2: var(--primary-2);
-  --link-3: var(--primary-3);
-  --link-4: var(--primary-4);
-  --link-5: var(--primary-5);
-  --link-6: var(--primary-6);
-  --link-7: var(--primary-7);
-  --link-8: var(--primary-8);
-  --link-9: var(--primary-9);
-  --link-10: var(--primary-10);
+  --link-1: var(--arcoblue-1);
+  --link-2: var(--arcoblue-2);
+  --link-3: var(--arcoblue-3);
+  --link-4: var(--arcoblue-4);
+  --link-5: var(--arcoblue-5);
+  --link-6: var(--arcoblue-6);
+  --link-7: var(--arcoblue-7);
+  --link-8: var(--arcoblue-8);
+  --link-9: var(--arcoblue-9);
+  --link-10: var(--arcoblue-10);
 }
 
 @theme inline {
@@ -765,6 +768,10 @@ body[arco-theme="dark"] {
     max-height: var(--size-schedule-dialog-max-height);
   }
 
+  .h-schedule-dialog {
+    height: var(--size-schedule-dialog-height);
+  }
+
   .max-h-dialog-screen {
     max-height: var(--size-dialog-screen-max-height);
   }
@@ -823,6 +830,14 @@ body[arco-theme="dark"] {
 
   .z-auth-overlay {
     z-index: var(--z-auth-overlay);
+  }
+
+  .z-modal {
+    z-index: var(--z-modal);
+  }
+
+  .z-modal-floating {
+    z-index: var(--z-modal-floating);
   }
 
   .z-composer-menu {
@@ -1183,6 +1198,7 @@ input#history-task-search:focus-visible {
 .mdata-auth-input:focus,
 .mdata-auth-input:focus-visible {
   border: 0 !important;
+  border-radius: 0 !important;
   color: var(--dark-color-text-1) !important;
   caret-color: var(--dark-color-text-1) !important;
   outline: none !important;

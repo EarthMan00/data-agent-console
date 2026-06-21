@@ -1,5 +1,6 @@
 import { fetchAuthorizedText } from "@/lib/agent-api/client";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
+import { favoriteCardPreviewText } from "@/lib/favorite-card-preview";
 import { CHATEXCEL_RESULT_RE, ALICE_INTERNAL_RESULT_RE } from "@/lib/platform-task-artifacts";
 import { buildTaskResultSheets } from "@/lib/task-result-sheets";
 
@@ -130,7 +131,7 @@ export async function buildFavoriteSnapshotFromArtifacts(
     snapshot: {
       version: 2,
       sheets: sheetRows,
-      card_preview: cardPreviewFrom(previewSource || "收藏结果"),
+      card_preview: cardPreviewFrom(favoriteCardPreviewText({ cardPreview: previewSource, fallback: "收藏结果" })),
       display_title: sheetRows[0]?.label ?? baseTitle,
     },
   };

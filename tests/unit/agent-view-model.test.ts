@@ -386,7 +386,7 @@ describe("agent view model helpers", () => {
     };
     const [round] = buildRoundViewModels(run);
     expect(round.supplementalUserMessages).toEqual([
-      { text: "vacuum flask", createdAt: "2026-03-28 12:00:30" },
+      { text: "vacuum flask", createdAt: "2026-03-28 12:00:30", attachments: [] },
     ]);
   });
 

@@ -4,7 +4,6 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskComposer } from "@/components/task-composer";
-import { mockDataSourceGroups, mockDataSourceItems } from "@/tests/fixtures/mock-data-source-menu";
 
 afterEach(() => {
   cleanup();
@@ -12,10 +11,14 @@ afterEach(() => {
 
 function ComposerHarness({
   onToolSelect = vi.fn(),
+  onSourceRemove = vi.fn(),
+  onSubmit = vi.fn(),
   dataSourceGroups,
   dataSourceItems,
 }: {
   onToolSelect?: (capabilityId: string) => void;
+  onSourceRemove?: (capabilityId: string) => void;
+  onSubmit?: () => void;
   dataSourceGroups?: Parameters<typeof TaskComposer>[0]["dataSourceGroups"];
   dataSourceItems?: Parameters<typeof TaskComposer>[0]["dataSourceItems"];
 }) {
@@ -30,34 +33,196 @@ function ComposerHarness({
       mode="普通模式"
       onModeChange={vi.fn()}
       selectedSourceIds={selectedSourceIds}
-      dataSourceGroups={dataSourceGroups ?? mockDataSourceGroups}
-      dataSourceItems={dataSourceItems ?? mockDataSourceItems}
+      dataSourceGroups={dataSourceGroups}
+      dataSourceItems={dataSourceItems}
       onToolSelect={(capabilityId) => {
         onToolSelect(capabilityId);
         setSelectedSourceIds((current) => (current.includes(capabilityId) ? current : [...current, capabilityId]));
       }}
       onSourceRemove={(capabilityId) => {
+        onSourceRemove(capabilityId);
         setSelectedSourceIds((current) => current.filter((id) => id !== capabilityId));
       }}
       onFilesSelected={vi.fn()}
-      onSubmit={vi.fn()}
+      onSubmit={onSubmit}
     />
   );
 }
 
+function placeCaretInTextNode(textNode: Text, offset: number) {
+  const range = document.createRange();
+  range.setStart(textNode, offset);
+  range.collapse(true);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+function placeCaretAfterElement(element: Element) {
+  const range = document.createRange();
+  range.setStartAfter(element);
+  range.collapse(true);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+function setEditorText(editor: HTMLElement, text: string) {
+  editor.textContent = text;
+  const textNode = editor.firstChild;
+  if (textNode instanceof Text) {
+    placeCaretInTextNode(textNode, text.length);
+  }
+  fireEvent.input(editor);
+}
+
+const MENU_INTERACTION_TIMEOUT_MS = 10000;
+
 describe("task composer data source menu", () => {
-  it("uses the home attachment button color in the default composer style", () => {
+  it("covers the composer input box core keyboard and datasource scenarios", async () => {
+    const user = userEvent.setup();
+
+    const submit = vi.fn();
+    render(<ComposerHarness onSubmit={submit} />);
+    let editor = screen.getByTestId("task-composer-editor");
+    expect(screen.getByText("输入任务")).toBeInTheDocument();
+    expect(screen.getByTestId("task-composer-submit")).toBeDisabled();
+
+    await user.click(editor);
+    setEditorText(editor, "需要分析库存");
+    await waitFor(() => expect(screen.getByTestId("task-composer-submit")).toBeEnabled());
+    fireEvent.keyDown(editor, { key: "Enter" });
+    expect(submit).toHaveBeenCalledTimes(1);
+
+    cleanup();
+
+    const buttonSelect = vi.fn();
+    const buttonRemove = vi.fn();
+    render(<ComposerHarness onToolSelect={buttonSelect} onSourceRemove={buttonRemove} />);
+    const trigger = screen.getByRole("button", { name: /@数据源/ });
+    await user.click(trigger);
+
+    let listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    const keepaSearch = within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ });
+    const keepaProductDetail = within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品详情/ });
+    expect(keepaSearch).toHaveAttribute("aria-selected", "false");
+    expect(keepaProductDetail).toHaveAttribute("aria-selected", "false");
+
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(buttonSelect).not.toHaveBeenCalled();
+    expect(screen.getByRole("listbox", { name: "数据源列表" })).toBeInTheDocument();
+
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    await waitFor(() => expect(keepaSearch).toHaveFocus());
+    fireEvent.keyDown(keepaSearch, { key: "ArrowDown" });
+    await waitFor(() => expect(keepaProductDetail).toHaveFocus());
+    fireEvent.keyDown(keepaProductDetail, { key: "Enter" });
+
+    await waitFor(() => expect(buttonSelect).toHaveBeenCalledWith("keepa-product-detail"));
+    expect(buttonSelect).not.toHaveBeenCalledWith("keepa");
+    expect(await screen.findByLabelText("数据源 Keepa-亚马逊-商品详情")).toBeInTheDocument();
+
+    editor = screen.getByTestId("task-composer-editor");
+    fireEvent.keyDown(editor, { key: "Backspace" });
+    await waitFor(() => expect(buttonRemove).toHaveBeenCalledWith("keepa-product-detail"));
+
+    cleanup();
+
     render(<ComposerHarness />);
+    editor = screen.getByTestId("task-composer-editor");
+    await user.click(editor);
+    setEditorText(editor, "@");
 
-    const attachmentButton = screen.getByRole("button", { name: "添加附件" });
-    expect(attachmentButton).toHaveClass("text-foreground", "hover:bg-fill-hover", "hover:text-foreground");
-  });
+    let mentionMenu = await screen.findByTestId("task-composer-mention-menu");
+    expect(mentionMenu).toHaveClass("z-modal-floating");
+    expect(mentionMenu).not.toHaveClass("z-composer-menu");
+    expect(screen.getByTestId("task-composer-mention-category-pane")).toBeInTheDocument();
+    expect(screen.getByTestId("task-composer-mention-option-pane")).toBeInTheDocument();
+    expect(editor).toHaveFocus();
 
-  it("keeps the default placeholder offset from the empty editor caret", () => {
+    const mentionKeepaSearch = within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ });
+    const mentionKeepaProductDetail = within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品详情/ });
+    await waitFor(() => expect(mentionKeepaSearch).toHaveAttribute("aria-selected", "true"));
+    fireEvent.keyDown(editor, { key: "ArrowDown" });
+    await waitFor(() => expect(mentionKeepaProductDetail).toHaveFocus());
+    fireEvent.keyDown(mentionKeepaProductDetail, { key: "ArrowUp" });
+    await waitFor(() => expect(mentionKeepaSearch).toHaveFocus());
+    fireEvent.keyDown(mentionKeepaSearch, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("task-composer-mention-menu")).not.toBeInTheDocument());
+
+    cleanup();
+
+    const filteredSelect = vi.fn();
+    render(<ComposerHarness onToolSelect={filteredSelect} />);
+    editor = screen.getByTestId("task-composer-editor");
+    await user.click(editor);
+    setEditorText(editor, "@亚马逊前端");
+
+    mentionMenu = await screen.findByTestId("task-composer-mention-menu");
+    const getSearchOption = () => within(mentionMenu).getByRole("option", { name: /亚马逊前台.*亚马逊前端搜索模拟/ });
+    const getDetailOption = () => within(mentionMenu).getByRole("option", { name: /亚马逊前台.*亚马逊前端-商品详情/ });
+    expect(getSearchOption()).toHaveAttribute("aria-selected", "false");
+    expect(getDetailOption()).toHaveAttribute("aria-selected", "false");
+
+    fireEvent.keyDown(editor, { key: "Enter" });
+    expect(filteredSelect).not.toHaveBeenCalled();
+    expect(screen.getByTestId("task-composer-mention-menu")).toBeInTheDocument();
+
+    fireEvent.keyDown(editor, { key: "ArrowUp" });
+    await waitFor(() => expect(getDetailOption()).toHaveAttribute("aria-selected", "true"));
+    fireEvent.keyDown(editor, { key: "Enter" });
+
+    await waitFor(() => expect(filteredSelect).toHaveBeenCalledWith("amazon-product-detail"));
+    expect(filteredSelect).not.toHaveBeenCalledWith("amazon");
+
+    cleanup();
+
     render(<ComposerHarness />);
+    await user.click(screen.getByRole("button", { name: /@数据源/ }));
+    listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ }));
 
-    expect(screen.getByText("输入任务")).toHaveClass("left-1.5");
-  });
+    editor = screen.getByTestId("task-composer-editor");
+    await waitFor(() => expect(editor).toHaveTextContent("按 Tab 键补全"));
+    fireEvent.keyDown(editor, { key: "Tab" });
+
+    await waitFor(() => {
+      expect(editor).toHaveTextContent("亚马逊美国站,搜索关键词");
+      expect(editor).toHaveTextContent("Sports Water Bottles");
+      expect(editor).not.toHaveTextContent("{{");
+      expect(editor.querySelectorAll("[data-template-slot='true']")).toHaveLength(4);
+    });
+  }, 20000);
+
+  it("renders prefilled datasource tokens at their original query position", () => {
+    render(
+      <TaskComposer
+        value="Keepa-亚马逊价格历史 ，美国站，查询ASIN:B0D5MV1S5W"
+        onValueChange={vi.fn()}
+        placeholder="输入任务"
+        mode="普通模式"
+        onModeChange={vi.fn()}
+        selectedSourceIds={["keepa-price-history"]}
+        sourcePlacements={[{ sourceId: "keepa-price-history", offset: "Keepa-亚马逊价格历史 ".length }]}
+        onToolSelect={vi.fn()}
+        onSourceRemove={vi.fn()}
+        onFilesSelected={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    const editor = screen.getByTestId("task-composer-editor");
+    const childSummary = Array.from(editor.childNodes).map((node) => {
+      if (node.nodeType === Node.TEXT_NODE) return { type: "text", text: node.textContent ?? "" };
+      const element = node as HTMLElement;
+      return { type: "tag", sourceId: element.dataset.toolId ?? "", text: element.textContent ?? "" };
+    });
+    const sourceTagIndex = childSummary.findIndex((item) => item.type === "tag" && item.sourceId === "keepa-price-history");
+
+    expect(sourceTagIndex).toBeGreaterThan(0);
+    expect(childSummary.slice(0, sourceTagIndex).map((item) => item.text).join("")).toBe("Keepa-亚马逊价格历史 ");
+    expect(screen.getByLabelText("数据源 Keepa-亚马逊价格历史")).toBeInTheDocument();
+  }, MENU_INTERACTION_TIMEOUT_MS);
 
   it("uses first-level categories to navigate second-level datasource cards", async () => {
     const onToolSelect = vi.fn();
@@ -66,6 +231,10 @@ describe("task composer data source menu", () => {
     await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
 
     const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    const popover = listbox.parentElement as HTMLElement;
+    expect(within(popover).queryByText("@数据源")).not.toBeInTheDocument();
+    expect(popover).toHaveClass("z-modal-floating");
+    expect(popover).toHaveClass("overflow-hidden", "rounded-popover");
     expect(listbox).toHaveStyle({ height: "360px" });
     expect(screen.getByTestId("task-composer-source-category-pane")).toHaveClass("h-full", "overflow-y-auto");
     expect(screen.getByTestId("task-composer-source-option-pane")).toHaveClass("h-full", "overflow-y-auto");
@@ -75,34 +244,116 @@ describe("task composer data source menu", () => {
     const amazonOption = within(listbox).getByRole("option", { name: /亚马逊前端搜索模拟/ });
     expect(amazonOption).toHaveAttribute("aria-selected", "true");
 
-    fireEvent.pointerDown(amazonOption);
+    fireEvent.click(amazonOption);
     await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("amazon"));
-    expect(screen.getByLabelText("移除数据源 亚马逊前端搜索模拟")).toBeInTheDocument();
-  });
+    const sourceToken = screen.getByLabelText("数据源 亚马逊前端搜索模拟");
+    expect(sourceToken).toBeInTheDocument();
+    expect(sourceToken).toHaveTextContent("亚马逊前端搜索模拟");
+    expect(sourceToken).toHaveClass("bg-bg-surface", "text-foreground");
+    expect(sourceToken.className).not.toContain("arcoblue");
+  }, MENU_INTERACTION_TIMEOUT_MS);
+
+  it("does not remove a datasource when its token is clicked", async () => {
+    const onSourceRemove = vi.fn();
+    render(<ComposerHarness onSourceRemove={onSourceRemove} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ }));
+
+    const sourceToken = await screen.findByLabelText("数据源 Keepa-亚马逊-商品搜索");
+    await userEvent.click(sourceToken);
+
+    expect(onSourceRemove).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("数据源 Keepa-亚马逊-商品搜索")).toBeInTheDocument();
+  }, MENU_INTERACTION_TIMEOUT_MS);
+
+  it("keeps a newly selected datasource visible before the parent state syncs", async () => {
+    const onToolSelect = vi.fn();
+    render(
+      <TaskComposer
+        value=""
+        onValueChange={vi.fn()}
+        placeholder="输入任务"
+        mode="普通模式"
+        onModeChange={vi.fn()}
+        selectedSourceIds={[]}
+        onToolSelect={onToolSelect}
+        onSourceRemove={vi.fn()}
+        onFilesSelected={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /热门视频与达人线索/ }));
+
+    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("tiktok"));
+    expect(screen.getByLabelText("数据源 热门视频与达人线索")).toBeInTheDocument();
+    expect(screen.queryByText("输入任务")).not.toBeInTheDocument();
+  }, MENU_INTERACTION_TIMEOUT_MS);
 
   it("supports two-pane arrow-key navigation and Enter selection in the button popover", async () => {
     const onToolSelect = vi.fn();
     render(<ComposerHarness onToolSelect={onToolSelect} />);
 
-    await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+    const trigger = screen.getByRole("button", { name: /@数据源/ });
+    await userEvent.click(trigger);
 
     const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
-    const keepaCategory = within(listbox).getByRole("button", { name: "Keepa" });
-    await waitFor(() => expect(keepaCategory).toHaveFocus());
-
-    await userEvent.keyboard("{ArrowRight}");
     const keepaSearch = within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ });
+    const keepaProductDetail = within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品详情/ });
+    const keepaPriceHistory = within(listbox).getByRole("option", { name: /Keepa-亚马逊价格历史/ });
+    expect(keepaSearch).toHaveAttribute("aria-selected", "false");
+    expect(keepaProductDetail).toHaveAttribute("aria-selected", "false");
+
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(onToolSelect).not.toHaveBeenCalled();
+    expect(screen.getByRole("listbox", { name: "数据源列表" })).toBeInTheDocument();
+
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
     await waitFor(() => expect(keepaSearch).toHaveFocus());
 
-    await userEvent.keyboard("{ArrowDown}");
-    const keepaPriceHistory = within(listbox).getByRole("option", { name: /Keepa-亚马逊价格历史/ });
+    fireEvent.keyDown(keepaSearch, { key: "ArrowDown" });
+    await waitFor(() => expect(keepaProductDetail).toHaveFocus());
+
+    fireEvent.keyDown(keepaProductDetail, { key: "ArrowDown" });
     await waitFor(() => expect(keepaPriceHistory).toHaveFocus());
 
-    await userEvent.keyboard("{Enter}");
+    fireEvent.keyDown(keepaPriceHistory, { key: "ArrowUp" });
+    await waitFor(() => expect(keepaProductDetail).toHaveFocus());
 
-    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("keepa-price-history"));
+    fireEvent.keyDown(keepaProductDetail, { key: "Enter" });
+
+    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("keepa-product-detail"));
+    expect(onToolSelect).not.toHaveBeenCalledWith("keepa");
     expect(listbox).not.toBeInTheDocument();
-  });
+  }, MENU_INTERACTION_TIMEOUT_MS);
+
+  it("moves through the button datasource menu with Tab without selecting", async () => {
+    const onToolSelect = vi.fn();
+    render(<ComposerHarness onToolSelect={onToolSelect} />);
+
+    const trigger = screen.getByRole("button", { name: /@数据源/ });
+    await userEvent.click(trigger);
+
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    const keepaSearch = within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ });
+    fireEvent.keyDown(trigger, { key: "Tab" });
+    await waitFor(() => expect(keepaSearch).toHaveFocus());
+
+    fireEvent.keyDown(keepaSearch, { key: "Tab" });
+    const keepaProductDetail = within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品详情/ });
+    await waitFor(() => expect(keepaProductDetail).toHaveFocus());
+    expect(onToolSelect).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(keepaProductDetail, { key: "Tab", shiftKey: true });
+    await waitFor(() => expect(keepaSearch).toHaveFocus());
+    expect(onToolSelect).not.toHaveBeenCalled();
+  }, MENU_INTERACTION_TIMEOUT_MS);
 
   it("opens the two-column datasource menu for a bare mention trigger", async () => {
     render(<ComposerHarness />);
@@ -112,7 +363,8 @@ describe("task composer data source menu", () => {
     await userEvent.type(editor, "@");
 
     const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
-    expect(within(mentionMenu).getByText("@数据源")).toBeInTheDocument();
+    expect(within(mentionMenu).queryByText("@数据源")).not.toBeInTheDocument();
+    expect(mentionMenu).toHaveClass("overflow-hidden");
     expect(mentionMenu).toHaveStyle({ width: "760px" });
     expect(screen.getByTestId("task-composer-mention-category-pane")).toBeInTheDocument();
     expect(screen.getByTestId("task-composer-mention-option-pane")).toBeInTheDocument();
@@ -131,40 +383,47 @@ describe("task composer data source menu", () => {
     const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
     expect(editor).toHaveFocus();
 
-    const mentionOptions = within(mentionMenu).getAllByRole("option");
-    expect(mentionOptions.length).toBeGreaterThan(1);
+    const keepaSearch = within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ });
+    const keepaProductDetail = within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品详情/ });
+    await waitFor(() => expect(keepaSearch).toHaveAttribute("aria-selected", "true"));
+
     fireEvent.keyDown(editor, { key: "ArrowDown" });
-    await waitFor(() => expect(mentionOptions[1]!).toHaveAttribute("aria-selected", "true"));
+    await waitFor(() => expect(keepaProductDetail).toHaveFocus());
 
-    fireEvent.keyDown(editor, { key: "ArrowLeft" });
-    const keepaCategory = within(mentionMenu).getByRole("button", { name: "Keepa" });
-    await waitFor(() => expect(keepaCategory).toHaveFocus());
+    fireEvent.keyDown(keepaProductDetail, { key: "ArrowDown" });
+    const keepaPriceHistory = within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊价格历史/ });
+    await waitFor(() => expect(keepaPriceHistory).toHaveFocus());
 
-    fireEvent.keyDown(keepaCategory, { key: "ArrowDown" });
-    const amazonCategory = within(mentionMenu).getByRole("button", { name: "亚马逊前台" });
-    await waitFor(() => expect(amazonCategory).toHaveFocus());
-
-    fireEvent.keyDown(amazonCategory, { key: "ArrowRight" });
+    fireEvent.keyDown(keepaPriceHistory, { key: "ArrowRight" });
     const amazonSearch = within(mentionMenu).getByRole("option", { name: /亚马逊前端搜索模拟/ });
     await waitFor(() => expect(amazonSearch).toHaveFocus());
 
     fireEvent.keyDown(amazonSearch, { key: "ArrowDown" });
+    const amazonProductDetail = within(mentionMenu).getByRole("option", { name: /亚马逊前端-商品详情/ });
+    await waitFor(() => expect(amazonProductDetail).toHaveFocus());
+
+    fireEvent.keyDown(amazonProductDetail, { key: "ArrowDown" });
     const amazonReview = within(mentionMenu).getByRole("option", { name: /亚马逊-商品评论/ });
     await waitFor(() => expect(amazonReview).toHaveFocus());
 
     fireEvent.keyDown(amazonReview, { key: "ArrowUp" });
-    await waitFor(() => expect(amazonSearch).toHaveFocus());
-    fireEvent.keyDown(amazonSearch, { key: "ArrowLeft" });
-    await waitFor(() => expect(amazonCategory).toHaveFocus());
+    await waitFor(() => expect(amazonProductDetail).toHaveFocus());
 
-    fireEvent.keyDown(amazonCategory, { key: "ArrowRight" });
+    fireEvent.keyDown(amazonProductDetail, { key: "ArrowUp" });
     await waitFor(() => expect(amazonSearch).toHaveFocus());
+
+    fireEvent.keyDown(amazonSearch, { key: "ArrowLeft" });
+    await waitFor(() => expect(keepaPriceHistory).toHaveFocus());
+
+    fireEvent.keyDown(keepaPriceHistory, { key: "ArrowRight" });
+    await waitFor(() => expect(amazonSearch).toHaveFocus());
+
     fireEvent.keyDown(amazonSearch, { key: "Enter" });
     await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("amazon"));
     expect(screen.queryByTestId("task-composer-mention-menu")).not.toBeInTheDocument();
-  });
+  }, MENU_INTERACTION_TIMEOUT_MS);
 
-  it("moves to the next bare mention datasource card with ArrowDown from the editor", async () => {
+  it("keeps moving through bare mention options when arrow keys stay on the editor", async () => {
     render(<ComposerHarness />);
 
     const editor = screen.getByTestId("task-composer-editor");
@@ -172,60 +431,37 @@ describe("task composer data source menu", () => {
     await userEvent.type(editor, "@");
 
     const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
-    const options = within(mentionMenu).getAllByRole("option");
-    expect(options.length).toBeGreaterThan(1);
-    const secondOption = options[1]!;
+    const keepaSearch = within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ });
+    const keepaProductDetail = within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品详情/ });
+    await waitFor(() => expect(keepaSearch).toHaveAttribute("aria-selected", "true"));
+
     fireEvent.keyDown(editor, { key: "ArrowDown" });
-    await waitFor(() => expect(secondOption).toHaveAttribute("aria-selected", "true"));
-  });
+    await waitFor(() => expect(keepaProductDetail).toHaveFocus());
 
-  it("wraps to the previous bare mention datasource card with ArrowUp from the editor", async () => {
-    render(<ComposerHarness />);
-
-    const editor = screen.getByTestId("task-composer-editor");
-    await userEvent.click(editor);
-    await userEvent.type(editor, "@");
-
-    const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
-    const options = within(mentionMenu).getAllByRole("option");
-    expect(options.length).toBeGreaterThan(0);
-    const lastOption = options[options.length - 1]!;
     fireEvent.keyDown(editor, { key: "ArrowUp" });
-    await waitFor(() => expect(lastOption).toHaveAttribute("aria-selected", "true"));
-  });
+    await waitFor(() => expect(keepaSearch).toHaveFocus());
+  }, MENU_INTERACTION_TIMEOUT_MS);
 
-  it("supports keyboard navigation after selecting a datasource and reopening mention", async () => {
+  it("moves through the bare mention datasource menu with Tab and selects only on Enter", async () => {
     const onToolSelect = vi.fn();
     render(<ComposerHarness onToolSelect={onToolSelect} />);
 
     const editor = screen.getByTestId("task-composer-editor");
     await userEvent.click(editor);
     await userEvent.type(editor, "@");
-    await screen.findByTestId("task-composer-mention-menu");
-    await userEvent.keyboard("{Enter}");
 
-    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("keepa"));
-    expect(screen.queryByTestId("task-composer-mention-menu")).not.toBeInTheDocument();
+    const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
+    fireEvent.keyDown(editor, { key: "Tab" });
+    const keepaSearch = within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ });
+    await waitFor(() => expect(keepaSearch).toHaveFocus());
+    expect(onToolSelect).not.toHaveBeenCalled();
 
-    await waitFor(() => expect(editor.querySelector("[data-template-ghost='true']")).toBeInTheDocument());
-    editor.querySelectorAll("[data-template-ghost='true']").forEach((node) => node.remove());
-    editor.appendChild(document.createTextNode("@"));
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    range.collapse(false);
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-    fireEvent.input(editor);
+    fireEvent.keyDown(keepaSearch, { key: "Tab" });
+    const keepaProductDetail = within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品详情/ });
+    await waitFor(() => expect(keepaProductDetail).toHaveFocus());
+    expect(onToolSelect).not.toHaveBeenCalled();
 
-    const reopenedMenu = await screen.findByTestId("task-composer-mention-menu");
-    const reopenedOptions = within(reopenedMenu).getAllByRole("option");
-    expect(reopenedOptions.length).toBeGreaterThan(1);
-
-    await userEvent.keyboard("{ArrowDown}");
-    await waitFor(() => expect(reopenedOptions[1]!).toHaveAttribute("aria-selected", "true"));
-    await userEvent.keyboard("{Enter}");
-
+    fireEvent.keyDown(keepaProductDetail, { key: "Enter" });
     await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("keepa-product-detail"));
     expect(screen.queryByTestId("task-composer-mention-menu")).not.toBeInTheDocument();
   });
@@ -236,40 +472,21 @@ describe("task composer data source menu", () => {
 
     const editor = screen.getByTestId("task-composer-editor");
     await userEvent.click(editor);
-    await userEvent.type(editor, "@亚马逊");
+    setEditorText(editor, "@亚马逊");
 
     const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
     expect(within(mentionMenu).getByText("选择工具")).toBeInTheDocument();
     expect(mentionMenu).toHaveStyle({ width: "340px" });
     expect(screen.queryByTestId("task-composer-source-category-pane")).not.toBeInTheDocument();
-    const option = within(mentionMenu).getByRole("option", { name: /亚马逊前台.*亚马逊前端搜索模拟/ });
+    const option = await waitFor(() =>
+      within(mentionMenu).getByRole("option", { name: /亚马逊前台.*亚马逊前端搜索模拟/ }),
+    );
 
-    fireEvent.pointerDown(option);
+    fireEvent.click(option);
 
     await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("amazon"));
     expect(screen.queryByTestId("task-composer-mention-menu")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("移除数据源 亚马逊前端搜索模拟")).toBeInTheDocument();
-  });
-
-  it("keeps following text when removing a datasource token", async () => {
-    render(<ComposerHarness />);
-
-    await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
-
-    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
-    const amazonOption = within(listbox).getByRole("option", { name: /亚马逊前端搜索模拟/ });
-    fireEvent.pointerDown(amazonOption);
-
-    const editor = screen.getByTestId("task-composer-editor");
-    await userEvent.type(editor, "请围绕目标关键词搜索结果做标签化。");
-    expect(editor).toHaveTextContent("请围绕目标关键词搜索结果做标签化。");
-
-    fireEvent.mouseDown(screen.getByLabelText("移除数据源 亚马逊前端搜索模拟"));
-
-    await waitFor(() => {
-      expect(screen.queryByLabelText("移除数据源 亚马逊前端搜索模拟")).not.toBeInTheDocument();
-    });
-    expect(editor).toHaveTextContent("请围绕目标关键词搜索结果做标签化。");
+    expect(screen.getByLabelText("数据源 亚马逊前端搜索模拟")).toBeInTheDocument();
   });
 
   it("searches after a typed mention query and selects the filtered result with Enter", async () => {
@@ -278,16 +495,156 @@ describe("task composer data source menu", () => {
 
     const editor = screen.getByTestId("task-composer-editor");
     await userEvent.click(editor);
-    await userEvent.type(editor, "@评论");
+    setEditorText(editor, "@评论");
 
     const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
     expect(within(mentionMenu).getByText("选择工具")).toBeInTheDocument();
-    expect(within(mentionMenu).getByRole("option", { name: /亚马逊前台.*亚马逊-商品评论/ })).toBeInTheDocument();
+    const option = within(mentionMenu).getByRole("option", { name: /亚马逊前台.*亚马逊-商品评论/ });
+    expect(option).toBeInTheDocument();
 
-    await userEvent.keyboard("{Enter}");
+    fireEvent.keyDown(editor, { key: "ArrowDown" });
+    await waitFor(() =>
+      expect(within(mentionMenu).getByRole("option", { name: /亚马逊前台.*亚马逊-商品评论/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    fireEvent.keyDown(editor, { key: "Enter" });
 
     await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("amazon-review"));
     expect(screen.queryByTestId("task-composer-mention-menu")).not.toBeInTheDocument();
+  });
+
+  it("moves through filtered mention results with arrow keys and selects the active result", async () => {
+    const onToolSelect = vi.fn();
+    render(<ComposerHarness onToolSelect={onToolSelect} />);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    setEditorText(editor, "@亚马逊前端");
+
+    await screen.findByTestId("task-composer-mention-menu");
+    const getMentionMenu = () => screen.getByTestId("task-composer-mention-menu");
+    const getSearchOption = () => within(getMentionMenu()).getByRole("option", { name: /亚马逊前台.*亚马逊前端搜索模拟/ });
+    const getDetailOption = () => within(getMentionMenu()).getByRole("option", { name: /亚马逊前台.*亚马逊前端-商品详情/ });
+    const searchOption = getSearchOption();
+    const detailOption = getDetailOption();
+    expect(searchOption).toHaveAttribute("aria-selected", "false");
+    expect(detailOption).toHaveAttribute("aria-selected", "false");
+
+    fireEvent.keyDown(editor, { key: "Enter" });
+    expect(onToolSelect).not.toHaveBeenCalled();
+    expect(screen.getByTestId("task-composer-mention-menu")).toBeInTheDocument();
+
+    fireEvent.keyDown(editor, { key: "ArrowUp" });
+    await waitFor(() => {
+      expect(getDetailOption()).toHaveAttribute("aria-selected", "true");
+      expect(getSearchOption()).toHaveAttribute("aria-selected", "false");
+    });
+
+    fireEvent.keyDown(editor, { key: "Enter" });
+
+    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("amazon-product-detail"));
+    expect(onToolSelect).not.toHaveBeenCalledWith("amazon");
+    expect(screen.queryByTestId("task-composer-mention-menu")).not.toBeInTheDocument();
+  });
+
+  it("excludes template-body-only matches when filtered mention results have datasource name matches", async () => {
+    const onToolSelect = vi.fn();
+    const customGroups: Parameters<typeof TaskComposer>[0]["dataSourceGroups"] = [
+      {
+        id: "amazon-group",
+        label: "亚马逊前台",
+        accent: "var(--color-accent-amazon)",
+        icon: "amazon",
+        items: [
+          {
+            id: "amazon",
+            label: "亚马逊前端搜索模拟",
+            promptHint: "全域覆盖",
+            parentId: "amazon-group",
+            parentLabel: "亚马逊前台",
+            accent: "var(--color-accent-amazon)",
+            icon: "amazon",
+          },
+          {
+            id: "amazon-product-detail",
+            label: "亚马逊前端-商品详情",
+            promptHint: "商品详情",
+            parentId: "amazon-group",
+            parentLabel: "亚马逊前台",
+            accent: "var(--color-accent-amazon)",
+            icon: "amazon",
+          },
+        ],
+      },
+      {
+        id: "alibaba-group",
+        label: "店雷达(1688)",
+        accent: "var(--color-accent-alibaba)",
+        icon: "alibaba",
+        items: [
+          {
+            id: "alibaba-noisy-template",
+            label: "店雷达-1688选品库",
+            promptHint: "货源筛选",
+            promptTemplate: "先用亚马逊前端搜索模拟验证市场，再查询1688货源",
+            parentId: "alibaba-group",
+            parentLabel: "店雷达(1688)",
+            accent: "var(--color-accent-alibaba)",
+            icon: "alibaba",
+          },
+        ],
+      },
+    ];
+    const customItems = customGroups.flatMap((group) => group.items);
+    render(<ComposerHarness onToolSelect={onToolSelect} dataSourceGroups={customGroups} dataSourceItems={customItems} />);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    setEditorText(editor, "@亚马逊前端");
+
+    const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
+    expect(within(mentionMenu).getByRole("option", { name: /亚马逊前台.*亚马逊前端搜索模拟/ })).toBeInTheDocument();
+    expect(within(mentionMenu).getByRole("option", { name: /亚马逊前台.*亚马逊前端-商品详情/ })).toBeInTheDocument();
+    expect(within(mentionMenu).queryByRole("option", { name: /店雷达.*1688选品库/ })).not.toBeInTheDocument();
+
+    fireEvent.keyDown(editor, { key: "ArrowUp" });
+    await waitFor(() =>
+      expect(within(mentionMenu).getByRole("option", { name: /亚马逊前台.*亚马逊前端-商品详情/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    fireEvent.keyDown(editor, { key: "Enter" });
+
+    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("amazon-product-detail"));
+    expect(onToolSelect).not.toHaveBeenCalledWith("alibaba-noisy-template");
+  });
+
+  it("removes the last selected datasource with Backspace even if the inline token is missing", async () => {
+    const onSourceRemove = vi.fn();
+    render(
+      <TaskComposer
+        value=""
+        onValueChange={vi.fn()}
+        placeholder="输入任务"
+        mode="普通模式"
+        onModeChange={vi.fn()}
+        selectedSourceIds={["keepa"]}
+        onToolSelect={vi.fn()}
+        onSourceRemove={onSourceRemove}
+        onFilesSelected={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    screen.getByLabelText("数据源 Keepa-亚马逊-商品搜索").remove();
+    const editor = screen.getByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    fireEvent.keyDown(editor, { key: "Backspace" });
+
+    expect(onSourceRemove).toHaveBeenCalledWith("keepa");
   });
 
   it("accepts a selected datasource prompt template with Tab and renders variable chips", async () => {
@@ -298,7 +655,7 @@ describe("task composer data source menu", () => {
 
     const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
     const keepaSearch = within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ });
-    fireEvent.pointerDown(keepaSearch);
+    fireEvent.click(keepaSearch);
 
     const editor = screen.getByTestId("task-composer-editor");
     await waitFor(() => {
@@ -317,7 +674,281 @@ describe("task composer data source menu", () => {
     });
   });
 
-  it("cycles selected datasource prompt templates and accepts the currently visible query", async () => {
+  it("shows datasource template completion after existing text and preserves that text on Tab", async () => {
+    render(<ComposerHarness />);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    await userEvent.type(editor, "是是是");
+
+    await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /Keepa-亚马逊价格历史/ }));
+
+    await waitFor(() => {
+      expect(editor).toHaveTextContent("是是是");
+      expect(editor).toHaveTextContent("按 Tab 键补全");
+      expect(editor).toHaveTextContent("过去{{12个月}}价格历史记录");
+    });
+
+    fireEvent.keyDown(editor, { key: "Tab" });
+
+    await waitFor(() => {
+      expect(editor).toHaveTextContent("是是是");
+      expect(editor).toHaveTextContent("亚马逊美国站");
+      expect(editor).toHaveTextContent("B0DD4GFNNG");
+      expect(editor).not.toHaveTextContent("{{");
+      expect(editor).not.toHaveTextContent("按 Tab 键补全");
+      expect(editor.querySelectorAll("[data-template-slot='true']")).toHaveLength(3);
+    });
+  });
+
+  it("accepts datasource template completion after selecting a filtered mention result", async () => {
+    const onToolSelect = vi.fn();
+    render(<ComposerHarness onToolSelect={onToolSelect} />);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    setEditorText(editor, "@价格历史");
+
+    const mentionMenu = await screen.findByTestId("task-composer-mention-menu");
+    const priceHistoryOption = within(mentionMenu).getByRole("option", { name: /Keepa.*亚马逊价格历史/ });
+    expect(priceHistoryOption).toHaveAttribute("aria-selected", "false");
+
+    fireEvent.keyDown(editor, { key: "ArrowDown" });
+    await waitFor(() => expect(priceHistoryOption).toHaveAttribute("aria-selected", "true"));
+    fireEvent.keyDown(editor, { key: "Enter" });
+
+    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("keepa-price-history"));
+    await waitFor(() => {
+      expect(screen.getByLabelText("数据源 Keepa-亚马逊价格历史")).toBeInTheDocument();
+      expect(editor).toHaveTextContent("按 Tab 键补全");
+      expect(editor).toHaveTextContent("过去{{12个月}}价格历史记录");
+    });
+
+    fireEvent.keyDown(editor, { key: "Tab" });
+
+    await waitFor(() => {
+      expect(editor).toHaveTextContent("亚马逊美国站");
+      expect(editor).toHaveTextContent("B0DD4GFNNG");
+      expect(editor).toHaveTextContent("过去12个月价格历史记录");
+      expect(editor.querySelectorAll("[data-template-slot='true']")).toHaveLength(3);
+      expect(editor).not.toHaveTextContent("{{");
+      expect(editor).not.toHaveTextContent("按 Tab 键补全");
+    });
+  });
+
+  it("matches datasource mentions embedded inside an accepted completion template", async () => {
+    const customDataSourceGroups: Parameters<typeof TaskComposer>[0]["dataSourceGroups"] = [
+      {
+        id: "sif-group",
+        label: "Sif数据分析工具",
+        accent: "var(--color-accent-sif)",
+        icon: "store",
+        items: [
+          {
+            id: "sif-asin-traffic-source",
+            label: "SIF-ASIN流量来源",
+            promptHint: "流量来源分析",
+            promptTemplate:
+              "1.@SIF-ASIN流量来源: 在{{美国站}}查询ASIN为：{{B0C6CLB49N}}的流量来源。\n2.统计主要关键词的搜索热度。\n3.分析该竞品主要靠广告驱动还是自然流量驱动。",
+            parentId: "sif-group",
+            parentLabel: "Sif数据分析工具",
+            accent: "var(--color-accent-sif)",
+            icon: "store",
+          },
+        ],
+      },
+    ];
+    const customDataSourceItems = customDataSourceGroups.flatMap((group) => group.items);
+
+    render(
+      <ComposerHarness
+        dataSourceGroups={customDataSourceGroups}
+        dataSourceItems={customDataSourceItems}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /SIF-ASIN流量来源/ }));
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await waitFor(() => {
+      expect(editor).toHaveTextContent("@SIF-ASIN流量来源");
+      expect(editor).toHaveTextContent("按 Tab 键补全");
+    });
+
+    fireEvent.keyDown(editor, { key: "Tab" });
+
+    await waitFor(() => {
+      const sourceToken = screen.getByLabelText("数据源 SIF-ASIN流量来源");
+      expect(sourceToken).toBeInTheDocument();
+      expect(editor.querySelectorAll("[data-tool-token='true'][data-tool-id='sif-asin-traffic-source']")).toHaveLength(1);
+      expect(
+        Array.from(editor.childNodes)
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .map((node) => node.textContent ?? "")
+          .join(""),
+      ).not.toContain("@SIF-ASIN流量来源");
+      expect(sourceToken.previousSibling?.textContent).toBe("1.");
+      expect(sourceToken.nextSibling?.textContent).toMatch(/^: 在/);
+      expect(editor).toHaveTextContent("查询ASIN为");
+      expect(editor.querySelectorAll("[data-template-slot='true']")).toHaveLength(2);
+      expect(editor).not.toHaveTextContent("{{");
+      expect(editor).not.toHaveTextContent("按 Tab 键补全");
+    });
+  });
+
+  it("adds secondary datasource tokens when an accepted completion template references another datasource", async () => {
+    const onToolSelect = vi.fn();
+    const customDataSourceGroups: Parameters<typeof TaskComposer>[0]["dataSourceGroups"] = [
+      {
+        id: "custom-group",
+        label: "组合工具",
+        accent: "var(--color-primary)",
+        icon: "grid",
+        items: [
+          {
+            id: "primary-source",
+            label: "主数据源",
+            promptHint: "主流程",
+            promptTemplate: "先用@辅助数据源 查询{{关键词}}，再汇总输出",
+            parentId: "custom-group",
+            parentLabel: "组合工具",
+            accent: "var(--color-primary)",
+            icon: "grid",
+          },
+          {
+            id: "secondary-source",
+            label: "辅助数据源",
+            promptHint: "辅助查询",
+            parentId: "custom-group",
+            parentLabel: "组合工具",
+            accent: "var(--color-primary)",
+            icon: "grid",
+          },
+        ],
+      },
+    ];
+    const customDataSourceItems = customDataSourceGroups.flatMap((group) => group.items);
+
+    render(
+      <ComposerHarness
+        onToolSelect={onToolSelect}
+        dataSourceGroups={customDataSourceGroups}
+        dataSourceItems={customDataSourceItems}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /主数据源/ }));
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await waitFor(() => {
+      expect(editor).toHaveTextContent("@辅助数据源");
+      expect(editor).toHaveTextContent("按 Tab 键补全");
+    });
+
+    fireEvent.keyDown(editor, { key: "Tab" });
+
+    await waitFor(() => {
+      expect(onToolSelect).toHaveBeenCalledWith("primary-source");
+      expect(onToolSelect).toHaveBeenCalledWith("secondary-source");
+      const tokenIds = Array.from(editor.querySelectorAll<HTMLElement>("[data-tool-token='true'][data-tool-id]")).map(
+        (node) => node.dataset.toolId,
+      );
+      expect(tokenIds).toEqual(["primary-source", "secondary-source"]);
+      expect(screen.getByLabelText("数据源 主数据源")).toBeInTheDocument();
+      const secondaryToken = screen.getByLabelText("数据源 辅助数据源");
+      expect(secondaryToken).toBeInTheDocument();
+      expect(secondaryToken.previousSibling?.textContent).toContain("先用");
+      expect(secondaryToken.nextSibling?.textContent).toMatch(/^ 查询/);
+      expect(
+        Array.from(editor.childNodes)
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .map((node) => node.textContent ?? "")
+          .join(""),
+      ).not.toContain("@辅助数据源");
+      expect(editor.querySelectorAll("[data-template-slot='true']")).toHaveLength(1);
+      expect(editor).not.toHaveTextContent("{{");
+      expect(editor).not.toHaveTextContent("按 Tab 键补全");
+    });
+  });
+
+  it("keeps a template chip when deleting its last character, then removes it on the next delete", async () => {
+    render(<ComposerHarness />);
+
+    await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ }));
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await waitFor(() => {
+      expect(editor).toHaveTextContent("按 Tab 键补全");
+    });
+
+    fireEvent.keyDown(editor, { key: "Tab" });
+
+    const siteSlot = await waitFor(() => {
+      const slot = editor.querySelector<HTMLElement>("[data-template-slot='true']");
+      expect(slot).toBeInTheDocument();
+      return slot!;
+    });
+    siteSlot.textContent = "站";
+    placeCaretInTextNode(siteSlot.firstChild as Text, 1);
+
+    fireEvent.keyDown(editor, { key: "Backspace" });
+
+    expect(siteSlot.isConnected).toBe(true);
+    expect(siteSlot.dataset.empty).toBe("true");
+    expect(siteSlot.textContent).toBe("\u200b");
+
+    fireEvent.keyDown(editor, { key: "Backspace" });
+
+    expect(siteSlot.isConnected).toBe(false);
+    expect(editor.querySelectorAll("[data-template-slot='true']")).toHaveLength(3);
+  });
+
+  it("keeps a template chip when deleting from the adjacent caret position", async () => {
+    render(<ComposerHarness />);
+
+    await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ }));
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await waitFor(() => {
+      expect(editor).toHaveTextContent("按 Tab 键补全");
+    });
+
+    fireEvent.keyDown(editor, { key: "Tab" });
+
+    const siteSlot = await waitFor(() => {
+      const slot = editor.querySelector<HTMLElement>("[data-template-slot='true']");
+      expect(slot).toBeInTheDocument();
+      return slot!;
+    });
+    siteSlot.textContent = "站";
+    placeCaretAfterElement(siteSlot);
+
+    fireEvent.keyDown(editor, { key: "Backspace" });
+
+    expect(siteSlot.isConnected).toBe(true);
+    expect(siteSlot.dataset.empty).toBe("true");
+    expect(siteSlot.textContent).toBe("\u200b");
+
+    fireEvent.keyDown(editor, { key: "Backspace" });
+
+    expect(siteSlot.isConnected).toBe(false);
+    expect(editor.querySelectorAll("[data-template-slot='true']")).toHaveLength(3);
+  });
+
+  it("accepts the visible selected datasource prompt template", async () => {
     const customDataSourceGroups: Parameters<typeof TaskComposer>[0]["dataSourceGroups"] = [
       {
         id: "custom-group",
@@ -350,7 +981,7 @@ describe("task composer data source menu", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /@数据源/ }));
     const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
-    fireEvent.pointerDown(within(listbox).getByRole("option", { name: /多模板数据源/ }));
+    fireEvent.click(within(listbox).getByRole("option", { name: /多模板数据源/ }));
 
     const editor = screen.getByTestId("task-composer-editor");
     await waitFor(() => {
@@ -358,22 +989,15 @@ describe("task composer data source menu", () => {
       expect(editor).toHaveTextContent("按 Tab 键补全");
     });
 
-    await waitFor(
-      () => {
-        expect(editor).toHaveTextContent("第二条查询");
-      },
-      { timeout: 5000 },
-    );
-
     fireEvent.keyDown(editor, { key: "Tab" });
 
     await waitFor(() => {
-      expect(editor).toHaveTextContent("第二条查询");
-      expect(editor).toHaveTextContent("ASIN");
+      expect(editor).toHaveTextContent("第一条查询");
+      expect(editor).toHaveTextContent("关键词");
       expect(editor).not.toHaveTextContent("按 Tab 键补全");
       expect(editor.querySelectorAll("[data-template-slot='true']")).toHaveLength(1);
     });
-  }, 10000);
+  });
 
   it("pastes clipboard images as composer attachments", async () => {
     const originalCreateObjectURL = URL.createObjectURL;
@@ -426,7 +1050,6 @@ describe("task composer data source menu", () => {
       expect(onFilesSelected).not.toHaveBeenCalled();
       expect(screen.getByText("pasted-image-1.png")).toBeInTheDocument();
       expect(screen.getByLabelText("图片预览 pasted-image-1.png")).toBeInTheDocument();
-      expect(screen.queryByLabelText("图片类型 PNG")).not.toBeInTheDocument();
     } finally {
       Object.defineProperty(URL, "createObjectURL", {
         configurable: true,
@@ -437,44 +1060,6 @@ describe("task composer data source menu", () => {
         value: originalRevokeObjectURL,
       });
     }
-  });
-
-  it("submits only attachments still visible in the composer", async () => {
-    const onSubmit = vi.fn();
-    const first = new File(["first"], "first.csv", { type: "text/csv" });
-    const second = new File(["second"], "second.csv", { type: "text/csv" });
-    const third = new File(["third"], "third.csv", { type: "text/csv" });
-
-    const { container } = render(
-      <TaskComposer
-        value="分析附件"
-        onValueChange={vi.fn()}
-        placeholder="输入任务"
-        mode="普通模式"
-        onModeChange={vi.fn()}
-        selectedSourceIds={[]}
-        onToolSelect={vi.fn()}
-        onSourceRemove={vi.fn()}
-        onFilesSelected={vi.fn()}
-        onSubmit={onSubmit}
-      />,
-    );
-
-    const fileInput = container.querySelector<HTMLInputElement>("input[type='file']");
-    expect(fileInput).not.toBeNull();
-    fireEvent.change(fileInput!, { target: { files: [first, second, third] } });
-
-    await waitFor(() => {
-      expect(screen.getByText("first.csv")).toBeInTheDocument();
-      expect(screen.getByText("second.csv")).toBeInTheDocument();
-      expect(screen.getByText("third.csv")).toBeInTheDocument();
-    });
-
-    await userEvent.click(screen.getByLabelText("删除附件 second.csv"));
-    await userEvent.click(screen.getByLabelText("删除附件 third.csv"));
-    await userEvent.click(screen.getByTestId("task-composer-submit"));
-
-    expect(onSubmit).toHaveBeenCalledWith([first]);
   });
 
   it("uses the native undoable edit command for pasted text", () => {

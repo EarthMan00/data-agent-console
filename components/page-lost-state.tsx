@@ -10,7 +10,7 @@ export function PageLostState({ onRetry }: { onRetry: () => void }) {
       <p className="text-body leading-6 text-text-tertiary">页面走丢了，请刷新试试</p>
       <Button
         type="button"
-        className="mt-7 h-12 rounded-full bg-primary px-10 text-title-1 font-semibold text-primary-foreground hover:bg-link-hover"
+        className="mt-7 h-12 rounded-full bg-primary px-10 text-title-1 font-semibold text-primary-foreground hover:bg-primary/85"
         onClick={onRetry}
       >
         刷新试试
