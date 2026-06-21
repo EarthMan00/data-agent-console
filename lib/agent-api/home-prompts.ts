@@ -8,8 +8,20 @@ export type PublicPromptCategory = {
   sort_order: number;
 };
 
-/** 拉取公开的 Prompt 分类列表。 */
+let _categoriesPromise: Promise<PublicPromptCategory[]> | null = null;
+
+/** 拉取公开的 Prompt 分类列表（自动去重：并发调用共享同一请求）。 */
 export async function fetchPublicPromptCategories(): Promise<PublicPromptCategory[]> {
+  if (_categoriesPromise) return _categoriesPromise;
+  _categoriesPromise = _doFetchCategories();
+  try {
+    return await _categoriesPromise;
+  } finally {
+    _categoriesPromise = null;
+  }
+}
+
+async function _doFetchCategories(): Promise<PublicPromptCategory[]> {
   const base = getAgentHttpApiBase();
   const res = await fetch(`${base}/api/prompt-categories`);
   const data = await readErrorResponseBody(res);
