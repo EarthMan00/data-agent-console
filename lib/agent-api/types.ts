@@ -424,3 +424,16 @@ export type AdminFeedbackEntry = {
   admin_note: string | null;
   updated_at: string | null;
 };
+
+export type AdminModelConfig = {
+  id: string;
+  name: string;
+  api_key: string;
+  base_url: string;
+  model: string;
+  request_timeout: number;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};

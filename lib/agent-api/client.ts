@@ -31,6 +31,7 @@ import type {
   AdminPromptTemplate,
   AdminPromptTemplateListResponse,
   AdminFeedbackEntry,
+  AdminModelConfig,
 } from "@/lib/agent-api/types";
 
 function apiUrl(path: string): string {
@@ -1356,4 +1357,61 @@ export async function adminPatchFeedback(
   const data = await safeJson(res);
   if (!res.ok) throw new AgentApiError("patch feedback failed", res.status, data);
   return data as { entry: AdminFeedbackEntry };
+}
+
+// --- Admin: model configs ---
+
+export async function adminListModelConfigs(accessToken: string): Promise<{ configs: AdminModelConfig[] }> {
+  const res = await fetch(apiUrl("/admin/models"), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("list model configs failed", res.status, data);
+  return data as { configs: AdminModelConfig[] };
+}
+
+export async function adminCreateModelConfig(
+  accessToken: string,
+  body: { name: string; api_key: string; base_url: string; model: string; request_timeout?: number },
+): Promise<{ config: AdminModelConfig }> {
+  const res = await fetch(apiUrl("/admin/models"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("create model config failed", res.status, data);
+  return data as { config: AdminModelConfig };
+}
+
+export async function adminPatchModelConfig(
+  accessToken: string, configId: string,
+  body: { name?: string; api_key?: string; base_url?: string; model?: string; request_timeout?: number },
+): Promise<{ config: AdminModelConfig }> {
+  const res = await fetch(apiUrl(`/admin/models/${encodeURIComponent(configId)}`), {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("patch model config failed", res.status, data);
+  return data as { config: AdminModelConfig };
+}
+
+export async function adminDeleteModelConfig(accessToken: string, configId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/admin/models/${encodeURIComponent(configId)}`), {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.ok) return;
+  throw new AgentApiError("delete model config failed", res.status, await safeJson(res));
+}
+
+export async function adminActivateModelConfig(accessToken: string, configId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/admin/models/${encodeURIComponent(configId)}/activate`), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.ok) return;
+  throw new AgentApiError("activate model config failed", res.status, await safeJson(res));
 }

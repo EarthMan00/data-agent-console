@@ -22,6 +22,7 @@ export {
   IconClockHour3 as Clock3,
   IconCornerDownLeft as CornerDownLeft,
   IconCopy as Copy,
+  IconCpu as Cpu,
   IconDatabase as Database,
   IconDownload as Download,
   IconDots as Ellipsis,

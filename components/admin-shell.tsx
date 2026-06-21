@@ -12,6 +12,7 @@ import {
   Package,
   BookOpen,
   MessageCircleMore,
+  Cpu,
 } from "@/components/ui/tabler-icons";
 
 const navItems = [
@@ -20,6 +21,7 @@ const navItems = [
   { href: "/admin/plans",    label: "套餐管理", icon: Package },
   { href: "/admin/prompts",  label: "Prompt 管理", icon: BookOpen },
   { href: "/admin/feedback", label: "反馈管理", icon: MessageCircleMore },
+  { href: "/admin/models",  label: "模型管理", icon: Cpu },
 ];
 
 export function AdminShell({ children }: { children: ReactNode }) {
