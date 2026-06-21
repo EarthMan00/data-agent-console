@@ -1,10 +1,43 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AliceShell, AliceShellRoot } from "@/components/alice-shell";
 
 const push = vi.fn();
 const replace = vi.fn();
+const platformAgentMock = vi.hoisted(() => ({
+  current: null as
+    | {
+        auth: { accessToken: string; displayName: string; userId: string };
+        platformSessionId: string | null;
+        withFreshToken: ReturnType<typeof vi.fn>;
+        setActivePlatformSession: ReturnType<typeof vi.fn>;
+        clearActivePlatformSession: ReturnType<typeof vi.fn>;
+        openLogin: ReturnType<typeof vi.fn>;
+      }
+    | null,
+}));
+const agentApiMocks = vi.hoisted(() => ({
+  listSessions: vi.fn(),
+  listSessionMessages: vi.fn(),
+  purgeSessionData: vi.fn(),
+  parseFastApiDetail: vi.fn(),
+}));
+const localStorageMock = vi.hoisted(() => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: vi.fn((key: string) => store[key] ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      store[key] = value;
+    }),
+    removeItem: vi.fn((key: string) => {
+      delete store[key];
+    }),
+    clear: vi.fn(() => {
+      store = {};
+    }),
+  };
+});
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/agent",
@@ -21,7 +54,22 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("@/components/platform-agent-provider", () => ({
-  useOptionalPlatformAgent: () => null,
+  useOptionalPlatformAgent: () => platformAgentMock.current,
+}));
+
+vi.mock("@/lib/agent-runtime", () => ({
+  isPlatformBackendEnabled: () => true,
+}));
+
+vi.mock("@/lib/agent-api/client", () => ({
+  AgentApiError: class AgentApiError extends Error {
+    status = 500;
+    body = null;
+  },
+  listSessions: agentApiMocks.listSessions,
+  listSessionMessages: agentApiMocks.listSessionMessages,
+  purgeSessionData: agentApiMocks.purgeSessionData,
+  parseFastApiDetail: agentApiMocks.parseFastApiDetail,
 }));
 
 function mockMatchMedia(matchesByQuery: Record<string, boolean>) {
@@ -55,9 +103,30 @@ function renderShellWithResultPanel() {
   );
 }
 
+function session(sessionId: string, createdAt: string) {
+  return {
+    session_id: sessionId,
+    status: "active",
+    created_at: createdAt,
+    last_active_at: createdAt,
+    expires_at: "2026-07-20T00:00:00.000Z",
+  };
+}
+
 describe("AliceShell right rail layout", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: localStorageMock,
+    });
+    window.localStorage.clear();
+  });
+
   afterEach(() => {
+    platformAgentMock.current = null;
     vi.clearAllMocks();
+    vi.useRealTimers();
+    window.localStorage.clear();
   });
 
   it("keeps the desktop sidebar element aligned to the collapsed grid width", async () => {
@@ -124,5 +193,101 @@ describe("AliceShell right rail layout", () => {
     expect(document.querySelector('[data-testid="workspace-right-rail"]')).not.toHaveClass("lg:border-t-0");
     expect(document.querySelector("main > div > div [data-testid='agent-preview-panel']")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "任务执行结果抽屉" })).not.toBeInTheDocument();
+  });
+
+  it("supports drag sorting history tasks in the sidebar", async () => {
+    vi.useFakeTimers();
+    mockMatchMedia({
+      "(max-width: 767px)": false,
+      "(max-width: 1023px)": false,
+    });
+    platformAgentMock.current = {
+      auth: { accessToken: "token", displayName: "sensen", userId: "sensen" },
+      platformSessionId: null,
+      withFreshToken: vi.fn(async (callback: (token: string) => Promise<unknown> | unknown) => callback("token")),
+      setActivePlatformSession: vi.fn(),
+      clearActivePlatformSession: vi.fn(),
+      openLogin: vi.fn(),
+    };
+    const titles: Record<string, string> = {
+      "session-alpha": "Alpha task",
+      "session-beta": "Beta task",
+      "session-gamma": "Gamma task",
+    };
+    const messageTimes: Record<string, string> = {
+      "session-alpha": "2026-06-20T10:00:00.000Z",
+      "session-beta": "2026-06-20T09:00:00.000Z",
+      "session-gamma": "2026-06-20T08:00:00.000Z",
+    };
+    agentApiMocks.listSessions.mockResolvedValue({
+      sessions: [
+        session("session-alpha", "2026-06-20T10:00:00.000Z"),
+        session("session-beta", "2026-06-20T09:00:00.000Z"),
+        session("session-gamma", "2026-06-20T08:00:00.000Z"),
+      ],
+      total: 3,
+      page: 1,
+      page_size: 20,
+    });
+    agentApiMocks.listSessionMessages.mockImplementation(async (_token: string, sessionId: string) => ({
+      messages: [
+        {
+          id: `message-${sessionId}`,
+          role: "user",
+          content: titles[sessionId] ?? sessionId,
+          created_at: messageTimes[sessionId] ?? "2026-06-20T00:00:00.000Z",
+          message_index: 0,
+        },
+      ],
+      has_more: false,
+    }));
+
+    renderShellWithResultPanel();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(950);
+    });
+    vi.useRealTimers();
+
+    const list = await screen.findByTestId("sidebar-history-list");
+    await waitFor(() => expect(within(list).getByText("Alpha task")).toBeInTheDocument());
+    const orderedText = () =>
+      within(list)
+        .getAllByTestId("sidebar-history-item")
+        .map((item) => item.textContent ?? "");
+    expect(orderedText()[0]).toContain("Alpha task");
+    expect(orderedText()[1]).toContain("Beta task");
+
+    const alphaItem = within(list).getByText("Alpha task").closest("[data-testid='sidebar-history-item']");
+    const betaItem = within(list).getByText("Beta task").closest("[data-testid='sidebar-history-item']");
+    expect(alphaItem).toBeInstanceOf(HTMLElement);
+    expect(betaItem).toBeInstanceOf(HTMLElement);
+    Object.defineProperty(alphaItem as HTMLElement, "getBoundingClientRect", {
+      value: () => ({
+        top: 0,
+        bottom: 40,
+        left: 0,
+        right: 260,
+        width: 260,
+        height: 40,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      }),
+    });
+    const dataTransfer = {
+      effectAllowed: "",
+      dropEffect: "",
+      setData: vi.fn(),
+      getData: vi.fn(() => "session-beta"),
+    };
+
+    fireEvent.dragStart(betaItem as HTMLElement, { dataTransfer });
+    fireEvent.dragOver(alphaItem as HTMLElement, { clientY: 1, dataTransfer });
+    fireEvent.drop(alphaItem as HTMLElement, { clientY: 1, dataTransfer });
+
+    await waitFor(() => {
+      expect(within(list).getAllByTestId("sidebar-history-item")[0]).toHaveTextContent("Beta task");
+    });
+    expect(JSON.parse(window.localStorage.getItem("alice:history-order-overrides") || "[]")[0]).toBe("session-beta");
   });
 });

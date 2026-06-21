@@ -17,16 +17,13 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [checkingAuth] = useState(() => loadAgentSession()?.userRole === "admin");
 
   useEffect(() => {
-    const session = loadAgentSession();
-    if (session?.userRole === "admin") {
+    if (checkingAuth) {
       router.replace("/admin/users");
-    } else {
-      setCheckingAuth(false);
     }
-  }, [router]);
+  }, [checkingAuth, router]);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {

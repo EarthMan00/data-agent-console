@@ -39,6 +39,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { createComposerPrefillStorageValue } from "@/lib/composer-prefill";
+import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
 import { AgentApiError, parseFastApiDetail } from "@/lib/agent-api/client";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import type { UserPromptDto, UserPromptGroupDto } from "@/lib/agent-api/types";
@@ -120,6 +121,9 @@ async function fetchAllPromptsForFilter(
 export function PromptLibraryWorkspace() {
   const router = useRouter();
   const platformAgent = useOptionalPlatformAgent();
+  const { dataSourceItems: promptLibraryDataSourceItems } = useHomeDataSourceMenu({
+    logLabel: "[prompt-library-workspace-source-menu-capabilities]",
+  });
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -226,7 +230,7 @@ export function PromptLibraryWorkspace() {
   const submitSave = async () => {
     if (!platformAgent?.auth) return;
     if (!formTitle.trim() || !formPrompt.trim()) {
-      setError("请填写标题与提示词 prompt。");
+      setError("请填写标题与提示词。");
       return;
     }
     setError("");
@@ -331,7 +335,10 @@ export function PromptLibraryWorkspace() {
       return;
     }
     try {
-      sessionStorage.setItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY, createComposerPrefillStorageValue(text));
+      sessionStorage.setItem(
+        AGENT_COMPOSER_PREFILL_STORAGE_KEY,
+        createComposerPrefillStorageValue(text, promptLibraryDataSourceItems),
+      );
     } catch {
       /* ignore */
     }
@@ -478,7 +485,7 @@ export function PromptLibraryWorkspace() {
                   <Search className="h-4 w-4" />
                 </Button>
                 <Button
-                  className="h-9 shrink-0 whitespace-nowrap rounded-control bg-primary px-3 text-primary-foreground hover:bg-link-hover sm:px-4"
+                  className="h-9 shrink-0 whitespace-nowrap rounded-control bg-primary px-3 text-primary-foreground hover:bg-primary/85 sm:px-4"
                   onClick={openCreate}
                 >
                   <Plus />
@@ -621,7 +628,7 @@ export function PromptLibraryWorkspace() {
             ) : null}
             <Button
               type="button"
-              className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-link-hover"
+              className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-primary/85"
               onClick={() => setSearchDialogOpen(false)}
             >
               完成
@@ -691,7 +698,7 @@ export function PromptLibraryWorkspace() {
             </Button>
             <Button
               type="button"
-              className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-link-hover"
+              className="h-9 rounded-control bg-primary px-4 text-body text-primary-foreground hover:bg-primary/85"
               disabled={newGroupCreateDisabled}
               onClick={() => void commitNewGroupInput()}
             >
@@ -749,7 +756,7 @@ export function PromptLibraryWorkspace() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm text-text-secondary">
-                  提示词 prompt <RequiredAsterisk />
+                  提示词 <RequiredAsterisk />
                 </label>
                 <Textarea
                   value={formPrompt}
@@ -991,7 +998,7 @@ function PromptLibraryCard({
           <Button
             type="button"
             size="sm"
-            className="rounded-md bg-primary text-primary-foreground hover:bg-link-hover"
+            className="rounded-md bg-primary text-primary-foreground hover:bg-primary/85"
             onClick={() => void onUse(p.prompt_text)}
           >
             使用

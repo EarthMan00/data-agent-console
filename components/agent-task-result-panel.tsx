@@ -122,7 +122,7 @@ function ExcelStyleSheetTabBar({
                 className={cn(
                   "flex w-full rounded-md px-2 py-2 text-left text-body transition",
                   activeId === t.id
-                    ? "bg-fill-active font-medium text-[var(--color-text-1)]"
+                    ? "bg-fill-active font-medium text-primary"
                     : "text-foreground hover:bg-fill-hover",
                 )}
                 onClick={() => {
@@ -153,13 +153,13 @@ function ExcelStyleSheetTabBar({
               className={cn(
                 "relative shrink-0 px-3 pb-2 pt-1.5 text-left leading-tight transition",
                 dense ? "text-caption" : "text-body",
-                active ? "font-medium text-[var(--color-text-1)]" : "text-text-secondary hover:bg-fill-hover",
+                active ? "font-medium text-primary" : "text-text-secondary hover:bg-fill-hover",
               )}
             >
               <span className="line-clamp-1 max-w-task-label-fluid">{t.label}</span>
               {active ? (
                 <span
-                  className="absolute bottom-0 left-2 right-2 h-1 rounded-t-xs bg-[var(--color-text-1)]"
+                  className="absolute bottom-0 left-2 right-2 h-1 rounded-t-xs bg-primary"
                   aria-hidden
                 />
               ) : null}
@@ -375,7 +375,7 @@ export function AgentTaskResultPanel({
         }}
         durationMs={2200}
       />
-      <div className="flex shrink-0 flex-col gap-1 border-b border-border bg-bg-surface px-3 py-2 sm:px-4">
+      <div className="flex shrink-0 flex-col gap-1 border-b border-border-strong bg-bg-surface px-3 py-2 shadow-hairline sm:px-4">
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-body font-medium text-foreground">任务执行结果</div>
@@ -482,7 +482,7 @@ export function AgentTaskResultPanel({
           )}
         </div>
 
-        {/* Excel 式底部 sheet：截图同款浅灰条 + 绿色激活下划线；多子任务时栏在最底，其上方可为同任务多文件 */}
+        {/* Excel 式底部 sheet：浅灰条 + 主色激活下划线；多子任务时栏在最底，其上方可为同任务多文件 */}
         <div className="flex shrink-0 flex-col shadow-hairline">
           {useSheetUi && sheets.length > 1 ? (
             <ExcelStyleSheetTabBar

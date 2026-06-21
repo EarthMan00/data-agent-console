@@ -49,7 +49,7 @@ import { Button } from "@/components/ui/button";
 import { sanitizeObjective } from "@/lib/agent-attachments";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { isPlatformBackendEnabled, streamAgentRound } from "@/lib/agent-runtime";
-import { getHomeCapabilityItem } from "@/lib/home-capability-items";
+import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
 import { takeRoundAttachmentFiles } from "@/lib/round-attachment-files";
 import { workspaceActions, useWorkspaceState, type Report, type TaskRun } from "@/lib/workspace-store";
 import { displayLabelForIndexedSubtask } from "@/lib/merge-orchestration-task-artifacts";
@@ -258,6 +258,10 @@ function AgentRunWorkspaceView({
   const composerMode = composerModes[run.id] ?? (run.mode === "专业模式" ? "深度模式" : "普通模式");
   const selectedSourceIds = selectedSourceOverrides[run.id] ?? [];
   const currentComposerVersion = composerVersion[run.id] ?? 0;
+  const {
+    dataSourceGroups: composerDataSourceGroups,
+    dataSourceItems: composerDataSourceItems,
+  } = useHomeDataSourceMenu({ logLabel: "[agent-source-menu-capabilities]" });
 
   const roundModels = useMemo(
     () =>
@@ -684,7 +688,7 @@ function AgentRunWorkspaceView({
   };
 
   const applyCapability = (capabilityId: string) => {
-    const item = getHomeCapabilityItem(capabilityId);
+    const item = composerDataSourceItems.find((entry) => entry.id === capabilityId);
     if (!item) return;
     setSelectedSourceOverrides((current) => {
       const currentSources = current[run.id] ?? [];
@@ -946,9 +950,7 @@ function AgentRunWorkspaceView({
                       ) : null;
 
                       const showResultCard =
-                        !round.assistantPending &&
-                        round.showTaskResultInChat &&
-                        (run.activePreviewId || latestRoundWantsTaskPanel);
+                        round.showTaskResultInChat && (run.activePreviewId || latestRoundWantsTaskPanel);
 
                       const afterExecution = (
                         <>
@@ -1045,6 +1047,10 @@ function AgentRunWorkspaceView({
                                 datetime={round.createdAt}
                                 streaming={round.assistantStreaming}
                               />
+                            ) : round.assistantPending &&
+                              round.executionGroups.length === 0 &&
+                              !round.executionSteps?.length ? (
+                              <AssistantLoadingRow variant="task" />
                             ) : null
                           }
                           showExecutionPanel={deferExecution ? false : splitRevealDone}
@@ -1149,6 +1155,8 @@ function AgentRunWorkspaceView({
                 }))
               }
               selectedSourceIds={selectedSourceIds}
+              dataSourceGroups={composerDataSourceGroups}
+              dataSourceItems={composerDataSourceItems}
               onToolSelect={applyCapability}
               onSourceRemove={removeCapability}
               onFilesSelected={handleFilesSelected}
@@ -1158,9 +1166,7 @@ function AgentRunWorkspaceView({
               onSubmit={() => void appendNote()}
             />
 
-            <div className="mt-3 text-center text-xs text-text-tertiary">
-              AI 可能产生不准确的信息。请核实重要细节。
-            </div>
+            <div className="mt-3 text-center text-xs text-text-tertiary">内容由 AI 大模型生成，请仔细甄别</div>
           </div>
         </div>
       </AssistantThreadFrame>

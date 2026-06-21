@@ -6,28 +6,25 @@ import {
   useMemo,
   useRef,
   useState,
-  type WheelEvent,
 } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatedArrowUpIcon } from "@/components/ui/animated-arrow-up-icon";
-import {
-  fetchHomePromptRecommendations,
-  fetchPublicPromptCategories,
-  type PublicPromptCategory,
-} from "@/lib/agent-api/home-prompts";
+import { fetchPublicPromptCategories, type PublicPromptCategory } from "@/lib/agent-api/home-prompts";
 import type { HomePromptCard } from "@/lib/workspace-domain-types";
 import {
   getHomeCapabilityItem,
 } from "@/lib/home-capability-items";
-import { useDataSourceMenu } from "@/lib/use-data-source-menu";
 import { AgentWorkspace } from "@/components/agent-workspace";
 import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
 import { AliceShell, useAliceShellState } from "@/components/alice-shell";
 import { PlatformLogo } from "@/components/platform-logo";
 import { sanitizeObjective } from "@/lib/agent-attachments";
-import { ALICE_LOGO_SRC } from "@/lib/brand-assets";
-import { parseComposerPrefillStorageValue, parseDatasourceMentions } from "@/lib/composer-prefill";
+import {
+  parseComposerPrefillStorageValue,
+  parseDatasourceMentions,
+  type ComposerSourcePlacement,
+} from "@/lib/composer-prefill";
 import { workspaceActions } from "@/lib/workspace-store";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
@@ -36,8 +33,14 @@ import {
   isAgentRuntimeConfigured,
   isPlatformBackendEnabled,
 } from "@/lib/agent-runtime";
+import {
+  getCachedHomePromptCards,
+  HOME_PROMPT_ANONYMOUS_CACHE_KEY,
+  loadHomePromptCardsOnce,
+} from "@/lib/home-prompt-data-sources";
+import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
 import { cn } from "@/lib/utils";
-import { TaskComposer } from "@/components/task-composer";
+import { NewConversationTaskComposer } from "@/components/new-conversation-task-composer";
 
 const PENDING_HOME_TASK_STORAGE_KEY = "alice:pending-home-task-after-login";
 const PENDING_HOME_TASK_MAX_AGE_MS = 30 * 60 * 1000;
@@ -45,72 +48,12 @@ const PENDING_HOME_TASK_MAX_AGE_MS = 30 * 60 * 1000;
 type PendingHomeTask = {
   text: string;
   selectedSourceIds: string[];
+  sourcePlacements: ComposerSourcePlacement[];
   activeCapabilityId: string;
   composerMode: "普通模式" | "深度模式";
   createdAt: number;
   pendingFiles?: File[];
 };
-
-type HomePromptCacheEntry = {
-  cards: HomePromptCard[] | null;
-  promise: Promise<HomePromptCard[]> | null;
-};
-
-const HOME_PROMPT_ANONYMOUS_CACHE_KEY = "__anonymous__";
-const homePromptCardCache = new Map<string, HomePromptCacheEntry>();
-
-function mapHomePromptCards(rows: Awaited<ReturnType<typeof fetchHomePromptRecommendations>>): HomePromptCard[] {
-  return rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    body: r.description,
-    prompt: r.prompt,
-    meta: r.meta,
-    capabilityIds: r.capability_ids,
-    replayRunId: r.replay_run_id ?? undefined,
-    replayShareId: r.replay_share_id ?? undefined,
-  }));
-}
-
-function getHomePromptCardFilterKey(capabilityIds: string[]) {
-  return capabilityIds.length > 0 ? capabilityIds.slice().sort().join(",") : "all";
-}
-
-function filterHomePromptCardsByCapability(cards: HomePromptCard[], capabilityIds: string[]) {
-  if (capabilityIds.length === 0) return cards;
-  const filterSet = new Set(capabilityIds);
-  return cards.filter((card) => card.capabilityIds.some((id) => filterSet.has(id)));
-}
-
-function getCachedHomePromptCards(cacheKey: string) {
-  return homePromptCardCache.get(cacheKey)?.cards ?? null;
-}
-
-function loadHomePromptCardsOnce(
-  cacheKey: string,
-  categoryId: string,
-  capabilityId?: string,
-  capabilityIds: string[] = [],
-) {
-  const cached = homePromptCardCache.get(cacheKey);
-  if (cached?.cards) return Promise.resolve(cached.cards);
-  if (cached?.promise) return cached.promise;
-
-  const promise = fetchHomePromptRecommendations(categoryId, capabilityId)
-    .then(mapHomePromptCards)
-    .then((cards) => filterHomePromptCardsByCapability(cards, capabilityIds))
-    .then((cards) => {
-      homePromptCardCache.set(cacheKey, { cards, promise: null });
-      return cards;
-    })
-    .catch((error) => {
-      homePromptCardCache.delete(cacheKey);
-      throw error;
-    });
-
-  homePromptCardCache.set(cacheKey, { cards: null, promise });
-  return promise;
-}
 
 function capabilityLabelFromId(capabilityId: string) {
   return capabilityId.trim().replace(/^@+/, "");
@@ -138,6 +81,19 @@ function consumePendingHomeTaskAfterLogin(): PendingHomeTask | null {
     return {
       text: parsed.text,
       selectedSourceIds: Array.isArray(parsed.selectedSourceIds) ? parsed.selectedSourceIds.filter((id) => typeof id === "string") : [],
+      sourcePlacements: Array.isArray(parsed.sourcePlacements)
+        ? parsed.sourcePlacements.filter(
+          (placement): placement is ComposerSourcePlacement =>
+            Boolean(
+              placement &&
+                typeof placement === "object" &&
+                "sourceId" in placement &&
+                typeof placement.sourceId === "string" &&
+                "offset" in placement &&
+                typeof placement.offset === "number",
+            ),
+        )
+        : [],
       activeCapabilityId: typeof parsed.activeCapabilityId === "string" ? parsed.activeCapabilityId : "scenarios",
       composerMode: parsed.composerMode === "普通模式" ? "普通模式" : "深度模式",
       createdAt: parsed.createdAt,
@@ -170,15 +126,21 @@ export function AliceHomePage() {
   const homePromptCacheKey = userCachePrefix && activeCategoryId ? `${userCachePrefix}:cat:${activeCategoryId}` : null;
   const cachedPromptCards = homePromptCacheKey ? getCachedHomePromptCards(homePromptCacheKey) : null;
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
+  const [sourcePlacements, setSourcePlacements] = useState<ComposerSourcePlacement[]>([]);
   const [composerMode, setComposerMode] = useState<"普通模式" | "深度模式">("深度模式");
   const [pendingHomeFiles, setPendingHomeFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
   const [launching, setLaunching] = useState(false);
   const [appliedPromptId, setAppliedPromptId] = useState<string | null>(null);
   const [composerPulse, setComposerPulse] = useState(false);
+  const [suppressTemplateCompletion, setSuppressTemplateCompletion] = useState(false);
   const [remotePromptCards, setRemotePromptCards] = useState<HomePromptCard[]>(() => cachedPromptCards ?? []);
   const [promptCardsLoading, setPromptCardsLoading] = useState(() => !cachedPromptCards);
-  const { groups: composerDataSourceGroups, items: composerDataSourceItems, loading: composerDataSourceLoading, ensureMenuLoaded } = useDataSourceMenu();
+  const {
+    dataSourceGroups: composerDataSourceGroups,
+    dataSourceItems: composerDataSourceItems,
+    loaded: dataSourceMenuLoaded,
+  } = useHomeDataSourceMenu({ logLabel: "[source-menu-capabilities]" });
   const promptGridScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -187,16 +149,18 @@ export function AliceHomePage() {
   const activeRunId = searchParams.get("runId");
 
   useEffect(() => {
+    if (!dataSourceMenuLoaded) return;
     if (typeof sessionStorage === "undefined") return;
     const raw = sessionStorage.getItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
     if (raw) {
-      const prefill = parseComposerPrefillStorageValue(raw);
+      const prefill = parseComposerPrefillStorageValue(raw, composerDataSourceItems);
       setQuery(prefill.text);
       setSelectedSourceIds(prefill.selectedSourceIds);
+      setSourcePlacements(prefill.sourcePlacements);
       setActiveCapabilityId(prefill.selectedSourceIds[0] ?? "scenarios");
       sessionStorage.removeItem(AGENT_COMPOSER_PREFILL_STORAGE_KEY);
     }
-  }, []);
+  }, [composerDataSourceItems, dataSourceMenuLoaded]);
 
   // 加载公开的 prompt 分类列表，默认选中第一个
   useEffect(() => {
@@ -205,8 +169,8 @@ export function AliceHomePage() {
       .then((cats) => {
         if (!cancelled) {
           setPromptCategories(cats);
-          if (cats.length > 0 && !activeCategoryId) {
-            setActiveCategoryId(cats[0].id);
+          if (cats.length > 0) {
+            setActiveCategoryId((current) => current || cats[0].id);
           }
         }
       })
@@ -250,7 +214,7 @@ export function AliceHomePage() {
   const cards = remotePromptCards;
   const composerCanSubmit = sanitizeObjective(query).length > 0 && !launching;
 
-  const launchAgent = useCallback(async (seed?: string, pending?: PendingHomeTask, attachmentFilesOverride?: File[]) => {
+  const launchAgent = useCallback(async (seed?: string, pending?: PendingHomeTask) => {
     const nextQuery = sanitizeObjective(seed ?? pending?.text ?? query);
     if (!nextQuery) {
       setNotice("请先输入一个研究目标，或从下方示例任务中直接发起。");
@@ -259,7 +223,6 @@ export function AliceHomePage() {
     const effectiveSelectedSourceIds = pending?.selectedSourceIds ?? selectedSourceIds;
     const effectiveActiveCapabilityId = pending?.activeCapabilityId ?? activeCapabilityId;
     const effectiveComposerMode = pending?.composerMode ?? composerMode;
-    const effectivePendingFiles = attachmentFilesOverride ?? pending?.pendingFiles ?? pendingHomeFiles;
     const selectedCapabilities = effectiveSelectedSourceIds.length > 0
       ? effectiveSelectedSourceIds
       : effectiveActiveCapabilityId === "scenarios"
@@ -279,9 +242,10 @@ export function AliceHomePage() {
         savePendingHomeTaskAfterLogin({
           text: nextQuery,
           selectedSourceIds: effectiveSelectedSourceIds,
+          sourcePlacements: pending?.sourcePlacements ?? sourcePlacements,
           activeCapabilityId: effectiveActiveCapabilityId,
           composerMode: effectiveComposerMode,
-          pendingFiles: effectivePendingFiles,
+          pendingFiles: pendingHomeFiles,
         });
         platformAgent.openLogin("登录后将继续发送当前任务。");
         return;
@@ -299,7 +263,7 @@ export function AliceHomePage() {
           objective: nextQuery,
           mode: effectiveComposerMode === "深度模式" ? "专业模式" : "轻量模式",
           selectedCapabilities,
-          pendingFiles: effectivePendingFiles,
+          pendingFiles: pending?.pendingFiles ?? pendingHomeFiles,
         });
         setPendingHomeFiles([]);
         setNotice("已连接 Alice 后端服务，正在执行任务。");
@@ -336,6 +300,7 @@ export function AliceHomePage() {
     router,
     selectedSourceIds,
     setActiveSessionTitle,
+    sourcePlacements,
     upsertOptimisticHistorySession,
   ]);
 
@@ -345,6 +310,7 @@ export function AliceHomePage() {
     if (!pending) return;
     setQuery(pending.text);
     setSelectedSourceIds(pending.selectedSourceIds);
+    setSourcePlacements(pending.sourcePlacements);
     setActiveCapabilityId(pending.activeCapabilityId);
     setComposerMode(pending.composerMode);
     void launchAgent(pending.text, pending);
@@ -353,32 +319,63 @@ export function AliceHomePage() {
   const applyComposerTool = (capabilityId: string) => {
     const item = composerDataSourceItems.find((source) => source.id === capabilityId);
     if (!item || item.id === "scenarios") return;
+    setSuppressTemplateCompletion(false);
     setSelectedSourceIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
     setNotice(`已选择数据源「${item.label}」，可以继续补充要求后直接发送。`);
   };
 
   const removeComposerTool = (capabilityId: string) => {
+    setSuppressTemplateCompletion(false);
     setSelectedSourceIds((current) => current.filter((id) => id !== capabilityId));
+    setSourcePlacements((current) => current.filter((placement) => placement.sourceId !== capabilityId));
   };
 
-  const syncPendingHomeFiles = useCallback((incoming: File[]) => {
-    setPendingHomeFiles(incoming);
+  const mergePendingHomeFiles = useCallback((incoming: File[]) => {
+    if (incoming.length === 0) return;
+    setPendingHomeFiles((prev) => {
+      const seen = new Set(prev.map((f) => `${f.name}:${f.size}:${f.lastModified}`));
+      const merged = [...prev];
+      for (const f of incoming) {
+        const key = `${f.name}:${f.size}:${f.lastModified}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(f);
+        }
+      }
+      return merged;
+    });
   }, []);
 
   const handleFilesSelected = (files: FileList) => {
     const picked = Array.from(files);
     if (picked.length === 0) return;
+    mergePendingHomeFiles(picked);
     setNotice(`已选择附件：${picked.map((file) => file.name).join("、")}。`);
   };
 
   const applyPromptCard = (card: HomePromptCard) => {
     const prefill = parseDatasourceMentions(card.prompt, composerDataSourceItems);
-    const metaPrefill = parseDatasourceMentions(card.meta, composerDataSourceItems);
-    const selectedIds = Array.from(new Set([...card.capabilityIds, ...prefill.selectedSourceIds, ...metaPrefill.selectedSourceIds]));
     setQuery(prefill.text);
-    setSelectedSourceIds(selectedIds);
+    setSelectedSourceIds(prefill.selectedSourceIds);
+    setSourcePlacements(prefill.sourcePlacements);
+    setSuppressTemplateCompletion(true);
     setNotice(`已载入示例任务「${card.title}」，可继续补充要求后发送。`);
   };
+
+  const applyPromptLibraryPrompt = useCallback((promptText: string) => {
+    const prefill = parseDatasourceMentions(promptText, composerDataSourceItems);
+    setQuery(prefill.text);
+    setSelectedSourceIds(prefill.selectedSourceIds);
+    setSourcePlacements(prefill.sourcePlacements);
+    setSuppressTemplateCompletion(true);
+    setNotice("已载入提示词，可继续补充要求后发送。");
+    setComposerPulse(true);
+    window.setTimeout(() => setComposerPulse(false), 520);
+    window.requestAnimationFrame(() => {
+      const composerRoot = document.getElementById("sym:TaskComposer");
+      composerRoot?.querySelector<HTMLElement>('[data-testid="task-composer-editor"]')?.focus();
+    });
+  }, [composerDataSourceItems]);
 
   const handlePromptCardClick = (card: HomePromptCard) => {
     applyPromptCard(card);
@@ -397,39 +394,6 @@ export function AliceHomePage() {
     });
   };
 
-  const handleHomeWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
-    const grid = promptGridScrollRef.current;
-    if (!grid || event.deltaY === 0) return;
-
-    const target = event.target;
-    if (target instanceof Node && grid.contains(target)) return;
-
-    let current = target instanceof Element ? target : null;
-    while (current && current !== event.currentTarget) {
-      const style = window.getComputedStyle(current);
-      const canScrollY =
-        (style.overflowY === "auto" || style.overflowY === "scroll") &&
-        current.scrollHeight > current.clientHeight;
-      if (canScrollY) return;
-      current = current.parentElement;
-    }
-
-    const maxScrollTop = grid.scrollHeight - grid.clientHeight;
-    if (maxScrollTop <= 0) return;
-
-    const deltaY =
-      event.deltaMode === 1
-        ? event.deltaY * 16
-        : event.deltaMode === 2
-          ? event.deltaY * grid.clientHeight
-          : event.deltaY;
-    const nextScrollTop = Math.max(0, Math.min(maxScrollTop, grid.scrollTop + deltaY));
-    if (nextScrollTop === grid.scrollTop) return;
-
-    event.preventDefault();
-    grid.scrollTop = nextScrollTop;
-  }, []);
-
   if (activeRunId) {
     return <AgentWorkspace />;
   }
@@ -440,7 +404,7 @@ export function AliceHomePage() {
         <section className="mx-auto w-full max-w-page-content px-4 pt-44 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 sm:gap-5">
             <Image
-              src={ALICE_LOGO_SRC}
+              src="/alice-logo.png"
               alt="Alice"
               width={76}
               height={76}
@@ -461,37 +425,29 @@ export function AliceHomePage() {
           <div className="mt-5 sm:mt-7">
             <div id="sym:TaskComposer" className="transition">
               <AssistantThreadFrame>
-                <TaskComposer
+                <NewConversationTaskComposer
                   value={query}
                   onValueChange={setQuery}
                   placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
                   mode={composerMode}
                   onModeChange={setComposerMode}
                   selectedSourceIds={selectedSourceIds}
+                  sourcePlacements={sourcePlacements}
+                  suppressTemplateCompletion={suppressTemplateCompletion}
                   dataSourceGroups={composerDataSourceGroups}
                   dataSourceItems={composerDataSourceItems}
-                  onDataSourceMenuRequest={ensureMenuLoaded}
-                  dataSourceLoading={composerDataSourceLoading}
                   onToolSelect={applyComposerTool}
                   onSourceRemove={removeComposerTool}
+                  onPromptUse={applyPromptLibraryPrompt}
                   onFilesSelected={handleFilesSelected}
-                  onAttachmentsChange={syncPendingHomeFiles}
-                  onSubmit={(files) => {
+                  onAttachmentsChange={mergePendingHomeFiles}
+                  onSubmit={() => {
                     if (!launching) {
-                      void launchAgent(undefined, undefined, files);
+                      void launchAgent();
                     }
                   }}
-                  visualStyle="heroMinimal"
-                  containerClassName={cn(
-                    "relative z-30 w-full rounded-composer border border-border bg-bg-surface shadow-popover transition-all duration-300 sm:rounded-hero",
-                    composerPulse && "border-primary/25 shadow-popover-strong",
-                  )}
-                  textareaClassName="min-h-28 max-h-composer-home min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent px-0 py-1.5 pr-2 text-body font-normal leading-6 text-foreground outline-none scrollbar-thin scrollbar-thumb-transparent hover:scrollbar-thumb-zinc-300 sm:min-h-34"
-                  placeholderClassName="top-1.5 text-body leading-6 text-text-tertiary"
-                  sendButtonClassName={cn(
-                    "h-10 w-10 min-w-0 rounded-full border border-transparent p-0 text-primary-foreground shadow-none transition",
-                    composerCanSubmit ? "bg-primary hover:bg-primary/85" : "bg-fill-active hover:bg-fill-active",
-                  )}
+                  highlighted={composerPulse}
+                  sendButtonActive={composerCanSubmit}
                 />
               </AssistantThreadFrame>
             </div>
@@ -574,12 +530,12 @@ export function AliceHomePage() {
                       }
                     }}
                     className={cn(
-                      "active-scale-quiet group relative h-full overflow-visible rounded-card border border-border-subtle bg-bg-surface/75 text-left shadow-surface outline-none transition-all duration-200 hover:z-20 hover:bg-bg-surface hover:shadow-card-hover focus-visible:z-20 focus-visible:bg-bg-surface focus-visible:shadow-card-hover sm:rounded-popover",
+                      "active-scale-quiet group relative overflow-visible rounded-card border border-border-subtle bg-bg-surface/75 text-left shadow-surface outline-none transition-all duration-200 hover:z-20 hover:bg-bg-surface hover:shadow-card-hover focus-visible:z-20 focus-visible:bg-bg-surface focus-visible:shadow-card-hover sm:rounded-popover",
                       appliedPromptId === card.id &&
                         "scale-card-selected border-primary/20 bg-bg-surface shadow-card-active",
                     )}
                   >
-                    <div className="flex h-full min-h-28 flex-col px-4 py-4 sm:min-h-33 sm:px-5 sm:py-4">
+                    <div className="flex min-h-28 flex-col px-4 py-4 sm:min-h-33 sm:px-5 sm:py-4">
                       <div className="flex items-start gap-2.5">
                         <span className="mt-1 inline-flex h-4 w-4 shrink-0 items-center justify-center">
                           <PlatformLogo
