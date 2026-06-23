@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { SessionMessageItem } from "@/lib/agent-api/types";
 import {
   alignStepStatusesWithOrchestrationBundles,
+  alignStepsWithBundlesForReplay,
   buildBundleDownloadApiForPanel,
   buildPlatformSubtasksForExecutionSteps,
   displayLabelForIndexedSubtask,
@@ -168,6 +169,36 @@ describe("alignStepStatusesWithOrchestrationBundles / buildPlatformSubtasksForEx
     const aligned = alignStepStatusesWithOrchestrationBundles(steps, bundles, ["current-task"]);
 
     expect(aligned[0]?.status).toBe("running");
+  });
+
+  it("clears runtime fields when bundle terminal status aligns a running step to done", () => {
+    const steps: TaskExecutionStep[] = [
+      {
+        id: "x0",
+        label: "查询 cup",
+        order: 1,
+        status: "running",
+        roundId: "r",
+        runtimeHint: "运行中",
+        runtimeStartedAt: "2026-06-22T10:00:00.000Z",
+      },
+    ];
+    const bundles = [
+      {
+        taskId: "current-task",
+        stepIndex: 0,
+        label: "查询 cup",
+        artifacts: [],
+        taskStatus: "SUCCESS",
+        finishedAt: "2026-06-22T10:02:00.000Z",
+      },
+    ];
+
+    const aligned = alignStepsWithBundlesForReplay(steps, bundles, ["current-task"]);
+
+    expect(aligned[0]?.status).toBe("done");
+    expect(aligned[0]?.runtimeHint).toBeUndefined();
+    expect(aligned[0]?.runtimeStartedAt).toBeUndefined();
   });
 });
 
