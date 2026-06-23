@@ -52,6 +52,15 @@ describe("resolveStaleTaskExecutionSteps", () => {
 
     expect(resolved?.map((step) => step.status)).toEqual(["running"]);
   });
+
+  it("marks steps error when task is cancelled", () => {
+    const resolved = resolveStaleTaskExecutionSteps([steps[0]!], {
+      taskStatus: "CANCELLED",
+      orchestrationStatuses: null,
+    });
+
+    expect(resolved?.map((step) => step.status)).toEqual(["error"]);
+  });
 });
 
 describe("enrichTaskExecutionStepsRuntime", () => {

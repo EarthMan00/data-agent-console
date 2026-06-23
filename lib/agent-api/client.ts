@@ -547,6 +547,31 @@ export async function patchTaskExecutionSteps(
   return true;
 }
 
+/** 用户终止任务后写入 Alice 终止说明（meta.kind=task_terminated）。 */
+export async function postTaskTerminatedMessage(
+  accessToken: string,
+  sessionId: string,
+  body: { round_id: string; task_id: string; orchestration_id?: string | null },
+): Promise<string | null> {
+  const res = await fetch(apiUrl(`/api/sessions/${sessionId}/messages/task-terminated`), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("post task terminated message failed", res.status, data);
+  }
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const mid = (data as Record<string, unknown>).message_id;
+    if (typeof mid === "string") return mid;
+  }
+  throw new AgentApiError("post task terminated message: missing message_id", res.status, data);
+}
+
 export type ListTasksParams = {
   status?: "RUNNING" | "SUCCESS" | "FAILED" | "BLOCKED_BY_PLAN" | "TIMEOUT" | "CANCELLED";
   page?: number;
@@ -1051,6 +1076,18 @@ export async function cancelToolOrchestration(accessToken: string, orchestration
   const raw = await safeJson(res);
   if (!res.ok) {
     throw new AgentApiError("cancel orchestration failed", res.status, raw);
+  }
+}
+
+/** 用户停止单任务：后端标记 CANCELLED，worker 结束后不再写入失败摘要。 */
+export async function cancelTask(accessToken: string, taskId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/api/tasks/${encodeURIComponent(taskId)}/cancel`), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const raw = await safeJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("cancel task failed", res.status, raw);
   }
 }
 

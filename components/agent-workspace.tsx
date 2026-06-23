@@ -56,6 +56,12 @@ import { displayLabelForIndexedSubtask } from "@/lib/merge-orchestration-task-ar
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 import { notifySplitRevealComplete } from "@/lib/split-reveal-gate";
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
+import {
+  isTaskTerminatedErrorMessage,
+  TASK_TERMINATED_GUIDANCE_BLOCK,
+  TASK_TERMINATED_LEADING,
+} from "@/lib/task-terminated-presentation";
+import { resolveInteractiveGuidanceRoundId } from "@/lib/guidance-interactivity";
 import { cn } from "@/lib/utils";
 import { cancelToolOrchestration } from "@/lib/agent-api/client";
 import {
@@ -687,6 +693,23 @@ function AgentRunWorkspaceView({
     void appendNote(item);
   };
 
+  const interactiveGuidanceRoundId = useMemo(
+    () =>
+      resolveInteractiveGuidanceRoundId(roundModels, {
+        roundHasTerminatedGuidance: (round) =>
+          isTaskTerminatedErrorMessage(round.errorMessage),
+      }),
+    [roundModels],
+  );
+
+  const guidanceSuggestionToggleForRound = useCallback(
+    (roundId: string) => {
+      if (roundId !== interactiveGuidanceRoundId) return undefined;
+      return submitGuidanceSuggestion;
+    },
+    [interactiveGuidanceRoundId],
+  );
+
   const applyCapability = (capabilityId: string) => {
     const item = composerDataSourceItems.find((entry) => entry.id === capabilityId);
     if (!item) return;
@@ -862,7 +885,15 @@ function AgentRunWorkspaceView({
 
                   {round.uiLayout === "simple_chat" && !(round.executionSteps?.length) ? (
                     <div className="w-full space-y-3">
-                      {round.errorMessage ? (
+                      {round.errorMessage && isTaskTerminatedErrorMessage(round.errorMessage) ? (
+                        <PostTaskGuidanceBubble
+                          leading={TASK_TERMINATED_LEADING}
+                          content={TASK_TERMINATED_GUIDANCE_BLOCK}
+                          datetime={round.createdAt}
+                          composerDraft={draft}
+                          onSuggestionToggle={guidanceSuggestionToggleForRound(round.roundId)}
+                        />
+                      ) : round.errorMessage ? (
                         <SimpleSystemBubble message={round.errorMessage} />
                       ) : round.assistantStreaming || round.assistantVisibleText ? (
                         <SimpleAssistantBubble
@@ -952,9 +983,21 @@ function AgentRunWorkspaceView({
                       const showResultCard =
                         round.showTaskResultInChat && (run.activePreviewId || latestRoundWantsTaskPanel);
 
+                      const roundTerminated = isTaskTerminatedErrorMessage(round.errorMessage);
+
                       const afterExecution = (
                         <>
-                          {round.errorMessage ? <p className="text-sm text-danger">{round.errorMessage}</p> : null}
+                          {round.errorMessage && roundTerminated ? (
+                            <PostTaskGuidanceBubble
+                              leading={TASK_TERMINATED_LEADING}
+                              content={TASK_TERMINATED_GUIDANCE_BLOCK}
+                              datetime={round.createdAt}
+                              composerDraft={draft}
+                              onSuggestionToggle={guidanceSuggestionToggleForRound(round.roundId)}
+                            />
+                          ) : round.errorMessage ? (
+                            <p className="text-sm text-danger">{round.errorMessage}</p>
+                          ) : null}
                           {showResultCard ? (
                             <>
                               <TaskResultSummaryCard
@@ -1018,11 +1061,13 @@ function AgentRunWorkspaceView({
                       )
                         ? <ExecutionRuntimeTag steps={round.executionSteps} />
                         : undefined;
-                      const executionTitle = round.errorMessage
-                        ? "任务执行失败"
-                        : round.collapseExecution
-                          ? "任务已完成"
-                          : "任务执行";
+                      const executionTitle = roundTerminated
+                        ? "任务已终止"
+                        : round.errorMessage
+                          ? "任务执行失败"
+                          : round.collapseExecution
+                            ? "任务已完成"
+                            : "任务执行";
 
                       const orchestrationBlock = (
                         <TaskOrchestrationBlock
@@ -1075,7 +1120,7 @@ function AgentRunWorkspaceView({
                         <PostTaskGuidanceBubble
                           content={round.postTaskGuidance}
                           datetime={round.createdAt}
-                          onSuggestionToggle={submitGuidanceSuggestion}
+                          onSuggestionToggle={guidanceSuggestionToggleForRound(round.roundId)}
                         />
                       ) : null;
 
@@ -1126,7 +1171,7 @@ function AgentRunWorkspaceView({
                     <PostTaskGuidanceBubble
                       content={round.postTaskGuidance}
                       datetime={round.createdAt}
-                      onSuggestionToggle={submitGuidanceSuggestion}
+                      onSuggestionToggle={guidanceSuggestionToggleForRound(round.roundId)}
                     />
                   ) : null}
 
