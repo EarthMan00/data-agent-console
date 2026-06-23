@@ -22,6 +22,9 @@ import {
   getToolOrchestration,
   listSessionMessages,
   patchTaskExecutionSteps,
+  postTaskTerminatedMessage,
+  cancelToolOrchestration,
+  cancelTask,
 } from "@/lib/agent-api/client";
 import { getChatMessageMaxChars } from "@/lib/agent-api/config";
 import type { ChatSendResult, SessionMessageItem, TaskResponse, ToolOrchestrationStepApi } from "@/lib/agent-api/types";
@@ -58,11 +61,25 @@ import { buildTaskStepsFromDecompositionLabels } from "@/lib/schedule-trial-exec
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import {
   buildLatestStepsMessageIdByTaskId,
+  buildTaskResultHintsByTaskId,
   isSupersededTaskExecutionStepsMessage,
   messageIdsEligibleForTaskResultCard,
 } from "@/lib/session-task-result-card-visibility";
 import { extractDecompositionLabelsFromMessages } from "@/lib/parse-decomposition-labels";
-import { resolvePostTaskGuidancePresentation } from "@/lib/parse-post-task-guidance";
+import { resolvePostTaskGuidancePresentation, resolveTaskTerminatedPresentation } from "@/lib/parse-post-task-guidance";
+import {
+  resolveInteractiveGuidanceMessageId,
+  resolveRoundPostTaskGuidanceContent,
+  shouldDeferPostTaskGuidanceToStepsBubble,
+  shouldRenderGuidanceBubbleAtMessage,
+} from "@/lib/guidance-interactivity";
+import {
+  isUserTerminatedTaskState,
+  sessionHasTaskTerminatedForTask,
+  sessionHasTaskTerminatedMessage,
+  TASK_TERMINATED_GUIDANCE_BLOCK,
+  TASK_TERMINATED_LEADING,
+} from "@/lib/task-terminated-presentation";
 import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
 import {
   analyzeSessionClarificationFlow,
@@ -75,10 +92,12 @@ import {
   alignStepsWithBundlesForReplay,
   enrichOrchestrationBundlesWithStepLabels,
   fetchTaskOrchestrationForResultPanel,
+  filterOrchestrationBundlesForTaskIds,
   mergeBundlesIntoPlatformSnapshots,
   pickBestOrchestrationAnchor,
   resolveAnchorForPanelFromMessageMeta,
   resolveOrchestrationAnchorFromMessageMeta,
+  resolvePanelAnchorForStepsMessage,
   type OrchestrationAnchor,
   type PanelOrchestrationAnchor,
   type ResultPanelContext,
@@ -90,7 +109,7 @@ import {
   isFrontendMockSessionId,
   mergeFrontendMockSessionMessages,
 } from "@/lib/frontend-mock-session";
-import { pollPlatformTaskUntilSettled } from "@/lib/poll-task-until-settled";
+import { pollAcceptedPlatformTaskInSession } from "@/lib/session-accepted-task-poll";
 import {
   isTaskInFlight,
   SCHEDULE_TRIAL_SESSION_RELOAD_INTERVAL_MS,
@@ -108,6 +127,10 @@ import {
   subscribe as subscribeToStream,
   releaseStream,
 } from "@/lib/streaming-session-manager";
+import {
+  findLatestTaskExecutionStepsMessage,
+  sessionExecutionCanStop,
+} from "@/lib/session-execution-stop";
 
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import { PostTaskGuidanceBubble } from "./post-task-guidance-bubble";
@@ -135,13 +158,41 @@ function mergeTaskStepStatuses(
 }
 
 function bundleTaskIdsExpectedForAnchor(
-  anchor: OrchestrationAnchor | null,
+  anchor: OrchestrationAnchor | PanelOrchestrationAnchor | null,
   fallbackTaskId?: string,
 ): string[] | null {
   const fromBundle = (anchor?.bundleTaskIds ?? []).map((id) => id.trim()).filter(Boolean);
   if (fromBundle.length > 0) return fromBundle;
   const primary = (anchor?.primaryTaskId ?? fallbackTaskId ?? "").trim();
   return primary ? [primary] : null;
+}
+
+function executionBubbleContextForMessage(
+  messages: SessionMessageItem[],
+  meta: Record<string, unknown> | undefined,
+  orchestrationBundles: TaskOrchestrationBundleRow[],
+  fallbackExpectedTaskIds: string[] | null,
+): { bundles: TaskOrchestrationBundleRow[]; expectedTaskIds: string[] | null } {
+  if (!meta || !parseTaskExecutionStepsFromMeta(meta)?.length) {
+    return { bundles: orchestrationBundles, expectedTaskIds: fallbackExpectedTaskIds };
+  }
+  const anchor = resolvePanelAnchorForStepsMessage(messages, meta);
+  const fallbackTaskId = typeof meta.task_id === "string" ? meta.task_id.trim() : undefined;
+  const expected =
+    bundleTaskIdsExpectedForAnchor(
+      anchor
+        ? {
+            primaryTaskId: anchor.primaryTaskId,
+            bundleTaskIds: anchor.bundleTaskIds,
+            orchestrationId: anchor.orchestrationId,
+          }
+        : null,
+      fallbackTaskId,
+    ) ?? fallbackExpectedTaskIds;
+  return {
+    bundles: filterOrchestrationBundlesForTaskIds(orchestrationBundles, expected),
+    expectedTaskIds: expected,
+  };
 }
 
 function orchestrationBundlesAllTerminal(bundles: TaskOrchestrationBundleRow[]): boolean {
@@ -458,7 +509,11 @@ export function PlatformSessionAgentWorkspace({
 
               if (task.status === "SUCCESS") {
                 resolved = steps.map((s) => ({ ...s, status: "done" as TaskExecutionStepStatus }));
-              } else if (task.status === "FAILED") {
+              } else if (
+                task.status === "FAILED" ||
+                task.status === "CANCELLED" ||
+                task.status === "TIMEOUT"
+              ) {
                 resolved = steps.map((s) => ({ ...s, status: "error" as TaskExecutionStepStatus }));
               } else if (task.status === "RUNNING") {
                 resolved = steps.map((s, idx) => ({
@@ -470,7 +525,12 @@ export function PlatformSessionAgentWorkspace({
 
               if (!resolved) return;
 
-              if (task.status === "SUCCESS" || task.status === "FAILED") {
+              if (
+                task.status === "SUCCESS" ||
+                task.status === "FAILED" ||
+                task.status === "CANCELLED" ||
+                task.status === "TIMEOUT"
+              ) {
                 try {
                   await patchTaskExecutionSteps(token, sessionId, m.id, {
                     round_id: (meta.round_id as string) || "",
@@ -1014,6 +1074,7 @@ export function PlatformSessionAgentWorkspace({
   ]);
 
   const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
+  const taskResultHintsByTaskId = useMemo(() => buildTaskResultHintsByTaskId(messages), [messages]);
 
   const orchestrationAnchor = useMemo(() => pickBestOrchestrationAnchor(messages), [messages]);
 
@@ -1231,6 +1292,212 @@ export function PlatformSessionAgentWorkspace({
     return null;
   }, [messages]);
 
+  const syntheticTerminatedGuidanceMessageId = useMemo(() => {
+    if (sessionHasTaskTerminatedMessage(messages) || !latestStepsMessageId) return null;
+    const stepsMsg = messages.find((m) => m.id === latestStepsMessageId);
+    if (!stepsMsg) return null;
+    const meta =
+      stepsMsg.meta && typeof stepsMsg.meta === "object" && !Array.isArray(stepsMsg.meta)
+        ? (stepsMsg.meta as Record<string, unknown>)
+        : undefined;
+    const steps = parseTaskExecutionStepsFromMeta(meta);
+    if (!steps?.length) return null;
+    const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+    const matchingBundle = rawTaskId
+      ? orchestrationBundles.find((b) => b.taskId === rawTaskId) ?? orchestrationBundles[0]
+      : orchestrationBundles[0];
+    const terminated = isUserTerminatedTaskState({
+      steps,
+      task:
+        lastTaskSnapshot && lastTaskSnapshot.task_id === rawTaskId ? lastTaskSnapshot : null,
+      bundle: matchingBundle ?? null,
+    });
+    return terminated ? latestStepsMessageId : null;
+  }, [messages, latestStepsMessageId, orchestrationBundles, lastTaskSnapshot]);
+
+  const interactiveGuidanceMessageId = useMemo(() => {
+    const fromMessages = resolveInteractiveGuidanceMessageId(messages, {
+      syntheticTerminatedMessageId: syntheticTerminatedGuidanceMessageId,
+    });
+    if (fromMessages) return fromMessages;
+    if (!latestStepsMessageId) return null;
+    const stepsIdx = messages.findIndex((m) => m.id === latestStepsMessageId);
+    if (stepsIdx < 0) return null;
+    const stepsMeta =
+      messages[stepsIdx]?.meta && typeof messages[stepsIdx]?.meta === "object"
+        ? (messages[stepsIdx]!.meta as Record<string, unknown>)
+        : undefined;
+    const stepsTaskId = typeof stepsMeta?.task_id === "string" ? stepsMeta.task_id.trim() : "";
+    const roundGuidance = resolveRoundPostTaskGuidanceContent(messages, stepsIdx, {
+      taskId: stepsTaskId,
+      taskSnapshot: lastTaskSnapshot,
+    });
+    if (!roundGuidance) return null;
+    for (let j = stepsIdx + 1; j < messages.length; j += 1) {
+      if (messages[j]?.role === "user") return null;
+    }
+    return roundGuidance.messageId.startsWith("task_guidance_")
+      ? latestStepsMessageId
+      : roundGuidance.messageId;
+  }, [messages, syntheticTerminatedGuidanceMessageId, latestStepsMessageId, lastTaskSnapshot]);
+
+  const [sessionStreamActive, setSessionStreamActive] = useState(
+    () => getStreamState(sessionId)?.status === "streaming",
+  );
+
+  useEffect(() => {
+    const sync = () => setSessionStreamActive(getStreamState(sessionId)?.status === "streaming");
+    sync();
+    return subscribeToStream(sessionId, sync);
+  }, [sessionId]);
+
+  const sessionAwaitingUserInput = useMemo(() => {
+    if (latestExecutionSteps?.some((s) => s.status === "awaiting_input")) return true;
+    if (sessionClarificationFlow.supplementUserMessageId) return false;
+    return Boolean(aliceClarificationForSteps);
+  }, [latestExecutionSteps, sessionClarificationFlow.supplementUserMessageId, aliceClarificationForSteps]);
+
+  const composerShowsStop = useMemo(
+    () =>
+      !scheduledRunRecord &&
+      sessionExecutionCanStop({
+        sending,
+        streamActive: sessionStreamActive,
+        awaitingUserInput: sessionAwaitingUserInput,
+        executionSteps: latestExecutionSteps,
+        orchestrationBundles,
+        lastTaskSnapshot,
+      }),
+    [
+      scheduledRunRecord,
+      sending,
+      sessionStreamActive,
+      sessionAwaitingUserInput,
+      latestExecutionSteps,
+      orchestrationBundles,
+      lastTaskSnapshot,
+    ],
+  );
+
+  const stopCurrentSessionTask = useCallback(async () => {
+    if (!platformAgent?.auth) return;
+    abortPollRef.current = true;
+    sessionGenRef.current += 1;
+    if (sseAbortRef.current) {
+      sseAbortRef.current.abort();
+      sseAbortRef.current = null;
+    }
+    releaseStream(sessionId);
+    completeStream(sessionId);
+
+    const orchId = effectiveOrchestrationAnchor?.orchestrationId?.trim();
+    if (orchId) {
+      try {
+        await platformAgent.withFreshToken((token) => cancelToolOrchestration(token, orchId));
+      } catch {
+        /* 终止以本地轮询与步骤落库为准；编排可能已结束或进程重启后不在内存 */
+      }
+    }
+
+    const stepsAnchor = findLatestTaskExecutionStepsMessage(messages);
+    if (stepsAnchor) {
+      const { message: stepsMsg, meta } = stepsAnchor;
+      const taskId = typeof meta.task_id === "string" ? meta.task_id.trim() : "";
+      const roundId = typeof meta.round_id === "string" ? meta.round_id.trim() : sessionId;
+      const orchIdMeta =
+        typeof meta.orchestration_id === "string" && meta.orchestration_id.trim()
+          ? meta.orchestration_id.trim()
+          : null;
+      const steps = parseTaskExecutionStepsFromMeta(meta);
+      if (taskId && steps?.length) {
+        try {
+          await platformAgent.withFreshToken(async (token) => {
+            await cancelTask(token, taskId);
+            await patchTaskExecutionSteps(token, sessionId, stepsMsg.id, {
+              round_id: roundId,
+              task_id: taskId,
+              steps: steps.map((s) => ({
+                id: s.id,
+                label: s.label,
+                status: "error" as const,
+              })),
+              orchestration_id: orchIdMeta,
+            });
+            await postTaskTerminatedMessage(token, sessionId, {
+              round_id: roundId,
+              task_id: taskId,
+              orchestration_id: orchIdMeta,
+            });
+          });
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
+
+    setSending(false);
+    setTrialRunInFlight(false);
+    await reload();
+    void refreshHistoryNow();
+  }, [
+    effectiveOrchestrationAnchor?.orchestrationId,
+    messages,
+    platformAgent,
+    refreshHistoryNow,
+    reload,
+    sessionId,
+  ]);
+
+  /** 历史会话重进：执行中任务周期性刷新 bundle，便于停止按钮与步骤图标同步终态。 */
+  useEffect(() => {
+    if (frontendMockSession || scheduledRunRecord || scheduleTrial) return;
+    if (!effectiveOrchestrationAnchor || !platformAgent?.auth) return;
+    if (!composerShowsStop || sending) return;
+
+    let stop = false;
+    const tick = async () => {
+      if (stop) return;
+      try {
+        await platformAgent.withFreshToken(async (token) => {
+          const data = await fetchTaskOrchestrationForResultPanel(
+            token,
+            effectiveOrchestrationAnchor.primaryTaskId,
+            effectiveOrchestrationAnchor.bundleTaskIds,
+            { orchestrationId: effectiveOrchestrationAnchor.orchestrationId },
+          );
+          if (stop) return;
+          setOrchestrationBundles(data.bundles);
+          const primary = effectiveOrchestrationAnchor.primaryTaskId.trim();
+          if (primary) {
+            try {
+              const t = await getTask(token, primary);
+              if (!stop) setLastTaskSnapshot(t);
+            } catch {
+              /* task may have been purged */
+            }
+          }
+        });
+      } catch {
+        /* 编排可能已结束 */
+      }
+    };
+
+    void tick();
+    const id = setInterval(() => void tick(), SCHEDULE_TRIAL_TASK_POLL_INTERVAL_MS);
+    return () => {
+      stop = true;
+      clearInterval(id);
+    };
+  }, [
+    composerShowsStop,
+    effectiveOrchestrationAnchor,
+    frontendMockSession,
+    platformAgent,
+    scheduleTrial,
+    scheduledRunRecord,
+    sending,
+  ]);
+
   const trialExecutionStepsForLabels = useMemo(() => {
     if (!scheduleTrial || trialMeta?.sessionId !== sessionId) return null;
     const labels = trialMeta.executionStepLabels;
@@ -1261,9 +1528,11 @@ export function PlatformSessionAgentWorkspace({
     const labels = extractDecompositionLabelsFromMessages(messages);
     if (!labels.length) return null;
     const orchFailed = sessionHasOrchestrationFailure(messages);
-    const orchCancelled = messages.some(
-      (m) => m.role === "assistant" && /多步任务已由用户终止/.test(m.content || ""),
-    );
+    const orchCancelled =
+      sessionHasTaskTerminatedMessage(messages) ||
+      messages.some(
+        (m) => m.role === "assistant" && /多步任务已由用户终止/.test(m.content || ""),
+      );
     return buildTaskStepsFromDecompositionLabels(labels, sessionId, false, null, {
       multiStepOrchestration: labels.length > 1,
       orchestrationFinished: Boolean(orchestrationAnchor),
@@ -1276,9 +1545,11 @@ export function PlatformSessionAgentWorkspace({
     const labels = extractDecompositionLabelsFromMessages(messages);
     if (!labels.length) return null;
     const orchFailed = sessionHasOrchestrationFailure(messages);
-    const orchCancelled = messages.some(
-      (m) => m.role === "assistant" && /多步任务已由用户终止/.test(m.content || ""),
-    );
+    const orchCancelled =
+      sessionHasTaskTerminatedMessage(messages) ||
+      messages.some(
+        (m) => m.role === "assistant" && /多步任务已由用户终止/.test(m.content || ""),
+      );
     // 若 bundle 中有仍在执行的任务，编排未结束 → 首步保持 running 而非全部 done
     const anyTaskInFlight = orchestrationBundles.some((b) => {
       const s = (b.taskStatus ?? "").toUpperCase();
@@ -1611,6 +1882,7 @@ export function PlatformSessionAgentWorkspace({
       sseAbortRef.current.abort();
     }
     const sendGen = sessionGenRef.current;
+    abortPollRef.current = false;
     const abortController = new AbortController();
     sseAbortRef.current = abortController;
     setSending(true);
@@ -1653,11 +1925,30 @@ export function PlatformSessionAgentWorkspace({
         if (sessionGenRef.current !== sendGen) return;
         void refreshHistoryNow();
         if (sendResult.kind === "accepted") {
-          await pollPlatformTaskUntilSettled(
+          setOrchestrationBundles([]);
+          const pollResult = await pollAcceptedPlatformTaskInSession(
             (fn) => platformAgent.withFreshToken(fn),
+            sessionId,
+            mid,
             sendResult,
-            () => abortPollRef.current || sessionGenRef.current !== sendGen,
+            {
+              shouldAbort: () => abortPollRef.current || sessionGenRef.current !== sendGen,
+              onReload: async () => {
+                if (sessionGenRef.current === sendGen) await reload();
+              },
+              onTaskUpdate: (task) => {
+                if (sessionGenRef.current === sendGen && task) setLastTaskSnapshot(task);
+              },
+            },
           );
+          const settledTaskId =
+            pollResult.lastTask?.task_id?.trim() || sendResult.task_id?.trim() || "";
+          if (settledTaskId && sessionGenRef.current === sendGen) {
+            await platformAgent.withFreshToken(async (token) => {
+              const latest = await getTask(token, settledTaskId);
+              setLastTaskSnapshot(latest);
+            });
+          }
         }
       });
       if (sessionGenRef.current === sendGen) {
@@ -1693,6 +1984,15 @@ export function PlatformSessionAgentWorkspace({
   const submitGuidanceSuggestion = useCallback((item: string) => {
     void send(item);
   }, [send]);
+
+  const guidanceSuggestionToggleForMessage = useCallback(
+    (messageId: string) => {
+      if (scheduledRunRecord || scheduleTrial) return undefined;
+      if (messageId !== interactiveGuidanceMessageId) return undefined;
+      return submitGuidanceSuggestion;
+    },
+    [interactiveGuidanceMessageId, scheduledRunRecord, scheduleTrial, submitGuidanceSuggestion],
+  );
 
   return (
     <>
@@ -1825,14 +2125,26 @@ export function PlatformSessionAgentWorkspace({
                     syntheticForTrial ??
                     syntheticForRunRecord ??
                     (isThisOrchestrationTurn ? decompositionFallbackSteps : null);
+                  const bubbleContext = executionBubbleContextForMessage(
+                    messages,
+                    meta,
+                    orchestrationBundles,
+                    expectedBundleTaskIds,
+                  );
+                  const messageOrchId =
+                    meta && typeof meta.orchestration_id === "string" ? meta.orchestration_id.trim() : "";
+                  const liveOrchMatchesMessage =
+                    !messageOrchId ||
+                    messageOrchId === (effectiveOrchestrationAnchor?.orchestrationId?.trim() ?? "");
                   const shouldOverlayLiveOrchStatuses =
                     (m.id === latestStepsMessageId || isThisOrchestrationTurn) &&
                     Boolean(liveOrchStepStatuses) &&
-                    !bundlesAllTerminal;
+                    !bundlesAllTerminal &&
+                    liveOrchMatchesMessage;
                   const stepsForExecutionBubble = taskStepsToShow
                     ? prepareExecutionStepsForBubble(taskStepsToShow, {
-                        bundles: orchestrationBundles,
-                        expectedTaskIds: expectedBundleTaskIds,
+                        bundles: bubbleContext.bundles,
+                        expectedTaskIds: bubbleContext.expectedTaskIds,
                         liveOverlay: shouldOverlayLiveOrchStatuses ? liveOrchStepStatuses : null,
                         ...executionStepsRuntimeOptions,
                       })
@@ -1857,18 +2169,49 @@ export function PlatformSessionAgentWorkspace({
                   const taskIdFromMeta =
                     m.role === "assistant" && rawTaskId && taskResultCardMessageIds.has(m.id) ? rawTaskId : undefined;
                   const taskId = taskIdFromMeta ?? (trialResultOnFirstAssistant ? effectiveOrchestrationAnchor!.primaryTaskId : undefined);
+                  const taskResultHints = rawTaskId ? taskResultHintsByTaskId.get(rawTaskId) : undefined;
+                  const hasArtifactsForResultCard =
+                    meta?.has_artifacts === true || taskResultHints?.hasArtifacts === true;
                   const hideAssistantBubble = shouldHideAssistantMessageBubble(m);
                   const msgKind =
                     meta && typeof meta.kind === "string" ? (meta.kind as string).trim() : "";
                   const isLinkfoxClarification = msgKind === "linkfox_clarification";
                   const isOrchestrationFailure = msgKind === "orchestration_failure";
+                  const isTaskTerminated = msgKind === "task_terminated";
                   const isTaskError =
                     m.role === "assistant" &&
                     meta?.task_status === "FAILED" &&
-                    typeof meta?.error_message === "string";
+                    typeof meta?.error_message === "string" &&
+                    !sessionHasTaskTerminatedForTask(messages, rawTaskId);
+                  const matchingBundle = rawTaskId
+                    ? orchestrationBundles.find((b) => b.taskId === rawTaskId) ?? orchestrationBundles[0]
+                    : orchestrationBundles[0];
+                  const stepsTerminated = Boolean(
+                    stepsForExecutionBubble &&
+                      isUserTerminatedTaskState({
+                        steps: stepsForExecutionBubble,
+                        task:
+                          lastTaskSnapshot && lastTaskSnapshot.task_id === rawTaskId
+                            ? lastTaskSnapshot
+                            : null,
+                        bundle: matchingBundle ?? null,
+                      }),
+                  );
+                  const showSyntheticTaskTerminated =
+                    showTaskStepsAtThisMessage &&
+                    m.id === latestStepsMessageId &&
+                    stepsTerminated &&
+                    !sessionHasTaskTerminatedMessage(messages);
                   const guidancePresentation =
-                    m.role === "assistant" && !showTaskStepsAtThisMessage && !hideAssistantBubble
+                    m.role === "assistant" &&
+                    !showTaskStepsAtThisMessage &&
+                    !hideAssistantBubble &&
+                    !isTaskTerminated
                       ? resolvePostTaskGuidancePresentation(m, meta)
+                      : ({ kind: "none" } as const);
+                  const taskTerminatedPresentation =
+                    m.role === "assistant" && isTaskTerminated
+                      ? resolveTaskTerminatedPresentation(m, meta)
                       : ({ kind: "none" } as const);
                   const showThinkingPlaceholder =
                     m.role === "assistant" &&
@@ -1879,8 +2222,21 @@ export function PlatformSessionAgentWorkspace({
                       i,
                       sending,
                     );
+                  const showGuidanceBubble = shouldRenderGuidanceBubbleAtMessage(messages, i);
+                  const deferGuidanceToStepsBubble = shouldDeferPostTaskGuidanceToStepsBubble(
+                    messages,
+                    i,
+                    latestStepsMessageId,
+                  );
+                  const roundGuidanceForSteps =
+                    showTaskStepsAtThisMessage && m.id === latestStepsMessageId
+                      ? resolveRoundPostTaskGuidanceContent(messages, i, {
+                          taskId: rawTaskId || taskId,
+                          taskSnapshot: lastTaskSnapshot,
+                        })
+                      : null;
                   const taskResultCard =
-                    taskId && meta?.has_artifacts === true ? (
+                    taskId && hasArtifactsForResultCard ? (
                       <TaskResultSummaryCard
                         title="任务结果"
                         summary=""
@@ -1931,8 +2287,19 @@ export function PlatformSessionAgentWorkspace({
                           {showDeferredTaskSteps ? (
                             <TaskExecutionStepsAssistantBubble
                               steps={prepareExecutionStepsForBubble(latestExecutionSteps!, {
-                                bundles: orchestrationBundles,
-                                expectedTaskIds: expectedBundleTaskIds,
+                                ...executionBubbleContextForMessage(
+                                  messages,
+                                  (() => {
+                                    const stepsMsg = latestStepsMessageId
+                                      ? messages.find((x) => x.id === latestStepsMessageId)
+                                      : undefined;
+                                    return stepsMsg?.meta && typeof stepsMsg.meta === "object"
+                                      ? (stepsMsg.meta as Record<string, unknown>)
+                                      : undefined;
+                                  })(),
+                                  orchestrationBundles,
+                                  expectedBundleTaskIds,
+                                ),
                                 liveOverlay:
                                   liveOrchStepStatuses && !bundlesAllTerminal ? liveOrchStepStatuses : null,
                                 ...executionStepsRuntimeOptions,
@@ -1973,6 +2340,7 @@ export function PlatformSessionAgentWorkspace({
                             <TaskExecutionStepsAssistantBubble
                               steps={stepsForExecutionBubble!}
                               datetime={m.created_at}
+                              terminated={stepsTerminated}
                               platformSubtasks={
                                 (() => {
                                   const supp = supplementalBundlesById[m.id];
@@ -1998,6 +2366,15 @@ export function PlatformSessionAgentWorkspace({
                               }}
                               afterExecution={taskResultCard}
                             />
+                            {showSyntheticTaskTerminated ? (
+                              <PostTaskGuidanceBubble
+                                leading={TASK_TERMINATED_LEADING}
+                                content={TASK_TERMINATED_GUIDANCE_BLOCK}
+                                datetime={m.created_at}
+                                composerDraft={draft}
+                                onSuggestionToggle={guidanceSuggestionToggleForMessage(m.id)}
+                              />
+                            ) : null}
                             {isOrchestrationFailure ? (
                               <AliceErrorBubble
                                 body={m.content}
@@ -2044,7 +2421,19 @@ export function PlatformSessionAgentWorkspace({
                                 : toggleGuidanceSuggestion
                             }
                           />
-                        ) : isLinkfoxClarification ? null : guidancePresentation.kind !== "none" && !taskId ? (
+                        ) : isLinkfoxClarification ? null : taskTerminatedPresentation.kind !== "none" &&
+                          showGuidanceBubble ? (
+                          <PostTaskGuidanceBubble
+                            leading={taskTerminatedPresentation.leading}
+                            content={taskTerminatedPresentation.guidanceBlock}
+                            datetime={m.created_at}
+                            composerDraft={draft}
+                            onSuggestionToggle={guidanceSuggestionToggleForMessage(m.id)}
+                          />
+                        ) : guidancePresentation.kind !== "none" &&
+                          !taskId &&
+                          showGuidanceBubble &&
+                          !deferGuidanceToStepsBubble ? (
                           <div className="space-y-2">
                             {guidancePresentation.kind === "embedded" &&
                             guidancePresentation.leading ? (
@@ -2062,9 +2451,7 @@ export function PlatformSessionAgentWorkspace({
                               }
                               datetime={m.created_at}
                               composerDraft={draft}
-                              onSuggestionToggle={
-                                scheduledRunRecord ? undefined : submitGuidanceSuggestion
-                              }
+                              onSuggestionToggle={guidanceSuggestionToggleForMessage(m.id)}
                             />
                           </div>
                         ) : isOrchestrationFailure ? (
@@ -2085,8 +2472,9 @@ export function PlatformSessionAgentWorkspace({
                               scheduleTrial || scheduledRunRecord ? undefined : toggleGuidanceSuggestion
                             }
                           />
-                        ) : hideAssistantBubble ? null : showThinkingPlaceholder ? (
-                          <AssistantLoadingRow variant="thinking" />
+                        ) : hideAssistantBubble ||
+                          (guidancePresentation.kind !== "none" && taskId) ? null : showThinkingPlaceholder ? (
+                          <AssistantLoadingRow variant="thinking" withIdentity />
                         ) : (
                           <SimpleAssistantBubble
                             body={m.content}
@@ -2101,7 +2489,18 @@ export function PlatformSessionAgentWorkspace({
                           {taskResultCard}
                         </AssistantOutputFrame>
                       ) : null}
-                      {taskId && guidancePresentation.kind !== "none" ? (
+                      {roundGuidanceForSteps ? (
+                        <PostTaskGuidanceBubble
+                          content={roundGuidanceForSteps.content}
+                          datetime={m.created_at}
+                          composerDraft={draft}
+                          onSuggestionToggle={guidanceSuggestionToggleForMessage(
+                            roundGuidanceForSteps.messageId.startsWith("task_guidance_")
+                              ? m.id
+                              : roundGuidanceForSteps.messageId,
+                          )}
+                        />
+                      ) : taskId && guidancePresentation.kind !== "none" && showGuidanceBubble ? (
                         <div className="space-y-2">
                           {guidancePresentation.kind === "embedded" &&
                           guidancePresentation.leading ? (
@@ -2119,9 +2518,7 @@ export function PlatformSessionAgentWorkspace({
                             }
                             datetime={m.created_at}
                             composerDraft={draft}
-                            onSuggestionToggle={
-                              scheduledRunRecord ? undefined : submitGuidanceSuggestion
-                            }
+                            onSuggestionToggle={guidanceSuggestionToggleForMessage(m.id)}
                           />
                         </div>
                       ) : null}
@@ -2131,7 +2528,7 @@ export function PlatformSessionAgentWorkspace({
                 {sending &&
                 !sessionHasVisibleInFlightAssistant(messages) &&
                 !sessionHasAssistantThinkingPlaceholder(messages, sending) ? (
-                  <AssistantLoadingRow variant="thinking" />
+                  <AssistantLoadingRow variant="thinking" withIdentity />
                 ) : null}
                 {showTrialRunFooterLine ? <AssistantLoadingRow variant="task" /> : null}
               </div>
@@ -2194,6 +2591,8 @@ export function PlatformSessionAgentWorkspace({
                 dataSourceItems={composerDataSourceItems}
                 onToolSelect={addComposerSource}
                 onSourceRemove={removeComposerSource}
+                submitVariant={composerShowsStop ? "stop" : "send"}
+                onStop={() => void stopCurrentSessionTask()}
                 onFilesSelected={(files) => {
                   setPendingFiles((prev) => {
                     const picked = Array.from(files);

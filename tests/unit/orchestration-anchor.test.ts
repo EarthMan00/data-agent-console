@@ -47,6 +47,25 @@ describe("pickBestOrchestrationAnchor", () => {
     expect(anchor?.bundleTaskIds).toEqual(["t1", "t2", "t3"]);
     expect(anchor?.primaryTaskId).toBe("step-last");
   });
+
+  it("追问进行中时优先选用未终态的 task_execution_steps，而非上一轮完成消息", () => {
+    const messages: SessionMessageItem[] = [
+      assistant("old-done", {
+        task_id: "old-last",
+        orchestration_step_task_ids: ["t1", "t2", "t3"],
+      }),
+      assistant("new-running", {
+        kind: "task_execution_steps",
+        task_id: "new-task",
+        orchestration_id: "orch-new",
+        steps: [{ id: "s1", label: "对比分析", status: "running" }],
+      }),
+    ];
+    const anchor = pickBestOrchestrationAnchor(messages);
+    expect(anchor?.messageId).toBe("new-running");
+    expect(anchor?.primaryTaskId).toBe("new-task");
+    expect(anchor?.orchestrationId).toBe("orch-new");
+  });
 });
 
 describe("resolveAnchorForPanelFromMessageMeta", () => {

@@ -23,6 +23,31 @@ export type PostTaskGuidancePresentation =
   | { kind: "dedicated"; content: string }
   | { kind: "embedded"; leading: string; guidanceBlock: string };
 
+export type TaskTerminatedPresentation =
+  | { kind: "none" }
+  | { kind: "dedicated"; leading: string; guidanceBlock: string }
+  | { kind: "embedded"; leading: string; guidanceBlock: string };
+
+/** 判断 assistant 消息是否应以 Alice + PostTaskGuidanceBubble 展示终止引导。 */
+export function resolveTaskTerminatedPresentation(
+  message: SessionMessageItem,
+  meta?: Record<string, unknown>,
+): TaskTerminatedPresentation {
+  const msgKind = typeof meta?.kind === "string" ? meta.kind.trim() : "";
+  if (msgKind === "task_terminated") {
+    const split = splitEmbeddedPostTaskGuidance(message.content);
+    if (split.guidanceBlock) {
+      return {
+        kind: "embedded",
+        leading: split.leading || "任务已终止，当前执行已停止。",
+        guidanceBlock: split.guidanceBlock,
+      };
+    }
+    return { kind: "none" };
+  }
+  return { kind: "none" };
+}
+
 /** 判断 assistant 消息是否应以 PostTaskGuidanceBubble 展示（含旧版正文内嵌引导）。 */
 export function resolvePostTaskGuidancePresentation(
   message: SessionMessageItem,

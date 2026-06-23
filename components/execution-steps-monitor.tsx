@@ -39,10 +39,11 @@ export function buildPlatformStepTimeline(
     if (step.status === "done" || step.status === "error") {
       const snap = snapByIndex.get(i);
       if (snap) {
-        /** 合成 steps 可能全为 done，但后端实际任务仍在执行 → 用快照真实状态覆盖。 */
+        /** 合成 steps 可能全为 done，但后端实际任务仍在执行 → 用快照真实状态覆盖；error 表示用户终止或失败，不再回退为执行中。 */
         const snapStatus = (snap.taskStatus ?? "").toUpperCase();
         const taskInFlight =
-          snapStatus === "RUNNING" || snapStatus === "PENDING" || snapStatus === "QUEUED";
+          step.status !== "error" &&
+          (snapStatus === "RUNNING" || snapStatus === "PENDING" || snapStatus === "QUEUED");
         if (taskInFlight) {
           items.push({
             kind: "executing",

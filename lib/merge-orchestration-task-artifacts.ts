@@ -1,6 +1,7 @@
 import { AgentApiError, getTask, getToolOrchestration } from "@/lib/agent-api/client";
 import type { SessionMessageItem, TaskResponse } from "@/lib/agent-api/types";
 import type { PlatformSubtaskSnapshot, PlatformTaskArtifactRef, TaskExecutionStep } from "@/lib/agent-events";
+import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import { isTaskInFlight } from "@/lib/task-status-poll";
 
 /** 编排消息里 step0..stepN-1 的顺序；合并时保持该顺序，使「后执行的子任务」产物在列表末尾 → sheet 排序更靠前。 */
@@ -305,6 +306,16 @@ export function buildPlatformSubtasksForExecutionSteps(
   return mergeBundlesIntoPlatformSnapshots(aligned, bundles);
 }
 
+/** 仅保留与当前轮 task_id 匹配的 bundle，避免追问时用上一轮 SUCCESS 推断 done。 */
+export function filterOrchestrationBundlesForTaskIds(
+  bundles: TaskOrchestrationBundleRow[],
+  expectedTaskIds: string[] | null | undefined,
+): TaskOrchestrationBundleRow[] {
+  if (!expectedTaskIds?.length) return [];
+  const expected = new Set(expectedTaskIds.map((id) => id.trim()).filter(Boolean));
+  return bundles.filter((b) => expected.has(b.taskId));
+}
+
 export function buildBundleDownloadApiForPanel(
   primaryTaskId: string,
   bundleTaskIds: string[] | undefined,
@@ -355,6 +366,17 @@ export function pickBestOrchestrationAnchor(messages: SessionMessageItem[]): Orc
     else if (tid && !isStepsProgressMeta) score += 50;
     else if (tid && isStepsProgressMeta) score += 5;
     if (orchId) score += 2;
+    if (isStepsProgressMeta) {
+      const steps = parseTaskExecutionStepsFromMeta(meta);
+      const inFlight = steps?.some(
+        (s) =>
+          s.status === "running" ||
+          s.status === "pending" ||
+          s.status === "queued" ||
+          s.status === "awaiting_input",
+      );
+      if (inFlight) score += 10_000;
+    }
 
     /** 同分时用后出现的消息（更近的一轮编排） */
     if (score >= bestScore) {
@@ -466,7 +488,9 @@ export function mergeBundlesIntoPlatformSnapshots(
     const rawStatus = (b?.taskStatus ?? "").toUpperCase();
     const bundleFailed =
       rawStatus === "FAILED" || rawStatus === "CANCELLED" || rawStatus === "CANCEL" || rawStatus === "TIMEOUT";
-    const bundleRunning = rawStatus === "RUNNING" || rawStatus === "PENDING" || rawStatus === "QUEUED";
+    const bundleRunning =
+      step.status !== "error" &&
+      (rawStatus === "RUNNING" || rawStatus === "PENDING" || rawStatus === "QUEUED");
     const isFailed = bundleFailed || step.status === "error";
     const outcome = isFailed ? ("failed" as const) : ("success" as const);
     const taskStatus = bundleRunning ? "RUNNING" : isFailed ? "FAILED" : "SUCCESS";

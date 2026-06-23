@@ -16,6 +16,7 @@ function matchesOrchestrationStatusContent(content: string): boolean {
   if (/^多步任务已全部完成/.test(c)) return true;
   if (/^多步任务在执行过程中失败/.test(c)) return true;
   if (/^多步任务已由用户终止/.test(c)) return true;
+  if (c.startsWith("任务已终止，当前执行已停止")) return true;
   if (/^任务已完成，可以在右侧查看/.test(c)) return true;
   if (/^任务执行失败，错误信息已记录在任务结果中/.test(c)) return true;
   if (c === "已分析请求，将触发工具执行。" || c === "已分析请求，将触发工具执行") return true;
@@ -44,6 +45,7 @@ export function shouldHideAssistantMessageBubble(m: SessionMessageItem): boolean
   ) {
     return false;
   }
+  if (kind === "task_terminated") return true;
   if (kind === "model_error" || kind === "blocked_by_plan") return false;
 
   if (kind === "tool_only_turn") return true;

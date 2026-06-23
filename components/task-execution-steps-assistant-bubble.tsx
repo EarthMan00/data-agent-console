@@ -17,6 +17,7 @@ import { ExecutionRuntimeTag, ExecutionStepsHistoryList } from "@/components/exe
 import type { PlatformSubtaskSnapshot, PlatformTaskArtifactRef, TaskExecutionStep } from "@/lib/agent-events";
 
 import { humanizeStepLabelForUi } from "@/lib/humanize-step-label";
+import { taskExecutionTitleForSteps } from "@/lib/task-terminated-presentation";
 
 
 
@@ -32,10 +33,8 @@ function hasActiveExecutionStep(steps: TaskExecutionStep[]) {
 
 }
 
-function getExecutionTitle(steps: TaskExecutionStep[]) {
-  if (steps.some((step) => step.status === "error")) return "任务执行失败";
-  if (steps.length > 0 && steps.every((step) => step.status === "done")) return "任务已完成";
-  return "任务执行";
+function getExecutionTitle(steps: TaskExecutionStep[], terminated?: boolean) {
+  return taskExecutionTitleForSteps(steps, { terminated });
 }
 
 function formatTime(iso: string) {
@@ -75,6 +74,8 @@ export function TaskExecutionStepsAssistantBubble({
 
   afterExecution,
 
+  terminated = false,
+
 }: {
 
   steps: TaskExecutionStep[];
@@ -101,12 +102,15 @@ export function TaskExecutionStepsAssistantBubble({
 
   afterExecution?: ReactNode;
 
+  /** 用户手动终止（区别于执行失败） */
+  terminated?: boolean;
+
 }) {
 
   const ordered = [...steps].sort((a, b) => a.order - b.order);
 
   const executionActive = hasActiveExecutionStep(ordered);
-  const executionTitle = getExecutionTitle(ordered);
+  const executionTitle = getExecutionTitle(ordered, terminated);
 
   const awaitingUserInput = ordered.some((s) => s.status === "awaiting_input");
 

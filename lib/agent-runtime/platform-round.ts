@@ -2,9 +2,9 @@ import {
   formatAgentApiErrorForUser,
   getTask,
   getToolOrchestration,
-  listSessionMessages,
   patchTaskExecutionSteps,
   postTaskExecutionSteps,
+  postTaskTerminatedMessage,
   sendChatMessageStream,
   uploadSessionAttachments,
 } from "@/lib/agent-api/client";
@@ -13,6 +13,7 @@ import type { TaskResponse, ToolOrchestrationStatusApi } from "@/lib/agent-api/t
 import type { AgentRoundRuntimeEvent, TaskExecutionStepStatus } from "@/lib/agent-events";
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { humanizeStepLabelForUi } from "@/lib/humanize-step-label";
+import { TASK_TERMINATED_LEADING } from "@/lib/task-terminated-presentation";
 
 async function resolveOrchestrationFailureUserMessage(
   accessToken: string,
@@ -44,10 +45,8 @@ async function resolveOrchestrationFailureUserMessage(
 import { safeRandomUUID } from "@/lib/random-uuid";
 import { streamSanitizeDeltaClient, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 import { sanitizeClarificationForUserDisplay, formatAliceClarificationForStream } from "@/lib/alice-clarification";
-import {
-  buildTaskCompletionSummary,
-  extractPostTaskGuidance,
-} from "@/lib/task-chat-summary";
+import { buildTaskCompletionSummary } from "@/lib/task-chat-summary";
+import { resolvePostTaskGuidanceText } from "@/lib/resolve-post-task-guidance-text";
 
 import { resolvePendingAliceClarificationFromSession } from "@/lib/agent-runtime/session-alice-clarification";
 import type { SessionAliceClarification } from "@/lib/agent-runtime/session-alice-clarification";
@@ -114,49 +113,6 @@ function buildPlatformSnapshotZipDownloadApi(
   }
   if (selfId) {
     return `/api/tasks/${encodeURIComponent(selfId)}/download`;
-  }
-  return null;
-}
-
-async function resolvePostTaskGuidanceText(
-  token: string,
-  sessionId: string,
-  task: Pick<TaskResponse, "task_id" | "response_summary" | "finished_at">,
-): Promise<string | null> {
-  const fromTask = extractPostTaskGuidance(task as TaskResponse);
-  if (fromTask) return fromTask;
-
-  const taskId = (task.task_id || "").trim();
-  // 引导由后端异步写入；减少轮询次数，避免与侧栏历史刷新叠加压垮 dev 代理
-  for (let i = 0; i < 10; i += 1) {
-    await sleep(1000);
-    if (taskId) {
-      try {
-        const latest = await getTask(token, taskId);
-        const g = extractPostTaskGuidance(latest);
-        if (g) return g;
-      } catch {
-        /* 单任务拉取失败时继续尝试会话消息 */
-      }
-    }
-    if (i % 2 === 1) {
-      try {
-        const page = await listSessionMessages(token, sessionId, 50);
-        const row = [...(page.messages ?? [])]
-          .reverse()
-          .find((m) => {
-            const meta =
-              m.meta && typeof m.meta === "object" && !Array.isArray(m.meta)
-                ? (m.meta as Record<string, unknown>)
-                : undefined;
-            return m.role === "assistant" && meta?.kind === "post_task_guidance";
-          });
-        const content = row?.content?.trim();
-        if (content) return content;
-      } catch {
-        /* 引导为增强能力，拉取失败不阻断主流程 */
-      }
-    }
   }
   return null;
 }
@@ -571,6 +527,18 @@ export async function runPlatformRound(
         await persistTaskExecutionStepsRows(stepDefs.map(() => finalStatus), taskIdForMeta);
       };
 
+      const persistTaskTerminatedMessage = async (taskIdForMeta?: string) => {
+        try {
+          await postTaskTerminatedMessage(accessToken, chatSessionId, {
+            round_id: input.roundId,
+            task_id: taskIdForMeta ?? acceptedTaskId ?? parentTaskId,
+            orchestration_id: orchestrationId,
+          });
+        } catch {
+          /* best-effort */
+        }
+      };
+
       const pushPlatformSnapshot = (t: Pick<TaskResponse, "task_id" | "artifacts" | "zip_download_api">) => {
         handlers.onEvent({
           type: "platform_task_snapshot",
@@ -716,6 +684,7 @@ export async function runPlatformRound(
         if (userStopped) {
           finalizeAllSteps("error");
           await persistTaskExecutionStepsUniform("error");
+          await persistTaskTerminatedMessage(parentTaskId);
           pushPlatformSnapshot({
             task_id: parentTaskId,
             artifacts: [],
@@ -724,7 +693,7 @@ export async function runPlatformRound(
           handlers.onEvent({
             type: "error",
             roundId: input.roundId,
-            message: humanizeTaskErrorMessage("任务已终止。"),
+            message: humanizeTaskErrorMessage(TASK_TERMINATED_LEADING),
           });
           return;
         }
@@ -769,10 +738,11 @@ export async function runPlatformRound(
           }
           finalizeAllSteps("error");
           await persistTaskExecutionStepsUniform("error", parentTaskId);
+          await persistTaskTerminatedMessage(parentTaskId);
           handlers.onEvent({
             type: "error",
             roundId: input.roundId,
-            message: humanizeTaskErrorMessage("任务已终止。"),
+            message: humanizeTaskErrorMessage(TASK_TERMINATED_LEADING),
           });
           return;
         }
