@@ -131,6 +131,13 @@ function hasTerminalTaskExecutionStepsMessage(m: SessionMessageItem): boolean {
   return steps.every((s) => s.status === "done" || s.status === "error");
 }
 
+/** 引导已由 PostTaskGuidanceBubble 承接时，不再用纯文本气泡展示同条消息正文。 */
+export function shouldSuppressPlainAssistantBubbleForGuidance(
+  guidancePresentation: { kind: string },
+): boolean {
+  return guidancePresentation.kind !== "none";
+}
+
 /** 引导挂在最新步骤气泡下时，避免同轮 post_task_guidance 消息重复渲染。 */
 export function shouldDeferPostTaskGuidanceToStepsBubble(
   messages: SessionMessageItem[],

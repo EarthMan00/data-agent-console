@@ -57,8 +57,28 @@ export async function pollAcceptedPlatformTaskInSession(
   }));
 
   if (stepDefs.length === 0) {
+    const bareTaskId = accepted.task_id;
+    const bareOrchId = accepted.orchestration_id;
     await pollPlatformTaskUntilSettled(withFreshToken, accepted, options?.shouldAbort);
-    return { lastTask: null };
+    let lastTask: TaskResponse | null = null;
+    if (!options?.shouldAbort?.()) {
+      await withFreshToken(async (token) => {
+        if (bareOrchId) {
+          const orch = await getToolOrchestration(token, bareOrchId);
+          const lastWithId = [...orch.steps].reverse().find((s) => s.task_id);
+          if (lastWithId?.task_id) {
+            lastTask = await getTask(token, lastWithId.task_id);
+            options?.onTaskUpdate?.(lastTask);
+          }
+        } else if (bareTaskId) {
+          lastTask = await getTask(token, bareTaskId);
+          options?.onTaskUpdate?.(lastTask);
+        }
+        await waitForSessionTaskOutcomeMessages(token, sessionId, lastTask);
+      });
+    }
+    await options?.onReload?.();
+    return { lastTask };
   }
 
   const initialStatuses: TaskExecutionStepStatus[] = stepDefs.map((_, i) =>

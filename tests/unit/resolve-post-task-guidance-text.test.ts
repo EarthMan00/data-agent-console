@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { SessionMessageItem } from "@/lib/agent-api/types";
-import { sessionHasTaskCompletionSummaryMessage } from "@/lib/resolve-post-task-guidance-text";
+import {
+  findLatestPostTaskGuidanceContent,
+  sessionHasTaskCompletionSummaryMessage,
+} from "@/lib/resolve-post-task-guidance-text";
 
 function assistant(
   id: string,
@@ -45,5 +48,37 @@ describe("sessionHasTaskCompletionSummaryMessage", () => {
       }),
     ];
     expect(sessionHasTaskCompletionSummaryMessage(messages, "task-1")).toBe(false);
+  });
+});
+
+describe("findLatestPostTaskGuidanceContent", () => {
+  it("returns latest guidance when task_id is omitted", () => {
+    const messages: SessionMessageItem[] = [
+      assistant("g1", {
+        content: "【接下来您可以】\n1. 第一轮",
+        meta: { kind: "post_task_guidance", task_id: "task-1" },
+      }),
+      assistant("g2", {
+        content: "【接下来您可以】\n1. 第二轮",
+        meta: { kind: "post_task_guidance", task_id: "task-2" },
+      }),
+    ];
+    expect(findLatestPostTaskGuidanceContent(messages)).toBe("【接下来您可以】\n1. 第二轮");
+  });
+
+  it("scopes guidance to the requested task_id for follow-up rounds", () => {
+    const messages: SessionMessageItem[] = [
+      assistant("g1", {
+        content: "【接下来您可以】\n1. 第一轮",
+        meta: { kind: "post_task_guidance", task_id: "task-1" },
+      }),
+      assistant("g2", {
+        content: "【接下来您可以】\n1. 第二轮",
+        meta: { kind: "post_task_guidance", task_id: "task-2" },
+      }),
+    ];
+    expect(findLatestPostTaskGuidanceContent(messages, "task-1")).toBe("【接下来您可以】\n1. 第一轮");
+    expect(findLatestPostTaskGuidanceContent(messages, "task-2")).toBe("【接下来您可以】\n1. 第二轮");
+    expect(findLatestPostTaskGuidanceContent(messages, "task-3")).toBeNull();
   });
 });

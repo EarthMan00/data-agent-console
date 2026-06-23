@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
   deleteTaskSession,
+  ensurePostTaskGuidance,
   formatAgentApiErrorForUser,
   getTask,
   getToolOrchestration,
@@ -72,6 +73,7 @@ import {
   resolveRoundPostTaskGuidanceContent,
   shouldDeferPostTaskGuidanceToStepsBubble,
   shouldRenderGuidanceBubbleAtMessage,
+  shouldSuppressPlainAssistantBubbleForGuidance,
 } from "@/lib/guidance-interactivity";
 import {
   isUserTerminatedTaskState,
@@ -1341,6 +1343,65 @@ export function PlatformSessionAgentWorkspace({
       : roundGuidance.messageId;
   }, [messages, syntheticTerminatedGuidanceMessageId, latestStepsMessageId, lastTaskSnapshot]);
 
+  const guidanceBackfillAttemptedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (frontendMockSession || scheduleTrial || scheduledRunRecord || sending || !platformAgent) {
+      return;
+    }
+    if (!latestStepsMessageId) return;
+
+    const stepsIdx = messages.findIndex((m) => m.id === latestStepsMessageId);
+    if (stepsIdx < 0) return;
+
+    const stepsMsg = messages[stepsIdx]!;
+    const stepsMeta =
+      stepsMsg.meta && typeof stepsMsg.meta === "object" && !Array.isArray(stepsMsg.meta)
+        ? (stepsMsg.meta as Record<string, unknown>)
+        : undefined;
+    const stepsTaskId = typeof stepsMeta?.task_id === "string" ? stepsMeta.task_id.trim() : "";
+    if (!stepsTaskId) return;
+
+    const steps = parseTaskExecutionStepsFromMeta(stepsMeta);
+    if (!steps?.length || !steps.every((s) => s.status === "done" || s.status === "error")) {
+      return;
+    }
+
+    const roundGuidance = resolveRoundPostTaskGuidanceContent(messages, stepsIdx, {
+      taskId: stepsTaskId,
+      taskSnapshot: lastTaskSnapshot?.task_id === stepsTaskId ? lastTaskSnapshot : null,
+    });
+    if (roundGuidance) return;
+
+    if (guidanceBackfillAttemptedRef.current.has(stepsTaskId)) return;
+    guidanceBackfillAttemptedRef.current.add(stepsTaskId);
+
+    let cancelled = false;
+    void platformAgent.withFreshToken(async (token) => {
+      try {
+        const result = await ensurePostTaskGuidance(token, stepsTaskId);
+        if (!cancelled && result.post_task_guidance?.trim()) {
+          await reload();
+        }
+      } catch {
+        /* 引导为增强能力，回填失败不阻断主流程 */
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    frontendMockSession,
+    lastTaskSnapshot,
+    latestStepsMessageId,
+    messages,
+    platformAgent,
+    reload,
+    scheduleTrial,
+    scheduledRunRecord,
+    sending,
+  ]);
+
   const [sessionStreamActive, setSessionStreamActive] = useState(
     () => getStreamState(sessionId)?.status === "streaming",
   );
@@ -2473,7 +2534,7 @@ export function PlatformSessionAgentWorkspace({
                             }
                           />
                         ) : hideAssistantBubble ||
-                          (guidancePresentation.kind !== "none" && taskId) ? null : showThinkingPlaceholder ? (
+                          shouldSuppressPlainAssistantBubbleForGuidance(guidancePresentation) ? null : showThinkingPlaceholder ? (
                           <AssistantLoadingRow variant="thinking" withIdentity />
                         ) : (
                           <SimpleAssistantBubble
