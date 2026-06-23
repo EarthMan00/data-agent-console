@@ -281,6 +281,21 @@ export function alignStepStatusesWithOrchestrationBundles(
   });
 }
 
+/** 回放场景：bundle 已终态时对齐步骤 meta，并去掉终态步骤上的 runtime 字段以免仍显示「运行中」计时。 */
+export function alignStepsWithBundlesForReplay(
+  steps: TaskExecutionStep[],
+  bundles: TaskOrchestrationBundleRow[],
+  expectedTaskIds?: string[] | null,
+): TaskExecutionStep[] {
+  const aligned = alignStepStatusesWithOrchestrationBundles(steps, bundles, expectedTaskIds);
+  return aligned.map((step) => {
+    if (step.status !== "done" && step.status !== "error") return step;
+    if (!step.runtimeHint && !step.runtimeStartedAt) return step;
+    const { runtimeHint: _hint, runtimeStartedAt: _startedAt, ...rest } = step;
+    return rest;
+  });
+}
+
 export function buildPlatformSubtasksForExecutionSteps(
   executionSteps: TaskExecutionStep[],
   bundles: TaskOrchestrationBundleRow[],
@@ -445,14 +460,21 @@ export function mergeBundlesIntoPlatformSnapshots(
   return ordered.map((step, i) => {
     const b = bundleByIdx.get(i);
     const rawLabel = step.label.replace(/^\d+[）.)]\s*/, "").trim();
-    const outcome = step.status === "error" ? ("failed" as const) : ("success" as const);
+    /** 用后端实际任务状态判断，避免合成 steps 全是 done 时掩盖运行中 / 失败态。 */
+    const rawStatus = (b?.taskStatus ?? "").toUpperCase();
+    const bundleFailed =
+      rawStatus === "FAILED" || rawStatus === "CANCELLED" || rawStatus === "CANCEL" || rawStatus === "TIMEOUT";
+    const bundleRunning = rawStatus === "RUNNING" || rawStatus === "PENDING" || rawStatus === "QUEUED";
+    const isFailed = bundleFailed || step.status === "error";
+    const outcome = isFailed ? ("failed" as const) : ("success" as const);
+    const taskStatus = bundleRunning ? "RUNNING" : isFailed ? "FAILED" : "SUCCESS";
     return {
       stepIndex: i,
       stepId: step.id,
       label: rawLabel.length > 0 ? rawLabel : (b?.label ?? `步骤 ${i + 1}`),
       taskId: b?.taskId ?? `__no_task_${step.id}`,
       outcome,
-      taskStatus: step.status === "error" ? "FAILED" : "SUCCESS",
+      taskStatus,
       artifacts: b?.artifacts ?? [],
       zipDownloadApi: null,
     };

@@ -7,8 +7,8 @@ export const TASK_STATUS_POLL_INTERVAL_MS = 3_000;
 /** 多步编排轮询 /api/tool-orchestrations/{id} 间隔（子任务完成时仍会按需 getTask） */
 export const ORCHESTRATION_STATUS_POLL_INTERVAL_MS = 2_000;
 
-/** 定时任务试跑页轮询任务/编排状态 */
-export const SCHEDULE_TRIAL_TASK_POLL_INTERVAL_MS = 5_000;
+/** 定时任务试跑 / 历史会话 / 运行记录查看执行过程 轮询任务/编排状态（与新建会话频率一致） */
+export const SCHEDULE_TRIAL_TASK_POLL_INTERVAL_MS = 3_000;
 
 /** 试跑首条 in_flight 时刷新会话消息列表 */
 export const SCHEDULE_TRIAL_SESSION_RELOAD_INTERVAL_MS = 6_000;

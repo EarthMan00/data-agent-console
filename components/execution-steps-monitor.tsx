@@ -39,7 +39,20 @@ export function buildPlatformStepTimeline(
     if (step.status === "done" || step.status === "error") {
       const snap = snapByIndex.get(i);
       if (snap) {
-        items.push({ kind: "result", snap });
+        /** 合成 steps 可能全为 done，但后端实际任务仍在执行 → 用快照真实状态覆盖。 */
+        const snapStatus = (snap.taskStatus ?? "").toUpperCase();
+        const taskInFlight =
+          snapStatus === "RUNNING" || snapStatus === "PENDING" || snapStatus === "QUEUED";
+        if (taskInFlight) {
+          items.push({
+            kind: "executing",
+            step: { ...step, status: "running" },
+            stepIndex: i,
+            total: n,
+          });
+        } else {
+          items.push({ kind: "result", snap });
+        }
       } else {
         items.push({
           kind: "result_pending",
