@@ -487,15 +487,12 @@ export function PlatformSessionAgentWorkspace({
                   await patchTaskExecutionSteps(token, sessionId, m.id, {
                     round_id: (meta.round_id as string) || "",
                     task_id: tid,
-                    steps: (resolved ?? steps).map((s) => {
-                      const entry: Record<string, unknown> = {
-                        id: s.id,
-                        label: s.label,
-                        status: s.status,
-                      };
-                      if (s.runtimeStartedAt) entry.runtime_started_at = s.runtimeStartedAt;
-                      return entry;
-                    }),
+                    steps: (resolved ?? steps).map((s) => ({
+                      id: s.id,
+                      label: s.label,
+                      status: s.status,
+                      ...(s.runtimeStartedAt ? { runtime_started_at: s.runtimeStartedAt } : {}),
+                    })),
                     orchestration_id: orchId,
                   });
                 } catch {
@@ -1654,6 +1651,7 @@ export function PlatformSessionAgentWorkspace({
       tool_name: "",
       status: hit.taskStatus ?? "RUNNING",
       started_at: hit.startedAt,
+      finished_at: null,
       zip_download_api: null,
       events: [],
       artifacts: [],

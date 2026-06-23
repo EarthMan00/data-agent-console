@@ -488,6 +488,7 @@ export type TaskExecutionStepPersistPayload = {
   id: string;
   label: string;
   status: TaskExecutionStepStatus;
+  runtime_started_at?: string;
 };
 
 export type TaskExecutionStepsPersistBody = {
