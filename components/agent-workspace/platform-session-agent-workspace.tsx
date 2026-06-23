@@ -24,7 +24,7 @@ import {
   patchTaskExecutionSteps,
 } from "@/lib/agent-api/client";
 import { getChatMessageMaxChars } from "@/lib/agent-api/config";
-import type { ChatSendResult, SessionMessageItem, TaskResponse } from "@/lib/agent-api/types";
+import type { ChatSendResult, SessionMessageItem, TaskResponse, ToolOrchestrationStepApi } from "@/lib/agent-api/types";
 import {
   createStreamingAssistantMessage,
   isStreamingAssistantMessage,
@@ -121,6 +121,10 @@ import {
 } from "./chat-bubbles";
 import { sanitizeClarificationForUserDisplay } from "@/lib/alice-clarification";
 import { sessionHasOrchestrationFailure } from "@/lib/orchestration-failure-message";
+import {
+  enrichStepsRuntimeFromBundles,
+  enrichTaskExecutionStepsRuntime,
+} from "@/lib/session-task-execution-step-resolver";
 
 function mergeTaskStepStatuses(
   steps: TaskExecutionStep[],
@@ -154,13 +158,20 @@ function prepareExecutionStepsForBubble(
     bundles: TaskOrchestrationBundleRow[];
     expectedTaskIds: string[] | null;
     liveOverlay: TaskExecutionStepStatus[] | null;
+    orchestrationSteps?: ToolOrchestrationStepApi[] | null;
+    inFlightTask?: TaskResponse | null;
   },
 ): TaskExecutionStep[] {
   const aligned =
     options.bundles.length > 0
       ? alignStepsWithBundlesForReplay(steps, options.bundles, options.expectedTaskIds)
       : steps;
-  return mergeTaskStepStatuses(aligned, options.liveOverlay);
+  const merged = mergeTaskStepStatuses(aligned, options.liveOverlay);
+  const withOrchRuntime = enrichTaskExecutionStepsRuntime(merged, {
+    task: options.inFlightTask,
+    orchestrationSteps: options.orchestrationSteps,
+  });
+  return enrichStepsRuntimeFromBundles(withOrchRuntime, options.bundles);
 }
 
 function attachmentsFromMessageMeta(meta: Record<string, unknown> | undefined): AgentAttachment[] {
@@ -274,6 +285,7 @@ export function PlatformSessionAgentWorkspace({
     shareUrl: string | null;
   } | null>(null);
   const [liveOrchStepStatuses, setLiveOrchStepStatuses] = useState<TaskExecutionStepStatus[] | null>(null);
+  const [liveOrchestrationSteps, setLiveOrchestrationSteps] = useState<ToolOrchestrationStepApi[] | null>(null);
   const trialTaskId = scheduleTrial ? loadScheduleTrialMeta()?.taskId : null;
 
   const processStreamingMessages = useCallback((msgs: SessionMessageItem[]): SessionMessageItem[] => {
@@ -448,10 +460,11 @@ export function PlatformSessionAgentWorkspace({
                 resolved = steps.map((s) => ({ ...s, status: "done" as TaskExecutionStepStatus }));
               } else if (task.status === "FAILED") {
                 resolved = steps.map((s) => ({ ...s, status: "error" as TaskExecutionStepStatus }));
-              } else if (task.status === "RUNNING" && steps[0]?.status === "pending") {
+              } else if (task.status === "RUNNING") {
                 resolved = steps.map((s, idx) => ({
                   ...s,
-                  status: idx === 0 ? ("running" as TaskExecutionStepStatus) : s.status,
+                  status: idx === 0 && s.status !== "error" ? ("running" as TaskExecutionStepStatus) : s.status,
+                  runtimeStartedAt: s.runtimeStartedAt ?? (idx === 0 ? task.started_at : undefined),
                 }));
               }
 
@@ -485,11 +498,15 @@ export function PlatformSessionAgentWorkspace({
                     ...msg,
                     meta: {
                       ...(msg.meta as Record<string, unknown>),
-                      steps: resolved!.map((s) => ({
-                        id: s.id,
-                        label: s.label,
-                        status: s.status,
-                      })),
+                      steps: resolved!.map((s) => {
+                        const entry: Record<string, unknown> = {
+                          id: s.id,
+                          label: s.label,
+                          status: s.status,
+                        };
+                        if (s.runtimeStartedAt) entry.runtime_started_at = s.runtimeStartedAt;
+                        return entry;
+                      }),
                     },
                   };
                 }
@@ -952,6 +969,7 @@ export function PlatformSessionAgentWorkspace({
       setMessagesLoaded(false);
     }
     setLiveOrchStepStatuses(null);
+    setLiveOrchestrationSteps(null);
 
     setShowResultPanel(false);
     setFocusedTaskId(null);
@@ -1026,12 +1044,14 @@ export function PlatformSessionAgentWorkspace({
     if (frontendMockSession) {
       setLiveOrchClarification(null);
       setLiveOrchStepStatuses(null);
+      setLiveOrchestrationSteps(null);
       return;
     }
     const orchId = effectiveOrchestrationAnchor?.orchestrationId?.trim();
     if (!orchId || !platformAgent?.auth) {
       setLiveOrchClarification(null);
       setLiveOrchStepStatuses(null);
+      setLiveOrchestrationSteps(null);
       return;
     }
     let stop = false;
@@ -1040,6 +1060,7 @@ export function PlatformSessionAgentWorkspace({
       try {
         await platformAgent.withFreshToken(async (token) => {
           const orch = await getToolOrchestration(token, orchId);
+          setLiveOrchestrationSteps(orch.steps);
           setLiveOrchStepStatuses(orch.steps.map((s) => mapServerOrchestrationStepStatus(s.status)));
           if (orch.awaiting_clarification && orch.clarification_message?.trim()) {
             setLiveOrchClarification({
@@ -1287,6 +1308,32 @@ export function PlatformSessionAgentWorkspace({
   const bundlesAllTerminal = useMemo(
     () => orchestrationBundlesAllTerminal(orchestrationBundles),
     [orchestrationBundles],
+  );
+
+  const inFlightTaskForRuntime = useMemo((): TaskResponse | null => {
+    if (lastTaskSnapshot && isTaskInFlight(lastTaskSnapshot)) return lastTaskSnapshot;
+    const hit = orchestrationBundles.find((bundle) => {
+      const status = (bundle.taskStatus ?? "").toUpperCase();
+      return (status === "RUNNING" || status === "PENDING" || status === "QUEUED") && bundle.startedAt;
+    });
+    if (!hit?.startedAt) return null;
+    return {
+      task_id: hit.taskId,
+      tool_name: "",
+      status: hit.taskStatus ?? "RUNNING",
+      started_at: hit.startedAt,
+      zip_download_api: null,
+      events: [],
+      artifacts: [],
+    };
+  }, [lastTaskSnapshot, orchestrationBundles]);
+
+  const executionStepsRuntimeOptions = useMemo(
+    () => ({
+      orchestrationSteps: liveOrchestrationSteps,
+      inFlightTask: inFlightTaskForRuntime,
+    }),
+    [liveOrchestrationSteps, inFlightTaskForRuntime],
   );
 
   const stepsMessageIdForBundles = useMemo(() => {
@@ -1787,6 +1834,7 @@ export function PlatformSessionAgentWorkspace({
                         bundles: orchestrationBundles,
                         expectedTaskIds: expectedBundleTaskIds,
                         liveOverlay: shouldOverlayLiveOrchStatuses ? liveOrchStepStatuses : null,
+                        ...executionStepsRuntimeOptions,
                       })
                     : null;
                   const showTaskStepsBubble = Boolean(stepsForExecutionBubble && stepsForExecutionBubble.length > 0);
@@ -1887,6 +1935,7 @@ export function PlatformSessionAgentWorkspace({
                                 expectedTaskIds: expectedBundleTaskIds,
                                 liveOverlay:
                                   liveOrchStepStatuses && !bundlesAllTerminal ? liveOrchStepStatuses : null,
+                                ...executionStepsRuntimeOptions,
                               })}
                               datetime={m.created_at}
                               platformSubtasks={

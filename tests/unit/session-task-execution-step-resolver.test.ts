@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { TaskExecutionStep } from "@/lib/agent-events";
 import {
+  enrichStepsRuntimeFromBundles,
   enrichTaskExecutionStepsRuntime,
   resolveStaleTaskExecutionSteps,
 } from "@/lib/session-task-execution-step-resolver";
@@ -88,5 +89,50 @@ describe("enrichTaskExecutionStepsRuntime", () => {
     expect(enriched[0]?.runtimeHint).toBe("正在搜索亚马逊");
     expect(enriched[0]?.runtimeStartedAt).toBe("2026-06-20T00:01:00.000Z");
     expect(enriched[1]?.runtimeHint).toBeUndefined();
+  });
+});
+
+describe("enrichStepsRuntimeFromBundles", () => {
+  it("adds runtimeStartedAt from in-flight bundle startedAt for running steps", () => {
+    const steps: TaskExecutionStep[] = [
+      { id: "s1", label: "步骤一", order: 1, status: "running", roundId: "round-1" },
+    ];
+    const enriched = enrichStepsRuntimeFromBundles(steps, [
+      {
+        taskId: "task-1",
+        stepIndex: 0,
+        label: "步骤一",
+        artifacts: [],
+        taskStatus: "RUNNING",
+        startedAt: "2026-06-20T00:00:00.000Z",
+      },
+    ]);
+
+    expect(enriched[0]?.runtimeStartedAt).toBe("2026-06-20T00:00:00.000Z");
+  });
+
+  it("does not overwrite existing runtimeStartedAt", () => {
+    const steps: TaskExecutionStep[] = [
+      {
+        id: "s1",
+        label: "步骤一",
+        order: 1,
+        status: "running",
+        roundId: "round-1",
+        runtimeStartedAt: "2026-06-20T00:05:00.000Z",
+      },
+    ];
+    const enriched = enrichStepsRuntimeFromBundles(steps, [
+      {
+        taskId: "task-1",
+        stepIndex: 0,
+        label: "步骤一",
+        artifacts: [],
+        taskStatus: "RUNNING",
+        startedAt: "2026-06-20T00:00:00.000Z",
+      },
+    ]);
+
+    expect(enriched[0]?.runtimeStartedAt).toBe("2026-06-20T00:05:00.000Z");
   });
 });
