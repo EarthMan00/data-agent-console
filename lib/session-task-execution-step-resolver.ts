@@ -1,7 +1,13 @@
 import type { TaskResponse, ToolOrchestrationStepApi } from "@/lib/agent-api/types";
 import type { TaskExecutionStep, TaskExecutionStepStatus } from "@/lib/agent-events";
 import { mapServerOrchestrationStepStatus } from "@/lib/agent-runtime/task-mapping";
+import type { TaskOrchestrationBundleRow } from "@/lib/merge-orchestration-task-artifacts";
 import { isTaskInFlight } from "@/lib/task-status-poll";
+
+function bundleTaskInFlight(status: string | undefined): boolean {
+  const s = (status || "").toUpperCase();
+  return s === "RUNNING" || s === "PENDING" || s === "QUEUED";
+}
 
 function taskStatusToResolvedStepStatus(status: string | null | undefined): TaskExecutionStepStatus | null {
   const s = (status || "").toUpperCase();
@@ -76,5 +82,25 @@ export function enrichTaskExecutionStepsRuntime(
       };
     }
     return step;
+  });
+}
+
+/** 历史会话重进：从已拉取的 bundle 子任务 started_at 补运行中步骤的计时起点。 */
+export function enrichStepsRuntimeFromBundles(
+  steps: TaskExecutionStep[],
+  bundles: TaskOrchestrationBundleRow[],
+): TaskExecutionStep[] {
+  if (!bundles.length) return steps;
+  const bundleByIdx = new Map<number, TaskOrchestrationBundleRow>();
+  for (const bundle of bundles) {
+    bundleByIdx.set(bundle.stepIndex, bundle);
+  }
+  const ordered = [...steps].sort((a, b) => a.order - b.order);
+  return ordered.map((step, index) => {
+    if (step.status !== "running" && step.status !== "awaiting_input") return step;
+    if (step.runtimeStartedAt) return step;
+    const bundle = bundleByIdx.get(index);
+    if (!bundle?.startedAt || !bundleTaskInFlight(bundle.taskStatus)) return step;
+    return { ...step, runtimeStartedAt: bundle.startedAt };
   });
 }

@@ -75,6 +75,7 @@ export type TaskOrchestrationBundleRow = {
   artifacts: PlatformTaskArtifactRef[];
   /** 子任务平台状态；用于区分「已有产物但仍在执行」与真正完成。 */
   taskStatus?: string;
+  startedAt?: string;
   finishedAt?: string | null;
 };
 
@@ -428,6 +429,7 @@ export async function fetchTaskOrchestrationForResultPanel(
       label: labelForOrchestrationStep(task, i),
       artifacts: arts,
       taskStatus: task.status,
+      startedAt: task.started_at || undefined,
       finishedAt: task.finished_at ?? null,
     });
   }
