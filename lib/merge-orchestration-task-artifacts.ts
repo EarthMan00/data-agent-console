@@ -372,7 +372,6 @@ export function pickBestOrchestrationAnchor(messages: SessionMessageItem[]): Orc
         (s) =>
           s.status === "running" ||
           s.status === "pending" ||
-          s.status === "queued" ||
           s.status === "awaiting_input",
       );
       if (inFlight) score += 10_000;
