@@ -1103,6 +1103,23 @@ export async function getTask(accessToken: string, taskId: string): Promise<Task
   return data as unknown as TaskResponse;
 }
 
+/** 已成功任务缺少引导时按需补写（历史 HTML 报告类任务回填）。 */
+export async function ensurePostTaskGuidance(
+  accessToken: string,
+  taskId: string,
+): Promise<{ task_id: string; post_task_guidance: string | null }> {
+  const res = await fetch(apiUrl(`/api/tasks/${taskId}/ensure-post-task-guidance`), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await parseJson(res);
+  if (!res.ok) {
+    throw new AgentApiError("ensure post task guidance failed", res.status, data);
+  }
+  assertJsonObject(data);
+  return data as { task_id: string; post_task_guidance: string | null };
+}
+
 /** 任务事件 WebSocket URL（勿再把 token 放在 query，以免进入代理/浏览器日志）。连接成功后应立刻发送 {@link taskWebSocketAuthPayload}。 */
 export function buildTaskWsUrl(taskId: string): string {
   const root = getAgentWsOrigin();

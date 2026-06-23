@@ -8,6 +8,7 @@ import {
   resolveRoundPostTaskGuidanceContent,
   shouldDeferPostTaskGuidanceToStepsBubble,
   shouldRenderGuidanceBubbleAtMessage,
+  shouldSuppressPlainAssistantBubbleForGuidance,
 } from "@/lib/guidance-interactivity";
 
 function guidanceMsg(id: string, index: number, kind = "post_task_guidance"): SessionMessageItem {
@@ -125,6 +126,14 @@ describe("resolveInteractiveGuidanceRoundId", () => {
       },
     ];
     expect(resolveInteractiveGuidanceRoundId(rounds)).toBeNull();
+  });
+});
+
+describe("shouldSuppressPlainAssistantBubbleForGuidance", () => {
+  it("suppresses dedicated and embedded guidance source messages", () => {
+    expect(shouldSuppressPlainAssistantBubbleForGuidance({ kind: "none" })).toBe(false);
+    expect(shouldSuppressPlainAssistantBubbleForGuidance({ kind: "dedicated" })).toBe(true);
+    expect(shouldSuppressPlainAssistantBubbleForGuidance({ kind: "embedded" })).toBe(true);
   });
 });
 

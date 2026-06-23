@@ -42,12 +42,19 @@ export function sessionHasTaskCompletionSummaryMessage(
   return false;
 }
 
-function findLatestPostTaskGuidanceContent(messages: SessionMessageItem[]): string | null {
+/** 按 task_id 过滤，避免历史会话二次追问时误把上一轮引导当作本轮已落库。 */
+export function findLatestPostTaskGuidanceContent(
+  messages: SessionMessageItem[],
+  taskId?: string | null,
+): string | null {
+  const tid = (taskId ?? "").trim();
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i]!;
     if (m.role !== "assistant") continue;
     const meta = messageMeta(m);
     if (meta?.kind !== "post_task_guidance") continue;
+    const msgTaskId = typeof meta.task_id === "string" ? meta.task_id.trim() : "";
+    if (tid && msgTaskId && msgTaskId !== tid) continue;
     const content = m.content?.trim();
     if (content) return content;
   }
@@ -81,7 +88,7 @@ export async function resolvePostTaskGuidanceText(
     if (i % 2 === 1) {
       try {
         const page = await listSessionMessages(token, sessionId, 50);
-        const content = findLatestPostTaskGuidanceContent(page.messages ?? []);
+        const content = findLatestPostTaskGuidanceContent(page.messages ?? [], taskId);
         if (content) return content;
       } catch {
         /* 引导为增强能力，拉取失败不阻断主流程 */
@@ -108,7 +115,7 @@ export async function waitForSessionTaskOutcomeMessages(
     try {
       const page = await listSessionMessages(token, sessionId, 80);
       const messages = page.messages ?? [];
-      if (findLatestPostTaskGuidanceContent(messages)) {
+      if (findLatestPostTaskGuidanceContent(messages, taskId)) {
         return;
       }
       if (sessionHasTaskCompletionSummaryMessage(messages, taskId)) {
@@ -133,7 +140,7 @@ export async function waitForSessionTaskOutcomeMessages(
       await sleep(1000);
       try {
         const page = await listSessionMessages(token, sessionId, 80);
-        if (findLatestPostTaskGuidanceContent(page.messages ?? [])) {
+        if (findLatestPostTaskGuidanceContent(page.messages ?? [], taskId)) {
           return;
         }
       } catch {
