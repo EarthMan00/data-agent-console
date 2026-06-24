@@ -460,7 +460,7 @@ export function PromptLibraryPicker({
                   value={formPrompt}
                   onValueChange={setFormPrompt}
                   placeholder={
-                    "示例：@卖家精灵-选产品 在亚马逊[[美国站]]搜索关键词 '{{Sports Water Bottles}}' 产品…\n可通过 {{}} 设置可编辑参数，如 [[亚马逊美国站]]"
+                    "示例：@卖家精灵-选产品 在亚马逊{{美国站}}搜索关键词 '{{Sports Water Bottles}}' 产品…\n可通过 {{}} 设置可编辑参数，如 {{亚马逊美国站}}"
                   }
                   mode="普通模式"
                   onModeChange={() => undefined}

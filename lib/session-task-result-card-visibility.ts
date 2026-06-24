@@ -1,4 +1,5 @@
 import type { SessionMessageItem } from "@/lib/agent-api/types";
+import { segmentBoundsForMessage } from "@/lib/guidance-interactivity";
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 
 function messageMeta(m: SessionMessageItem): Record<string, unknown> | undefined {
@@ -82,11 +83,14 @@ export function messageIdsEligibleForTaskResultCard(messages: SessionMessageItem
 
   // Pass 2: remaining assistant messages with a task_id that lack explicit
   // task_execution_steps meta — e.g. orchestration summary messages.
-  for (const m of messages) {
+  for (let i = 0; i < messages.length; i += 1) {
+    const m = messages[i]!;
     if (m.role !== "assistant") continue;
     const meta = messageMeta(m);
     const tid = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
     if (!tid || coveredTaskIds.has(tid)) continue;
+    const kind = typeof meta?.kind === "string" ? meta.kind.trim() : "";
+    if (kind === "task_terminated" && segmentHasTaskExecutionSteps(messages, i)) continue;
     coveredTaskIds.add(tid);
     out.add(m.id);
   }
@@ -113,6 +117,15 @@ export function buildLatestStepsMessageIdByTaskId(
     if (!map[key]) map[key] = m.id;
   }
   return map;
+}
+
+function segmentHasTaskExecutionSteps(messages: SessionMessageItem[], messageIndex: number): boolean {
+  const { start, end } = segmentBoundsForMessage(messages, messageIndex);
+  for (let i = start; i < end; i += 1) {
+    const steps = parseTaskExecutionStepsFromMeta(messageMeta(messages[i]!));
+    if (steps?.length) return true;
+  }
+  return false;
 }
 
 /**

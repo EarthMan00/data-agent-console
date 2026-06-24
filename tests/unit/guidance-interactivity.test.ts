@@ -7,8 +7,10 @@ import {
   resolveInteractiveGuidanceRoundId,
   resolveRoundPostTaskGuidanceContent,
   shouldDeferPostTaskGuidanceToStepsBubble,
+  shouldDeferTaskTerminatedToStepsBubble,
   shouldRenderGuidanceBubbleAtMessage,
   shouldSuppressPlainAssistantBubbleForGuidance,
+  shouldSuppressStandaloneTaskResultCard,
 } from "@/lib/guidance-interactivity";
 
 function guidanceMsg(id: string, index: number, kind = "post_task_guidance"): SessionMessageItem {
@@ -53,6 +55,35 @@ describe("resolveInteractiveGuidanceMessageId", () => {
 
   it("returns synthetic anchor when it is the latest and no user follows", () => {
     const messages = [userMsg("u0", 0), { ...guidanceMsg("steps", 1), meta: { kind: "task_execution_steps" } }];
+    expect(
+      resolveInteractiveGuidanceMessageId(messages, { syntheticTerminatedMessageId: "steps" }),
+    ).toBe("steps");
+  });
+
+  it("prefers steps anchor over task_terminated when guidance is mounted on steps bubble", () => {
+    const messages: SessionMessageItem[] = [
+      userMsg("u0", 0),
+      {
+        id: "steps",
+        role: "assistant",
+        content: "（以下为该轮任务的执行步骤记录）",
+        created_at: new Date(Date.UTC(2026, 5, 20, 1)).toISOString(),
+        message_index: 1,
+        meta: {
+          kind: "task_execution_steps",
+          task_id: "task-1",
+          steps: [{ id: "s1", label: "在亚马逊搜索 cup", status: "error" }],
+        },
+      },
+      {
+        id: "terminated",
+        role: "assistant",
+        content: "任务已终止，当前执行已停止。\n\n【接下来您可以】\n1. 重新发送完整需求",
+        created_at: new Date(Date.UTC(2026, 5, 20, 2)).toISOString(),
+        message_index: 2,
+        meta: { kind: "task_terminated", task_id: "task-1" },
+      },
+    ];
     expect(
       resolveInteractiveGuidanceMessageId(messages, { syntheticTerminatedMessageId: "steps" }),
     ).toBe("steps");
@@ -179,5 +210,78 @@ describe("resolveRoundPostTaskGuidanceContent", () => {
     ];
     expect(shouldDeferPostTaskGuidanceToStepsBubble(messages, 2, "steps")).toBe(true);
     expect(shouldRenderGuidanceBubbleAtMessage(messages, 2)).toBe(true);
+  });
+
+  it("defers task_terminated guidance to the steps bubble in the same turn", () => {
+    const messages: SessionMessageItem[] = [
+      userMsg("u1", 0),
+      {
+        id: "steps",
+        role: "assistant",
+        content: "（以下为该轮任务的执行步骤记录）",
+        created_at: "2026-05-22T10:00:00Z",
+        message_index: 1,
+        meta: {
+          kind: "task_execution_steps",
+          task_id: "task-1",
+          steps: [{ id: "s1", label: "在亚马逊搜索 cup", status: "error" }],
+        },
+      },
+      {
+        id: "terminated",
+        role: "assistant",
+        content: "任务已终止，当前执行已停止。\n\n【接下来您可以】\n1. 重新发送完整需求",
+        created_at: "2026-05-22T10:00:01Z",
+        message_index: 2,
+        meta: { kind: "task_terminated", task_id: "task-1" },
+      },
+    ];
+    expect(shouldDeferTaskTerminatedToStepsBubble(messages, 2, "steps")).toBe(true);
+    expect(shouldDeferTaskTerminatedToStepsBubble(messages, 1, "steps")).toBe(false);
+    expect(resolveRoundPostTaskGuidanceContent(messages, 1, { taskId: "task-1" })).toBeNull();
+  });
+
+  it("suppresses standalone task result card on task_terminated when steps already owns it", () => {
+    const messages: SessionMessageItem[] = [
+      userMsg("u1", 0),
+      {
+        id: "steps",
+        role: "assistant",
+        content: "（以下为该轮任务的执行步骤记录）",
+        created_at: "2026-05-22T10:00:00Z",
+        message_index: 1,
+        meta: {
+          kind: "task_execution_steps",
+          task_id: "task-1",
+          steps: [{ id: "s1", label: "搜索", status: "error" }],
+        },
+      },
+      {
+        id: "terminated",
+        role: "assistant",
+        content: "任务已终止，当前执行已停止。",
+        created_at: "2026-05-22T10:00:01Z",
+        message_index: 2,
+        meta: { kind: "task_terminated", task_id: "task-1" },
+      },
+    ];
+    const cardIds = new Set(["steps"]);
+    const visible = new Map([["steps", true]]);
+    expect(
+      shouldSuppressStandaloneTaskResultCard(messages, 2, {
+        latestStepsMessageId: "steps",
+        taskResultCardMessageIds: cardIds,
+        taskResultEntryVisibleByMessageId: visible,
+        deferTaskTerminatedToSteps: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldSuppressStandaloneTaskResultCard(messages, 1, {
+        latestStepsMessageId: "steps",
+        taskResultCardMessageIds: cardIds,
+        taskResultEntryVisibleByMessageId: visible,
+        deferTaskTerminatedToSteps: false,
+      }),
+    ).toBe(false);
   });
 });

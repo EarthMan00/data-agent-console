@@ -26,11 +26,25 @@ function snap(stepIndex: number, taskId: string): PlatformSubtaskSnapshot {
 }
 
 describe("buildPlatformStepTimeline", () => {
-  it("只展示当前步骤的执行卡片（第一步 running）", () => {
+  it("展示全部步骤（第一步 running，后续 pending）", () => {
     const steps = [step("a", 0, "A", "running"), step("b", 1, "B", "pending")];
     const items = buildPlatformStepTimeline(steps, undefined);
-    expect(items).toHaveLength(1);
+    expect(items).toHaveLength(2);
     expect(items[0]).toMatchObject({ kind: "executing", stepIndex: 0, total: 2 });
+    expect(items[1]).toMatchObject({ kind: "executing", stepIndex: 1, total: 2 });
+  });
+
+  it("多步任务第一步执行中时展示全部步骤", () => {
+    const steps = [
+      step("a", 0, "步骤一", "running"),
+      step("b", 1, "步骤二", "pending"),
+      step("c", 2, "步骤三", "pending"),
+      step("d", 3, "步骤四", "pending"),
+      step("e", 4, "步骤五", "pending"),
+    ];
+    const items = buildPlatformStepTimeline(steps, undefined);
+    expect(items).toHaveLength(5);
+    expect(items.every((item) => item.kind === "executing")).toBe(true);
   });
 
   it("第一步完成后为结果卡片，第二步为执行卡片", () => {

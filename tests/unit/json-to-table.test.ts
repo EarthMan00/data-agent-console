@@ -7,6 +7,7 @@ import {
   hasTabularTaskResultFiles,
   pickPrimaryCsvArtifact,
   pickPrimaryTaskDataArtifact,
+  shouldShowTaskResultEntryCard,
 } from "@/lib/platform-task-artifacts";
 import { parseJsonToTableData } from "@/lib/json-to-table";
 
@@ -214,6 +215,35 @@ describe("hasTabularTaskResultFiles", () => {
         },
       ]),
     ).toBe(true);
+  });
+});
+
+describe("shouldShowTaskResultEntryCard", () => {
+  const csvArtifact = {
+    artifact_id: "c",
+    artifact_type: "csv",
+    original_name: "data.csv",
+    download_api: "/c",
+  };
+  const logArtifact = {
+    artifact_id: "l",
+    artifact_type: "log",
+    original_name: "linkfox_result.txt",
+    download_api: "/l",
+  };
+
+  it("shows entry when any bundle has tabular files regardless of task status", () => {
+    expect(
+      shouldShowTaskResultEntryCard([{ artifacts: [logArtifact, csvArtifact] }], []),
+    ).toBe(true);
+  });
+
+  it("hides entry when only logs exist even if backend marked has_artifacts", () => {
+    expect(shouldShowTaskResultEntryCard([{ artifacts: [logArtifact] }], [logArtifact])).toBe(false);
+  });
+
+  it("shows entry from extra single-task artifacts", () => {
+    expect(shouldShowTaskResultEntryCard([], [csvArtifact])).toBe(true);
   });
 });
 

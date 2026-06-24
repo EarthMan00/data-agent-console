@@ -440,19 +440,16 @@ export function buildRoundViewModels(run: TaskRunLike) {
     const tabularOk = hasTabularTaskResultFiles(run.platformTaskArtifacts);
 
     const showTaskResultInChat = isPlatformStepRound
-      ? Boolean(
-          !errorMessage &&
-            run.status === "success" &&
-            tabularOk &&
-            taskOutcomeReady,
-        )
-      : uiLayout === "tool_orchestration" && !hasExecSteps
+      ? Boolean(tabularOk && taskOutcomeReady)
+      : uiLayout === "tool_orchestration"
         ? executionPhasesComplete && taskOutcomeReady
         : taskOutcomeReady;
 
     const hasResult = isPlatformStepRound
-      ? Boolean(!errorMessage && run.status === "success" && tabularOk && taskOutcomeReady)
-      : taskOutcomeReady;
+      ? Boolean(tabularOk && taskOutcomeReady)
+      : uiLayout === "tool_orchestration"
+        ? executionPhasesComplete && taskOutcomeReady
+        : taskOutcomeReady;
 
     models.push({
       roundId: node.roundId,

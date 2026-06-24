@@ -62,7 +62,6 @@ import { buildTaskStepsFromDecompositionLabels } from "@/lib/schedule-trial-exec
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import {
   buildLatestStepsMessageIdByTaskId,
-  buildTaskResultHintsByTaskId,
   isSupersededTaskExecutionStepsMessage,
   messageIdsEligibleForTaskResultCard,
 } from "@/lib/session-task-result-card-visibility";
@@ -72,8 +71,10 @@ import {
   resolveInteractiveGuidanceMessageId,
   resolveRoundPostTaskGuidanceContent,
   shouldDeferPostTaskGuidanceToStepsBubble,
+  shouldDeferTaskTerminatedToStepsBubble,
   shouldRenderGuidanceBubbleAtMessage,
   shouldSuppressPlainAssistantBubbleForGuidance,
+  shouldSuppressStandaloneTaskResultCard,
 } from "@/lib/guidance-interactivity";
 import {
   isUserTerminatedTaskState,
@@ -88,18 +89,19 @@ import {
   shouldSuppressSessionClarificationAt,
 } from "@/lib/session-clarification-flow";
 import { safeRandomUUID } from "@/lib/random-uuid";
-import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
+import { hasTabularTaskResultFiles, shouldShowTaskResultEntryCard } from "@/lib/platform-task-artifacts";
 import {
-  buildBundleDownloadApiForPanel,
   alignStepsWithBundlesForReplay,
+  buildBundleDownloadApiForPanel,
   enrichOrchestrationBundlesWithStepLabels,
   fetchTaskOrchestrationForResultPanel,
   filterOrchestrationBundlesForTaskIds,
   mergeBundlesIntoPlatformSnapshots,
+  orchestrationBundlesForTaskResultCard,
   pickBestOrchestrationAnchor,
-  resolveAnchorForPanelFromMessageMeta,
-  resolveOrchestrationAnchorFromMessageMeta,
+  resolvePanelAnchorForMessage,
   resolvePanelAnchorForStepsMessage,
+  taskArtifactsFromSnapshot,
   type OrchestrationAnchor,
   type PanelOrchestrationAnchor,
   type ResultPanelContext,
@@ -322,6 +324,8 @@ export function PlatformSessionAgentWorkspace({
   } | null>(null);
   const trialAutoOpenedPanelRef = useRef(false);
   const scheduledRunAutoOpenedPanelRef = useRef(false);
+  /** 用户在本会话内 send 触发的任务完成后，自动展开右侧结果面板（与首页新建任务行为一致） */
+  const pendingSessionResultAutoOpenRef = useRef(false);
   const trialPrefetchAnchorRef = useRef<string | null>(null);
   const trialDoneReloadedRef = useRef(false);
   const trialClarificationReloadedRef = useRef(false);
@@ -1037,6 +1041,7 @@ export function PlatformSessionAgentWorkspace({
     setTrialOrchestrationDone(null);
     trialAutoOpenedPanelRef.current = false;
     scheduledRunAutoOpenedPanelRef.current = false;
+    pendingSessionResultAutoOpenRef.current = false;
     trialPrefetchAnchorRef.current = null;
     trialDoneReloadedRef.current = false;
     trialClarificationReloadedRef.current = false;
@@ -1073,7 +1078,37 @@ export function PlatformSessionAgentWorkspace({
   ]);
 
   const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
-  const taskResultHintsByTaskId = useMemo(() => buildTaskResultHintsByTaskId(messages), [messages]);
+
+  const taskResultEntryVisibleByMessageId = useMemo(() => {
+    const out = new Map<string, boolean>();
+    for (const m of messages) {
+      if (!taskResultCardMessageIds.has(m.id)) continue;
+      const meta =
+        m.meta && typeof m.meta === "object" && !Array.isArray(m.meta)
+          ? (m.meta as Record<string, unknown>)
+          : undefined;
+      const rawTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+      const bundles = orchestrationBundlesForTaskResultCard(
+        m.id,
+        meta,
+        messages,
+        orchestrationBundles,
+        supplementalBundlesById,
+      );
+      const extraArtifacts =
+        rawTaskId && lastTaskSnapshot?.task_id === rawTaskId
+          ? taskArtifactsFromSnapshot(lastTaskSnapshot)
+          : undefined;
+      out.set(m.id, shouldShowTaskResultEntryCard(bundles, extraArtifacts));
+    }
+    return out;
+  }, [
+    messages,
+    taskResultCardMessageIds,
+    orchestrationBundles,
+    supplementalBundlesById,
+    lastTaskSnapshot,
+  ]);
 
   const orchestrationAnchor = useMemo(() => pickBestOrchestrationAnchor(messages), [messages]);
 
@@ -1151,7 +1186,7 @@ export function PlatformSessionAgentWorkspace({
       }
       return;
     }
-    if (!effectiveOrchestrationAnchor || !platformAgent?.auth || showResultPanel) {
+    if (!effectiveOrchestrationAnchor || !platformAgent?.auth) {
       return;
     }
     if (scheduleTrial && trialRunInFlight) return;
@@ -1173,7 +1208,7 @@ export function PlatformSessionAgentWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [effectiveOrchestrationAnchor, frontendMockSession, platformAgent, showResultPanel, scheduleTrial, trialRunInFlight]);
+  }, [effectiveOrchestrationAnchor, frontendMockSession, platformAgent, scheduleTrial, trialRunInFlight]);
 
   /** scheduledRunRecord 模式：任务仍在执行时周期性刷新 bundle 状态，直到全部终态为止。 */
   useEffect(() => {
@@ -1225,7 +1260,7 @@ export function PlatformSessionAgentWorkspace({
   const loadSupplementalBundlesForMessage = useCallback((messageId: string, meta: Record<string, unknown> | undefined) => {
     if (!frontendMockSession && !platformAgent?.auth) return;
     if (supplementalBundlesById[messageId] || fetchedSupplementalRef.current.has(messageId)) return;
-    const anchor = resolveOrchestrationAnchorFromMessageMeta(meta);
+    const anchor = resolvePanelAnchorForMessage(messages, meta);
     if (!anchor) {
       fetchedSupplementalRef.current.add(messageId);
       return;
@@ -1244,7 +1279,7 @@ export function PlatformSessionAgentWorkspace({
         const data = await fetchTaskOrchestrationForResultPanel(
           token,
           anchor.primaryTaskId,
-          anchor.bundleTaskIds.length > 0 ? anchor.bundleTaskIds : undefined,
+          anchor.bundleTaskIds,
           { orchestrationId: anchor.orchestrationId, expandOrchestration: false },
         );
         setSupplementalBundlesById((prev) => ({ ...prev, [messageId]: data.bundles }));
@@ -1252,7 +1287,7 @@ export function PlatformSessionAgentWorkspace({
         // task/orchestration may have been deleted
       }
     });
-  }, [frontendMockSession, platformAgent, supplementalBundlesById]);
+  }, [frontendMockSession, messages, platformAgent, supplementalBundlesById]);
 
   useEffect(() => {
     fetchedSupplementalRef.current = new Set();
@@ -1292,7 +1327,7 @@ export function PlatformSessionAgentWorkspace({
   }, [messages]);
 
   const syntheticTerminatedGuidanceMessageId = useMemo(() => {
-    if (sessionHasTaskTerminatedMessage(messages) || !latestStepsMessageId) return null;
+    if (!latestStepsMessageId) return null;
     const stepsMsg = messages.find((m) => m.id === latestStepsMessageId);
     if (!stepsMsg) return null;
     const meta =
@@ -1305,12 +1340,14 @@ export function PlatformSessionAgentWorkspace({
     const matchingBundle = rawTaskId
       ? orchestrationBundles.find((b) => b.taskId === rawTaskId) ?? orchestrationBundles[0]
       : orchestrationBundles[0];
-    const terminated = isUserTerminatedTaskState({
-      steps,
-      task:
-        lastTaskSnapshot && lastTaskSnapshot.task_id === rawTaskId ? lastTaskSnapshot : null,
-      bundle: matchingBundle ?? null,
-    });
+    const terminated =
+      sessionHasTaskTerminatedForTask(messages, rawTaskId) ||
+      isUserTerminatedTaskState({
+        steps,
+        task:
+          lastTaskSnapshot && lastTaskSnapshot.task_id === rawTaskId ? lastTaskSnapshot : null,
+        bundle: matchingBundle ?? null,
+      });
     return terminated ? latestStepsMessageId : null;
   }, [messages, latestStepsMessageId, orchestrationBundles, lastTaskSnapshot]);
 
@@ -1828,11 +1865,11 @@ export function PlatformSessionAgentWorkspace({
       messageId: string | null,
       options?: { focusedSubtaskId?: string | null },
     ) => {
-      const anchor = resolveAnchorForPanelFromMessageMeta(meta);
+      const anchor = resolvePanelAnchorForMessage(messages, meta);
       if (!anchor) return;
       await openResultPanelFromAnchor(anchor, messageId, options);
     },
-    [openResultPanelFromAnchor],
+    [messages, openResultPanelFromAnchor],
   );
 
   const withFreshTokenForResultPanel = useCallback(
@@ -1885,6 +1922,41 @@ export function PlatformSessionAgentWorkspace({
     subtasksWithTabularPreview.length,
     effectiveOrchestrationAnchor,
     openResultPanelFromAnchor,
+  ]);
+
+  useEffect(() => {
+    if (scheduleTrial || scheduledRunRecord || frontendMockSession) return;
+    if (!pendingSessionResultAutoOpenRef.current) return;
+    if (sending || composerShowsStop) return;
+    if (!effectiveOrchestrationAnchor) return;
+
+    if (subtasksWithTabularPreview.length > 0) {
+      pendingSessionResultAutoOpenRef.current = false;
+      void openResultPanelFromAnchor(
+        {
+          primaryTaskId: effectiveOrchestrationAnchor.primaryTaskId,
+          bundleTaskIds: effectiveOrchestrationAnchor.bundleTaskIds,
+          orchestrationId: effectiveOrchestrationAnchor.orchestrationId,
+        },
+        effectiveOrchestrationAnchor.messageId || null,
+      );
+      return;
+    }
+
+    if (bundlesAllTerminal && orchestrationBundlesForUi.length > 0) {
+      pendingSessionResultAutoOpenRef.current = false;
+    }
+  }, [
+    bundlesAllTerminal,
+    composerShowsStop,
+    effectiveOrchestrationAnchor,
+    frontendMockSession,
+    openResultPanelFromAnchor,
+    orchestrationBundlesForUi.length,
+    scheduleTrial,
+    scheduledRunRecord,
+    sending,
+    subtasksWithTabularPreview.length,
   ]);
 
   const send = useCallback(async (textOverride?: string) => {
@@ -2008,6 +2080,9 @@ export function PlatformSessionAgentWorkspace({
               setLastTaskSnapshot(latest);
             });
           }
+          if (!scheduleTrial && !scheduledRunRecord && sessionGenRef.current === sendGen) {
+            pendingSessionResultAutoOpenRef.current = true;
+          }
         }
       });
       if (sessionGenRef.current === sendGen) {
@@ -2035,6 +2110,8 @@ export function PlatformSessionAgentWorkspace({
     processStreamingMessages,
     reload,
     refreshHistoryNow,
+    scheduleTrial,
+    scheduledRunRecord,
     selectedSourceIds,
     sending,
     sessionId,
@@ -2228,9 +2305,7 @@ export function PlatformSessionAgentWorkspace({
                   const taskIdFromMeta =
                     m.role === "assistant" && rawTaskId && taskResultCardMessageIds.has(m.id) ? rawTaskId : undefined;
                   const taskId = taskIdFromMeta ?? (trialResultOnFirstAssistant ? effectiveOrchestrationAnchor!.primaryTaskId : undefined);
-                  const taskResultHints = rawTaskId ? taskResultHintsByTaskId.get(rawTaskId) : undefined;
-                  const hasArtifactsForResultCard =
-                    meta?.has_artifacts === true || taskResultHints?.hasArtifacts === true;
+                  const hasArtifactsForResultCard = taskResultEntryVisibleByMessageId.get(m.id) === true;
                   const hideAssistantBubble = shouldHideAssistantMessageBubble(m);
                   const msgKind =
                     meta && typeof meta.kind === "string" ? (meta.kind as string).trim() : "";
@@ -2247,20 +2322,33 @@ export function PlatformSessionAgentWorkspace({
                     : orchestrationBundles[0];
                   const stepsTerminated = Boolean(
                     stepsForExecutionBubble &&
-                      isUserTerminatedTaskState({
-                        steps: stepsForExecutionBubble,
-                        task:
-                          lastTaskSnapshot && lastTaskSnapshot.task_id === rawTaskId
-                            ? lastTaskSnapshot
-                            : null,
-                        bundle: matchingBundle ?? null,
-                      }),
+                      (sessionHasTaskTerminatedForTask(messages, rawTaskId) ||
+                        isUserTerminatedTaskState({
+                          steps: stepsForExecutionBubble,
+                          task:
+                            lastTaskSnapshot && lastTaskSnapshot.task_id === rawTaskId
+                              ? lastTaskSnapshot
+                              : null,
+                          bundle: matchingBundle ?? null,
+                        })),
                   );
-                  const showSyntheticTaskTerminated =
+                  const showTerminatedGuidanceOnSteps =
                     showTaskStepsAtThisMessage &&
                     m.id === latestStepsMessageId &&
-                    stepsTerminated &&
-                    !sessionHasTaskTerminatedMessage(messages);
+                    stepsTerminated;
+                  const deferTaskTerminatedToSteps =
+                    isTaskTerminated &&
+                    shouldDeferTaskTerminatedToStepsBubble(messages, i, latestStepsMessageId);
+                  const suppressStandaloneTaskResultCard = shouldSuppressStandaloneTaskResultCard(
+                    messages,
+                    i,
+                    {
+                      latestStepsMessageId,
+                      taskResultCardMessageIds,
+                      taskResultEntryVisibleByMessageId,
+                      deferTaskTerminatedToSteps,
+                    },
+                  );
                   const guidancePresentation =
                     m.role === "assistant" &&
                     !showTaskStepsAtThisMessage &&
@@ -2425,7 +2513,7 @@ export function PlatformSessionAgentWorkspace({
                               }}
                               afterExecution={taskResultCard}
                             />
-                            {showSyntheticTaskTerminated ? (
+                            {showTerminatedGuidanceOnSteps ? (
                               <PostTaskGuidanceBubble
                                 leading={TASK_TERMINATED_LEADING}
                                 content={TASK_TERMINATED_GUIDANCE_BLOCK}
@@ -2481,7 +2569,8 @@ export function PlatformSessionAgentWorkspace({
                             }
                           />
                         ) : isLinkfoxClarification ? null : taskTerminatedPresentation.kind !== "none" &&
-                          showGuidanceBubble ? (
+                          showGuidanceBubble &&
+                          !deferTaskTerminatedToSteps ? (
                           <PostTaskGuidanceBubble
                             leading={taskTerminatedPresentation.leading}
                             content={taskTerminatedPresentation.guidanceBlock}
@@ -2543,12 +2632,12 @@ export function PlatformSessionAgentWorkspace({
                           />
                         )
                       ) : null}
-                      {taskResultCard && !taskResultCardInline ? (
+                      {taskResultCard && !taskResultCardInline && !suppressStandaloneTaskResultCard ? (
                         <AssistantOutputFrame datetime={m.created_at} wide>
                           {taskResultCard}
                         </AssistantOutputFrame>
                       ) : null}
-                      {roundGuidanceForSteps ? (
+                      {roundGuidanceForSteps && !showTerminatedGuidanceOnSteps ? (
                         <PostTaskGuidanceBubble
                           content={roundGuidanceForSteps.content}
                           datetime={m.created_at}
