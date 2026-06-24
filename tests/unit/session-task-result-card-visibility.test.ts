@@ -82,6 +82,33 @@ describe("messageIdsEligibleForTaskResultCard", () => {
     const ids = messageIdsEligibleForTaskResultCard(messages);
     expect(ids.has("steps-failed")).toBe(true);
   });
+
+  it("excludes task_terminated in the same segment when steps message exists", () => {
+    const messages: SessionMessageItem[] = [
+      {
+        id: "u1",
+        role: "user",
+        content: "分析 cup",
+        created_at: "2026-05-22T09:00:00Z",
+        message_index: 0,
+      },
+      assistant("steps", {
+        content: "（以下为该轮任务的执行步骤记录）",
+        meta: {
+          kind: "task_execution_steps",
+          task_id: "task-1",
+          steps: [{ id: "s1", label: "搜索", status: "error" }],
+        },
+      }),
+      assistant("terminated", {
+        content: "任务已终止，当前执行已停止。",
+        meta: { kind: "task_terminated", task_id: "task-1" },
+      }),
+    ];
+    const ids = messageIdsEligibleForTaskResultCard(messages);
+    expect(ids.has("steps")).toBe(true);
+    expect(ids.has("terminated")).toBe(false);
+  });
 });
 
 describe("buildTaskResultHintsByTaskId", () => {

@@ -441,13 +441,12 @@ function AgentRunWorkspaceView({
     const last = latestPlatformSubtasks.length > 0 ? latestPlatformSubtasks[latestPlatformSubtasks.length - 1] : undefined;
     return last?.taskId ?? null;
   }, [panelSubtaskFocus, subtasksWithTabularPreview, latestPlatformSubtasks]);
-  /** 分步任务：任一步产生可表格化产物即可展开右侧；执行中（running）也可预览已完成的步骤 */
+  /** 分步任务：任一步产生可表格化产物即可展开右侧；执行中（running）也可预览已完成的步骤；失败但已有产物时仍可查看。 */
   const latestRoundWantsTaskPanel = Boolean(
     latestRoundModel?.uiLayout === "tool_orchestration" &&
       latestHasPlatformSteps &&
-      (run.status === "success" || run.status === "running") &&
-      (hasTabularTaskResultFiles(effectivePanelArtifacts) || anySubtaskTabular) &&
-      !latestRoundModel?.errorMessage,
+      (run.status === "success" || run.status === "running" || run.status === "error") &&
+      (hasTabularTaskResultFiles(effectivePanelArtifacts) || anySubtaskTabular),
   );
 
   const pv = panelVisibility[run.id];
@@ -1092,10 +1091,6 @@ function AgentRunWorkspaceView({
                                 datetime={round.createdAt}
                                 streaming={round.assistantStreaming}
                               />
-                            ) : round.assistantPending &&
-                              round.executionGroups.length === 0 &&
-                              !round.executionSteps?.length ? (
-                              <AssistantLoadingRow variant="task" />
                             ) : null
                           }
                           showExecutionPanel={deferExecution ? false : splitRevealDone}

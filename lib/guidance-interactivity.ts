@@ -1,6 +1,7 @@
 import type { SessionMessageItem } from "@/lib/agent-api/types";
 import type { TaskResponse } from "@/lib/agent-api/types";
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
+import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
 import { extractPostTaskGuidance } from "@/lib/task-chat-summary";
 import {
   resolvePostTaskGuidancePresentation,
@@ -95,6 +96,9 @@ export function resolveDedicatedPostTaskGuidanceInSegment(
     const m = messages[i]!;
     if (m.role !== "assistant") continue;
     const meta = messageMeta(m);
+    const msgKind = typeof meta?.kind === "string" ? meta.kind.trim() : "";
+    // 终止引导由步骤卡片下的 PostTaskGuidanceBubble 单独承接，勿在此重复挂载。
+    if (msgKind === "task_terminated") continue;
     const pres = resolvePostTaskGuidancePresentation(m, meta);
     if (pres.kind === "dedicated" && pres.content.trim()) {
       return { content: pres.content.trim(), messageId: m.id };
@@ -152,6 +156,64 @@ export function shouldDeferPostTaskGuidanceToStepsBubble(
   return hasTerminalTaskExecutionStepsMessage(messages[stepsIdx]!);
 }
 
+/** 用户终止后：引导挂在步骤卡片下，避免 task_terminated 消息重复渲染引导块。 */
+export function shouldDeferTaskTerminatedToStepsBubble(
+  messages: SessionMessageItem[],
+  messageIndex: number,
+  latestStepsMessageId: string | null,
+): boolean {
+  const m = messages[messageIndex];
+  if (!m || m.role !== "assistant") return false;
+  const meta = messageMeta(m);
+  if (meta?.kind !== "task_terminated") return false;
+  if (!latestStepsMessageId) return false;
+
+  const stepsIdx = messages.findIndex((msg) => msg.id === latestStepsMessageId);
+  if (stepsIdx < 0) return false;
+  const { start, end } = segmentBoundsForMessage(messages, messageIndex);
+  if (stepsIdx < start || stepsIdx >= end) return false;
+
+  const stepsMeta = messageMeta(messages[stepsIdx]!);
+  const steps = parseTaskExecutionStepsFromMeta(stepsMeta);
+  if (!steps?.length) return false;
+
+  const terminatedTaskId = typeof meta.task_id === "string" ? meta.task_id.trim() : "";
+  const stepsTaskId = typeof stepsMeta?.task_id === "string" ? stepsMeta.task_id.trim() : "";
+  if (terminatedTaskId && stepsTaskId && terminatedTaskId !== stepsTaskId) return false;
+
+  return true;
+}
+
+/** 步骤卡片已挂载任务结果入口时，同轮 task_terminated / 隐藏总结消息不再单独渲染结果卡。 */
+export function shouldSuppressStandaloneTaskResultCard(
+  messages: SessionMessageItem[],
+  messageIndex: number,
+  options: {
+    latestStepsMessageId: string | null;
+    taskResultCardMessageIds: ReadonlySet<string>;
+    taskResultEntryVisibleByMessageId: ReadonlyMap<string, boolean>;
+    deferTaskTerminatedToSteps: boolean;
+  },
+): boolean {
+  if (options.deferTaskTerminatedToSteps) return true;
+  const latestId = (options.latestStepsMessageId ?? "").trim();
+  if (!latestId) return false;
+  if (!options.taskResultCardMessageIds.has(latestId)) return false;
+  if (options.taskResultEntryVisibleByMessageId.get(latestId) !== true) return false;
+
+  const stepsIdx = messages.findIndex((m) => m.id === latestId);
+  if (stepsIdx < 0) return false;
+  const { start, end } = segmentBoundsForMessage(messages, messageIndex);
+  if (stepsIdx < start || stepsIdx >= end) return false;
+
+  const m = messages[messageIndex]!;
+  if (m.role !== "assistant") return false;
+  const meta = messageMeta(m);
+  const kind = typeof meta?.kind === "string" ? meta.kind.trim() : "";
+  if (kind === "task_terminated") return true;
+  return shouldHideAssistantMessageBubble(m);
+}
+
 function hasUserMessageAfter(messages: SessionMessageItem[], afterIndex: number): boolean {
   for (let i = afterIndex + 1; i < messages.length; i++) {
     if (messages[i]?.role === "user") return true;
@@ -161,11 +223,20 @@ function hasUserMessageAfter(messages: SessionMessageItem[], afterIndex: number)
 
 /**
  * 仅最后一条引导消息可点击；其后若已有用户追问，则全部引导（含最后一条）变为只读。
+ * 终止引导挂在步骤卡片上时，可交互锚点为 steps 消息（syntheticTerminatedMessageId），而非 task_terminated。
  */
 export function resolveInteractiveGuidanceMessageId(
   messages: SessionMessageItem[],
   options?: { syntheticTerminatedMessageId?: string | null },
 ): string | null {
+  const syntheticId = (options?.syntheticTerminatedMessageId ?? "").trim();
+  if (syntheticId) {
+    const idx = messages.findIndex((m) => m.id === syntheticId);
+    if (idx >= 0 && !hasUserMessageAfter(messages, idx)) {
+      return syntheticId;
+    }
+  }
+
   const anchors: { id: string; index: number }[] = [];
 
   messages.forEach((m, index) => {
@@ -173,14 +244,6 @@ export function resolveInteractiveGuidanceMessageId(
       anchors.push({ id: m.id, index });
     }
   });
-
-  const syntheticId = (options?.syntheticTerminatedMessageId ?? "").trim();
-  if (syntheticId) {
-    const idx = messages.findIndex((m) => m.id === syntheticId);
-    if (idx >= 0 && !anchors.some((a) => a.id === syntheticId)) {
-      anchors.push({ id: syntheticId, index: idx });
-    }
-  }
 
   if (anchors.length === 0) return null;
 

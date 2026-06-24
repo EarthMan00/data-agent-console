@@ -9,8 +9,10 @@ import {
   displayLabelForIndexedSubtask,
   isUnhelpfulApiTaskLabel,
   mergeBundlesIntoPlatformSnapshots,
+  orchestrationBundlesForTaskResultCard,
   pickBestOrchestrationAnchor,
   resolveAnchorForPanelFromMessageMeta,
+  resolvePanelAnchorForMessage,
   resolvePanelAnchorForStepsMessage,
 } from "@/lib/merge-orchestration-task-artifacts";
 import type { TaskExecutionStep } from "@/lib/agent-events";
@@ -138,6 +140,88 @@ describe("resolvePanelAnchorForStepsMessage", () => {
       "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
     ]);
     expect(anchor?.orchestrationId).toBe("orch-round-2");
+  });
+});
+
+describe("resolvePanelAnchorForMessage", () => {
+  it("task_execution_steps 消息通过 resolvePanelAnchorForStepsMessage 补全多步 task ids", () => {
+    const messages: SessionMessageItem[] = [
+      assistant("steps", {
+        kind: "task_execution_steps",
+        task_id: "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+        orchestration_id: "orch-round-2",
+        steps: [{ id: "s1", label: "1", status: "done" }],
+      }),
+      assistant("done", {
+        kind: "orchestration_failure",
+        task_id: "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+        orchestration_id: "orch-round-2",
+        orchestration_step_task_ids: [
+          "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+          "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+        ],
+      }),
+    ];
+    const anchor = resolvePanelAnchorForMessage(messages, {
+      kind: "task_execution_steps",
+      task_id: "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+      orchestration_id: "orch-round-2",
+      steps: [{ id: "s1", label: "1", status: "done" }],
+    });
+    expect(anchor?.bundleTaskIds).toEqual([
+      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+    ]);
+  });
+
+  it("非 steps 消息仍走 resolveAnchorForPanelFromMessageMeta", () => {
+    const anchor = resolvePanelAnchorForMessage([], {
+      task_id: "6e4eb5b6-0593-4a25-83f4-4d23f8666e86",
+      has_artifacts: true,
+    });
+    expect(anchor?.primaryTaskId).toBe("6e4eb5b6-0593-4a25-83f4-4d23f8666e86");
+  });
+});
+
+describe("orchestrationBundlesForTaskResultCard", () => {
+  it("uses orchestration_step_task_ids from failure message for steps message", () => {
+    const messages: SessionMessageItem[] = [
+      assistant("steps", {
+        kind: "task_execution_steps",
+        task_id: "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+        orchestration_id: "orch-1",
+        steps: [{ id: "s1", label: "1", status: "done" }],
+      }),
+      assistant("failure", {
+        kind: "orchestration_failure",
+        task_id: "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+        orchestration_id: "orch-1",
+        orchestration_step_task_ids: [
+          "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+          "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+        ],
+      }),
+    ];
+    const bundles = [
+      { taskId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", stepIndex: 0, label: "A", artifacts: [{ artifact_id: "1", artifact_type: "csv", original_name: "a.csv", download_api: "/a" }] },
+      { taskId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", stepIndex: 1, label: "B", artifacts: [] },
+      { taskId: "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b", stepIndex: 2, label: "C", artifacts: [] },
+    ];
+    const filtered = orchestrationBundlesForTaskResultCard(
+      "steps",
+      messages[0]!.meta as Record<string, unknown>,
+      messages,
+      bundles,
+      {},
+    );
+    expect(filtered.map((b) => b.taskId)).toEqual([
+      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "cf0d16f8-aafd-47ce-a220-ba081fdc1a6b",
+    ]);
   });
 });
 

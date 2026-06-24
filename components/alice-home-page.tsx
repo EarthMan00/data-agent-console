@@ -142,11 +142,31 @@ export function AliceHomePage() {
     loaded: dataSourceMenuLoaded,
   } = useHomeDataSourceMenu({ logLabel: "[source-menu-capabilities]" });
   const promptGridScrollRef = useRef<HTMLDivElement | null>(null);
+  const prevActiveRunIdRef = useRef<string | null>(null);
+
+  const resetHomeComposer = useCallback(() => {
+    setQuery("");
+    setSelectedSourceIds([]);
+    setSourcePlacements([]);
+    setActiveCapabilityId("scenarios");
+    setSuppressTemplateCompletion(false);
+    setPendingHomeFiles([]);
+    setNotice("");
+  }, []);
 
   useEffect(() => {
     setCanPersonalizeGreeting(true);
   }, []);
   const activeRunId = searchParams.get("runId");
+
+  // 从任务页回到首页（如侧栏「新建任务」）时清空输入框，避免带入上次发送内容
+  useEffect(() => {
+    const prev = prevActiveRunIdRef.current;
+    prevActiveRunIdRef.current = activeRunId;
+    if (prev && !activeRunId) {
+      resetHomeComposer();
+    }
+  }, [activeRunId, resetHomeComposer]);
 
   useEffect(() => {
     if (!dataSourceMenuLoaded) return;
@@ -266,6 +286,7 @@ export function AliceHomePage() {
           pendingFiles: pending?.pendingFiles ?? pendingHomeFiles,
         });
         setPendingHomeFiles([]);
+        resetHomeComposer();
         setNotice("已连接 Alice 后端服务，正在执行任务。");
         router.replace(`/?runId=${runId}`);
       } finally {
@@ -286,6 +307,7 @@ export function AliceHomePage() {
         selectedCapabilities,
       });
       workspaceActions.upsertRunSnapshot(snapshot.run, snapshot.report);
+      resetHomeComposer();
       router.replace(`/?runId=${snapshot.run.id}`);
     } finally {
       setLaunching(false);
@@ -302,6 +324,7 @@ export function AliceHomePage() {
     setActiveSessionTitle,
     sourcePlacements,
     upsertOptimisticHistorySession,
+    resetHomeComposer,
   ]);
 
   useEffect(() => {

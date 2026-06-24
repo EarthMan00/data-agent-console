@@ -2,6 +2,17 @@
 
 import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
 
+const LINKFOX_POLLING_LINE_RE = /^\.\.\.\s*任务执行中\s*\(\d+s,\s*第\d+次轮询\)\s*$/;
+
+function stripLinkfoxPollingNoise(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !LINKFOX_POLLING_LINE_RE.test(line))
+    .join("\n")
+    .trim();
+}
+
 function stripChatexcelImportNoise(text: string): string {
   return text
     .replace(/\[OK\]\s*成功导入模块:\s*[^\s]+\s*/g, "")
@@ -20,7 +31,7 @@ function normalizeKeyErrorName(err: string): string {
 }
 
 export function humanizeTaskErrorMessage(raw: string): string {
-  const t = (raw || "").trim();
+  const t = stripLinkfoxPollingNoise((raw || "").trim());
   if (!t) return t;
   if (/未找到可分析的表格数据|未找到可用的表格文件/.test(t)) {
     return t;

@@ -39,6 +39,15 @@ export function hasTabularTaskResultFiles(artifacts: PlatformTaskArtifactRef[] |
   );
 }
 
+/** 是否展示「任务结果」入口卡片：仅看是否存在可预览的结果文件，与任务成功/失败无关。 */
+export function shouldShowTaskResultEntryCard(
+  bundles: { artifacts: PlatformTaskArtifactRef[] }[],
+  extraArtifacts?: PlatformTaskArtifactRef[] | null,
+): boolean {
+  if (bundles.some((b) => hasTabularTaskResultFiles(b.artifacts))) return true;
+  return hasTabularTaskResultFiles(extraArtifacts);
+}
+
 /** 侧栏仅展示一个主文件：优先 Markdown/HTML/PDF 报告，其次 CSV，再次 JSON（不含 *_result.txt） */
 export function pickPrimaryTaskDataArtifact(artifacts: PlatformTaskArtifactRef[]): PlatformTaskArtifactRef | null {
   const list = filterArtifactsForTaskResultPanel(artifacts);

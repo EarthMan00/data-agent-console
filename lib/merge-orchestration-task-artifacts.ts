@@ -139,6 +139,55 @@ export function resolveOrchestrationAnchorFromMessageMeta(
 }
 
 /**
+ * 从单条消息 + 同会话上下文解析面板 anchor。
+ * task_execution_steps 消息通常只有末步 task_id，需从同编排的完成/失败消息补全 orchestration_step_task_ids。
+ */
+export function resolvePanelAnchorForMessage(
+  messages: SessionMessageItem[],
+  meta: Record<string, unknown> | undefined,
+): PanelOrchestrationAnchor | null {
+  if (!meta) return null;
+  if (parseTaskExecutionStepsFromMeta(meta)?.length) {
+    return resolvePanelAnchorForStepsMessage(messages, meta);
+  }
+  return resolveAnchorForPanelFromMessageMeta(meta);
+}
+
+/** 解析某条消息对应轮次的编排 bundle 子集，用于判断任务结果入口卡片是否应展示。 */
+export function orchestrationBundlesForTaskResultCard(
+  messageId: string,
+  meta: Record<string, unknown> | undefined,
+  messages: SessionMessageItem[],
+  orchestrationBundles: TaskOrchestrationBundleRow[],
+  supplementalBundlesById: Record<string, TaskOrchestrationBundleRow[]>,
+): TaskOrchestrationBundleRow[] {
+  const supplemental = supplementalBundlesById[messageId];
+  if (supplemental?.length) return supplemental;
+
+  const anchor = resolvePanelAnchorForMessage(messages, meta);
+  if (anchor?.bundleTaskIds?.length) {
+    return filterOrchestrationBundlesForTaskIds(orchestrationBundles, anchor.bundleTaskIds);
+  }
+
+  const tid = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+  if (tid) {
+    const hits = orchestrationBundles.filter((b) => b.taskId === tid);
+    if (hits.length) return hits;
+  }
+  return orchestrationBundles;
+}
+
+export function taskArtifactsFromSnapshot(task: TaskResponse | null | undefined): PlatformTaskArtifactRef[] {
+  if (!task?.artifacts?.length) return [];
+  return task.artifacts.map((a) => ({
+    artifact_id: a.artifact_id,
+    artifact_type: a.artifact_type,
+    original_name: a.original_name,
+    download_api: a.download_api,
+  }));
+}
+
+/**
  * 从单条消息 meta 解析面板 anchor；不回退到会话级最新编排。
  * 用于历史回放点击某轮任务卡 / 步骤结果卡。
  */

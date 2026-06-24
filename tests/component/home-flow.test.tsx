@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AliceHomePage } from "@/components/alice-home-page";
 
 const replace = vi.fn();
+const mockSearchParams = vi.hoisted(() => new URLSearchParams());
 const mockFetchHomePromptRecommendations = vi.hoisted(() => vi.fn());
 const mockFetchPublicPromptCategories = vi.hoisted(() => vi.fn());
 const mockListUserPromptGroups = vi.hoisted(() => vi.fn());
@@ -84,7 +85,7 @@ vi.mock("next/navigation", () => ({
     replace,
     push: vi.fn(),
   }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => mockSearchParams,
 }));
 
 vi.mock("next/link", () => ({
@@ -102,6 +103,7 @@ function renderHomePage() {
 describe("home flow", () => {
   beforeEach(() => {
     replace.mockClear();
+    mockSearchParams.forEach((_, key) => mockSearchParams.delete(key));
     mockAliceShellState.refreshHistoryNow.mockClear();
     mockAliceShellState.setActiveSessionTitle.mockClear();
     mockAliceShellState.upsertOptimisticHistorySession.mockClear();
@@ -212,6 +214,18 @@ describe("home flow", () => {
       amazon: [amazonCard],
       patent: [patentAliasCard],
     }[categoryId] ?? []));
+  });
+
+  it("clears the home composer when returning from an active run", async () => {
+    mockSearchParams.set("runId", "run-1");
+    const { rerender } = renderHomePage();
+    expect(screen.getByText("agent workspace")).toBeInTheDocument();
+
+    mockSearchParams.delete("runId");
+    rerender(<AliceHomePage />);
+
+    const editor = await screen.findByTestId("task-composer-editor");
+    expect(editor.textContent?.trim()).toBe("");
   });
 
   it("keeps prompt cards stable when selecting datasource tokens", async () => {

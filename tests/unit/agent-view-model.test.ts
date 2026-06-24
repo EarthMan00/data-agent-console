@@ -348,6 +348,91 @@ describe("agent view model helpers", () => {
     expect(round.showTaskResultInChat).toBe(true);
   });
 
+  it("shows task result entry when steps failed but tabular artifacts exist", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      chains: [],
+      roundUiLayouts: { "round-1": "tool_orchestration" },
+      status: "error",
+      platformTaskArtifacts: [
+        {
+          artifact_id: "a1",
+          artifact_type: "text/csv",
+          original_name: "partial.csv",
+          download_api: "/api/tasks/x/download/a1",
+        },
+      ],
+      taskExecutionStepsByRound: {
+        "round-1": [
+          { id: "s1", roundId: "round-1", order: 0, label: "步骤一", status: "done" },
+          { id: "s2", roundId: "round-1", order: 1, label: "步骤二", status: "error" },
+        ],
+      },
+      timeline: [
+        {
+          id: "node-user",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:00",
+          kind: "user_message",
+          text: "调研 Yoga Mat 市场",
+        },
+        {
+          id: "node-assistant",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:05",
+          kind: "assistant_message",
+          text: "第2步执行失败",
+          status: "complete",
+        },
+      ],
+    };
+    const [round] = buildRoundViewModels(run);
+    expect(round.hasResult).toBe(true);
+    expect(round.showTaskResultInChat).toBe(true);
+  });
+
+  it("hides task result entry when task succeeded but only logs exist", () => {
+    const run: TaskRunLike = {
+      ...sampleRun,
+      chains: [],
+      roundUiLayouts: { "round-1": "tool_orchestration" },
+      status: "success",
+      platformTaskArtifacts: [
+        {
+          artifact_id: "log1",
+          artifact_type: "log",
+          original_name: "linkfox_result.txt",
+          download_api: "/api/tasks/x/download/log1",
+        },
+      ],
+      taskExecutionStepsByRound: {
+        "round-1": [
+          { id: "s1", roundId: "round-1", order: 0, label: "步骤一", status: "done" },
+        ],
+      },
+      timeline: [
+        {
+          id: "node-user",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:00",
+          kind: "user_message",
+          text: "查询",
+        },
+        {
+          id: "node-assistant",
+          roundId: "round-1",
+          createdAt: "2026-03-28 12:00:05",
+          kind: "assistant_message",
+          text: "完成",
+          status: "complete",
+        },
+      ],
+    };
+    const [round] = buildRoundViewModels(run);
+    expect(round.hasResult).toBe(false);
+    expect(round.showTaskResultInChat).toBe(false);
+  });
+
   it("maps splitStreamEnded and splitRevealComplete from run into round view models", () => {
     const run: TaskRunLike = {
       ...sampleRun,
