@@ -182,6 +182,23 @@ function bundleTaskIdsExpectedForAnchor(
   return primary ? [primary] : null;
 }
 
+function sameTrimmedValue(a: string | null | undefined, b: string | null | undefined): boolean {
+  return (a ?? "").trim() === (b ?? "").trim();
+}
+
+function resultPanelContextMatchesAnchor(
+  context: ResultPanelContext | null | undefined,
+  anchor: OrchestrationAnchor | PanelOrchestrationAnchor | null | undefined,
+): boolean {
+  if (!context || !anchor) return false;
+  const contextOrchId = (context.orchestrationId ?? "").trim();
+  const anchorOrchId = (anchor.orchestrationId ?? "").trim();
+  if (contextOrchId || anchorOrchId) {
+    return contextOrchId.length > 0 && contextOrchId === anchorOrchId;
+  }
+  return sameTrimmedValue(context.primaryTaskId, anchor.primaryTaskId);
+}
+
 function executionBubbleContextForMessage(
   messages: SessionMessageItem[],
   meta: Record<string, unknown> | undefined,
@@ -303,6 +320,8 @@ export function PlatformSessionAgentWorkspace({
   const scheduledRunAutoOpenedPanelRef = useRef(false);
   /** 用户在本会话内 send 触发的任务完成后，自动展开右侧结果面板（与首页新建任务行为一致） */
   const pendingSessionResultAutoOpenRef = useRef(false);
+  const sessionResultAutoFollowRef = useRef(false);
+  const sessionResultAutoFollowInitializedRef = useRef(false);
   const trialPrefetchAnchorRef = useRef<string | null>(null);
   const trialDoneReloadedRef = useRef(false);
   const trialClarificationReloadedRef = useRef(false);
@@ -1022,6 +1041,8 @@ export function PlatformSessionAgentWorkspace({
     trialAutoOpenedPanelRef.current = false;
     scheduledRunAutoOpenedPanelRef.current = false;
     pendingSessionResultAutoOpenRef.current = false;
+    sessionResultAutoFollowRef.current = false;
+    sessionResultAutoFollowInitializedRef.current = false;
     trialPrefetchAnchorRef.current = null;
     trialDoneReloadedRef.current = false;
     trialClarificationReloadedRef.current = false;
@@ -1115,6 +1136,31 @@ export function PlatformSessionAgentWorkspace({
     };
   }, [orchestrationAnchor, scheduleTrial, trialMeta, sessionId, scheduledRunRecord, fallbackTaskId]);
 
+  const syncResultPanelContextFromAnchorData = useCallback(
+    (
+      anchor: PanelOrchestrationAnchor,
+      data: Awaited<ReturnType<typeof fetchTaskOrchestrationForResultPanel>>,
+    ) => {
+      const dl = buildBundleDownloadApiForPanel(anchor.primaryTaskId, anchor.bundleTaskIds);
+      setResultPanelContext((prev) => {
+        if (!prev || !resultPanelContextMatchesAnchor(prev, anchor)) return prev;
+        return {
+          ...prev,
+          primaryTaskId: anchor.primaryTaskId,
+          bundleTaskIds: anchor.bundleTaskIds,
+          orchestrationId: anchor.orchestrationId ?? null,
+          bundles: data.bundles,
+          finishedAt: data.finishedAt,
+          errorMessage: data.errorMessage,
+          lastStatus: data.lastStatus,
+          bundleDownloadApi: dl.api,
+          bundleDownloadName: dl.name,
+        };
+      });
+    },
+    [],
+  );
+
   useEffect(() => {
     const orchId = effectiveOrchestrationAnchor?.orchestrationId?.trim();
     if (!orchId || !platformAgent?.auth) {
@@ -1169,6 +1215,12 @@ export function PlatformSessionAgentWorkspace({
       return;
     }
     if (scheduleTrial && trialRunInFlight) return;
+    if (
+      scheduledRunRecord ||
+      (!scheduleTrial && Boolean(effectiveOrchestrationAnchor.orchestrationId?.trim()))
+    ) {
+      return;
+    }
 
     let cancelled = false;
     void platformAgent.withFreshToken(async (token) => {
@@ -1179,7 +1231,17 @@ export function PlatformSessionAgentWorkspace({
           effectiveOrchestrationAnchor.bundleTaskIds,
           { orchestrationId: effectiveOrchestrationAnchor.orchestrationId },
         );
-        if (!cancelled) setOrchestrationBundles(data.bundles);
+        if (!cancelled) {
+          setOrchestrationBundles(data.bundles);
+          syncResultPanelContextFromAnchorData(
+            {
+              primaryTaskId: effectiveOrchestrationAnchor.primaryTaskId,
+              bundleTaskIds: effectiveOrchestrationAnchor.bundleTaskIds,
+              orchestrationId: effectiveOrchestrationAnchor.orchestrationId,
+            },
+            data,
+          );
+        }
       } catch {
         // task/orchestration may have been deleted
       }
@@ -1187,7 +1249,77 @@ export function PlatformSessionAgentWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [effectiveOrchestrationAnchor, platformAgent, scheduleTrial, trialRunInFlight]);
+  }, [
+    effectiveOrchestrationAnchor,
+    platformAgent,
+    scheduleTrial,
+    scheduledRunRecord,
+    syncResultPanelContextFromAnchorData,
+    trialRunInFlight,
+  ]);
+
+  /** live 多步任务：执行中持续刷新 bundles，结果文件一出现即可驱动右侧查看态与后续自动跟随。 */
+  useEffect(() => {
+    if (scheduleTrial || scheduledRunRecord || !effectiveOrchestrationAnchor || !platformAgent?.auth) return;
+    const orchId = effectiveOrchestrationAnchor.orchestrationId?.trim();
+    if (!orchId) return;
+
+    let stop = false;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    const clearPoll = () => {
+      stop = true;
+      if (intervalId !== undefined) {
+        clearInterval(intervalId);
+        intervalId = undefined;
+      }
+    };
+
+    const tick = async () => {
+      if (stop) return;
+      try {
+        let allTerminal = true;
+        await platformAgent.withFreshToken(async (token) => {
+          const data = await fetchTaskOrchestrationForResultPanel(
+            token,
+            effectiveOrchestrationAnchor.primaryTaskId,
+            effectiveOrchestrationAnchor.bundleTaskIds,
+            { orchestrationId: effectiveOrchestrationAnchor.orchestrationId },
+          );
+          if (stop) return;
+          setOrchestrationBundles(data.bundles);
+          syncResultPanelContextFromAnchorData(
+            {
+              primaryTaskId: effectiveOrchestrationAnchor.primaryTaskId,
+              bundleTaskIds: effectiveOrchestrationAnchor.bundleTaskIds,
+              orchestrationId: effectiveOrchestrationAnchor.orchestrationId,
+            },
+            data,
+          );
+          allTerminal = !data.bundles.some((b) => {
+            const s = (b.taskStatus ?? "").toUpperCase();
+            return s === "RUNNING" || s === "PENDING" || s === "QUEUED";
+          });
+        });
+        if (stop) return;
+        if (allTerminal) {
+          clearPoll();
+        }
+      } catch {
+        /* task/orchestration may have been deleted */
+      }
+    };
+
+    void tick();
+    intervalId = setInterval(() => void tick(), SCHEDULE_TRIAL_TASK_POLL_INTERVAL_MS);
+    return clearPoll;
+  }, [
+    effectiveOrchestrationAnchor,
+    platformAgent,
+    scheduleTrial,
+    scheduledRunRecord,
+    syncResultPanelContextFromAnchorData,
+  ]);
 
   /** scheduledRunRecord 模式：任务仍在执行时周期性刷新 bundle 状态，直到全部终态为止。 */
   useEffect(() => {
@@ -1217,6 +1349,14 @@ export function PlatformSessionAgentWorkspace({
           );
           if (stop) return;
           setOrchestrationBundles(data.bundles);
+          syncResultPanelContextFromAnchorData(
+            {
+              primaryTaskId: effectiveOrchestrationAnchor.primaryTaskId,
+              bundleTaskIds: effectiveOrchestrationAnchor.bundleTaskIds,
+              orchestrationId: effectiveOrchestrationAnchor.orchestrationId,
+            },
+            data,
+          );
           allTerminal = !data.bundles.some((b) => {
             const s = (b.taskStatus ?? "").toUpperCase();
             return s === "RUNNING" || s === "PENDING" || s === "QUEUED";
@@ -1234,7 +1374,7 @@ export function PlatformSessionAgentWorkspace({
     void tick();
     intervalId = setInterval(() => void tick(), SCHEDULE_TRIAL_TASK_POLL_INTERVAL_MS);
     return clearPoll;
-  }, [scheduledRunRecord, effectiveOrchestrationAnchor, platformAgent]);
+  }, [scheduledRunRecord, effectiveOrchestrationAnchor, platformAgent, syncResultPanelContextFromAnchorData]);
 
   const loadSupplementalBundlesForMessage = useCallback((messageId: string, meta: Record<string, unknown> | undefined) => {
     if (!platformAgent?.auth) return;
@@ -1829,11 +1969,17 @@ export function PlatformSessionAgentWorkspace({
     return true;
   }, [scheduleTrial, trialRunInFlight, sending, messages, firstAssistantIndex, sessionId]);
 
+  const stopSessionResultAutoFollow = useCallback(() => {
+    sessionResultAutoFollowRef.current = false;
+    pendingSessionResultAutoOpenRef.current = false;
+  }, []);
+
   const closeResultPanel = useCallback(() => {
+    stopSessionResultAutoFollow();
     setShowResultPanel(false);
     setFocusedTaskId(null);
     setResultPanelContext(null);
-  }, []);
+  }, [stopSessionResultAutoFollow]);
 
   const applyPanelFetchToContext = useCallback(
     (
@@ -1849,6 +1995,8 @@ export function PlatformSessionAgentWorkspace({
       setResultPanelContext({
         sourceMessageId: messageId,
         primaryTaskId: anchor.primaryTaskId,
+        bundleTaskIds: anchor.bundleTaskIds,
+        orchestrationId: anchor.orchestrationId ?? null,
         bundles: data.bundles,
         finishedAt: data.finishedAt,
         errorMessage: data.errorMessage,
@@ -1907,6 +2055,18 @@ export function PlatformSessionAgentWorkspace({
     [messages, openResultPanelFromAnchor],
   );
 
+  const openResultPanelForMessageManually = useCallback(
+    async (
+      meta: Record<string, unknown> | undefined,
+      messageId: string | null,
+      options?: { focusedSubtaskId?: string | null },
+    ) => {
+      stopSessionResultAutoFollow();
+      await openResultPanelForMessage(meta, messageId, options);
+    },
+    [openResultPanelForMessage, stopSessionResultAutoFollow],
+  );
+
   const withFreshTokenForResultPanel = useCallback(
     async (run: (token: string) => Promise<void>) => {
       if (!platformAgent?.withFreshToken) return;
@@ -1914,6 +2074,16 @@ export function PlatformSessionAgentWorkspace({
     },
     [platformAgent],
   );
+
+  useEffect(() => {
+    if (scheduleTrial || scheduledRunRecord) return;
+    if (sessionResultAutoFollowInitializedRef.current) return;
+    if (!effectiveOrchestrationAnchor) return;
+    if (!composerShowsStop && !sending) return;
+    sessionResultAutoFollowInitializedRef.current = true;
+    sessionResultAutoFollowRef.current = true;
+    pendingSessionResultAutoOpenRef.current = true;
+  }, [composerShowsStop, effectiveOrchestrationAnchor, scheduleTrial, scheduledRunRecord, sending]);
 
   useEffect(() => {
     if (!scheduleTrial || trialRunInFlight || trialAutoOpenedPanelRef.current) return;
@@ -1957,36 +2127,53 @@ export function PlatformSessionAgentWorkspace({
 
   useEffect(() => {
     if (scheduleTrial || scheduledRunRecord) return;
-    if (!pendingSessionResultAutoOpenRef.current) return;
-    if (sending || composerShowsStop) return;
+    if (!pendingSessionResultAutoOpenRef.current && !sessionResultAutoFollowRef.current) return;
     if (!effectiveOrchestrationAnchor) return;
 
-    if (subtasksWithTabularPreview.length > 0) {
+    const latestSubtaskTaskId = subtasksWithTabularPreview[0]?.taskId ?? null;
+    if (latestSubtaskTaskId) {
       pendingSessionResultAutoOpenRef.current = false;
-      void openResultPanelFromAnchor(
-        {
-          primaryTaskId: effectiveOrchestrationAnchor.primaryTaskId,
-          bundleTaskIds: effectiveOrchestrationAnchor.bundleTaskIds,
-          orchestrationId: effectiveOrchestrationAnchor.orchestrationId,
-        },
-        effectiveOrchestrationAnchor.messageId || null,
-      );
+      if (
+        !showResultPanel ||
+        !resultPanelContext ||
+        !resultPanelContextMatchesAnchor(resultPanelContext, effectiveOrchestrationAnchor)
+      ) {
+        void openResultPanelFromAnchor(
+          {
+            primaryTaskId: effectiveOrchestrationAnchor.primaryTaskId,
+            bundleTaskIds: effectiveOrchestrationAnchor.bundleTaskIds,
+            orchestrationId: effectiveOrchestrationAnchor.orchestrationId,
+          },
+          effectiveOrchestrationAnchor.messageId || null,
+          { focusedSubtaskId: latestSubtaskTaskId },
+        );
+        return;
+      }
+      if (resolvedPanelSubtaskId !== latestSubtaskTaskId) {
+        setResultPanelContext((prev) =>
+          prev && resultPanelContextMatchesAnchor(prev, effectiveOrchestrationAnchor)
+            ? { ...prev, focusedSubtaskId: latestSubtaskTaskId }
+            : prev,
+        );
+      }
       return;
     }
 
     if (bundlesAllTerminal && orchestrationBundlesForUi.length > 0) {
       pendingSessionResultAutoOpenRef.current = false;
+      sessionResultAutoFollowRef.current = false;
     }
   }, [
     bundlesAllTerminal,
-    composerShowsStop,
     effectiveOrchestrationAnchor,
     openResultPanelFromAnchor,
     orchestrationBundlesForUi.length,
+    resolvedPanelSubtaskId,
+    resultPanelContext,
     scheduleTrial,
     scheduledRunRecord,
-    sending,
-    subtasksWithTabularPreview.length,
+    showResultPanel,
+    subtasksWithTabularPreview,
   ]);
 
   const sendPreparedMessage = useCallback(async ({
@@ -2088,6 +2275,8 @@ export function PlatformSessionAgentWorkspace({
           }
           if (!scheduleTrial && !scheduledRunRecord && isActiveSend()) {
             pendingSessionResultAutoOpenRef.current = true;
+            sessionResultAutoFollowRef.current = true;
+            sessionResultAutoFollowInitializedRef.current = true;
           }
         }
       });
@@ -2235,6 +2424,7 @@ export function PlatformSessionAgentWorkspace({
               onSubtaskSelect={(taskId) => {
                 const row = panelBundlesForUi.find((s) => s.taskId === taskId);
                 if (row && hasTabularTaskResultFiles(row.artifacts)) {
+                  stopSessionResultAutoFollow();
                   setResultPanelContext((prev) =>
                     prev ? { ...prev, focusedSubtaskId: taskId } : null,
                   );
@@ -2466,7 +2656,7 @@ export function PlatformSessionAgentWorkspace({
                             closeResultPanel();
                             return;
                           }
-                          void openResultPanelForMessage(meta, m.id);
+                          void openResultPanelForMessageManually(meta, m.id);
                         }}
                       />
                     ) : null;
@@ -2547,7 +2737,7 @@ export function PlatformSessionAgentWorkspace({
                                   stepsMsg?.meta && typeof stepsMsg.meta === "object"
                                     ? (stepsMsg.meta as Record<string, unknown>)
                                     : undefined;
-                                void openResultPanelForMessage(stepsMeta, stepsMsg?.id ?? null, {
+                                void openResultPanelForMessageManually(stepsMeta, stepsMsg?.id ?? null, {
                                   focusedSubtaskId: subtaskTaskId,
                                 });
                               }}
@@ -2580,7 +2770,7 @@ export function PlatformSessionAgentWorkspace({
                               timelineRunId={sessionId}
                               activeHighlightTaskId={stepTimelineHighlightTaskId}
                               onOpenSubtaskResult={(subtaskTaskId) => {
-                                void openResultPanelForMessage(meta, m.id, {
+                                void openResultPanelForMessageManually(meta, m.id, {
                                   focusedSubtaskId: subtaskTaskId,
                                 });
                               }}

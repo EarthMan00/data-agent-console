@@ -49,7 +49,12 @@ vi.mock("@/components/platform-agent-provider", () => ({
 }));
 
 vi.mock("@/components/alice-shell", () => ({
-  AliceShell: ({ children }: { children: ReactNode }) => <div data-testid="alice-shell">{children}</div>,
+  AliceShell: ({ children, rightRail }: { children: ReactNode; rightRail?: ReactNode }) => (
+    <div data-testid="alice-shell">
+      <div data-testid="alice-shell-main">{children}</div>
+      {rightRail ? <div data-testid="alice-shell-right-rail">{rightRail}</div> : null}
+    </div>
+  ),
   useAliceShellState: () => aliceShellStateMock,
 }));
 
@@ -112,7 +117,31 @@ vi.mock("@/components/task-execution-steps-assistant-bubble", () => ({
 }));
 
 vi.mock("@/components/agent-task-result-panel", () => ({
-  AgentTaskResultPanel: () => <div data-testid="agent-task-result-panel" />,
+  AgentTaskResultPanel: ({
+    taskId,
+    activeSubtaskTaskId,
+    subtaskResultTabs,
+    onSubtaskSelect,
+  }: {
+    taskId?: string | null;
+    activeSubtaskTaskId?: string | null;
+    subtaskResultTabs?: Array<{ taskId: string; label: string }>;
+    onSubtaskSelect?: (taskId: string) => void;
+  }) => (
+    <div
+      data-testid="agent-task-result-panel"
+      data-task-id={taskId ?? ""}
+      data-active-subtask-id={activeSubtaskTaskId ?? ""}
+    >
+      <div>{`panel-task:${taskId ?? ""}`}</div>
+      <div>{`panel-subtask:${activeSubtaskTaskId ?? ""}`}</div>
+      {subtaskResultTabs?.map((tab) => (
+        <button key={tab.taskId} type="button" onClick={() => onSubtaskSelect?.(tab.taskId)}>
+          {`select-${tab.taskId}`}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 
 vi.mock("@/components/task-result-summary-card", () => ({
@@ -434,6 +463,296 @@ describe("PlatformSessionAgentWorkspace post-task guidance", () => {
       expect(screen.getByText(buildTaskCompletionSummary(settledTask as never))).toBeInTheDocument();
       expect(screen.getByText("接下来您可以试试：")).toBeInTheDocument();
       expect(screen.getByText("Review the top three listings")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("auto-opens the live result panel on the first tabular artifact and switches to the newest subtask result", async () => {
+    vi.useFakeTimers();
+    try {
+      const orchState: {
+        finished: boolean;
+        awaiting_clarification: boolean;
+        steps: Array<{ status: string; task_id: string; task_started_at?: string }>;
+      } = {
+        finished: false,
+        awaiting_clarification: false,
+        steps: [{ status: "RUNNING", task_id: "task-1", task_started_at: "2026-06-27T08:00:00Z" }],
+      };
+      const taskState: Record<string, Record<string, unknown>> = {
+        "task-1": {
+          task_id: "task-1",
+          tool_name: "skill_task",
+          status: "RUNNING",
+          started_at: "2026-06-27T08:00:00Z",
+          finished_at: null,
+          artifacts: [],
+          events: [],
+          zip_download_api: null,
+        },
+      };
+
+      agentApiMocks.listSessionMessages.mockResolvedValue({
+        messages: [
+          message("u1", "user", "run multi step collection", 0),
+          message(
+            "steps",
+            "assistant",
+            "Running multi-step task",
+            1,
+            {
+              kind: "task_execution_steps",
+              task_id: "task-1",
+              round_id: "round-1",
+              orchestration_id: "orch-1",
+              steps: [
+                { id: "round-1-step-1", label: "Step 1", status: "running" },
+                { id: "round-1-step-2", label: "Step 2", status: "pending" },
+                { id: "round-1-step-3", label: "Step 3", status: "pending" },
+              ],
+            },
+          ),
+        ],
+        has_more: false,
+      });
+      agentApiMocks.getToolOrchestration.mockImplementation(async () => orchState);
+      agentApiMocks.getTask.mockImplementation(async (_token: string, taskId: string) => {
+        const hit = taskState[taskId];
+        if (!hit) {
+          throw new Error(`unknown task ${taskId}`);
+        }
+        return hit;
+      });
+
+      render(<PlatformSessionAgentWorkspace sessionId="session-1" />);
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.queryByTestId("agent-task-result-panel")).not.toBeInTheDocument();
+
+      orchState.steps = [
+        { status: "SUCCESS", task_id: "task-1", task_started_at: "2026-06-27T08:00:00Z" },
+        { status: "RUNNING", task_id: "task-2", task_started_at: "2026-06-27T08:00:03Z" },
+      ];
+      taskState["task-1"] = {
+        task_id: "task-1",
+        tool_name: "skill_task",
+        status: "SUCCESS",
+        started_at: "2026-06-27T08:00:00Z",
+        finished_at: "2026-06-27T08:00:03Z",
+        artifacts: [
+          {
+            artifact_id: "artifact-1",
+            artifact_type: "csv",
+            original_name: "step-1.csv",
+            download_api: "/api/tasks/task-1/artifacts/artifact-1/download",
+          },
+        ],
+        events: [],
+        zip_download_api: null,
+      };
+      taskState["task-2"] = {
+        task_id: "task-2",
+        tool_name: "skill_task",
+        status: "RUNNING",
+        started_at: "2026-06-27T08:00:03Z",
+        finished_at: null,
+        artifacts: [],
+        events: [],
+        zip_download_api: null,
+      };
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByTestId("agent-task-result-panel")).toHaveAttribute("data-active-subtask-id", "task-1");
+
+      orchState.steps = [
+        { status: "SUCCESS", task_id: "task-1", task_started_at: "2026-06-27T08:00:00Z" },
+        { status: "SUCCESS", task_id: "task-2", task_started_at: "2026-06-27T08:00:03Z" },
+      ];
+      orchState.finished = true;
+      taskState["task-2"] = {
+        task_id: "task-2",
+        tool_name: "skill_task",
+        status: "SUCCESS",
+        started_at: "2026-06-27T08:00:03Z",
+        finished_at: "2026-06-27T08:00:06Z",
+        artifacts: [
+          {
+            artifact_id: "artifact-2",
+            artifact_type: "csv",
+            original_name: "step-2.csv",
+            download_api: "/api/tasks/task-2/artifacts/artifact-2/download",
+          },
+        ],
+        events: [],
+        zip_download_api: null,
+      };
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByTestId("agent-task-result-panel")).toHaveAttribute("data-active-subtask-id", "task-2");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops auto-following new live results after the user manually selects a subtask", async () => {
+    vi.useFakeTimers();
+    try {
+      const orchState: {
+        finished: boolean;
+        awaiting_clarification: boolean;
+        steps: Array<{ status: string; task_id: string; task_started_at?: string }>;
+      } = {
+        finished: false,
+        awaiting_clarification: false,
+        steps: [
+          { status: "SUCCESS", task_id: "task-1", task_started_at: "2026-06-27T08:00:00Z" },
+          { status: "SUCCESS", task_id: "task-2", task_started_at: "2026-06-27T08:00:03Z" },
+          { status: "RUNNING", task_id: "task-3", task_started_at: "2026-06-27T08:00:06Z" },
+        ],
+      };
+      const taskState: Record<string, Record<string, unknown>> = {
+        "task-1": {
+          task_id: "task-1",
+          tool_name: "skill_task",
+          status: "SUCCESS",
+          started_at: "2026-06-27T08:00:00Z",
+          finished_at: "2026-06-27T08:00:03Z",
+          artifacts: [
+            {
+              artifact_id: "artifact-1",
+              artifact_type: "csv",
+              original_name: "step-1.csv",
+              download_api: "/api/tasks/task-1/artifacts/artifact-1/download",
+            },
+          ],
+          events: [],
+          zip_download_api: null,
+        },
+        "task-2": {
+          task_id: "task-2",
+          tool_name: "skill_task",
+          status: "SUCCESS",
+          started_at: "2026-06-27T08:00:03Z",
+          finished_at: "2026-06-27T08:00:06Z",
+          artifacts: [
+            {
+              artifact_id: "artifact-2",
+              artifact_type: "csv",
+              original_name: "step-2.csv",
+              download_api: "/api/tasks/task-2/artifacts/artifact-2/download",
+            },
+          ],
+          events: [],
+          zip_download_api: null,
+        },
+        "task-3": {
+          task_id: "task-3",
+          tool_name: "skill_task",
+          status: "RUNNING",
+          started_at: "2026-06-27T08:00:06Z",
+          finished_at: null,
+          artifacts: [],
+          events: [],
+          zip_download_api: null,
+        },
+      };
+
+      agentApiMocks.listSessionMessages.mockResolvedValue({
+        messages: [
+          message("u1", "user", "run multi step collection", 0),
+          message(
+            "steps",
+            "assistant",
+            "Running multi-step task",
+            1,
+            {
+              kind: "task_execution_steps",
+              task_id: "task-1",
+              round_id: "round-1",
+              orchestration_id: "orch-1",
+              steps: [
+                { id: "round-1-step-1", label: "Step 1", status: "done" },
+                { id: "round-1-step-2", label: "Step 2", status: "done" },
+                { id: "round-1-step-3", label: "Step 3", status: "running" },
+              ],
+            },
+          ),
+        ],
+        has_more: false,
+      });
+      agentApiMocks.getToolOrchestration.mockImplementation(async () => orchState);
+      agentApiMocks.getTask.mockImplementation(async (_token: string, taskId: string) => {
+        const hit = taskState[taskId];
+        if (!hit) {
+          throw new Error(`unknown task ${taskId}`);
+        }
+        return hit;
+      });
+
+      render(<PlatformSessionAgentWorkspace sessionId="session-1" />);
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(3_000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByTestId("agent-task-result-panel")).toHaveAttribute("data-active-subtask-id", "task-2");
+
+      await act(async () => {
+        screen.getByRole("button", { name: "select-task-1" }).click();
+      });
+
+      expect(screen.getByTestId("agent-task-result-panel")).toHaveAttribute("data-active-subtask-id", "task-1");
+
+      orchState.steps = [
+        { status: "SUCCESS", task_id: "task-1", task_started_at: "2026-06-27T08:00:00Z" },
+        { status: "SUCCESS", task_id: "task-2", task_started_at: "2026-06-27T08:00:03Z" },
+        { status: "SUCCESS", task_id: "task-3", task_started_at: "2026-06-27T08:00:06Z" },
+      ];
+      orchState.finished = true;
+      taskState["task-3"] = {
+        task_id: "task-3",
+        tool_name: "skill_task",
+        status: "SUCCESS",
+        started_at: "2026-06-27T08:00:06Z",
+        finished_at: "2026-06-27T08:00:09Z",
+        artifacts: [
+          {
+            artifact_id: "artifact-3",
+            artifact_type: "csv",
+            original_name: "step-3.csv",
+            download_api: "/api/tasks/task-3/artifacts/artifact-3/download",
+          },
+        ],
+        events: [],
+        zip_download_api: null,
+      };
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByTestId("agent-task-result-panel")).toHaveAttribute("data-active-subtask-id", "task-1");
     } finally {
       vi.useRealTimers();
     }
