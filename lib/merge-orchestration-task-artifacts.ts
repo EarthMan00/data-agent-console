@@ -92,6 +92,8 @@ export type OrchestrationAnchor = {
 export type ResultPanelContext = {
   sourceMessageId: string | null;
   primaryTaskId: string;
+  bundleTaskIds: string[] | undefined;
+  orchestrationId: string | null;
   bundles: TaskOrchestrationBundleRow[];
   finishedAt: string | null;
   errorMessage: string | null;
