@@ -1,9 +1,8 @@
-"use client";
+﻿"use client";
 
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -25,11 +24,9 @@ import {
   parseDatasourceMentions,
   type ComposerSourcePlacement,
 } from "@/lib/composer-prefill";
-import { workspaceActions } from "@/lib/workspace-store";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import {
-  createAgentRun,
   isAgentRuntimeConfigured,
   isPlatformBackendEnabled,
 } from "@/lib/agent-runtime";
@@ -38,19 +35,24 @@ import {
   HOME_PROMPT_ANONYMOUS_CACHE_KEY,
   loadHomePromptCardsOnce,
 } from "@/lib/home-prompt-data-sources";
+import {
+  saveHomeSessionLaunchMeta,
+  stashHomeSessionLaunchFiles,
+} from "@/lib/home-session-launch";
 import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
 import { cn } from "@/lib/utils";
 import { NewConversationTaskComposer } from "@/components/new-conversation-task-composer";
 
 const PENDING_HOME_TASK_STORAGE_KEY = "alice:pending-home-task-after-login";
 const PENDING_HOME_TASK_MAX_AGE_MS = 30 * 60 * 1000;
+type HomeComposerMode = "普通模式" | "深度模式";
 
 type PendingHomeTask = {
   text: string;
   selectedSourceIds: string[];
   sourcePlacements: ComposerSourcePlacement[];
   activeCapabilityId: string;
-  composerMode: "普通模式" | "深度模式";
+  composerMode: HomeComposerMode;
   createdAt: number;
   pendingFiles?: File[];
 };
@@ -120,14 +122,14 @@ export function AliceHomePage() {
   const hydratedAuth = canPersonalizeGreeting && platformAgent?.authHydrated ? platformAgent.auth : null;
   const userCachePrefix = hydratedAuth?.userId ?? (platformAgent?.authHydrated ? HOME_PROMPT_ANONYMOUS_CACHE_KEY : null);
   const greetingName = hydratedAuth
-    ? (hydratedAuth.displayName || hydratedAuth.userId || "Boss 👋").trim()
-    : "Boss 👋";
+    ? (hydratedAuth.displayName || hydratedAuth.userId || "伙伴").trim()
+    : "伙伴";
   const greetingTitle = `你好，${greetingName}`;
   const homePromptCacheKey = userCachePrefix && activeCategoryId ? `${userCachePrefix}:cat:${activeCategoryId}` : null;
   const cachedPromptCards = homePromptCacheKey ? getCachedHomePromptCards(homePromptCacheKey) : null;
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [sourcePlacements, setSourcePlacements] = useState<ComposerSourcePlacement[]>([]);
-  const [composerMode, setComposerMode] = useState<"普通模式" | "深度模式">("深度模式");
+  const [composerMode, setComposerMode] = useState<HomeComposerMode>("深度模式");
   const [pendingHomeFiles, setPendingHomeFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
   const [launching, setLaunching] = useState(false);
@@ -159,7 +161,7 @@ export function AliceHomePage() {
   }, []);
   const activeRunId = searchParams.get("runId");
 
-  // 从任务页回到首页（如侧栏「新建任务」）时清空输入框，避免带入上次发送内容
+  // Return to the home page from a task view and clear the composer.
   useEffect(() => {
     const prev = prevActiveRunIdRef.current;
     prevActiveRunIdRef.current = activeRunId;
@@ -182,7 +184,7 @@ export function AliceHomePage() {
     }
   }, [composerDataSourceItems, dataSourceMenuLoaded]);
 
-  // 加载公开的 prompt 分类列表，默认选中第一个
+  // Load public prompt categories and select the first one by default.
   useEffect(() => {
     let cancelled = false;
     fetchPublicPromptCategories()
@@ -249,66 +251,49 @@ export function AliceHomePage() {
         ? []
         : [effectiveActiveCapabilityId];
 
-    if (isPlatformBackendEnabled()) {
-      if (!isAgentRuntimeConfigured()) {
-        setNotice("当前服务暂时不可用，请稍后重试或联系管理员。");
-        return;
-      }
-      if (!platformAgent) {
-        setNotice("平台联调未启用或 Provider 未挂载。");
-        return;
-      }
-      if (!platformAgent.auth) {
-        savePendingHomeTaskAfterLogin({
-          text: nextQuery,
-          selectedSourceIds: effectiveSelectedSourceIds,
-          sourcePlacements: pending?.sourcePlacements ?? sourcePlacements,
-          activeCapabilityId: effectiveActiveCapabilityId,
-          composerMode: effectiveComposerMode,
-          pendingFiles: pendingHomeFiles,
-        });
-        platformAgent.openLogin("登录后将继续发送当前任务。");
-        return;
-      }
-      setLaunching(true);
-      try {
-        const sid = await platformAgent.beginNewHomeTaskSession();
-        if (!sid) return;
-        upsertOptimisticHistorySession(sid);
-        platformAgent.setActivePlatformSession(sid);
-        setActiveSessionTitle(nextQuery);
-        void refreshHistoryNow();
-        const runId = workspaceActions.startPlatformTask({
-          platformSessionId: sid,
-          objective: nextQuery,
-          mode: effectiveComposerMode === "深度模式" ? "专业模式" : "轻量模式",
-          selectedCapabilities,
-          pendingFiles: pending?.pendingFiles ?? pendingHomeFiles,
-        });
-        setPendingHomeFiles([]);
-        resetHomeComposer();
-        setNotice("已连接 Alice 后端服务，正在执行任务。");
-        router.replace(`/?runId=${runId}`);
-      } finally {
-        setLaunching(false);
-      }
+    if (!isPlatformBackendEnabled()) {
+      setNotice("当前服务暂时不可用，请稍后重试或联系管理员。");
       return;
     }
-
     if (!isAgentRuntimeConfigured()) {
-      setNotice("会话后端接口未配置。请先设置 NEXT_PUBLIC_AGENT_API_BASE_URL。");
+      setNotice("当前服务暂时不可用，请稍后重试或联系管理员。");
+      return;
+    }
+    if (!platformAgent) {
+      setNotice("当前平台认证尚未初始化，请稍后重试。");
+      return;
+    }
+    if (!platformAgent.auth) {
+      savePendingHomeTaskAfterLogin({
+        text: nextQuery,
+        selectedSourceIds: effectiveSelectedSourceIds,
+        sourcePlacements: pending?.sourcePlacements ?? sourcePlacements,
+        activeCapabilityId: effectiveActiveCapabilityId,
+        composerMode: effectiveComposerMode,
+        pendingFiles: pendingHomeFiles,
+      });
+      platformAgent.openLogin("登录后将继续发送当前任务。");
       return;
     }
     setLaunching(true);
     try {
-      const snapshot = await createAgentRun({
-        objective: nextQuery,
-        mode: effectiveComposerMode === "深度模式" ? "专业模式" : "轻量模式",
-        selectedCapabilities,
+      const sid = await platformAgent.beginNewHomeTaskSession();
+      if (!sid) return;
+      upsertOptimisticHistorySession(sid);
+      platformAgent.setActivePlatformSession(sid);
+      setActiveSessionTitle(nextQuery);
+      void refreshHistoryNow();
+      saveHomeSessionLaunchMeta({
+        v: 1,
+        sessionId: sid,
+        prompt: nextQuery,
+        selectedSourceIds: selectedCapabilities,
+        sendKind: "pending",
       });
-      workspaceActions.upsertRunSnapshot(snapshot.run, snapshot.report);
+      stashHomeSessionLaunchFiles(sid, pending?.pendingFiles ?? pendingHomeFiles);
+      setPendingHomeFiles([]);
       resetHomeComposer();
-      router.replace(`/?runId=${snapshot.run.id}`);
+      router.replace(`/agent?sessionId=${encodeURIComponent(sid)}`);
     } finally {
       setLaunching(false);
     }
@@ -353,26 +338,13 @@ export function AliceHomePage() {
     setSourcePlacements((current) => current.filter((placement) => placement.sourceId !== capabilityId));
   };
 
-  const mergePendingHomeFiles = useCallback((incoming: File[]) => {
-    if (incoming.length === 0) return;
-    setPendingHomeFiles((prev) => {
-      const seen = new Set(prev.map((f) => `${f.name}:${f.size}:${f.lastModified}`));
-      const merged = [...prev];
-      for (const f of incoming) {
-        const key = `${f.name}:${f.size}:${f.lastModified}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          merged.push(f);
-        }
-      }
-      return merged;
-    });
+  const syncPendingHomeFiles = useCallback((files: File[]) => {
+    setPendingHomeFiles(files);
   }, []);
 
   const handleFilesSelected = (files: FileList) => {
     const picked = Array.from(files);
     if (picked.length === 0) return;
-    mergePendingHomeFiles(picked);
     setNotice(`已选择附件：${picked.map((file) => file.name).join("、")}。`);
   };
 
@@ -440,7 +412,7 @@ export function AliceHomePage() {
                 {greetingTitle}
               </h1>
               <div className="text-title-2 font-normal text-text-secondary">
-                💬 你的跨境运营助理，24h随时在线
+                你的跨境数据运营搭档，24h 随时在线
               </div>
             </div>
           </div>
@@ -451,7 +423,7 @@ export function AliceHomePage() {
                 <NewConversationTaskComposer
                   value={query}
                   onValueChange={setQuery}
-                  placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
+                  placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊 流量来源分析。"
                   mode={composerMode}
                   onModeChange={setComposerMode}
                   selectedSourceIds={selectedSourceIds}
@@ -463,7 +435,7 @@ export function AliceHomePage() {
                   onSourceRemove={removeComposerTool}
                   onPromptUse={applyPromptLibraryPrompt}
                   onFilesSelected={handleFilesSelected}
-                  onAttachmentsChange={mergePendingHomeFiles}
+                  onAttachmentsChange={syncPendingHomeFiles}
                   onSubmit={() => {
                     if (!launching) {
                       void launchAgent();
@@ -483,7 +455,7 @@ export function AliceHomePage() {
             id="sym:homeCapabilityItems"
             className="mt-7 flex w-full flex-wrap items-center gap-x-4 gap-y-2 text-body leading-5 sm:mt-10 sm:gap-x-6 sm:gap-y-3 sm:text-title-1 sm:leading-6"
           >
-            {/* 数据库中的 Prompt 分类 */}
+            {/* Prompt categories loaded from the backend */}
             {promptCategories.map((cat) => (
               <button
                 key={cat.id}
@@ -572,7 +544,7 @@ export function AliceHomePage() {
                             {card.title}
                           </div>
                           <div className="mt-2 line-clamp-3 text-body font-normal leading-6 text-text-tertiary">
-                            {card.body.length > 78 ? `${card.body.slice(0, 78)}…` : card.body}
+                            {card.body.length > 78 ? `${card.body.slice(0, 78)}...` : card.body}
                           </div>
                         </div>
                       </div>
@@ -591,3 +563,4 @@ export function AliceHomePage() {
     </AliceShell>
   );
 }
+

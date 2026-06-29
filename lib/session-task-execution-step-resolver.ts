@@ -1,7 +1,8 @@
-import type { TaskResponse, ToolOrchestrationStepApi } from "@/lib/agent-api/types";
+import type { SessionMessageItem, TaskResponse, ToolOrchestrationStepApi } from "@/lib/agent-api/types";
 import type { TaskExecutionStep, TaskExecutionStepStatus } from "@/lib/agent-events";
 import { mapServerOrchestrationStepStatus } from "@/lib/agent-runtime/task-mapping";
 import type { TaskOrchestrationBundleRow } from "@/lib/merge-orchestration-task-artifacts";
+import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import { isTaskInFlight } from "@/lib/task-status-poll";
 
 function bundleTaskInFlight(status: string | undefined): boolean {
@@ -103,4 +104,91 @@ export function enrichStepsRuntimeFromBundles(
     if (!bundle?.startedAt || !bundleTaskInFlight(bundle.taskStatus)) return step;
     return { ...step, runtimeStartedAt: bundle.startedAt };
   });
+}
+
+function stepsEqual(a: TaskExecutionStep[], b: TaskExecutionStep[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const left = a[i]!;
+    const right = b[i]!;
+    if (
+      left.id !== right.id ||
+      left.label !== right.label ||
+      left.status !== right.status ||
+      left.runtimeStartedAt !== right.runtimeStartedAt ||
+      left.runtimeHint !== right.runtimeHint
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function serializeStepsForMeta(steps: TaskExecutionStep[]): Array<Record<string, unknown>> {
+  return steps.map((step) => {
+    const out: Record<string, unknown> = {
+      id: step.id,
+      label: step.label,
+      status: step.status,
+    };
+    if (step.runtimeStartedAt) out.runtime_started_at = step.runtimeStartedAt;
+    if (step.runtimeHint) out.runtime_hint = step.runtimeHint;
+    return out;
+  });
+}
+
+export function hydrateTaskExecutionMessagesFromLiveState(
+  messages: SessionMessageItem[],
+  options?: {
+    task?: TaskResponse | null;
+    orchestrationSteps?: ToolOrchestrationStepApi[] | null;
+  },
+): SessionMessageItem[] {
+  if (!messages.length) return messages;
+  const task = options?.task ?? null;
+  const orchestrationSteps = options?.orchestrationSteps ?? null;
+  let changed = false;
+
+  const next = messages.map((message) => {
+    if (message.role !== "assistant") return message;
+    const meta =
+      message.meta && typeof message.meta === "object" && !Array.isArray(message.meta)
+        ? (message.meta as Record<string, unknown>)
+        : undefined;
+    const steps = parseTaskExecutionStepsFromMeta(meta);
+    if (!meta || !steps?.length) return message;
+
+    const taskId = typeof meta.task_id === "string" ? meta.task_id.trim() : "";
+    const orchestrationId = typeof meta.orchestration_id === "string" ? meta.orchestration_id.trim() : "";
+
+    let resolved =
+      orchestrationId && orchestrationSteps?.length
+        ? resolveStaleTaskExecutionSteps(steps, {
+            orchestrationStatuses: orchestrationSteps.map((step) => step.status),
+          })
+        : task && taskId && task.task_id === taskId
+          ? resolveStaleTaskExecutionSteps(steps, {
+              taskStatus: task.status,
+            })
+          : null;
+
+    if (!resolved) return message;
+
+    resolved = enrichTaskExecutionStepsRuntime(resolved, {
+      task: task && taskId && task.task_id === taskId ? task : null,
+      orchestrationSteps: orchestrationId ? orchestrationSteps : null,
+    });
+
+    if (stepsEqual(steps, resolved)) return message;
+    changed = true;
+    return {
+      ...message,
+      meta: {
+        ...meta,
+        steps: serializeStepsForMeta(resolved),
+      },
+    };
+  });
+
+  return changed ? next : messages;
 }

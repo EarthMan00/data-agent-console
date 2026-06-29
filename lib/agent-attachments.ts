@@ -1,7 +1,12 @@
 import type { AgentAttachmentFileType } from "@/lib/agent-events";
 
 export function sanitizeObjective(value: string) {
-  return value.replace(/(^|\s)@[^\s]*/g, " ").replace(/\s+/g, " ").trim();
+  return value
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/(^|[ \t])@[^\s]*/g, " ").replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .trim();
 }
 
 export function inferAttachmentType(name: string): AgentAttachmentFileType {

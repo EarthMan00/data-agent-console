@@ -16,7 +16,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  AlarmFilled,
   Bell,
   BookOpen,
   Clock3,
@@ -46,7 +45,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { isPlatformBackendEnabled } from "@/lib/agent-runtime";
-import { isFrontendMockSessionId } from "@/lib/frontend-mock-session";
 import {
   AgentApiError,
   listSessions,
@@ -62,16 +60,6 @@ const navItems = [
   { href: "/", label: "新的对话", icon: SparkleHighlight },
   { href: "/schedules", label: "定时任务", icon: Clock3 },
   { href: "/artifacts", label: "收藏夹", icon: FolderHeart },
-];
-
-const mockNotificationItems = [
-  {
-    id: "mock-task-complete",
-    title: "任务「搜集Github热门ai项目」已完成",
-    description: "点击查看任务详情",
-    time: "5/31 20:01",
-    unread: true,
-  },
 ];
 
 type AliceShellProps = {
@@ -721,11 +709,10 @@ function AliceShellComponent({
   const activeSessionId = platformAgent?.platformSessionId ?? null;
   const urlRunId = searchParams.get("runId");
   const urlSessionId = searchParams.get("sessionId");
-  const isFrontendMockRoute = isFrontendMockSessionId(urlSessionId);
   const activeRun = (urlRunId ? runs.find((run) => run.id === urlRunId) : null) ?? runs.find((run) => run.id === currentRunId);
   const effectiveActiveSessionId = urlSessionId || activeRun?.platformSessionId || activeSessionId;
   const agentHasSpecificSelection = currentPath === "/agent" && Boolean(urlRunId || urlSessionId);
-  const showAuthSidebar = clientMounted && (isLoggedIn || isFrontendMockRoute);
+  const showAuthSidebar = clientMounted && isLoggedIn;
   /** 账户区：mount 前固定为「登录」，避免 token 仅在客户端存在时 hydration 不一致 */
   const headerAuth = platformAgent?.auth;
   const showHeaderUserMenu = clientMounted && Boolean(headerAuth);
@@ -780,7 +767,6 @@ function AliceShellComponent({
 
   const filteredHistorySessions = useMemo(() => {
     const visibleHistorySessions = historySessions
-      .filter((s) => !isFrontendMockSessionId(s.session_id))
       .filter((s) => s.isOptimistic || s.hasMessages !== false);
     const q = historySearch.trim().toLowerCase();
     const base = q ? visibleHistorySessions.filter((s) => {
@@ -1108,7 +1094,6 @@ function AliceShellComponent({
                       const historyItemActive =
                         currentPath.startsWith("/agent") && effectiveActiveSessionId === s.session_id;
                       const createdTime = formatHistoryCreatedTime(s);
-                      const frontendMockHistory = isFrontendMockSessionId(s.session_id);
                       return (
                         <div
                           key={s.session_id}
@@ -1184,7 +1169,6 @@ function AliceShellComponent({
                               </span>
                             ) : null}
                           </button>
-                          {!frontendMockHistory ? (
                           <Popover
                             open={historyPurgeConfirmId === s.session_id}
                             onOpenChange={(open) => {
@@ -1237,7 +1221,6 @@ function AliceShellComponent({
                               </div>
                             </PopoverContent>
                           </Popover>
-                          ) : null}
                         </div>
                       );
                     })
@@ -1576,37 +1559,9 @@ function AliceShellComponent({
                 </button>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
-                {mockNotificationItems.length > 0 ? (
-                  <div className="space-y-3">
-                    {mockNotificationItems.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className="relative flex min-h-20 w-full items-center gap-4 rounded-card bg-bg-surface px-4 py-4 text-left transition hover:bg-fill-hover"
-                      >
-                        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-bg-subtle text-primary">
-                          <AlarmFilled className="h-6 w-6" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-body font-semibold leading-5 text-foreground">
-                            {item.title}
-                          </span>
-                          <span className="mt-1 block truncate text-caption leading-5 text-text-tertiary">
-                            {item.description}
-                          </span>
-                        </span>
-                        <span className="shrink-0 text-caption leading-5 text-text-tertiary">{item.time}</span>
-                        {item.unread ? (
-                          <span className="absolute right-4 top-4 h-1.5 w-1.5 rounded-full bg-danger" aria-label="未读" />
-                        ) : null}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex h-full items-center justify-center pb-8">
-                    <EmptyState className="m-0 min-h-0" message="暂无消息" />
-                  </div>
-                )}
+                <div className="flex h-full items-center justify-center pb-8">
+                  <EmptyState className="m-0 min-h-0" message="暂无消息" />
+                </div>
               </div>
             </div>
           </DialogContent>

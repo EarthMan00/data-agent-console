@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { SessionMessageItem } from "@/lib/agent-api/types";
 import {
-  resolveDedicatedPostTaskGuidanceInSegment,
+  buildPostTaskGuidanceLeadingByMessageId,
   resolveInteractiveGuidanceMessageId,
   resolveInteractiveGuidanceRoundId,
   resolveRoundPostTaskGuidanceContent,
+  resolveRoundTaskOutcomeSummary,
   shouldDeferPostTaskGuidanceToStepsBubble,
   shouldDeferTaskTerminatedToStepsBubble,
   shouldRenderGuidanceBubbleAtMessage,
@@ -189,6 +190,155 @@ describe("resolveRoundPostTaskGuidanceContent", () => {
     const hit = resolveRoundPostTaskGuidanceContent(messages, 1, { taskId: "task-1" });
     expect(hit?.messageId).toBe("g1");
     expect(hit?.content).toContain("重新发送完整需求");
+  });
+
+  it("normalizes the matching task outcome summary as leading content for steps guidance", () => {
+    const messages: SessionMessageItem[] = [
+      userMsg("u1", 0),
+      {
+        id: "steps",
+        role: "assistant",
+        content: "（以下为该轮任务的执行步骤记录）",
+        created_at: "2026-05-22T10:00:00Z",
+        message_index: 1,
+        meta: {
+          kind: "task_execution_steps",
+          task_id: "task-1",
+          steps: [{ id: "s1", label: "分析", status: "error" }],
+        },
+      },
+      {
+        id: "summary",
+        role: "assistant",
+        content: "任务执行失败，可在右侧查看任务结果详情。",
+        created_at: "2026-05-22T10:00:01Z",
+        message_index: 2,
+        meta: {
+          task_id: "task-1",
+          task_status: "FAILED",
+          error_message: "network error",
+        },
+      },
+      guidanceMsg("g1", 3),
+    ];
+
+    const hit = resolveRoundPostTaskGuidanceContent(messages, 1, { taskId: "task-1" });
+    expect(hit?.messageId).toBe("g1");
+    expect(hit?.leading).toBe("这轮没有完成“分析”。执行失败。原因：network error");
+    expect(hit?.leadingMessageId).toBe("summary");
+  });
+
+  it("can merge a later task summary into an earlier dedicated guidance bubble", () => {
+    const messages: SessionMessageItem[] = [
+      userMsg("u1", 0),
+      guidanceMsg("g1", 1),
+      {
+        id: "summary",
+        role: "assistant",
+        content: "任务已完成，可以在右侧查看本轮任务结果和 CSV 数据。",
+        created_at: "2026-05-22T10:00:01Z",
+        message_index: 2,
+        meta: {
+          task_id: "task-1",
+          task_status: "SUCCESS",
+          has_artifacts: true,
+        },
+      },
+    ];
+
+    const leadingByMessageId = buildPostTaskGuidanceLeadingByMessageId(messages);
+    expect(leadingByMessageId.get("g1")).toEqual({
+      text: "这轮已经完成“继续”。结果数据已整理好，右侧可以直接查看。",
+      sourceMessageId: "summary",
+    });
+  });
+
+  it("finds the nearest task outcome summary for both steps and guidance anchors", () => {
+    const messages: SessionMessageItem[] = [
+      userMsg("u1", 0),
+      {
+        id: "steps",
+        role: "assistant",
+        content: "（以下为该轮任务的执行步骤记录）",
+        created_at: "2026-05-22T10:00:00Z",
+        message_index: 1,
+        meta: {
+          kind: "task_execution_steps",
+          task_id: "task-1",
+          steps: [{ id: "s1", label: "分析", status: "done" }],
+        },
+      },
+      {
+        id: "summary",
+        role: "assistant",
+        content: "任务已完成，可以在右侧查看本轮任务结果和 CSV 数据。",
+        created_at: "2026-05-22T10:00:01Z",
+        message_index: 2,
+        meta: {
+          task_id: "task-1",
+          task_status: "SUCCESS",
+          has_artifacts: true,
+        },
+      },
+      guidanceMsg("g1", 3),
+    ];
+
+    expect(resolveRoundTaskOutcomeSummary(messages, 1, { taskId: "task-1" })).toEqual({
+      text: "这轮已经完成“分析”。结果数据已整理好，右侧可以直接查看。",
+      sourceMessageId: "summary",
+    });
+    expect(resolveRoundTaskOutcomeSummary(messages, 3, { taskId: "task-1" })).toEqual({
+      text: "这轮已经完成“分析”。结果数据已整理好，右侧可以直接查看。",
+      sourceMessageId: "summary",
+    });
+  });
+
+  it("synthesizes the task outcome summary from the terminal task snapshot when the summary message has not reloaded yet", () => {
+    const messages: SessionMessageItem[] = [
+      userMsg("u1", 0),
+      {
+        id: "steps",
+        role: "assistant",
+        content: "running",
+        created_at: "2026-05-22T10:00:00Z",
+        message_index: 1,
+        meta: {
+          kind: "task_execution_steps",
+          task_id: "task-1",
+          steps: [{ id: "s1", label: "Search the top three cup listings", status: "done" }],
+        },
+      },
+      guidanceMsg("g1", 2),
+    ];
+
+    expect(
+      resolveRoundTaskOutcomeSummary(messages, 1, {
+        taskId: "task-1",
+        taskSnapshot: {
+          task_id: "task-1",
+          tool_name: "skill_task",
+          status: "SUCCESS",
+          started_at: "2026-05-22T10:00:00Z",
+          finished_at: "2026-05-22T10:00:03Z",
+          artifacts: [
+            {
+              artifact_id: "artifact-1",
+              artifact_type: "result",
+              original_name: "top-cups.csv",
+              download_api: "/api/tasks/task-1/artifacts/artifact-1/download",
+            },
+          ],
+          events: [],
+          zip_download_api: null,
+          request_payload: {
+            message: "Search the top three cup listings",
+          },
+        } as never,
+      }),
+    ).toEqual({
+      text: "这轮已经完成“Search the top three cup listings”。结果数据已整理好，右侧可以直接查看。",
+      sourceMessageId: "task_outcome_task-1",
+    });
   });
 
   it("defers standalone post_task_guidance when steps bubble should own guidance", () => {

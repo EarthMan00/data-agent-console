@@ -8,7 +8,7 @@
 const AGENT_PLATFORM_PROXY_PREFIX = "/agent-platform";
 
 export function isAgentRealApiEnabled(): boolean {
-  return (process.env.NEXT_PUBLIC_AGENT_USE_REAL_API ?? "").trim() === "1";
+  return true;
 }
 
 /** 为 true 时，浏览器只请求当前页面的 origin + /agent-platform，由 next.config rewrites 转到后端。 */
@@ -31,7 +31,7 @@ export function getAgentApiOrigin(): string {
   const v = process.env.NEXT_PUBLIC_AGENT_API_ORIGIN?.trim();
   if (!v) {
     throw new Error(
-      "NEXT_PUBLIC_AGENT_API_ORIGIN is required when NEXT_PUBLIC_AGENT_USE_REAL_API=1（除非设置 NEXT_PUBLIC_AGENT_API_USE_PROXY=1）",
+      "NEXT_PUBLIC_AGENT_API_ORIGIN is required unless NEXT_PUBLIC_AGENT_API_USE_PROXY=1",
     );
   }
   return v.replace(/\/$/, "");

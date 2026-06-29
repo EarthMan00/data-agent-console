@@ -18,7 +18,7 @@ import type {
 import { stripModelThinkingForUi, stripModelThinkingForStreamPartial } from "@/lib/strip-model-thinking";
 import { upsertReportCollection, upsertRunCollection } from "@/lib/workspace-upsert";
 import { DEFAULT_RESULT_PREVIEW_KEY } from "@/lib/report-defaults";
-import { getDataSourceItems, getHomeCapabilityItem } from "@/lib/home-capability-items";
+import { getDataSourceItems } from "@/lib/home-capability-items";
 import { DEFAULT_RESULT_SUMMARY_TITLE, WORKSPACE_DISPLAY_NAME } from "@/lib/workspace-constants";
 import { stashRoundAttachmentFiles } from "@/lib/round-attachment-files";
 import { inferAttachmentType } from "@/lib/agent-attachments";

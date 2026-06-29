@@ -12,7 +12,6 @@ import { TaskComposer } from "@/components/task-composer";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { useAliceShellState } from "@/components/alice-shell";
 import { compactText } from "@/components/agent-workspace-view-models";
-import { buildAttachmentItems } from "@/components/agent-workspace/attachment-utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -32,7 +31,10 @@ import type { ChatSendResult, SessionMessageItem, TaskResponse, ToolOrchestratio
 import {
   createStreamingAssistantMessage,
   isStreamingAssistantMessage,
+  mergeFreshMessagesWithLocalPending,
+  OPTIMISTIC_USER_MESSAGE_ID_PREFIX,
   sendSessionMessageStream,
+  STREAMING_ASSISTANT_MESSAGE_ID_PREFIX,
   sessionHasAssistantThinkingPlaceholder,
   sessionHasVisibleInFlightAssistant,
   shouldShowAssistantThinkingPlaceholder,
@@ -46,7 +48,7 @@ import {
   removeFromComposerDraft,
 } from "@/lib/composer-prefill";
 import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
-import type { AgentAttachment, TaskExecutionStep, TaskExecutionStepStatus } from "@/lib/agent-events";
+import type { TaskExecutionStep, TaskExecutionStepStatus } from "@/lib/agent-events";
 import { mapServerOrchestrationStepStatus } from "@/lib/agent-runtime/task-mapping";
 import type { ScheduleTrialSendState } from "@/lib/schedule-create-draft";
 import {
@@ -56,6 +58,13 @@ import {
   saveScheduleTrialMeta,
   tryClaimScheduleTrialFirstSend,
 } from "@/lib/schedule-create-draft";
+import {
+  isHomeSessionLaunchAwaitingFirstMessage,
+  loadHomeSessionLaunchMeta,
+  saveHomeSessionLaunchMeta,
+  takeHomeSessionLaunchFiles,
+  tryClaimHomeSessionLaunchFirstSend,
+} from "@/lib/home-session-launch";
 import { takeScheduleTrialAttachmentFiles } from "@/lib/schedule-trial-attachment-files";
 import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
 import { buildTaskStepsFromDecompositionLabels } from "@/lib/schedule-trial-execution-presentation";
@@ -65,11 +74,16 @@ import {
   isSupersededTaskExecutionStepsMessage,
   messageIdsEligibleForTaskResultCard,
 } from "@/lib/session-task-result-card-visibility";
-import { extractDecompositionLabelsFromMessages } from "@/lib/parse-decomposition-labels";
+import {
+  extractDecompositionLabelsFromMessages,
+  findLatestDecompositionAssistantIndex,
+} from "@/lib/parse-decomposition-labels";
 import { resolvePostTaskGuidancePresentation, resolveTaskTerminatedPresentation } from "@/lib/parse-post-task-guidance";
 import {
+  buildPostTaskGuidanceLeadingByMessageId,
   resolveInteractiveGuidanceMessageId,
   resolveRoundPostTaskGuidanceContent,
+  resolveRoundTaskOutcomeSummary,
   shouldDeferPostTaskGuidanceToStepsBubble,
   shouldDeferTaskTerminatedToStepsBubble,
   shouldRenderGuidanceBubbleAtMessage,
@@ -107,12 +121,6 @@ import {
   type ResultPanelContext,
   type TaskOrchestrationBundleRow,
 } from "@/lib/merge-orchestration-task-artifacts";
-import {
-  getFrontendMockOrchestrationBundles,
-  getFrontendMockResultPanelData,
-  isFrontendMockSessionId,
-  mergeFrontendMockSessionMessages,
-} from "@/lib/frontend-mock-session";
 import { pollAcceptedPlatformTaskInSession } from "@/lib/session-accepted-task-poll";
 import {
   isTaskInFlight,
@@ -150,8 +158,11 @@ import { sanitizeClarificationForUserDisplay } from "@/lib/alice-clarification";
 import { sessionHasOrchestrationFailure } from "@/lib/orchestration-failure-message";
 import {
   enrichStepsRuntimeFromBundles,
+  hydrateTaskExecutionMessagesFromLiveState,
   enrichTaskExecutionStepsRuntime,
 } from "@/lib/session-task-execution-step-resolver";
+import { getLiveSessionPrimaryTaskPollStrategy } from "@/lib/session-live-status-poll";
+import { sessionHasTaskCompletionSummaryMessage } from "@/lib/resolve-post-task-guidance-text";
 
 function mergeTaskStepStatuses(
   steps: TaskExecutionStep[],
@@ -229,38 +240,6 @@ function prepareExecutionStepsForBubble(
   return enrichStepsRuntimeFromBundles(withOrchRuntime, options.bundles);
 }
 
-function attachmentsFromMessageMeta(meta: Record<string, unknown> | undefined): AgentAttachment[] {
-  const raw = Array.isArray(meta?.attachments) ? meta.attachments : [];
-  return raw
-    .map((item, index) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) return null;
-      const row = item as Record<string, unknown>;
-      const id = typeof row.id === "string"
-        ? row.id
-        : typeof row.attachment_id === "string"
-          ? row.attachment_id
-          : `attachment-${index}`;
-      const name = typeof row.name === "string" ? row.name.trim() : "";
-      if (!name) return null;
-      const extension =
-        typeof row.extension === "string"
-          ? row.extension
-          : name.includes(".")
-            ? name.split(".").pop()?.toLowerCase()
-            : undefined;
-      const attachment: AgentAttachment = {
-        id,
-        name,
-        status: typeof row.status === "string" ? (row.status as AgentAttachment["status"]) : "accepted",
-      };
-      if (typeof row.size === "number") attachment.size = row.size;
-      if (extension) attachment.extension = extension;
-      if (typeof row.fileType === "string") attachment.fileType = row.fileType as AgentAttachment["fileType"];
-      return attachment;
-    })
-    .filter((item): item is AgentAttachment => item !== null);
-}
-
 export function PlatformSessionAgentWorkspace({
   sessionId,
   scheduleTrial = false,
@@ -280,7 +259,6 @@ export function PlatformSessionAgentWorkspace({
   const platformAgent = useOptionalPlatformAgent();
   const { refreshHistoryNow, setActiveSessionTitle } = useAliceShellState();
   const router = useRouter();
-  const frontendMockSession = isFrontendMockSessionId(sessionId);
   const isMounted = useRef(true);
   const abortPollRef = useRef(false);
   const sseAbortRef = useRef<AbortController | null>(null);
@@ -310,7 +288,6 @@ export function PlatformSessionAgentWorkspace({
   const [messages, setMessages] = useState<SessionMessageItem[]>([]);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesInnerRef = useRef<HTMLDivElement>(null);
-  const localUserAttachmentHintsRef = useRef<Array<{ content: string; attachments: AgentAttachment[] }>>([]);
   const [showResultPanel, setShowResultPanel] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [resultPanelContext, setResultPanelContext] = useState<ResultPanelContext | null>(null);
@@ -368,20 +345,6 @@ export function PlatformSessionAgentWorkspace({
   }, [sessionId]);
 
   const reload = useCallback(async () => {
-    if (frontendMockSession) {
-      setMessagesLoaded(false);
-      const cached = readSessionMessageCache(sessionId);
-      const source = mergeFrontendMockSessionMessages(cached);
-      const fresh = processStreamingMessages(source);
-      writeSessionMessageCache(sessionId, fresh);
-      setMessages(fresh);
-      setOrchestrationBundles(getFrontendMockOrchestrationBundles());
-      setBusy(false);
-      setError("");
-      setMessagesLoaded(true);
-      return;
-    }
-
     if (!platformAgent?.auth) return;
 
     setMessagesLoaded(false);
@@ -403,21 +366,24 @@ export function PlatformSessionAgentWorkspace({
         // 合并进行中的流式消息，避免 reload 冲掉 manager 推送的增量内容
         setMessages((cur) => {
           const streamState = getStreamState(sessionId);
-          if (!streamState || streamState.status !== "streaming") return fresh;
+          if (!streamState || streamState.status !== "streaming") return mergeFreshMessagesWithLocalPending(fresh, cur);
           const streamId = streamState.assistantStreamId;
           const curStreaming = cur.find((m) => m.id === streamId && isStreamingAssistantMessage(m));
-          if (!curStreaming) return fresh;
+          if (!curStreaming) return mergeFreshMessagesWithLocalPending(fresh, cur);
           // fresh 中无此流式条（服务端尚未落库）→ 将本地流式 + 乐观 user 追加到列表
           if (!fresh.some((m) => m.id === streamId)) {
-            const userMsg = cur.find((m) => m.role === "user" && m.id.startsWith("optimistic_user_"));
+            const userMsg = cur.find(
+              (m) => m.role === "user" && m.id.startsWith(OPTIMISTIC_USER_MESSAGE_ID_PREFIX),
+            );
             const tail = userMsg ? [userMsg, curStreaming] : [curStreaming];
             // 去重：避免与 fresh 中已存在的同 id 消息重复
             const freshIds = new Set(fresh.map((m) => m.id));
             const append = tail.filter((m) => !freshIds.has(m.id));
-            return [...fresh, ...append];
+            return mergeFreshMessagesWithLocalPending([...fresh, ...append], cur);
           }
-          return fresh.map((m) =>
-            m.id === streamId ? curStreaming : m,
+          return mergeFreshMessagesWithLocalPending(
+            fresh.map((m) => (m.id === streamId ? curStreaming : m)),
+            cur,
           );
         });
       });
@@ -429,13 +395,21 @@ export function PlatformSessionAgentWorkspace({
       setBusy(false);
       setMessagesLoaded(true);
     }
-  }, [frontendMockSession, platformAgent, processStreamingMessages, sessionId]);
+  }, [platformAgent, processStreamingMessages, sessionId]);
+
+  useEffect(() => {
+    setMessages((prev) =>
+      hydrateTaskExecutionMessagesFromLiveState(prev, {
+        task: lastTaskSnapshot,
+        orchestrationSteps: liveOrchestrationSteps,
+      }),
+    );
+  }, [lastTaskSnapshot, liveOrchestrationSteps]);
 
   // Resolve stale task_execution_steps in the background every time messages
   // are loaded, without blocking render or the session-list refresh.
   const resolveStaleRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (frontendMockSession) return;
     if (busy || messages.length === 0 || !platformAgent?.auth) return;
     let cancelled = false;
 
@@ -587,7 +561,7 @@ export function PlatformSessionAgentWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [busy, frontendMockSession, messages, platformAgent, sessionId]);
+  }, [busy, messages, platformAgent, sessionId]);
 
   useEffect(() => {
     resolveStaleRef.current = new Set();
@@ -596,7 +570,6 @@ export function PlatformSessionAgentWorkspace({
   useEffect(() => {
     isMounted.current = true;
     abortPollRef.current = false;
-    sessionGenRef.current += 1;
     return () => {
       isMounted.current = false;
       abortPollRef.current = true;
@@ -605,19 +578,19 @@ export function PlatformSessionAgentWorkspace({
   }, [sessionId]);
 
   useEffect(() => {
-    if (frontendMockSession) {
-      platformAgent?.setActivePlatformSession(sessionId);
-      void reload();
-      return;
-    }
     if (!platformAgent) return;
     if (!platformAgent.auth) return;
-    platformAgent.setActivePlatformSession(sessionId);
+    if (!scheduledRunRecord) {
+      platformAgent.setActivePlatformSession(sessionId);
+    }
     if (scheduleTrial && isScheduleTrialAwaitingFirstMessage(sessionId, loadScheduleTrialMeta())) {
       return;
     }
+    if (!scheduleTrial && !scheduledRunRecord && isHomeSessionLaunchAwaitingFirstMessage(sessionId, loadHomeSessionLaunchMeta())) {
+      return;
+    }
     void reload();
-  }, [frontendMockSession, platformAgent, reload, sessionId, scheduleTrial]);
+  }, [platformAgent, reload, sessionId, scheduleTrial, scheduledRunRecord]);
 
   // 订阅 stream manager 更新：始终建立订阅（不因挂载时无流而跳过），
   // 有活跃流时立即 flush 同步首屏内容；后续 onDelta 写 manager 时自动推送。
@@ -682,7 +655,8 @@ export function PlatformSessionAgentWorkspace({
       saveScheduleTrialMeta({ v: 1, sessionId, taskId: null, sendKind: "unknown" });
       return;
     }
-    const userMid = `optimistic_user_${safeRandomUUID()}`;
+    const userMid = `${OPTIMISTIC_USER_MESSAGE_ID_PREFIX}${safeRandomUUID()}`;
+    const mid = safeRandomUUID();
     const trialAttachmentFiles = takeScheduleTrialAttachmentFiles(sessionId);
     const trialAttachments = buildUserMessageAttachmentsFromFiles(trialAttachmentFiles);
     const optimistic: SessionMessageItem = {
@@ -691,12 +665,12 @@ export function PlatformSessionAgentWorkspace({
       content: prompt,
       created_at: new Date().toISOString(),
       message_index: 0,
+      message_id: mid,
       meta: trialAttachments.length > 0 ? { attachments: trialAttachments } : {},
     };
     setError("");
     setSending(true);
-    const mid = safeRandomUUID();
-    const assistantStreamId = `streaming_assistant_${mid}`;
+    const assistantStreamId = `${STREAMING_ASSISTANT_MESSAGE_ID_PREFIX}${mid}`;
     const nowIso = new Date().toISOString();
     // 与主 send() 对齐：注册 stream 以便 manager 接收 onDelta 推送
     releaseStream(sessionId);
@@ -704,6 +678,7 @@ export function PlatformSessionAgentWorkspace({
     registerStream(sessionId, { abortController: trialAbort, assistantStreamId });
     contentLenRef.current = 0;
     const trialSendGen = sessionGenRef.current;
+    const isTrialSendActive = () => sessionGenRef.current === trialSendGen && isMounted.current;
     setMessages([optimistic, createStreamingAssistantMessage(assistantStreamId, nowIso)]);
     void (async () => {
       try {
@@ -719,9 +694,10 @@ export function PlatformSessionAgentWorkspace({
             trialAbort.signal,
             (content) => updateStreamContent(sessionId, content),
             () => contentLenRef.current,
-            () => sessionGenRef.current === trialSendGen && isMounted.current,
+            isTrialSendActive,
           );
           completeStream(sessionId);
+          if (!isTrialSendActive()) return;
           let taskId: string | null = null;
           let sendKind: ScheduleTrialSendState = "unknown";
           let executionStepLabels: string[] | null = null;
@@ -751,14 +727,14 @@ export function PlatformSessionAgentWorkspace({
             orchestrationId,
           });
         });
-        if (isMounted.current) await reload();
+        if (isTrialSendActive()) await reload();
       } catch (e) {
         completeStream(sessionId);
         saveScheduleTrialMeta({ v: 1, sessionId, taskId: null, sendKind: "unknown" });
-        if (isMounted.current) setError(formatAgentApiErrorForUser(e) || "发送失败");
-        if (isMounted.current) await reload();
+        if (isTrialSendActive()) setError(formatAgentApiErrorForUser(e) || "发送失败");
+        if (isTrialSendActive()) await reload();
       } finally {
-        if (isMounted.current) setSending(false);
+        if (isTrialSendActive()) setSending(false);
       }
     })();
   }, [scheduleTrial, platformAgent, sessionId, reload]);
@@ -1021,23 +997,27 @@ export function PlatformSessionAgentWorkspace({
   useEffect(() => {
     // 在 reset effect 中同步检查缓存：缓存命中则立即展示，不依赖后续 effect 调用时序
     const cached = readSessionMessageCache(sessionId);
-    if (frontendMockSession) {
-      const mockMessages = mergeFrontendMockSessionMessages(cached);
-      setMessages(processStreamingMessages(mockMessages));
-      setMessagesLoaded(true);
-      setBusy(false);
-      setError("");
-    } else {
-      setMessages(cached ?? []);
-      setMessagesLoaded(false);
-    }
+    setMessages((current) => {
+      if (cached) return cached;
+      const homeLaunchPending =
+        !scheduleTrial &&
+        !scheduledRunRecord &&
+        isHomeSessionLaunchAwaitingFirstMessage(sessionId, loadHomeSessionLaunchMeta());
+      const scheduleTrialPending =
+        scheduleTrial && isScheduleTrialAwaitingFirstMessage(sessionId, loadScheduleTrialMeta());
+      if ((homeLaunchPending || scheduleTrialPending) && current.length > 0) {
+        return current;
+      }
+      return [];
+    });
+    setMessagesLoaded(false);
     setLiveOrchStepStatuses(null);
     setLiveOrchestrationSteps(null);
 
     setShowResultPanel(false);
     setFocusedTaskId(null);
     setResultPanelContext(null);
-    setOrchestrationBundles(frontendMockSession ? getFrontendMockOrchestrationBundles() : []);
+    setOrchestrationBundles([]);
     setTrialOrchestrationDone(null);
     trialAutoOpenedPanelRef.current = false;
     scheduledRunAutoOpenedPanelRef.current = false;
@@ -1047,7 +1027,7 @@ export function PlatformSessionAgentWorkspace({
     trialClarificationReloadedRef.current = false;
     setLiveOrchClarification(null);
     setSupplementalBundlesById({});
-  }, [frontendMockSession, processStreamingMessages, sessionId]);
+  }, [scheduleTrial, scheduledRunRecord, sessionId]);
 
   // 防御性守卫：只要 messages 非空，busy 就必须是 false
   // 避免 guard 阻止 reload() 后 busy 永远停留在 true
@@ -1059,7 +1039,7 @@ export function PlatformSessionAgentWorkspace({
 
   useEffect(() => {
     if (scheduleTrial || scheduledRunRecord) return;
-    if (frontendMockSession) return;
+    if (isHomeSessionLaunchAwaitingFirstMessage(sessionId, loadHomeSessionLaunchMeta())) return;
     if (!messagesLoaded || busy || sending || error) return;
     if (messages.length > 0) return;
     platformAgent?.clearActivePlatformSession();
@@ -1073,8 +1053,8 @@ export function PlatformSessionAgentWorkspace({
     router,
     scheduleTrial,
     scheduledRunRecord,
+    sessionId,
     sending,
-    frontendMockSession,
   ]);
 
   const taskResultCardMessageIds = useMemo(() => messageIdsEligibleForTaskResultCard(messages), [messages]);
@@ -1136,12 +1116,6 @@ export function PlatformSessionAgentWorkspace({
   }, [orchestrationAnchor, scheduleTrial, trialMeta, sessionId, scheduledRunRecord, fallbackTaskId]);
 
   useEffect(() => {
-    if (frontendMockSession) {
-      setLiveOrchClarification(null);
-      setLiveOrchStepStatuses(null);
-      setLiveOrchestrationSteps(null);
-      return;
-    }
     const orchId = effectiveOrchestrationAnchor?.orchestrationId?.trim();
     if (!orchId || !platformAgent?.auth) {
       setLiveOrchClarification(null);
@@ -1150,11 +1124,22 @@ export function PlatformSessionAgentWorkspace({
       return;
     }
     let stop = false;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    const clearPoll = () => {
+      stop = true;
+      if (intervalId !== undefined) {
+        clearInterval(intervalId);
+        intervalId = undefined;
+      }
+    };
+
     const tick = async () => {
       if (stop) return;
       try {
         await platformAgent.withFreshToken(async (token) => {
           const orch = await getToolOrchestration(token, orchId);
+          if (stop) return;
           setLiveOrchestrationSteps(orch.steps);
           setLiveOrchStepStatuses(orch.steps.map((s) => mapServerOrchestrationStepStatus(s.status)));
           if (orch.awaiting_clarification && orch.clarification_message?.trim()) {
@@ -1166,26 +1151,20 @@ export function PlatformSessionAgentWorkspace({
           } else if (!orch.awaiting_clarification) {
             setLiveOrchClarification(null);
           }
+          if (orch.finished && !orch.awaiting_clarification) {
+            clearPoll();
+          }
         });
       } catch {
         /* 编排可能已结束 */
       }
     };
     void tick();
-    const id = setInterval(() => void tick(), SCHEDULE_TRIAL_TASK_POLL_INTERVAL_MS);
-    return () => {
-      stop = true;
-      clearInterval(id);
-    };
-  }, [effectiveOrchestrationAnchor?.orchestrationId, frontendMockSession, platformAgent, scheduleTrial]);
+    intervalId = setInterval(() => void tick(), SCHEDULE_TRIAL_TASK_POLL_INTERVAL_MS);
+    return clearPoll;
+  }, [effectiveOrchestrationAnchor?.orchestrationId, platformAgent, scheduleTrial]);
 
   useEffect(() => {
-    if (frontendMockSession) {
-      if (effectiveOrchestrationAnchor && !showResultPanel) {
-        setOrchestrationBundles(getFrontendMockOrchestrationBundles());
-      }
-      return;
-    }
     if (!effectiveOrchestrationAnchor || !platformAgent?.auth) {
       return;
     }
@@ -1208,7 +1187,7 @@ export function PlatformSessionAgentWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [effectiveOrchestrationAnchor, frontendMockSession, platformAgent, scheduleTrial, trialRunInFlight]);
+  }, [effectiveOrchestrationAnchor, platformAgent, scheduleTrial, trialRunInFlight]);
 
   /** scheduledRunRecord 模式：任务仍在执行时周期性刷新 bundle 状态，直到全部终态为止。 */
   useEffect(() => {
@@ -1258,7 +1237,7 @@ export function PlatformSessionAgentWorkspace({
   }, [scheduledRunRecord, effectiveOrchestrationAnchor, platformAgent]);
 
   const loadSupplementalBundlesForMessage = useCallback((messageId: string, meta: Record<string, unknown> | undefined) => {
-    if (!frontendMockSession && !platformAgent?.auth) return;
+    if (!platformAgent?.auth) return;
     if (supplementalBundlesById[messageId] || fetchedSupplementalRef.current.has(messageId)) return;
     const anchor = resolvePanelAnchorForMessage(messages, meta);
     if (!anchor) {
@@ -1266,13 +1245,6 @@ export function PlatformSessionAgentWorkspace({
       return;
     }
     fetchedSupplementalRef.current.add(messageId);
-    if (frontendMockSession) {
-      setSupplementalBundlesById((prev) => ({
-        ...prev,
-        [messageId]: getFrontendMockOrchestrationBundles(),
-      }));
-      return;
-    }
     if (!platformAgent?.auth) return;
     void platformAgent.withFreshToken(async (token) => {
       try {
@@ -1287,7 +1259,7 @@ export function PlatformSessionAgentWorkspace({
         // task/orchestration may have been deleted
       }
     });
-  }, [frontendMockSession, messages, platformAgent, supplementalBundlesById]);
+  }, [messages, platformAgent, supplementalBundlesById]);
 
   useEffect(() => {
     fetchedSupplementalRef.current = new Set();
@@ -1297,6 +1269,16 @@ export function PlatformSessionAgentWorkspace({
   const firstAssistantIndex = useMemo(
     () => messages.findIndex((m) => m.role === "assistant"),
     [messages],
+  );
+
+  const latestDecompositionAssistantIndex = useMemo(
+    () => findLatestDecompositionAssistantIndex(messages),
+    [messages],
+  );
+
+  const latestDecompositionTailMessages = useMemo(
+    () => (latestDecompositionAssistantIndex >= 0 ? messages.slice(latestDecompositionAssistantIndex) : []),
+    [latestDecompositionAssistantIndex, messages],
   );
 
   const latestStepsMessageId = useMemo(() => {
@@ -1325,6 +1307,18 @@ export function PlatformSessionAgentWorkspace({
     }
     return null;
   }, [messages]);
+
+  const { postTaskGuidanceLeadingByMessageId, mergedPostTaskGuidanceLeadingMessageIds } = useMemo(() => {
+    const leadingByMessageId = buildPostTaskGuidanceLeadingByMessageId(messages, {
+      taskSnapshot: lastTaskSnapshot,
+    });
+    return {
+      postTaskGuidanceLeadingByMessageId: leadingByMessageId,
+      mergedPostTaskGuidanceLeadingMessageIds: new Set(
+        [...leadingByMessageId.values()].map((value) => value.sourceMessageId),
+      ),
+    };
+  }, [messages, lastTaskSnapshot]);
 
   const syntheticTerminatedGuidanceMessageId = useMemo(() => {
     if (!latestStepsMessageId) return null;
@@ -1380,7 +1374,7 @@ export function PlatformSessionAgentWorkspace({
   const guidanceBackfillAttemptedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (frontendMockSession || scheduleTrial || scheduledRunRecord || sending || !platformAgent) {
+    if (scheduleTrial || scheduledRunRecord || !platformAgent) {
       return;
     }
     if (!latestStepsMessageId) return;
@@ -1425,7 +1419,6 @@ export function PlatformSessionAgentWorkspace({
       cancelled = true;
     };
   }, [
-    frontendMockSession,
     lastTaskSnapshot,
     latestStepsMessageId,
     messages,
@@ -1433,7 +1426,6 @@ export function PlatformSessionAgentWorkspace({
     reload,
     scheduleTrial,
     scheduledRunRecord,
-    sending,
   ]);
 
   const [sessionStreamActive, setSessionStreamActive] = useState(
@@ -1471,6 +1463,24 @@ export function PlatformSessionAgentWorkspace({
       latestExecutionSteps,
       orchestrationBundles,
       lastTaskSnapshot,
+    ],
+  );
+
+  const liveSessionPrimaryTaskPollStrategy = useMemo(
+    () =>
+      getLiveSessionPrimaryTaskPollStrategy({
+        scheduleTrial,
+        scheduledRunRecord,
+        composerShowsStop,
+        sending,
+        orchestrationId: effectiveOrchestrationAnchor?.orchestrationId,
+      }),
+    [
+      composerShowsStop,
+      effectiveOrchestrationAnchor?.orchestrationId,
+      scheduleTrial,
+      scheduledRunRecord,
+      sending,
     ],
   );
 
@@ -1543,37 +1553,35 @@ export function PlatformSessionAgentWorkspace({
     sessionId,
   ]);
 
-  /** 历史会话重进：执行中任务周期性刷新 bundle，便于停止按钮与步骤图标同步终态。 */
+  /** 历史会话重进：单任务没有 orchestration 快照时，继续轮询主 task。 */
   useEffect(() => {
-    if (frontendMockSession || scheduledRunRecord || scheduleTrial) return;
-    if (!effectiveOrchestrationAnchor || !platformAgent?.auth) return;
-    if (!composerShowsStop || sending) return;
+    if (liveSessionPrimaryTaskPollStrategy !== "primary-task") return;
+    if (!effectiveOrchestrationAnchor?.primaryTaskId || !platformAgent?.auth) return;
 
     let stop = false;
     const tick = async () => {
       if (stop) return;
       try {
         await platformAgent.withFreshToken(async (token) => {
-          const data = await fetchTaskOrchestrationForResultPanel(
-            token,
-            effectiveOrchestrationAnchor.primaryTaskId,
-            effectiveOrchestrationAnchor.bundleTaskIds,
-            { orchestrationId: effectiveOrchestrationAnchor.orchestrationId },
-          );
-          if (stop) return;
-          setOrchestrationBundles(data.bundles);
           const primary = effectiveOrchestrationAnchor.primaryTaskId.trim();
-          if (primary) {
-            try {
-              const t = await getTask(token, primary);
-              if (!stop) setLastTaskSnapshot(t);
-            } catch {
-              /* task may have been purged */
-            }
-          }
+          if (!primary) return;
+          const t = await getTask(token, primary);
+          if (stop) return;
+          setLastTaskSnapshot(t);
+          setOrchestrationBundles((current) => [
+            {
+              taskId: t.task_id,
+              stepIndex: 0,
+              label: current[0]?.label ?? "步骤 1",
+              artifacts: taskArtifactsFromSnapshot(t),
+              taskStatus: t.status,
+              startedAt: t.started_at || undefined,
+              finishedAt: t.finished_at ?? null,
+            },
+          ]);
         });
       } catch {
-        /* 编排可能已结束 */
+        /* task may have been deleted */
       }
     };
 
@@ -1584,13 +1592,9 @@ export function PlatformSessionAgentWorkspace({
       clearInterval(id);
     };
   }, [
-    composerShowsStop,
     effectiveOrchestrationAnchor,
-    frontendMockSession,
+    liveSessionPrimaryTaskPollStrategy,
     platformAgent,
-    scheduleTrial,
-    scheduledRunRecord,
-    sending,
   ]);
 
   const trialExecutionStepsForLabels = useMemo(() => {
@@ -1618,22 +1622,47 @@ export function PlatformSessionAgentWorkspace({
     orchestrationAnchor,
   ]);
 
+  const pendingDecompositionRecovery = useMemo(() => {
+    if (latestStepsMessageId) return false;
+    if (latestDecompositionAssistantIndex < 0) return false;
+    if (sessionHasOrchestrationFailure(latestDecompositionTailMessages)) return false;
+    if (sessionHasTaskTerminatedMessage(latestDecompositionTailMessages)) return false;
+    if (sessionHasTaskCompletionSummaryMessage(latestDecompositionTailMessages, null)) return false;
+    for (let i = latestDecompositionAssistantIndex + 1; i < messages.length; i += 1) {
+      if (messages[i]?.role === "user") return false;
+    }
+    return extractDecompositionLabelsFromMessages(messages).length > 0;
+  }, [
+    latestDecompositionAssistantIndex,
+    latestDecompositionTailMessages,
+    latestStepsMessageId,
+    messages,
+  ]);
+
   const decompositionFallbackSteps = useMemo(() => {
     if (latestStepsMessageId) return null;
     const labels = extractDecompositionLabelsFromMessages(messages);
     if (!labels.length) return null;
-    const orchFailed = sessionHasOrchestrationFailure(messages);
+    const orchFailed = sessionHasOrchestrationFailure(latestDecompositionTailMessages);
     const orchCancelled =
-      sessionHasTaskTerminatedMessage(messages) ||
-      messages.some(
+      sessionHasTaskTerminatedMessage(latestDecompositionTailMessages) ||
+      latestDecompositionTailMessages.some(
         (m) => m.role === "assistant" && /多步任务已由用户终止/.test(m.content || ""),
       );
-    return buildTaskStepsFromDecompositionLabels(labels, sessionId, false, null, {
+    return buildTaskStepsFromDecompositionLabels(labels, sessionId, pendingDecompositionRecovery, lastTaskSnapshot, {
       multiStepOrchestration: labels.length > 1,
-      orchestrationFinished: Boolean(orchestrationAnchor),
+      orchestrationFinished: !pendingDecompositionRecovery && Boolean(orchestrationAnchor),
       orchestrationSuccess: !orchFailed && !orchCancelled,
     });
-  }, [latestStepsMessageId, messages, orchestrationAnchor, sessionId]);
+  }, [
+    latestStepsMessageId,
+    latestDecompositionTailMessages,
+    messages,
+    orchestrationAnchor,
+    pendingDecompositionRecovery,
+    sessionId,
+    lastTaskSnapshot,
+  ]);
 
   const runRecordExecutionStepsForLabels = useMemo(() => {
     if (!scheduledRunRecord) return null;
@@ -1660,6 +1689,17 @@ export function PlatformSessionAgentWorkspace({
 
   const executionStepsForBundleLabels =
     latestExecutionSteps ?? trialExecutionStepsForLabels ?? runRecordExecutionStepsForLabels;
+
+  useEffect(() => {
+    if (!platformAgent?.auth) return;
+    if (!pendingDecompositionRecovery) return;
+
+    const t = setInterval(() => {
+      void reload();
+    }, SCHEDULE_TRIAL_SESSION_RELOAD_INTERVAL_MS);
+
+    return () => clearInterval(t);
+  }, [pendingDecompositionRecovery, platformAgent, reload]);
 
   const orchestrationBundlesForUi = useMemo(
     () => enrichOrchestrationBundlesWithStepLabels(orchestrationBundles, executionStepsForBundleLabels),
@@ -1829,11 +1869,6 @@ export function PlatformSessionAgentWorkspace({
       messageId: string | null = null,
       options?: { focusedSubtaskId?: string | null },
     ) => {
-      if (frontendMockSession) {
-        setError("");
-        applyPanelFetchToContext(messageId, anchor, getFrontendMockResultPanelData(), options?.focusedSubtaskId);
-        return;
-      }
       if (!platformAgent?.auth) {
         platformAgent?.openLogin("请先登录后再查看任务结果。");
         return;
@@ -1856,7 +1891,7 @@ export function PlatformSessionAgentWorkspace({
         setError(formatAgentApiErrorForUser(e));
       }
     },
-    [applyPanelFetchToContext, frontendMockSession, platformAgent],
+    [applyPanelFetchToContext, platformAgent],
   );
 
   const openResultPanelForMessage = useCallback(
@@ -1874,14 +1909,10 @@ export function PlatformSessionAgentWorkspace({
 
   const withFreshTokenForResultPanel = useCallback(
     async (run: (token: string) => Promise<void>) => {
-      if (frontendMockSession) {
-        await run("__frontend_mock_token__");
-        return;
-      }
       if (!platformAgent?.withFreshToken) return;
       await platformAgent.withFreshToken(run);
     },
-    [frontendMockSession, platformAgent],
+    [platformAgent],
   );
 
   useEffect(() => {
@@ -1925,7 +1956,7 @@ export function PlatformSessionAgentWorkspace({
   ]);
 
   useEffect(() => {
-    if (scheduleTrial || scheduledRunRecord || frontendMockSession) return;
+    if (scheduleTrial || scheduledRunRecord) return;
     if (!pendingSessionResultAutoOpenRef.current) return;
     if (sending || composerShowsStop) return;
     if (!effectiveOrchestrationAnchor) return;
@@ -1950,7 +1981,6 @@ export function PlatformSessionAgentWorkspace({
     bundlesAllTerminal,
     composerShowsStop,
     effectiveOrchestrationAnchor,
-    frontendMockSession,
     openResultPanelFromAnchor,
     orchestrationBundlesForUi.length,
     scheduleTrial,
@@ -1959,55 +1989,29 @@ export function PlatformSessionAgentWorkspace({
     subtasksWithTabularPreview.length,
   ]);
 
-  const send = useCallback(async (textOverride?: string) => {
-    const rawText = (textOverride ?? draft).trim();
-    const sourceIdsToSend = textOverride === undefined ? selectedSourceIds : [];
-    const text = buildComposerMessage(rawText, sourceIdsToSend);
-    const filesToSend = textOverride === undefined ? pendingFiles : [];
-    if ((!rawText && filesToSend.length === 0) || sending) return;
+  const sendPreparedMessage = useCallback(async ({
+    rawText,
+    sourceIds,
+    files,
+  }: {
+    rawText: string;
+    sourceIds: string[];
+    files: File[];
+  }) => {
+    const trimmedText = rawText.trim();
+    const text = buildComposerMessage(trimmedText, sourceIds);
+    const filesToSend = files;
+    if ((!trimmedText && filesToSend.length === 0) || sending) return false;
     const maxChars = getChatMessageMaxChars();
     if (text.length > maxChars) {
-      setError(`消息过长（${text.length} 字），请控制在 ${maxChars} 字以内。`);
-      return;
-    }
-    if (frontendMockSession) {
-      const now = new Date().toISOString();
-      const optimisticAttachments = buildUserMessageAttachmentsFromFiles(filesToSend);
-      const userMessage: SessionMessageItem = {
-        id: `mock_user_${safeRandomUUID()}`,
-        role: "user",
-        content: text,
-        created_at: now,
-        message_index: messages.length,
-        meta: optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {},
-      };
-      const assistantMessage: SessionMessageItem = {
-        id: `mock_assistant_${safeRandomUUID()}`,
-        role: "assistant",
-        content:
-          `已收到你的本地 mock 追问：${text}\n\n` +
-          "这里不会请求后端，用于检查发送按钮、输入框清空、附件展示、消息气泡、滚动定位和后续追问交互。",
-        created_at: now,
-        message_index: messages.length + 1,
-        meta: {},
-      };
-      const nextMessages = processStreamingMessages([...messages, userMessage, assistantMessage]);
-      writeSessionMessageCache(sessionId, nextMessages);
-      setMessages(nextMessages);
-      setDraft("");
-      setPendingFiles([]);
-      setSelectedSourceIds([]);
-      setSourcePlacements([]);
-      setError("");
-      setBusy(false);
-      setMessagesLoaded(true);
-      return;
+      setError(`\u6d88\u606f\u8fc7\u957f\uff08${text.length} \u5b57\uff09\uff0c\u8bf7\u63a7\u5236\u5728 ${maxChars} \u5b57\u4ee5\u5185\u3002`);
+      return false;
     }
     if (!platformAgent?.auth) {
-      platformAgent?.openLogin("请先登录后再发送消息。");
-      return;
+      platformAgent?.openLogin("\u8bf7\u5148\u767b\u5f55\u540e\u518d\u53d1\u9001\u6d88\u606f\u3002");
+      return false;
     }
-    // 释放当前会话的上一个流（如有），避免新旧流并存
+    // Release the current session stream before starting a new one.
     releaseStream(sessionId);
     if (sseAbortRef.current) {
       sseAbortRef.current.abort();
@@ -2018,17 +2022,19 @@ export function PlatformSessionAgentWorkspace({
     sseAbortRef.current = abortController;
     setSending(true);
     setError("");
+    const mid = safeRandomUUID();
+    const isActiveSend = () => sessionGenRef.current === sendGen && isMounted.current;
     const optimisticAttachments = buildUserMessageAttachmentsFromFiles(filesToSend);
     const optimistic: SessionMessageItem = {
-      id: `optimistic_user_${safeRandomUUID()}`,
+      id: `${OPTIMISTIC_USER_MESSAGE_ID_PREFIX}${safeRandomUUID()}`,
       role: "user",
       content: text,
       created_at: new Date().toISOString(),
       message_index: 0,
+      message_id: mid,
       meta: optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {},
     };
-    const mid = safeRandomUUID();
-    const assistantStreamId = `streaming_assistant_${mid}`;
+    const assistantStreamId = `${STREAMING_ASSISTANT_MESSAGE_ID_PREFIX}${mid}`;
     const nowIso = new Date().toISOString();
     registerStream(sessionId, { abortController, assistantStreamId });
     contentLenRef.current = 0;
@@ -2048,12 +2054,12 @@ export function PlatformSessionAgentWorkspace({
           assistantStreamId,
           filesToSend,
           abortController.signal,
-          (content) => updateStreamContent(sessionId, content),
+          (streamContent) => updateStreamContent(sessionId, streamContent),
           () => contentLenRef.current,
-          () => sessionGenRef.current === sendGen,
+          isActiveSend,
         );
         completeStream(sessionId);
-        if (sessionGenRef.current !== sendGen) return;
+        if (!isActiveSend()) return;
         void refreshHistoryNow();
         if (sendResult.kind === "accepted") {
           setOrchestrationBundles([]);
@@ -2063,59 +2069,97 @@ export function PlatformSessionAgentWorkspace({
             mid,
             sendResult,
             {
-              shouldAbort: () => abortPollRef.current || sessionGenRef.current !== sendGen,
+              shouldAbort: () => abortPollRef.current || !isActiveSend(),
               onReload: async () => {
-                if (sessionGenRef.current === sendGen) await reload();
+                if (isActiveSend()) await reload();
               },
               onTaskUpdate: (task) => {
-                if (sessionGenRef.current === sendGen && task) setLastTaskSnapshot(task);
+                if (isActiveSend() && task) setLastTaskSnapshot(task);
               },
             },
           );
           const settledTaskId =
             pollResult.lastTask?.task_id?.trim() || sendResult.task_id?.trim() || "";
-          if (settledTaskId && sessionGenRef.current === sendGen) {
+          if (settledTaskId && isActiveSend()) {
             await platformAgent.withFreshToken(async (token) => {
               const latest = await getTask(token, settledTaskId);
               setLastTaskSnapshot(latest);
             });
           }
-          if (!scheduleTrial && !scheduledRunRecord && sessionGenRef.current === sendGen) {
+          if (!scheduleTrial && !scheduledRunRecord && isActiveSend()) {
             pendingSessionResultAutoOpenRef.current = true;
           }
         }
       });
-      if (sessionGenRef.current === sendGen) {
+      if (isActiveSend()) {
         await reload();
       }
     } catch (e) {
       completeStream(sessionId);
-      if (sessionGenRef.current === sendGen) {
+      if (isActiveSend()) {
         setError(formatAgentApiErrorForUser(e));
         await reload();
         void refreshHistoryNow();
       }
     } finally {
-      if (sessionGenRef.current === sendGen) {
+      if (isActiveSend()) {
         setSending(false);
       }
     }
+    return true;
   }, [
     buildComposerMessage,
-    draft,
-    frontendMockSession,
-    messages,
-    pendingFiles,
     platformAgent,
-    processStreamingMessages,
     reload,
     refreshHistoryNow,
     scheduleTrial,
     scheduledRunRecord,
-    selectedSourceIds,
     sending,
     sessionId,
   ]);
+
+  const send = useCallback(async (textOverride?: string) => {
+    await sendPreparedMessage({
+      rawText: textOverride ?? draft,
+      sourceIds: textOverride === undefined ? selectedSourceIds : [],
+      files: textOverride === undefined ? pendingFiles : [],
+    });
+  }, [draft, pendingFiles, selectedSourceIds, sendPreparedMessage]);
+
+  useEffect(() => {
+    if (scheduleTrial || scheduledRunRecord || !platformAgent?.auth) return;
+    const homeLaunchMeta = tryClaimHomeSessionLaunchFirstSend(sessionId);
+    if (!homeLaunchMeta) return;
+    const launchFiles = takeHomeSessionLaunchFiles(sessionId);
+    void (async () => {
+      try {
+        await sendPreparedMessage({
+          rawText: homeLaunchMeta.prompt,
+          sourceIds: homeLaunchMeta.selectedSourceIds,
+          files: launchFiles,
+        });
+      } finally {
+        saveHomeSessionLaunchMeta({ ...homeLaunchMeta, sendKind: "done" });
+      }
+    })();
+  }, [platformAgent, scheduleTrial, scheduledRunRecord, sendPreparedMessage, sessionId]);
+
+  useEffect(() => {
+    if (scheduleTrial || scheduledRunRecord || !platformAgent?.auth) return;
+    const homeLaunchMeta = loadHomeSessionLaunchMeta();
+    if (
+      homeLaunchMeta?.sessionId !== sessionId ||
+      homeLaunchMeta.sendKind !== "in_flight" ||
+      messages.length > 0 ||
+      sending
+    ) {
+      return;
+    }
+    const t = setInterval(() => {
+      void reload();
+    }, SCHEDULE_TRIAL_SESSION_RELOAD_INTERVAL_MS);
+    return () => clearInterval(t);
+  }, [messages.length, platformAgent, reload, scheduleTrial, scheduledRunRecord, sending, sessionId]);
 
   const submitGuidanceSuggestion = useCallback((item: string) => {
     void send(item);
@@ -2169,7 +2213,7 @@ export function PlatformSessionAgentWorkspace({
       contentScrollMode="child"
       currentRunLabel={headerLabel}
       rightRail={
-        showResultPanel && resultPanelContext && (frontendMockSession || platformAgent?.withFreshToken) ? (
+        showResultPanel && resultPanelContext && platformAgent?.withFreshToken ? (
           <AgentTaskResultPanel
             artifacts={artifactsForTaskPanel}
             withFreshToken={withFreshTokenForResultPanel}
@@ -2217,13 +2261,14 @@ export function PlatformSessionAgentWorkspace({
                 {messages.map((m, i) => {
                   if (m.role !== "user" && m.role !== "assistant") return null;
                   const meta = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : undefined;
-                  const messageAttachments = m.role === "user" ? attachmentsFromMessageMeta(meta) : [];
                   const taskStepsFromMessage = parseTaskExecutionStepsFromMeta(meta);
                   const tmeta = loadScheduleTrialMeta();
                   const trialLabels =
                     scheduleTrial && tmeta?.sessionId === sessionId ? tmeta.executionStepLabels : undefined;
                   const isThisOrchestrationTurn =
                     m.role === "assistant" && i === firstAssistantIndex;
+                  const isLatestDecompositionTurn =
+                    m.role === "assistant" && i === latestDecompositionAssistantIndex;
                   const syntheticForTrial =
                     scheduleTrial &&
                     isThisOrchestrationTurn &&
@@ -2245,7 +2290,7 @@ export function PlatformSessionAgentWorkspace({
                       : null;
                   const syntheticForRunRecord =
                     scheduledRunRecord &&
-                    isThisOrchestrationTurn &&
+                    isLatestDecompositionTurn &&
                     !taskStepsFromMessage &&
                     !latestStepsMessageId &&
                     runRecordExecutionStepsForLabels?.length
@@ -2260,7 +2305,7 @@ export function PlatformSessionAgentWorkspace({
                     taskStepsFromMessage ??
                     syntheticForTrial ??
                     syntheticForRunRecord ??
-                    (isThisOrchestrationTurn ? decompositionFallbackSteps : null);
+                    (isLatestDecompositionTurn ? decompositionFallbackSteps : null);
                   const bubbleContext = executionBubbleContextForMessage(
                     messages,
                     meta,
@@ -2379,9 +2424,37 @@ export function PlatformSessionAgentWorkspace({
                     showTaskStepsAtThisMessage && m.id === latestStepsMessageId
                       ? resolveRoundPostTaskGuidanceContent(messages, i, {
                           taskId: rawTaskId || taskId,
-                          taskSnapshot: lastTaskSnapshot,
+                          taskSnapshot:
+                            lastTaskSnapshot &&
+                            (rawTaskId || taskId) &&
+                            lastTaskSnapshot.task_id === (rawTaskId || taskId)
+                              ? lastTaskSnapshot
+                              : null,
                         })
                       : null;
+                  const roundTaskOutcomeSummaryForSteps =
+                    showTaskStepsAtThisMessage && m.id === latestStepsMessageId
+                      ? resolveRoundTaskOutcomeSummary(messages, i, {
+                          taskId: rawTaskId || taskId,
+                          taskSnapshot:
+                            lastTaskSnapshot &&
+                            (rawTaskId || taskId) &&
+                            lastTaskSnapshot.task_id === (rawTaskId || taskId)
+                              ? lastTaskSnapshot
+                              : null,
+                        })
+                      : null;
+                  const dedicatedGuidanceLeading =
+                    guidancePresentation.kind === "dedicated"
+                      ? postTaskGuidanceLeadingByMessageId.get(m.id)?.text
+                      : undefined;
+                  const mergedGuidanceLeading =
+                    guidancePresentation.kind === "embedded"
+                      ? guidancePresentation.leading
+                      : dedicatedGuidanceLeading;
+                  const suppressMessageAsMergedGuidanceLeading =
+                    mergedPostTaskGuidanceLeadingMessageIds.has(m.id) ||
+                    roundGuidanceForSteps?.leadingMessageId === m.id;
                   const taskResultCard =
                     taskId && hasArtifactsForResultCard ? (
                       <TaskResultSummaryCard
@@ -2514,13 +2587,15 @@ export function PlatformSessionAgentWorkspace({
                               afterExecution={taskResultCard}
                             />
                             {showTerminatedGuidanceOnSteps ? (
-                              <PostTaskGuidanceBubble
-                                leading={TASK_TERMINATED_LEADING}
-                                content={TASK_TERMINATED_GUIDANCE_BLOCK}
-                                datetime={m.created_at}
-                                composerDraft={draft}
-                                onSuggestionToggle={guidanceSuggestionToggleForMessage(m.id)}
-                              />
+                              <>
+                                <AliceMessageBubble body={TASK_TERMINATED_LEADING} datetime={m.created_at} />
+                                <PostTaskGuidanceBubble
+                                  content={TASK_TERMINATED_GUIDANCE_BLOCK}
+                                  datetime={m.created_at}
+                                  composerDraft={draft}
+                                  onSuggestionToggle={guidanceSuggestionToggleForMessage(m.id)}
+                                />
+                              </>
                             ) : null}
                             {isOrchestrationFailure ? (
                               <AliceErrorBubble
@@ -2571,25 +2646,22 @@ export function PlatformSessionAgentWorkspace({
                         ) : isLinkfoxClarification ? null : taskTerminatedPresentation.kind !== "none" &&
                           showGuidanceBubble &&
                           !deferTaskTerminatedToSteps ? (
-                          <PostTaskGuidanceBubble
-                            leading={taskTerminatedPresentation.leading}
-                            content={taskTerminatedPresentation.guidanceBlock}
-                            datetime={m.created_at}
-                            composerDraft={draft}
-                            onSuggestionToggle={guidanceSuggestionToggleForMessage(m.id)}
-                          />
+                          <>
+                            <AliceMessageBubble body={taskTerminatedPresentation.leading} datetime={m.created_at} />
+                            <PostTaskGuidanceBubble
+                              content={taskTerminatedPresentation.guidanceBlock}
+                              datetime={m.created_at}
+                              composerDraft={draft}
+                              onSuggestionToggle={guidanceSuggestionToggleForMessage(m.id)}
+                            />
+                          </>
                         ) : guidancePresentation.kind !== "none" &&
                           !taskId &&
                           showGuidanceBubble &&
                           !deferGuidanceToStepsBubble ? (
-                          <div className="space-y-2">
-                            {guidancePresentation.kind === "embedded" &&
-                            guidancePresentation.leading ? (
-                              <SimpleAssistantBubble
-                                body={guidancePresentation.leading}
-                                datetime={m.created_at}
-                                streaming={isStreamingAssistantMessage(m)}
-                              />
+                          <>
+                            {mergedGuidanceLeading ? (
+                              <AliceMessageBubble body={mergedGuidanceLeading} datetime={m.created_at} />
                             ) : null}
                             <PostTaskGuidanceBubble
                               content={
@@ -2601,8 +2673,8 @@ export function PlatformSessionAgentWorkspace({
                               composerDraft={draft}
                               onSuggestionToggle={guidanceSuggestionToggleForMessage(m.id)}
                             />
-                          </div>
-                        ) : isOrchestrationFailure ? (
+                          </>
+                        ) : isOrchestrationFailure && !suppressMessageAsMergedGuidanceLeading ? (
                           <AliceErrorBubble
                             body={m.content}
                             datetime={m.created_at}
@@ -2611,7 +2683,7 @@ export function PlatformSessionAgentWorkspace({
                               scheduleTrial || scheduledRunRecord ? undefined : toggleGuidanceSuggestion
                             }
                           />
-                        ) : isTaskError ? (
+                        ) : isTaskError && !suppressMessageAsMergedGuidanceLeading ? (
                           <AliceErrorBubble
                             body={m.content}
                             datetime={m.created_at}
@@ -2620,7 +2692,8 @@ export function PlatformSessionAgentWorkspace({
                               scheduleTrial || scheduledRunRecord ? undefined : toggleGuidanceSuggestion
                             }
                           />
-                        ) : hideAssistantBubble ||
+                        ) : suppressMessageAsMergedGuidanceLeading ||
+                          hideAssistantBubble ||
                           shouldSuppressPlainAssistantBubbleForGuidance(guidancePresentation) ? null : showThinkingPlaceholder ? (
                           <AssistantLoadingRow variant="thinking" withIdentity />
                         ) : (
@@ -2637,26 +2710,31 @@ export function PlatformSessionAgentWorkspace({
                           {taskResultCard}
                         </AssistantOutputFrame>
                       ) : null}
+                      {roundTaskOutcomeSummaryForSteps &&
+                      !showTerminatedGuidanceOnSteps &&
+                      !roundGuidanceForSteps?.leading ? (
+                        <AliceMessageBubble body={roundTaskOutcomeSummaryForSteps.text} datetime={m.created_at} />
+                      ) : null}
                       {roundGuidanceForSteps && !showTerminatedGuidanceOnSteps ? (
-                        <PostTaskGuidanceBubble
-                          content={roundGuidanceForSteps.content}
-                          datetime={m.created_at}
-                          composerDraft={draft}
-                          onSuggestionToggle={guidanceSuggestionToggleForMessage(
-                            roundGuidanceForSteps.messageId.startsWith("task_guidance_")
-                              ? m.id
-                              : roundGuidanceForSteps.messageId,
-                          )}
-                        />
+                        <>
+                          {roundGuidanceForSteps.leading ? (
+                            <AliceMessageBubble body={roundGuidanceForSteps.leading} datetime={m.created_at} />
+                          ) : null}
+                          <PostTaskGuidanceBubble
+                            content={roundGuidanceForSteps.content}
+                            datetime={m.created_at}
+                            composerDraft={draft}
+                            onSuggestionToggle={guidanceSuggestionToggleForMessage(
+                              roundGuidanceForSteps.messageId.startsWith("task_guidance_")
+                                ? m.id
+                                : roundGuidanceForSteps.messageId,
+                            )}
+                          />
+                        </>
                       ) : taskId && guidancePresentation.kind !== "none" && showGuidanceBubble ? (
-                        <div className="space-y-2">
-                          {guidancePresentation.kind === "embedded" &&
-                          guidancePresentation.leading ? (
-                            <SimpleAssistantBubble
-                              body={guidancePresentation.leading}
-                              datetime={m.created_at}
-                              streaming={isStreamingAssistantMessage(m)}
-                            />
+                        <>
+                          {mergedGuidanceLeading ? (
+                            <AliceMessageBubble body={mergedGuidanceLeading} datetime={m.created_at} />
                           ) : null}
                           <PostTaskGuidanceBubble
                             content={
@@ -2668,7 +2746,7 @@ export function PlatformSessionAgentWorkspace({
                             composerDraft={draft}
                             onSuggestionToggle={guidanceSuggestionToggleForMessage(m.id)}
                           />
-                        </div>
+                        </>
                       ) : null}
                     </div>
                   );

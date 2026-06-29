@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AliceHomePage } from "@/components/alice-home-page";
+import { workspaceActions } from "@/lib/workspace-store";
 
 const replace = vi.fn();
 const mockSearchParams = vi.hoisted(() => new URLSearchParams());
@@ -79,6 +80,15 @@ vi.mock("@/lib/agent-api/user-prompts", () => ({
   listUserPromptGroups: mockListUserPromptGroups,
   listUserPrompts: mockListUserPrompts,
 }));
+
+vi.mock("@/lib/agent-runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/agent-runtime")>();
+  return {
+    ...actual,
+    isAgentRuntimeConfigured: () => true,
+    isPlatformBackendEnabled: () => true,
+  };
+});
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -226,6 +236,39 @@ describe("home flow", () => {
 
     const editor = await screen.findByTestId("task-composer-editor");
     expect(editor.textContent?.trim()).toBe("");
+  });
+
+  it("renders readable greeting and placeholder copy on a fresh home page", async () => {
+    renderHomePage();
+
+    expect(await screen.findByText("你的跨境数据运营搭档，24h 随时在线")).toBeInTheDocument();
+    expect(
+      screen.getByText("需要分析亚马逊的流量来源？试试 @Sif-亚马逊 流量来源分析。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/\\u9700\\u8981/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/浣犵殑/)).not.toBeInTheDocument();
+  });
+
+  it("routes a fresh home task into the real session workspace instead of the local run view", async () => {
+    const startPlatformTask = vi.spyOn(workspaceActions, "startPlatformTask");
+    mockPlatformAgent.current = createPlatformAgentMock({ accessToken: "access-token", userId: "user-1" });
+    mockPlatformAgent.current.beginNewHomeTaskSession.mockResolvedValue("session-home");
+
+    renderHomePage();
+
+    const editor = await screen.findByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    await userEvent.type(editor, "分析 cup 的前三爆品");
+    await userEvent.click(screen.getByTestId("task-composer-submit"));
+
+    await waitFor(() => {
+      expect(mockPlatformAgent.current?.beginNewHomeTaskSession).toHaveBeenCalledTimes(1);
+    });
+    expect(mockAliceShellState.upsertOptimisticHistorySession).toHaveBeenCalledWith("session-home");
+    expect(mockPlatformAgent.current?.setActivePlatformSession).toHaveBeenCalledWith("session-home");
+    expect(mockAliceShellState.refreshHistoryNow).toHaveBeenCalled();
+    expect(startPlatformTask).not.toHaveBeenCalled();
+    expect(replace).toHaveBeenCalledWith("/agent?sessionId=session-home");
   });
 
   it("keeps prompt cards stable when selecting datasource tokens", async () => {

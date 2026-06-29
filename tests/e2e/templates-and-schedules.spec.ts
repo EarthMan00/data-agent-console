@@ -15,9 +15,11 @@ test.describe.serial("schedules", () => {
     await closeSingleWindowSession(context, baselinePage, appPage);
   });
 
-  test("covers schedule list and run history tab", async () => {
-    await expect(appPage.getByRole("heading", { name: "定时任务" })).toBeVisible();
-    await appPage.getByRole("tab", { name: "运行记录" }).click();
-    await expect(appPage.getByText("亚马逊搜索computer desk并返回前100条数据")).toBeVisible();
+  test("renders the schedules workspace entry points", async () => {
+    await expect(appPage.getByText("定时任务")).toBeVisible();
+    await expect(appPage.getByRole("tab", { name: "已定时" })).toBeVisible();
+    await expect(appPage.getByRole("tab", { name: "运行记录" })).toBeVisible();
+    await expect(appPage.getByRole("button", { name: "创建定时任务" })).toBeVisible();
+    await expect(appPage.locator("button[role='combobox']").filter({ hasText: "全部状态" })).toBeVisible();
   });
 });

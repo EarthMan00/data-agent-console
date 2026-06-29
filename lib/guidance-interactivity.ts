@@ -2,7 +2,7 @@ import type { SessionMessageItem } from "@/lib/agent-api/types";
 import type { TaskResponse } from "@/lib/agent-api/types";
 import { parseTaskExecutionStepsFromMeta } from "@/lib/task-execution-steps-meta";
 import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
-import { extractPostTaskGuidance } from "@/lib/task-chat-summary";
+import { buildTaskCompletionSummary, extractPostTaskGuidance } from "@/lib/task-chat-summary";
 import {
   resolvePostTaskGuidancePresentation,
   resolveTaskTerminatedPresentation,
@@ -23,6 +23,13 @@ function messageHasGuidanceBubble(m: SessionMessageItem): boolean {
 
 type GuidanceBubbleKind = "none" | "post_task_guidance" | "other";
 
+type GuidanceLeadingSource = {
+  text: string;
+  sourceMessageId: string;
+};
+
+const TERMINAL_TASK_STATUSES = new Set(["SUCCESS", "FAILED", "TIMEOUT", "CANCELLED", "BLOCKED_BY_PLAN"]);
+
 function classifyGuidanceBubbleMessage(m: SessionMessageItem): GuidanceBubbleKind {
   if (m.role !== "assistant") return "none";
   const meta = messageMeta(m);
@@ -30,6 +37,217 @@ function classifyGuidanceBubbleMessage(m: SessionMessageItem): GuidanceBubbleKin
   if (resolvePostTaskGuidancePresentation(m, meta).kind === "none") return "none";
   const msgKind = typeof meta?.kind === "string" ? meta.kind.trim() : "";
   return msgKind === "post_task_guidance" ? "post_task_guidance" : "other";
+}
+
+function sameTaskIdOrUnspecified(messageTaskId: string, requestedTaskId: string): boolean {
+  if (!requestedTaskId) return true;
+  if (!messageTaskId) return true;
+  return messageTaskId === requestedTaskId;
+}
+
+function terminalTaskStatus(meta: Record<string, unknown> | undefined): string {
+  const status = typeof meta?.task_status === "string" ? meta.task_status.trim().toUpperCase() : "";
+  return TERMINAL_TASK_STATUSES.has(status) ? status : "";
+}
+
+function terminalTaskSnapshotSummary(
+  taskSnapshot: TaskResponse | null | undefined,
+  requestedTaskId?: string | null,
+): { text: string; sourceMessageId: string } | null {
+  if (!taskSnapshot) return null;
+  const taskId = (requestedTaskId ?? "").trim();
+  if (taskId && taskSnapshot.task_id !== taskId) return null;
+  const status = (taskSnapshot.status || "").trim().toUpperCase();
+  if (!TERMINAL_TASK_STATUSES.has(status)) return null;
+  const text = buildTaskCompletionSummary(taskSnapshot);
+  if (!text.trim()) return null;
+  return {
+    text,
+    sourceMessageId: `task_outcome_${taskSnapshot.task_id}`,
+  };
+}
+
+function resolveTaskNameFromRoundContext(
+  messages: SessionMessageItem[],
+  anchorIndex: number,
+  taskId: string,
+): string | null {
+  const { start } = segmentBoundsForMessage(messages, anchorIndex);
+
+  for (let i = anchorIndex; i >= start; i -= 1) {
+    const candidate = messages[i];
+    if (!candidate) continue;
+    const meta = messageMeta(candidate);
+    const candidateTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+    if (!sameTaskIdOrUnspecified(candidateTaskId, taskId)) continue;
+
+    const steps = parseTaskExecutionStepsFromMeta(meta);
+    const labels =
+      steps
+        ?.map((step) => (typeof step.label === "string" ? step.label.trim() : ""))
+        .filter((label): label is string => label.length > 0) ?? [];
+    if (labels.length === 1) return labels[0]!;
+  }
+
+  for (let i = start - 1; i >= 0; i -= 1) {
+    const candidate = messages[i];
+    if (!candidate || candidate.role !== "user") continue;
+    const text = (candidate.content || "").trim();
+    if (text) return text;
+  }
+
+  return null;
+}
+
+function buildSyntheticTaskOutcomeSummary(
+  messages: SessionMessageItem[],
+  messageIndex: number,
+  taskSnapshot?: TaskResponse | null,
+): string | null {
+  const message = messages[messageIndex];
+  if (!message) return null;
+
+  const meta = messageMeta(message);
+  const taskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+  const fromTaskSnapshot = terminalTaskSnapshotSummary(taskSnapshot, taskId);
+  if (fromTaskSnapshot) {
+    return fromTaskSnapshot.text;
+  }
+
+  const status = terminalTaskStatus(meta);
+  if (!status) return null;
+
+  const taskName = resolveTaskNameFromRoundContext(messages, messageIndex, taskId);
+  if (!taskName) return null;
+
+  const syntheticTask: TaskResponse = {
+    task_id: taskId || message.id,
+    tool_name: typeof meta?.tool_name === "string" && meta.tool_name.trim() ? meta.tool_name.trim() : "skill_task",
+    status,
+    started_at: message.created_at,
+    zip_download_api: null,
+    events: [],
+    artifacts:
+      meta?.has_artifacts === true
+        ? [
+            {
+              artifact_id: "synthetic-task-artifact",
+              artifact_type: "result",
+              original_name: "result",
+              download_api: "",
+            },
+          ]
+        : [],
+    finished_at: message.created_at,
+    request_payload: { message: taskName },
+    response_summary: null,
+    error_message: typeof meta?.error_message === "string" ? meta.error_message.trim() || null : null,
+  };
+
+  return buildTaskCompletionSummary(syntheticTask);
+}
+
+function isTaskOutcomeSummaryMessage(
+  m: SessionMessageItem,
+  requestedTaskId?: string | null,
+): boolean {
+  if (m.role !== "assistant") return false;
+  const meta = messageMeta(m);
+  const msgKind = typeof meta?.kind === "string" ? meta.kind.trim() : "";
+  if (msgKind === "post_task_guidance" || msgKind === "task_execution_steps" || msgKind === "task_terminated") {
+    return false;
+  }
+
+  const messageTaskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+  const taskId = (requestedTaskId ?? "").trim();
+  if (!sameTaskIdOrUnspecified(messageTaskId, taskId)) return false;
+
+  const taskStatus = typeof meta?.task_status === "string" ? meta.task_status.trim() : "";
+  if (msgKind === "orchestration_failure") return true;
+  if (taskStatus && ["SUCCESS", "FAILED", "TIMEOUT", "CANCELLED", "BLOCKED_BY_PLAN"].includes(taskStatus)) {
+    return true;
+  }
+
+  const content = (m.content || "").trim();
+  if (!content) return false;
+  return (
+    /^任务已完成/.test(content) ||
+    /^多步任务已全部完成/.test(content) ||
+    /^任务执行失败/.test(content) ||
+    /^多步任务在执行过程中失败/.test(content) ||
+    /^任务执行超时/.test(content) ||
+    /^多步任务执行超时/.test(content)
+  );
+}
+
+function findNearestTaskOutcomeSummaryInSegment(
+  messages: SessionMessageItem[],
+  options: {
+    anchorIndex: number;
+    start: number;
+    end: number;
+    taskId?: string | null;
+    excludeMessageIds?: ReadonlySet<string>;
+    taskSnapshot?: TaskResponse | null;
+  },
+): GuidanceLeadingSource | null {
+  const excluded = options.excludeMessageIds ?? new Set<string>();
+  let best:
+    | {
+        distance: number;
+        index: number;
+        source: GuidanceLeadingSource;
+      }
+    | null = null;
+
+  for (let i = options.start; i < options.end; i += 1) {
+    const message = messages[i]!;
+    if (excluded.has(message.id)) continue;
+    if (!isTaskOutcomeSummaryMessage(message, options.taskId)) continue;
+    const text =
+      buildSyntheticTaskOutcomeSummary(messages, i, options.taskSnapshot) ?? (message.content || "").trim();
+    if (!text) continue;
+
+    const candidate = {
+      distance: Math.abs(i - options.anchorIndex),
+      index: i,
+      source: {
+        text,
+        sourceMessageId: message.id,
+      },
+    };
+
+    if (
+      !best ||
+      candidate.distance < best.distance ||
+      (candidate.distance === best.distance && candidate.index > best.index)
+    ) {
+      best = candidate;
+    }
+  }
+
+  if (best) return best.source;
+  return terminalTaskSnapshotSummary(options.taskSnapshot, options.taskId);
+}
+
+export function resolveRoundTaskOutcomeSummary(
+  messages: SessionMessageItem[],
+  anchorIndex: number,
+  options?: {
+    taskId?: string | null;
+    excludeMessageIds?: ReadonlySet<string>;
+    taskSnapshot?: TaskResponse | null;
+  },
+): GuidanceLeadingSource | null {
+  const { start, end } = segmentBoundsForMessage(messages, anchorIndex);
+  return findNearestTaskOutcomeSummaryInSegment(messages, {
+    anchorIndex,
+    start,
+    end,
+    taskId: options?.taskId,
+    excludeMessageIds: options?.excludeMessageIds,
+    taskSnapshot: options?.taskSnapshot,
+  });
 }
 
 /** 同一轮用户追问与下一条用户消息之间，仅展示一条引导气泡。 */
@@ -84,12 +302,15 @@ export function shouldRenderGuidanceBubbleAtMessage(
 export type RoundPostTaskGuidance = {
   content: string;
   messageId: string;
+  leading?: string;
+  leadingMessageId?: string;
 };
 
 /** 取该轮 segment 内最新的专用/内嵌引导文案（供步骤气泡下挂载）。 */
 export function resolveDedicatedPostTaskGuidanceInSegment(
   messages: SessionMessageItem[],
   anchorIndex: number,
+  options?: { taskSnapshot?: TaskResponse | null },
 ): RoundPostTaskGuidance | null {
   const { start, end } = segmentBoundsForMessage(messages, anchorIndex);
   for (let i = end - 1; i >= start; i -= 1) {
@@ -101,10 +322,28 @@ export function resolveDedicatedPostTaskGuidanceInSegment(
     if (msgKind === "task_terminated") continue;
     const pres = resolvePostTaskGuidancePresentation(m, meta);
     if (pres.kind === "dedicated" && pres.content.trim()) {
-      return { content: pres.content.trim(), messageId: m.id };
+      const taskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+      const leading = findNearestTaskOutcomeSummaryInSegment(messages, {
+        anchorIndex: i,
+        start,
+        end,
+        taskId,
+        excludeMessageIds: new Set([m.id]),
+        taskSnapshot: options?.taskSnapshot,
+      });
+      return {
+        content: pres.content.trim(),
+        messageId: m.id,
+        leading: leading?.text,
+        leadingMessageId: leading?.sourceMessageId,
+      };
     }
     if (pres.kind === "embedded" && pres.guidanceBlock?.trim()) {
-      return { content: pres.guidanceBlock.trim(), messageId: m.id };
+      return {
+        content: pres.guidanceBlock.trim(),
+        messageId: m.id,
+        leading: pres.leading || undefined,
+      };
     }
   }
   return null;
@@ -116,7 +355,9 @@ export function resolveRoundPostTaskGuidanceContent(
   anchorIndex: number,
   options?: { taskId?: string | null; taskSnapshot?: TaskResponse | null },
 ): RoundPostTaskGuidance | null {
-  const fromSegment = resolveDedicatedPostTaskGuidanceInSegment(messages, anchorIndex);
+  const fromSegment = resolveDedicatedPostTaskGuidanceInSegment(messages, anchorIndex, {
+    taskSnapshot: options?.taskSnapshot,
+  });
   if (fromSegment) return fromSegment;
 
   const tid = (options?.taskId ?? "").trim();
@@ -124,7 +365,51 @@ export function resolveRoundPostTaskGuidanceContent(
   if (!tid || !snap || snap.task_id !== tid) return null;
   const fromTask = extractPostTaskGuidance(snap);
   if (!fromTask) return null;
-  return { content: fromTask, messageId: `task_guidance_${tid}` };
+  const { start, end } = segmentBoundsForMessage(messages, anchorIndex);
+  const leading = findNearestTaskOutcomeSummaryInSegment(messages, {
+    anchorIndex,
+    start,
+    end,
+    taskId: tid,
+    taskSnapshot: snap,
+  });
+  return {
+    content: fromTask,
+    messageId: `task_guidance_${tid}`,
+    leading: leading?.text,
+    leadingMessageId: leading?.sourceMessageId,
+  };
+}
+
+export function buildPostTaskGuidanceLeadingByMessageId(
+  messages: SessionMessageItem[],
+  options?: { taskSnapshot?: TaskResponse | null },
+): Map<string, GuidanceLeadingSource> {
+  const out = new Map<string, GuidanceLeadingSource>();
+
+  for (let i = 0; i < messages.length; i += 1) {
+    const message = messages[i]!;
+    if (message.role !== "assistant") continue;
+    const meta = messageMeta(message);
+    const pres = resolvePostTaskGuidancePresentation(message, meta);
+    if (pres.kind !== "dedicated") continue;
+
+    const { start, end } = segmentBoundsForMessage(messages, i);
+    const taskId = typeof meta?.task_id === "string" ? meta.task_id.trim() : "";
+    const leading = findNearestTaskOutcomeSummaryInSegment(messages, {
+      anchorIndex: i,
+      start,
+      end,
+      taskId,
+      excludeMessageIds: new Set([message.id]),
+      taskSnapshot: options?.taskSnapshot,
+    });
+    if (leading) {
+      out.set(message.id, leading);
+    }
+  }
+
+  return out;
 }
 
 function hasTerminalTaskExecutionStepsMessage(m: SessionMessageItem): boolean {

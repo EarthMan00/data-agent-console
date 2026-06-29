@@ -3,15 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  adminListPlans,
   adminCreatePlan,
-  adminPatchPlan,
   adminDeletePlan,
+  adminListPlans,
+  adminPatchPlan,
   AgentApiError,
   parseFastApiDetail,
 } from "@/lib/agent-api/client";
@@ -29,7 +29,6 @@ export function AdminPlansWorkspace() {
   const [editCode, setEditCode] = useState("");
   const [editLevel, setEditLevel] = useState(0);
   const [editCanUseTools, setEditCanUseTools] = useState(false);
-  const [editToolAllowlist, setEditToolAllowlist] = useState("");
   const [editFeatures, setEditFeatures] = useState("");
   const [editBusy, setEditBusy] = useState(false);
 
@@ -52,7 +51,9 @@ export function AdminPlansWorkspace() {
     }
   }, [platformAgent]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   const openCreate = () => {
     setEditTarget(null);
@@ -60,7 +61,6 @@ export function AdminPlansWorkspace() {
     setEditCode("");
     setEditLevel(0);
     setEditCanUseTools(false);
-    setEditToolAllowlist("");
     setEditFeatures("");
     setEditOpen(true);
   };
@@ -71,7 +71,6 @@ export function AdminPlansWorkspace() {
     setEditCode(plan.code);
     setEditLevel(plan.level);
     setEditCanUseTools(plan.can_use_tools);
-    setEditToolAllowlist((plan.tool_allowlist ?? []).join("\n"));
     setEditFeatures(
       plan.features && typeof plan.features === "object" && Object.keys(plan.features).length > 0
         ? JSON.stringify(plan.features, null, 2)
@@ -82,8 +81,14 @@ export function AdminPlansWorkspace() {
 
   const submitEdit = async () => {
     if (!platformAgent?.auth) return;
-    if (editName.trim().length < 1) { setNotice("套餐名称不能为空"); return; }
-    if (!editTarget && editCode.trim().length < 1) { setNotice("套餐代码不能为空"); return; }
+    if (editName.trim().length < 1) {
+      setNotice("套餐名称不能为空");
+      return;
+    }
+    if (!editTarget && editCode.trim().length < 1) {
+      setNotice("套餐代码不能为空");
+      return;
+    }
 
     let featuresObj: Record<string, unknown> | undefined;
     if (editFeatures.trim()) {
@@ -95,11 +100,6 @@ export function AdminPlansWorkspace() {
       }
     }
 
-    const toolAllowlistArr = editToolAllowlist
-      .split("\n")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-
     setEditBusy(true);
     setNotice("");
     try {
@@ -109,7 +109,6 @@ export function AdminPlansWorkspace() {
             name: editName.trim(),
             level: editLevel,
             can_use_tools: editCanUseTools,
-            tool_allowlist: toolAllowlistArr,
             features: featuresObj,
           });
         } else {
@@ -118,7 +117,6 @@ export function AdminPlansWorkspace() {
             name: editName.trim(),
             level: editLevel,
             can_use_tools: editCanUseTools,
-            tool_allowlist: toolAllowlistArr,
             features: featuresObj,
           });
         }
@@ -144,8 +142,7 @@ export function AdminPlansWorkspace() {
       await refresh();
     } catch (e) {
       if (e instanceof AgentApiError && e.status === 400) {
-        const detail = parseFastApiDetail(e.body) ?? e.message;
-        setNotice(detail);
+        setNotice(parseFastApiDetail(e.body) ?? e.message);
       } else {
         setNotice(e instanceof AgentApiError ? parseFastApiDetail(e.body) ?? e.message : String(e));
       }
@@ -160,10 +157,12 @@ export function AdminPlansWorkspace() {
         <div>
           <h1 className="text-title-3 font-semibold leading-8 text-foreground">套餐管理</h1>
           <p className="mt-2 text-sm leading-6 text-text-tertiary">
-            管理用户套餐与工具权限配置。每个套餐可独立控制是否启用工具、允许哪些工具，以及附加功能特性。
+            管理账号套餐。当前权限模型只区分是否可使用 skills 工具，不再维护工具白名单。
           </p>
         </div>
-        <Button className="rounded-control" onClick={openCreate}>新增套餐</Button>
+        <Button className="rounded-control" onClick={openCreate}>
+          新增套餐
+        </Button>
       </div>
 
       {notice ? <p className="mt-4 text-sm text-danger">{notice}</p> : null}
@@ -175,56 +174,94 @@ export function AdminPlansWorkspace() {
               <th className="px-4 py-3">套餐名称</th>
               <th className="px-4 py-3">Code</th>
               <th className="px-4 py-3">级别</th>
-              <th className="px-4 py-3">工具权限</th>
+              <th className="px-4 py-3">权限</th>
               <th className="px-4 py-3">用户数</th>
               <th className="px-4 py-3 text-right">操作</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-text-disabled">加载中…</td></tr>
-            ) : plans.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-text-disabled">暂无套餐</td></tr>
-            ) : plans.map((plan) => (
-              <tr key={plan.id} className="border-b border-border-subtle last:border-0">
-                <td className="px-4 py-3 font-medium text-foreground">{plan.name}</td>
-                <td className="px-4 py-3 font-mono text-xs text-text-tertiary">{plan.code}</td>
-                <td className="px-4 py-3 text-text-tertiary">{plan.level}</td>
-                <td className="px-4 py-3">
-                  {plan.can_use_tools ? (
-                    <span className="rounded-full bg-success-bg px-2 py-0.5 text-xs text-success">允许使用工具</span>
-                  ) : (
-                    <span className="rounded-full bg-fill-hover px-2 py-0.5 text-xs text-text-secondary">仅对话</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-text-tertiary">{plan.user_count}</td>
-                <td className="px-4 py-3 text-right">
-                  <Button variant="ghost" size="sm" className="h-8 rounded-md" onClick={() => openEdit(plan)}>编辑</Button>
-                  <Button variant="ghost" size="sm" className="h-8 rounded-md text-danger" onClick={() => setDeleteTarget(plan)}>删除</Button>
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-text-disabled">
+                  加载中…
                 </td>
               </tr>
-            ))}
+            ) : plans.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-text-disabled">
+                  暂无套餐
+                </td>
+              </tr>
+            ) : (
+              plans.map((plan) => (
+                <tr key={plan.id} className="border-b border-border-subtle last:border-0">
+                  <td className="px-4 py-3 font-medium text-foreground">{plan.name}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-text-tertiary">{plan.code}</td>
+                  <td className="px-4 py-3 text-text-tertiary">{plan.level}</td>
+                  <td className="px-4 py-3">
+                    {plan.can_use_tools ? (
+                      <span className="rounded-full bg-success-bg px-2 py-0.5 text-xs text-success">
+                        可使用 skills 工具
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-fill-hover px-2 py-0.5 text-xs text-text-secondary">
+                        仅文本对话
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-text-tertiary">{plan.user_count}</td>
+                  <td className="px-4 py-3 text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 rounded-md"
+                      onClick={() => openEdit(plan)}
+                    >
+                      编辑
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 rounded-md text-danger"
+                      onClick={() => setDeleteTarget(plan)}
+                    >
+                      删除
+                    </Button>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
 
-      {/* Create/Edit Dialog */}
-      <Dialog open={editOpen} onOpenChange={(o) => !o && setEditOpen(false)}>
+      <Dialog open={editOpen} onOpenChange={(open) => !open && setEditOpen(false)}>
         <DialogContent className="max-w-lg rounded-card">
           <DialogTitle>{editTarget ? "编辑套餐" : "新增套餐"}</DialogTitle>
           <div className="grid gap-3 pt-2">
             <div className="grid gap-1">
               <label className="text-xs text-text-tertiary">套餐名称</label>
-              <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="h-9 rounded-control" />
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="h-9 rounded-control"
+              />
             </div>
-            {!editTarget && (
+
+            {!editTarget ? (
               <div className="grid gap-1">
                 <label className="text-xs text-text-tertiary">Code（唯一标识）</label>
-                <Input value={editCode} onChange={(e) => setEditCode(e.target.value)} className="h-9 rounded-control" placeholder="如: premium" />
+                <Input
+                  value={editCode}
+                  onChange={(e) => setEditCode(e.target.value)}
+                  className="h-9 rounded-control"
+                  placeholder="premium"
+                />
               </div>
-            )}
+            ) : null}
+
             <div className="grid gap-1">
-              <label className="text-xs text-text-tertiary">级别（数字，数值越高优先级越高）</label>
+              <label className="text-xs text-text-tertiary">级别（数值越高优先级越高）</label>
               <Input
                 type="number"
                 value={editLevel}
@@ -232,25 +269,15 @@ export function AdminPlansWorkspace() {
                 className="h-9 rounded-control"
               />
             </div>
+
             <label className="flex items-center gap-2 text-sm text-foreground">
               <Checkbox
                 checked={editCanUseTools}
-                onCheckedChange={(v) => setEditCanUseTools(v === true)}
+                onCheckedChange={(value) => setEditCanUseTools(value === true)}
               />
-              <span className="text-xs text-text-tertiary">允许使用工具</span>
+              <span className="text-xs text-text-tertiary">允许使用 skills 工具</span>
             </label>
-            <div className="grid gap-1">
-              <label className="text-xs text-text-tertiary">
-                工具白名单
-                <span className="ml-1 text-text-disabled">（每行一个工具名称）</span>
-              </label>
-              <Textarea
-                value={editToolAllowlist}
-                onChange={(e) => setEditToolAllowlist(e.target.value)}
-                className="min-h-20 rounded-control"
-                placeholder={"tool_a\ntool_b\ntool_c"}
-              />
-            </div>
+
             <div className="grid gap-1">
               <label className="text-xs text-text-tertiary">
                 附加功能配置
@@ -263,24 +290,52 @@ export function AdminPlansWorkspace() {
                 placeholder='{"max_daily_queries": 100, "enable_export": true}'
               />
             </div>
+
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" size="sm" className="rounded-control" onClick={() => setEditOpen(false)}>取消</Button>
-              <Button size="sm" className="rounded-control" disabled={editBusy} onClick={submitEdit}>{editBusy ? "保存中…" : "保存"}</Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-control"
+                onClick={() => setEditOpen(false)}
+              >
+                取消
+              </Button>
+              <Button
+                size="sm"
+                className="rounded-control"
+                disabled={editBusy}
+                onClick={submitEdit}
+              >
+                {editBusy ? "保存中…" : "保存"}
+              </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Dialog */}
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <DialogContent className="max-w-md rounded-card">
           <DialogTitle>确认删除</DialogTitle>
           <p className="text-sm text-text-tertiary">
-            确定删除套餐「{deleteTarget?.name}」？若有用户正在使用此套餐，删除将失败。
+            确定删除套餐“{deleteTarget?.name}”？如果仍有用户在使用该套餐，删除会失败。
           </p>
           <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" size="sm" className="rounded-control" onClick={() => setDeleteTarget(null)}>取消</Button>
-            <Button size="sm" className="rounded-control bg-danger hover:bg-danger-hover" disabled={deleteBusy} onClick={submitDelete}>{deleteBusy ? "删除中…" : "确定删除"}</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-control"
+              onClick={() => setDeleteTarget(null)}
+            >
+              取消
+            </Button>
+            <Button
+              size="sm"
+              className="rounded-control bg-danger hover:bg-danger-hover"
+              disabled={deleteBusy}
+              onClick={submitDelete}
+            >
+              {deleteBusy ? "删除中…" : "确认删除"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

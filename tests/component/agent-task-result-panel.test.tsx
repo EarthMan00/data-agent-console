@@ -47,7 +47,7 @@ const multiSheetArtifacts: PlatformTaskArtifactRef[] = [
   },
 ];
 
-function renderPanel(token = "__frontend_mock_token__") {
+function renderPanel(token = "real-token") {
   return render(
     <AgentTaskResultPanel
       onClose={vi.fn()}
@@ -67,10 +67,11 @@ describe("agent task result panel favorite feedback", () => {
     apiMocks.downloadAuthorizedFile.mockReset();
     apiMocks.getFavoriteByTask.mockReset();
     apiMocks.getFavoriteByTask.mockResolvedValue({ favorited: false, favorite_id: null });
+    apiMocks.createUserFavorite.mockResolvedValue({ id: "favorite-1" });
   });
 
-  it("shows a global success toast for mock favorite actions without an inline panel notice", async () => {
-    renderPanel();
+  it("shows a global success toast for favorite actions without an inline panel notice", async () => {
+    renderPanel("real-token");
 
     const panel = screen.getByTestId("agent-preview-panel");
     fireEvent.click(within(panel).getByRole("button", { name: "收藏报告" }));
@@ -80,7 +81,7 @@ describe("agent task result panel favorite feedback", () => {
     await waitFor(() => {
       expect(within(panel).getByRole("button", { name: "取消收藏报告" })).toBeInTheDocument();
     });
-    expect(apiMocks.createUserFavorite).not.toHaveBeenCalled();
+    expect(apiMocks.createUserFavorite).toHaveBeenCalledTimes(1);
   });
 
   it("does not render raw favorite API errors inside the result panel", async () => {
@@ -101,7 +102,7 @@ describe("agent task result panel favorite feedback", () => {
         artifacts={multiSheetArtifacts}
         taskId="mock-task"
         withFreshToken={async (run) => {
-          await run("__frontend_mock_token__");
+          await run("real-token");
         }}
       />,
     );

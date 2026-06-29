@@ -35,6 +35,28 @@ export type SessionAcceptedTaskPollResult = {
 
 type WithFreshToken = (fn: (token: string) => Promise<void>) => Promise<void>;
 
+function buildPersistedStepRows(
+  stepDefs: Array<{ id: string; label: string }>,
+  statuses: TaskExecutionStepStatus[],
+  runtimeStartedAtByIndex?: Array<string | undefined>,
+) {
+  return stepDefs.map((step, index) => {
+    const row: {
+      id: string;
+      label: string;
+      status: TaskExecutionStepStatus;
+      runtime_started_at?: string;
+    } = {
+      id: step.id,
+      label: step.label,
+      status: statuses[index] ?? "pending",
+    };
+    const runtimeStartedAt = runtimeStartedAtByIndex?.[index];
+    if (runtimeStartedAt) row.runtime_started_at = runtimeStartedAt;
+    return row;
+  });
+}
+
 /**
  * 历史会话 send 路径：任务受理后持久化 task_execution_steps，轮询期间更新步骤状态并周期性 reload。
  */
@@ -81,9 +103,36 @@ export async function pollAcceptedPlatformTaskInSession(
     return { lastTask };
   }
 
-  const initialStatuses: TaskExecutionStepStatus[] = stepDefs.map((_, i) =>
+  let initialStatuses: TaskExecutionStepStatus[] = stepDefs.map((_, i) =>
     i === 0 ? "running" : "pending",
   );
+  let initialRuntimeStartedAtByIndex: Array<string | undefined> = stepDefs.map(() => undefined);
+
+  try {
+    await withFreshToken(async (token) => {
+      if (accepted.orchestration_id) {
+        const orch = await getToolOrchestration(token, accepted.orchestration_id);
+        const orchStatuses = orch.steps.map((step) => mapServerOrchestrationStepStatus(step.status));
+        if (orchStatuses.length > 0) {
+          initialStatuses = stepDefs.map((_, index) => orchStatuses[index] ?? "pending");
+        }
+        initialRuntimeStartedAtByIndex = stepDefs.map(
+          (_, index) => orch.steps[index]?.task_started_at ?? undefined,
+        );
+        return;
+      }
+      const task = await getTask(token, accepted.task_id);
+      options?.onTaskUpdate?.(task);
+      initialStatuses = stepDefs.map((_, index) =>
+        index === 0 ? taskStatusToStepStatus(task) : "pending",
+      );
+      initialRuntimeStartedAtByIndex = stepDefs.map((_, index) =>
+        index === 0 ? task.started_at ?? undefined : undefined,
+      );
+    });
+  } catch {
+    /* fallback to default optimistic running state */
+  }
 
   let stepsMessageId: string | null = null;
   try {
@@ -91,11 +140,7 @@ export async function pollAcceptedPlatformTaskInSession(
       stepsMessageId = await postTaskExecutionSteps(token, sessionId, {
         round_id: roundId,
         task_id: accepted.task_id,
-        steps: stepDefs.map((s, i) => ({
-          id: s.id,
-          label: s.label,
-          status: initialStatuses[i]!,
-        })),
+        steps: buildPersistedStepRows(stepDefs, initialStatuses, initialRuntimeStartedAtByIndex),
         orchestration_id: accepted.orchestration_id,
       });
     });
@@ -105,17 +150,18 @@ export async function pollAcceptedPlatformTaskInSession(
 
   await options?.onReload?.();
 
-  const persistRows = async (token: string, statuses: TaskExecutionStepStatus[], taskId?: string) => {
+  const persistRows = async (
+    token: string,
+    statuses: TaskExecutionStepStatus[],
+    taskId?: string,
+    runtimeStartedAtByIndex?: Array<string | undefined>,
+  ) => {
     if (!stepsMessageId) return;
     try {
       await patchTaskExecutionSteps(token, sessionId, stepsMessageId, {
         round_id: roundId,
         task_id: taskId ?? accepted.task_id,
-        steps: stepDefs.map((s, i) => ({
-          id: s.id,
-          label: s.label,
-          status: statuses[i] ?? "pending",
-        })),
+        steps: buildPersistedStepRows(stepDefs, statuses, runtimeStartedAtByIndex),
         orchestration_id: accepted.orchestration_id,
       });
     } catch {
@@ -155,11 +201,14 @@ export async function pollAcceptedPlatformTaskInSession(
       if (orchId) {
         const orch = await getToolOrchestration(token, orchId);
         const rowStatuses = orch.steps.map((st) => mapServerOrchestrationStepStatus(st.status));
+        const runtimeStartedAtByIndex = stepDefs.map(
+          (_, index) => orch.steps[index]?.task_started_at ?? undefined,
+        );
         if (rowStatuses.length === stepDefs.length) {
-          await persistRows(token, rowStatuses);
+          await persistRows(token, rowStatuses, undefined, runtimeStartedAtByIndex);
         } else if (rowStatuses.length > 0) {
           const padded = stepDefs.map((_, i) => rowStatuses[i] ?? ("pending" as TaskExecutionStepStatus));
-          await persistRows(token, padded);
+          await persistRows(token, padded, undefined, runtimeStartedAtByIndex);
         }
         if (orch.finished || orch.awaiting_clarification) done = true;
         const lastWithId = [...orch.steps].reverse().find((s) => s.task_id);
@@ -171,7 +220,12 @@ export async function pollAcceptedPlatformTaskInSession(
         lastTask = await getTask(token, taskId);
         options?.onTaskUpdate?.(lastTask);
         const st = taskStatusToStepStatus(lastTask);
-        await persistRows(token, stepDefs.map((_, i) => (i === 0 ? st : "pending")));
+        await persistRows(
+          token,
+          stepDefs.map((_, i) => (i === 0 ? st : "pending")),
+          undefined,
+          stepDefs.map((_, index) => (index === 0 ? lastTask?.started_at ?? undefined : undefined)),
+        );
         if (!isTaskInFlight(lastTask)) done = true;
       }
     });

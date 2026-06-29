@@ -1,27 +1,10 @@
-import { isAgentRealApiEnabled } from "@/lib/agent-api/config";
 import type { AgentRoundRuntimeEvent } from "@/lib/agent-events";
 
-import { runApiRound } from "./api-round";
-import { getApiBase, isAgentRuntimeConfigured, isPlatformBackendEnabled } from "./config";
+export { isAgentRuntimeConfigured, isPlatformBackendEnabled } from "./config";
 import { runPlatformRound } from "./platform-round";
-import type { AgentCreateRunInput, AgentRoundInput, AgentRunSnapshot, StreamAgentRoundPlatformOptions } from "./types";
-import { parseJsonResponse } from "./util";
+import type { AgentRoundInput, StreamAgentRoundPlatformOptions } from "./types";
 
-export type { AgentCreateRunInput, AgentRoundInput, AgentRunSnapshot, StreamAgentRoundPlatformOptions };
-
-export { isAgentRuntimeConfigured, isMockRuntimeEnabled, isPlatformBackendEnabled } from "./config";
-
-export async function createAgentRun(input: AgentCreateRunInput) {
-  const base = getApiBase();
-  const response = await fetch(`${base}/runs`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(input),
-  });
-  return parseJsonResponse<AgentRunSnapshot>(response);
-}
+export type { AgentRoundInput, StreamAgentRoundPlatformOptions };
 
 export async function streamAgentRound(
   input: AgentRoundInput,
@@ -30,16 +13,13 @@ export async function streamAgentRound(
   },
   options?: { platform?: StreamAgentRoundPlatformOptions },
 ) {
-  if (isAgentRealApiEnabled()) {
-    const sid = input.platformChatSessionId;
-    const platform = options?.platform;
-    if (sid && platform?.withFreshToken) {
-      await runPlatformRound(input, handlers, sid, platform);
-      return;
-    }
-    throw new Error(
-      "已开启平台后端，但当前任务没有可用平台会话。请从首页输入需求并发送以创建真实会话。",
-    );
+  const sid = input.platformChatSessionId;
+  const platform = options?.platform;
+  if (sid && platform?.withFreshToken) {
+    await runPlatformRound(input, handlers, sid, platform);
+    return;
   }
-  await runApiRound(input, handlers);
+  throw new Error(
+    "当前任务没有可用平台会话。请从首页输入需求并发送以创建真实会话。",
+  );
 }

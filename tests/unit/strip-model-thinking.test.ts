@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   resolveAssistantBodyForUi,
-  stripModelThinkingForStreamPartial,
   stripModelThinkingForUi,
   streamSanitizeDeltaClient,
 } from "@/lib/strip-model-thinking";

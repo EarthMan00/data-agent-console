@@ -3,13 +3,10 @@
 import Image from "next/image";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Copy, FileText } from "@/components/ui/tabler-icons";
+import { ChevronDown, FileText } from "@/components/ui/tabler-icons";
 
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { DotmSquare11 } from "@/components/ui/dotm-square-11";
-import { AssistantAttachmentList } from "@/components/assistant-attachment-list";
-import { copyTextToClipboard } from "@/lib/clipboard";
-import type { AgentAttachment } from "@/lib/agent-events";
 import { useTypewriterReveal } from "@/lib/use-typewriter-reveal";
 import { cn } from "@/lib/utils";
 import { stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
@@ -113,7 +110,7 @@ export function AssistantOutputFrame({
           </div>
           {children}
           {datetime ? (
-            <div className="mt-1 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            <div className="mt-1 text-left text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
               {formatTimeForBubble(datetime)}
             </div>
           ) : null}
@@ -230,7 +227,7 @@ export function SimpleAssistantBubble({
             </div>
           )}
           {after ? <div className="mt-2 w-full">{after}</div> : null}
-          <div className="mt-1 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <div className="mt-1 text-left text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
             {formatTimeForBubble(datetime)}
           </div>
         </div>
@@ -344,7 +341,7 @@ export function AliceMessageBubble({
               })}
             </div>
           ) : null}
-          <div className="mt-1 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <div className="mt-1 text-left text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
             {formatTimeForBubble(datetime)}
           </div>
         </div>
@@ -593,7 +590,7 @@ export function AliceErrorBubble({
             </div>
           ) : null}
 
-          <div className="mt-1 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <div className="mt-1 text-left text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
             {formatTimeForBubble(datetime)}
           </div>
         </div>

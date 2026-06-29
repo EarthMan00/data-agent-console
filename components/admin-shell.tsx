@@ -3,25 +3,23 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, type ReactNode } from "react";
-import { cn } from "@/lib/utils";
 import { clearAgentSession } from "@/lib/agent-api/session";
+import { cn } from "@/lib/utils";
 import {
-  LogOut,
-  Users,
-  Shield,
-  Package,
   BookOpen,
-  MessageCircleMore,
   Cpu,
+  LogOut,
+  MessageCircleMore,
+  Package,
+  Users,
 } from "@/components/ui/tabler-icons";
 
 const navItems = [
-  { href: "/admin/users",    label: "用户管理", icon: Users },
-  { href: "/admin/roles",    label: "角色权限", icon: Shield },
-  { href: "/admin/plans",    label: "套餐管理", icon: Package },
-  { href: "/admin/prompts",  label: "Prompt 管理", icon: BookOpen },
+  { href: "/admin/users", label: "用户管理", icon: Users },
+  { href: "/admin/plans", label: "套餐管理", icon: Package },
+  { href: "/admin/prompts", label: "Prompt 管理", icon: BookOpen },
   { href: "/admin/feedback", label: "反馈管理", icon: MessageCircleMore },
-  { href: "/admin/models",  label: "模型管理", icon: Cpu },
+  { href: "/admin/models", label: "模型管理", icon: Cpu },
 ];
 
 export function AdminShell({ children }: { children: ReactNode }) {
@@ -35,14 +33,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-screen bg-bg-page">
-      {/* Sidebar */}
       <aside className="flex w-sidebar-admin shrink-0 flex-col border-r border-border bg-bg-surface">
         <div className="flex h-14 items-center gap-2 border-b border-border-subtle px-4">
           <span className="text-sm font-semibold text-foreground">管理后台</span>
         </div>
         <nav className="flex-1 space-y-0.5 p-2">
           {navItems.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
                 key={item.href}
@@ -72,11 +69,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {/* Content */}
       <main className="flex-1 overflow-auto">
-        <div className="mx-auto max-w-admin-content px-8 pb-12 pt-8">
-          {children}
-        </div>
+        <div className="mx-auto max-w-admin-content px-8 pb-12 pt-8">{children}</div>
       </main>
     </div>
   );
