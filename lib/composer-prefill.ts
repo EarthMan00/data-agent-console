@@ -54,6 +54,23 @@ function uniqueSourcePlacements(placements: ComposerSourcePlacement[]) {
   });
 }
 
+function decodeEscapedUnicodeLiterals(value: string) {
+  let next = value;
+  if (next.includes("\\u")) {
+    next = next.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
+  }
+  if (next.includes("\\n") || next.includes("\\r") || next.includes("\\t")) {
+    next = next
+      .replace(/\\r\\n/g, "\n")
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "\r")
+      .replace(/\\t/g, "\t");
+  }
+  return next;
+}
+
 function parseStoredSourcePlacements(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value
@@ -165,6 +182,7 @@ export function parseDatasourceMentions(
   text: string,
   dataSourceItems: HomeCapabilityItem[] = getDataSourceItems(),
 ): ComposerPrefill {
+  const sourceText = decodeEscapedUnicodeLiterals(text);
   const tools = buildMentionToolCandidates(dataSourceItems);
   const selectedSourceIds: string[] = [];
   const sourcePlacements: ComposerSourcePlacement[] = [];
@@ -172,13 +190,13 @@ export function parseDatasourceMentions(
   let nextText = "";
 
   MENTION_PATTERN.lastIndex = 0;
-  let match = MENTION_PATTERN.exec(text);
+  let match = MENTION_PATTERN.exec(sourceText);
   while (match) {
     const [matchedText, prefix = "", body = ""] = match;
     const matchStart = match.index;
     const matchEnd = matchStart + matchedText.length;
     const resolution = resolveMentionBody(body, tools);
-    nextText += text.slice(cursor, matchStart);
+    nextText += sourceText.slice(cursor, matchStart);
 
     if (resolution) {
       nextText += prefix;
@@ -190,10 +208,10 @@ export function parseDatasourceMentions(
     }
 
     cursor = matchEnd;
-    match = MENTION_PATTERN.exec(text);
+    match = MENTION_PATTERN.exec(sourceText);
   }
 
-  nextText += text.slice(cursor);
+  nextText += sourceText.slice(cursor);
   const normalizedText = nextText.replace(/[ \t]{2,}/g, " ").replace(/\n[ \t]+/g, "\n").trimStart();
   const trimOffset = nextText.length - normalizedText.length;
 
@@ -274,7 +292,7 @@ export function parseComposerPrefillStorageValue(
   try {
     const parsed = JSON.parse(raw) as StoredComposerPrefill;
     if (parsed && typeof parsed === "object" && typeof parsed.text === "string") {
-      const mentionParsed = parseDatasourceMentions(parsed.text, dataSourceItems);
+      const mentionParsed = parseDatasourceMentions(decodeEscapedUnicodeLiterals(parsed.text), dataSourceItems);
       const storedIds = Array.isArray(parsed.selectedSourceIds)
         ? parsed.selectedSourceIds.filter((id): id is string => typeof id === "string")
         : [];
@@ -289,5 +307,5 @@ export function parseComposerPrefillStorageValue(
     /* Backward-compatible plain text prefill. */
   }
 
-  return parseDatasourceMentions(raw, dataSourceItems);
+  return parseDatasourceMentions(decodeEscapedUnicodeLiterals(raw), dataSourceItems);
 }

@@ -3,9 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AliceHomePage } from "@/components/alice-home-page";
-import { workspaceActions } from "@/lib/workspace-store";
 
 const replace = vi.fn();
+const homeSessionLaunchMocks = vi.hoisted(() => ({
+  saveHomeSessionLaunchMeta: vi.fn(),
+  stashHomeSessionLaunchFiles: vi.fn(),
+}));
 const platformAgentMock = vi.hoisted(() => ({
   auth: { accessToken: "token", userId: "u1" },
   authHydrated: true,
@@ -58,6 +61,8 @@ vi.mock("@/lib/agent-api/home-prompts", () => ({
   fetchPublicPromptCategories: vi.fn(() => Promise.resolve([])),
 }));
 
+vi.mock("@/lib/home-session-launch", () => homeSessionLaunchMocks);
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     replace,
@@ -78,6 +83,8 @@ describe("home attachments", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     replace.mockClear();
+    homeSessionLaunchMocks.saveHomeSessionLaunchMeta.mockClear();
+    homeSessionLaunchMocks.stashHomeSessionLaunchFiles.mockClear();
     platformAgentMock.beginNewHomeTaskSession.mockResolvedValue("session-home");
     platformAgentMock.setActivePlatformSession.mockClear();
     shellStateMock.refreshHistoryNow.mockClear();
@@ -85,8 +92,7 @@ describe("home attachments", () => {
     shellStateMock.upsertOptimisticHistorySession.mockClear();
   });
 
-  it("starts the first task with only attachments still visible in the home composer", async () => {
-    const startPlatformTask = vi.spyOn(workspaceActions, "startPlatformTask").mockReturnValue("run-home");
+  it("stashes only attachments still visible in the home composer before entering the session workspace", async () => {
     const first = new File(["aad"], "AAD_SSO_Vendor_Implementation_Guide.md", { type: "text/markdown" });
     const second = new File(["dump"], "LocalDumps.reg", { type: "application/octet-stream" });
     const third = new File(["cards"], "agent_linkfox_all_category_cards.xlsx", {
@@ -96,7 +102,7 @@ describe("home attachments", () => {
     const { container } = render(<AliceHomePage />);
     const editor = screen.getByTestId("task-composer-editor");
     await userEvent.click(editor);
-    await userEvent.type(editor, "分析一下附件");
+    await userEvent.type(editor, "analyze attachments");
 
     const fileInput = container.querySelector<HTMLInputElement>("input[type='file']");
     expect(fileInput).not.toBeNull();
@@ -108,17 +114,19 @@ describe("home attachments", () => {
       expect(screen.getByText("agent_linkfox_all_category_cards.xlsx")).toBeInTheDocument();
     });
 
-    await userEvent.click(screen.getByLabelText("删除附件 AAD_SSO_Vendor_Implementation_Guide.md"));
-    await userEvent.click(screen.getByLabelText("删除附件 LocalDumps.reg"));
+    await userEvent.click(screen.getByLabelText(/AAD_SSO_Vendor_Implementation_Guide\.md/));
+    await userEvent.click(screen.getByLabelText(/LocalDumps\.reg/));
     await userEvent.click(screen.getByTestId("task-composer-submit"));
 
     await waitFor(() => {
-      expect(startPlatformTask).toHaveBeenCalledTimes(1);
+      expect(homeSessionLaunchMocks.saveHomeSessionLaunchMeta).toHaveBeenCalledTimes(1);
     });
-    expect(startPlatformTask).toHaveBeenCalledWith(
+    expect(homeSessionLaunchMocks.stashHomeSessionLaunchFiles).toHaveBeenCalledWith("session-home", [third]);
+    expect(homeSessionLaunchMocks.saveHomeSessionLaunchMeta).toHaveBeenCalledWith(
       expect.objectContaining({
-        pendingFiles: [third],
+        sessionId: "session-home",
       }),
     );
+    expect(replace).toHaveBeenCalledWith("/agent?sessionId=session-home");
   });
 });

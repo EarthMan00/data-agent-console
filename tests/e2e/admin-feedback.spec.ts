@@ -1,26 +1,35 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
-import { closeSingleWindowSession, createSingleWindowSession } from "./helpers";
+import {
+  closeSingleWindowSession,
+  createFeedbackFixture,
+  createSingleWindowSession,
+  markFeedbackFixtureHandled,
+} from "./helpers";
 
 test.describe.serial("admin feedback", () => {
   let context: BrowserContext;
   let baselinePage: Page;
   let appPage: Page;
+  let feedbackMessage: string;
+  let feedbackId: string;
+  let rootUrl: string;
 
   test.beforeAll(async ({ browser, baseURL }) => {
-    ({ context, baselinePage, appPage } = await createSingleWindowSession(browser, baseURL!, "/admin/login"));
+    rootUrl = baseURL!;
+    feedbackMessage = `e2e feedback ${Date.now()}`;
+    feedbackId = await createFeedbackFixture(rootUrl, feedbackMessage);
+    ({ context, baselinePage, appPage } = await createSingleWindowSession(browser, rootUrl, "/admin/feedback"));
   });
 
   test.afterAll(async () => {
     await closeSingleWindowSession(context, baselinePage, appPage);
+    await markFeedbackFixtureHandled(rootUrl, feedbackId);
   });
 
-  test("logs into the feedback admin and shows the configured empty state", async () => {
-    await appPage.getByLabel("账号").fill("Admin");
-    await appPage.getByLabel("密码").fill("admin123");
-    await appPage.getByRole("button", { name: "登录后台" }).click();
-
+  test("shows public feedback entries in the admin list", async () => {
     await expect(appPage).toHaveURL(/\/admin\/feedback/);
-    await expect(appPage.getByText("问题反馈")).toBeVisible();
+    await expect(appPage.getByRole("heading", { name: "反馈管理" })).toBeVisible();
+    await expect(appPage.getByText(feedbackMessage)).toBeVisible();
   });
 });

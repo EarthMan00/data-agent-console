@@ -5,10 +5,6 @@ const extraDevOrigins = (process.env.NEXT_DEV_ALLOWED_ORIGINS ?? "")
   .map((s) => s.trim())
   .filter(Boolean);
 
-const agentInternal =
-  process.env.AGENT_WEB_PLATFORM_INTERNAL_URL?.trim() || "http://127.0.0.1:8000";
-const agentInternalBase = agentInternal.replace(/\/$/, "");
-
 const nextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost", ...extraDevOrigins],
   // Next.js 16 默认生产构建用 Turbopack；保留 webpack 仅用于 dev:webpack 的 client fallback

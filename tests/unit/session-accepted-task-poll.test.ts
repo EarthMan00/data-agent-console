@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { pollAcceptedPlatformTaskInSession } from "@/lib/session-accepted-task-poll";
 
@@ -38,6 +38,10 @@ vi.mock("@/lib/poll-task-until-settled", () => ({
 }));
 
 describe("pollAcceptedPlatformTaskInSession", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("posts task_execution_steps then reloads before polling", async () => {
     const { postTaskExecutionSteps, patchTaskExecutionSteps } = await import("@/lib/agent-api/client");
     const onReload = vi.fn(async () => undefined);
@@ -71,5 +75,49 @@ describe("pollAcceptedPlatformTaskInSession", () => {
     expect(onReload).toHaveBeenCalled();
     expect(patchTaskExecutionSteps).toHaveBeenCalled();
     expect(tokens).toEqual([]);
+  });
+
+  it("persists runtime_started_at for the running step before the first reload", async () => {
+    const { getTask, postTaskExecutionSteps } = await import("@/lib/agent-api/client");
+    vi.mocked(getTask)
+      .mockResolvedValueOnce({
+        task_id: "task-1",
+        status: "RUNNING",
+        started_at: "2026-06-29T08:00:00Z",
+      } as never)
+      .mockResolvedValueOnce({
+        task_id: "task-1",
+        status: "SUCCESS",
+        started_at: "2026-06-29T08:00:00Z",
+      } as never);
+
+    await pollAcceptedPlatformTaskInSession(
+      async (fn) => {
+        await fn("token-a");
+      },
+      "session-1",
+      "round-1",
+      {
+        kind: "accepted",
+        task_id: "task-1",
+        task_status: "RUNNING",
+        execution_steps: ["分析表格数据"],
+        orchestration_id: null,
+      },
+      { onReload: vi.fn(async () => undefined) },
+    );
+
+    expect(postTaskExecutionSteps).toHaveBeenCalledWith(
+      "token-a",
+      "session-1",
+      expect.objectContaining({
+        steps: [
+          expect.objectContaining({
+            status: "running",
+            runtime_started_at: "2026-06-29T08:00:00Z",
+          }),
+        ],
+      }),
+    );
   });
 });

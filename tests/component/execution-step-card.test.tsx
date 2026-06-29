@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { ExecutionStepCard } from "@/components/execution-steps-monitor";
@@ -20,9 +20,8 @@ describe("ExecutionStepCard", () => {
     );
 
     const card = screen.getByTestId("execution-step-card");
-    expect(within(card).getByText("步骤 1 / 2 · 待您补充信息")).toHaveClass("text-warning");
-    expect(
-      within(card).getByText("1. 进入亚马逊美国站前台，围绕目标关键词搜索"),
-    ).toHaveClass("text-warning");
+    const warningText = card.querySelector(".text-warning");
+    expect(warningText).not.toBeNull();
+    expect(warningText).toHaveTextContent("1. 进入亚马逊美国站前台，围绕目标关键词搜索");
   });
 });

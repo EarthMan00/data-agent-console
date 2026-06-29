@@ -6,22 +6,25 @@ test.describe.serial("report and artifacts", () => {
   let context: BrowserContext;
   let baselinePage: Page;
   let appPage: Page;
+  let rootUrl: string;
 
   test.beforeAll(async ({ browser, baseURL }) => {
-    ({ context, baselinePage, appPage } = await createSingleWindowSession(browser, baseURL!, "/report"));
+    rootUrl = baseURL!;
+    ({ context, baselinePage, appPage } = await createSingleWindowSession(browser, rootUrl, "/report"));
   });
 
   test.afterAll(async () => {
     await closeSingleWindowSession(context, baselinePage, appPage);
   });
 
-  test("renders report view and artifacts page actions", async () => {
-    await expect(appPage.getByRole("button", { name: "报告摘要" })).toBeVisible();
-    await appPage.getByRole("button", { name: "结构化表格" }).click();
-    await expect(appPage.getByRole("button", { name: "保存为模板" })).toBeVisible();
+  test("renders the current report empty state and artifacts workspace", async () => {
+    await expect(appPage.getByText("未找到报告", { exact: true })).toBeVisible();
+    await expect(appPage.getByText("未找到报告。请从运行列表或带 reportId 的链接进入。")).toBeVisible();
 
-    await appPage.goto("http://127.0.0.1:3000/artifacts");
-    await expect(appPage.getByRole("button", { name: "打开结果页" })).toBeVisible();
-    await expect(appPage.getByRole("button", { name: "返回任务上下文" })).toBeVisible();
+    await appPage.goto(`${rootUrl}/artifacts`);
+    await expect(appPage).toHaveURL(/\/artifacts/);
+    await expect(appPage.getByText("我的收藏夹")).toBeVisible();
+    await expect(appPage.getByRole("button", { name: "新建文件夹" })).toBeVisible();
+    await expect(appPage.getByPlaceholder("搜索收藏")).toBeVisible();
   });
 });

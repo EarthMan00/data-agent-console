@@ -51,8 +51,6 @@ type AgentTaskResultPanelProps = {
   taskStatus?: string | null;
 };
 
-const FRONTEND_MOCK_TOKEN = "__frontend_mock_token__";
-
 function effectiveBundleDownloadPath(p: {
   bundleDownloadApi?: string | null;
   zipDownloadApi?: string | null;
@@ -301,7 +299,6 @@ export function AgentTaskResultPanel({
     if (!withFreshToken || !tid) return;
     try {
       await withFreshToken(async (token) => {
-        if (token === FRONTEND_MOCK_TOKEN) return;
         const r = await getFavoriteByTask(token, tid);
         setFavorited(r.favorited);
         setFavoriteId(r.favorite_id);
@@ -325,7 +322,6 @@ export function AgentTaskResultPanel({
     try {
       if (favorited && favoriteId) {
         await withFreshToken(async (token) => {
-          if (token === FRONTEND_MOCK_TOKEN) return;
           await deleteUserFavorite(token, favoriteId);
         });
         setFavorited(false);
@@ -338,10 +334,6 @@ export function AgentTaskResultPanel({
       });
       let createdFavoriteId: string | null = null;
       await withFreshToken(async (token) => {
-        if (token === FRONTEND_MOCK_TOKEN) {
-          createdFavoriteId = `mock-favorite-${tid}`;
-          return;
-        }
         const created = await createUserFavorite(token, {
           title: built.title,
           source_task_id: tid,

@@ -16,11 +16,13 @@ test.describe.serial("home to agent", () => {
   });
 
   test("starts a task from the home composer", async () => {
-    await appPage.getByLabel("任务输入编辑器").click();
-    await appPage.keyboard.type("请分析美国站 keyboard tablet case 赛道，并输出机会点。");
+    const message = `e2e home task ${Date.now()}`;
+    await appPage.getByTestId("task-composer-textbox").click();
+    await appPage.keyboard.type(message);
     await appPage.getByTestId("task-composer-submit").click();
 
-    await expect(appPage).toHaveURL(/runId=/);
-    await expect(appPage.getByTestId("agent-user-input-card")).toBeVisible();
+    await expect(appPage).toHaveURL(/\/agent\?sessionId=/, { timeout: 60000 });
+    await expect(appPage.getByTestId("agent-user-input-card")).toBeVisible({ timeout: 60000 });
+    await expect(appPage.getByText(message)).toBeVisible();
   });
 });

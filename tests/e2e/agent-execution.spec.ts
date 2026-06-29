@@ -8,22 +8,22 @@ test.describe.serial("agent execution", () => {
   let appPage: Page;
 
   test.beforeAll(async ({ browser, baseURL }) => {
-    ({ context, baselinePage, appPage } = await createSingleWindowSession(browser, baseURL!, "/agent?runId=run-default"));
+    ({ context, baselinePage, appPage } = await createSingleWindowSession(
+      browser,
+      baseURL!,
+      "/agent?runId=run-e2e-missing",
+    ));
   });
 
   test.afterAll(async () => {
     await closeSingleWindowSession(context, baselinePage, appPage);
   });
 
-  test("shows the latest /agent sequence and preview behavior", async () => {
-    await expect(appPage.getByTestId("agent-split-section")).toBeVisible();
-    await expect(appPage.getByTestId("agent-execution-summary-bar")).toBeVisible();
-    await expect(appPage.getByTestId("agent-result-section")).toBeVisible();
-    await expect(appPage.getByTestId("agent-preview-panel")).toBeVisible();
-
-    await appPage.getByTestId("agent-execution-summary-bar").click();
-    await expect(appPage.getByTestId("agent-execution-panel")).toBeVisible();
-    await expect(appPage.getByTestId("agent-execution-panel")).not.toContainText("调用工具");
-    await expect(appPage.getByTestId("agent-execution-panel")).toContainText(/亚马逊|积木|实时与全网检索/);
+  test("shows a clear empty state for an unknown run id", async () => {
+    await expect(appPage).toHaveURL(/\/agent\?runId=run-e2e-missing/);
+    await expect(appPage.getByText("未找到任务")).toBeVisible();
+    await expect(
+      appPage.getByText("未在本地状态中找到该任务。请从首页发起研究，或确认 URL 中 runId 有效。"),
+    ).toBeVisible();
   });
 });

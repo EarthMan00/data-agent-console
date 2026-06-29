@@ -19,7 +19,7 @@ import {
   AgentApiError,
   parseFastApiDetail,
 } from "@/lib/agent-api/client";
-import type { AdminPromptCategory, AdminPromptTemplate, AdminPromptTemplateListResponse } from "@/lib/agent-api/types";
+import type { AdminPromptCategory, AdminPromptTemplate } from "@/lib/agent-api/types";
 
 export function AdminPromptsWorkspace() {
   const platformAgent = useOptionalPlatformAgent();
@@ -109,7 +109,11 @@ export function AdminPromptsWorkspace() {
     setCeBusy(true); setNotice("");
     try {
       await platformAgent.withFreshToken(async (token) => {
-        ceTarget ? await adminPatchPromptCategory(token, ceTarget.id, { name: ceName.trim(), sort_order: ceOrder }) : await adminCreatePromptCategory(token, { name: ceName.trim(), sort_order: ceOrder });
+        if (ceTarget) {
+          await adminPatchPromptCategory(token, ceTarget.id, { name: ceName.trim(), sort_order: ceOrder });
+          return;
+        }
+        await adminCreatePromptCategory(token, { name: ceName.trim(), sort_order: ceOrder });
       });
       setCeOpen(false); await refresh();
     } catch (e) {
@@ -160,7 +164,11 @@ export function AdminPromptsWorkspace() {
         catch { setNotice("variables 不是有效的 JSON"); setTeBusy(false); return; }
       }
       await platformAgent.withFreshToken(async (t) => {
-        teTarget ? await adminPatchPromptTemplate(t, teTarget.id, body) : await adminCreatePromptTemplate(t, body);
+        if (teTarget) {
+          await adminPatchPromptTemplate(t, teTarget.id, body);
+          return;
+        }
+        await adminCreatePromptTemplate(t, body);
       });
       setTeOpen(false); await refresh();
     } catch (e) {

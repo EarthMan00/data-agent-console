@@ -77,13 +77,27 @@ function formatElapsed(seconds: number): string {
   return `${minutes} 分 ${rest} 秒`;
 }
 
+function normalizeRuntimeHint(runtimeHint: string | undefined): string {
+  return stripInternalToolNamesForUi(runtimeHint ?? "")
+    .replace(/[?？]/g, " ")
+    .replace(/\s*·\s*/g, " · ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripRuntimeWaitSuffix(runtimeHint: string): string {
+  const waitStart = runtimeHint.search(/已等(?:待)?|已等待/u);
+  if (waitStart < 0) return runtimeHint;
+  return runtimeHint
+    .slice(0, waitStart)
+    .replace(/[·•\s]+$/u, "")
+    .trim();
+}
+
 function runtimeHintWithElapsed(runtimeHint: string | undefined, elapsedSeconds: number): string {
   const elapsedText = `已等待 ${formatElapsed(elapsedSeconds)}`;
-  const hint = stripInternalToolNamesForUi(runtimeHint ?? "").trim();
+  const hint = stripRuntimeWaitSuffix(normalizeRuntimeHint(runtimeHint));
   if (!hint) return elapsedText;
-  if (/已等待\s*\d+\s*分\s*\d+\s*秒/.test(hint)) {
-    return hint.replace(/已等待\s*\d+\s*分\s*\d+\s*秒/g, elapsedText);
-  }
   return `${hint} · ${elapsedText}`;
 }
 
@@ -113,7 +127,7 @@ export function ExecutionRuntimeTag({ steps }: { steps: TaskExecutionStep[] | un
 
   const text =
     startedAtMs === null
-      ? stripInternalToolNamesForUi(step.runtimeHint ?? "")
+      ? normalizeRuntimeHint(step.runtimeHint)
       : runtimeHintWithElapsed(step.runtimeHint, (nowMs - startedAtMs) / 1000);
 
   if (!text.trim()) return null;
@@ -165,14 +179,17 @@ export function ExecutionTimelineRow({
   isLast,
   active = false,
   onSelect,
+  testId,
 }: {
   label: string;
   status: TaskExecutionStep["status"];
   isLast: boolean;
   active?: boolean;
   onSelect?: () => void;
+  testId?: string;
 }) {
   const emphasized = active || status === "running" || status === "awaiting_input" || isLast;
+  const awaitingInput = status === "awaiting_input";
   const rowClass = cn(
     "relative flex w-full min-w-0 items-start gap-3 py-1.5 text-left transition-colors",
     onSelect ? "rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/15" : "",
@@ -188,7 +205,11 @@ export function ExecutionTimelineRow({
       <span
         className={cn(
           "min-w-0 flex-1 break-words overflow-wrap-anywhere text-body leading-6.5",
-          emphasized ? "font-semibold text-foreground" : "font-medium text-text-secondary",
+          awaitingInput
+            ? "font-semibold text-warning"
+            : emphasized
+              ? "font-semibold text-foreground"
+              : "font-medium text-text-secondary",
         )}
       >
         {label}
@@ -198,13 +219,13 @@ export function ExecutionTimelineRow({
 
   if (onSelect) {
     return (
-      <button type="button" className={rowClass} onClick={onSelect}>
+      <button type="button" className={rowClass} onClick={onSelect} data-testid={testId}>
         {content}
       </button>
     );
   }
 
-  return <div className={rowClass}>{content}</div>;
+  return <div className={rowClass} data-testid={testId}>{content}</div>;
 }
 
 /** 当前正在排队或执行中的步骤（非终态） */
@@ -223,6 +244,7 @@ export function ExecutionStepCard({
       status={step.status}
       isLast={stepIndex >= total - 1}
       active={step.status !== "done" && step.status !== "pending"}
+      testId="execution-step-card"
     />
   );
 }

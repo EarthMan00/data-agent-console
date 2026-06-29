@@ -1,5 +1,5 @@
-import { AdminRolesWorkspace } from "@/components/admin-roles-workspace";
+import { redirect } from "next/navigation";
 
 export default function AdminRolesPage() {
-  return <AdminRolesWorkspace />;
+  redirect("/admin/users");
 }

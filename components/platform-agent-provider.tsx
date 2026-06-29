@@ -28,7 +28,6 @@ import {
   releaseSession,
   sendRegisterEmailOtp,
 } from "@/lib/agent-api/client";
-import { isAgentRealApiEnabled } from "@/lib/agent-api/config";
 import {
   AGENT_AUTH_EXPIRED_EVENT,
   AGENT_SESSION_CHANGED_EVENT,
@@ -289,7 +288,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [loginIntroFullText, setLoginIntroFullText] = useState(LOGIN_INTRO_TEXT);
-  const [loginTitleAnimation, setLoginTitleAnimation] =
+  const [, setLoginTitleAnimation] =
     useState<AuthTitleAnimationState>({ done: true, key: "", text: LOGIN_INTRO_TEXT });
   const [loginTitleOverride, setLoginTitleOverride] = useState("");
   const [loginTitleReplayId, setLoginTitleReplayId] = useState(0);
@@ -1368,12 +1367,5 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
 }
 
 export function PlatformAgentProvider({ children }: { children: ReactNode }) {
-  if (!isAgentRealApiEnabled()) {
-    return (
-      <PlatformAgentContext.Provider value={null}>
-        {children}
-      </PlatformAgentContext.Provider>
-    );
-  }
   return <PlatformAgentInner>{children}</PlatformAgentInner>;
 }

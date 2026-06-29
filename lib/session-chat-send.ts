@@ -4,6 +4,9 @@ import { sendChatMessageStream, uploadSessionAttachments } from "@/lib/agent-api
 import type { ChatSendResult, SessionMessageItem } from "@/lib/agent-api/types";
 import { streamSanitizeDeltaClient, stripModelThinkingForStreamPartial, stripModelThinkingForUi } from "@/lib/strip-model-thinking";
 
+export const OPTIMISTIC_USER_MESSAGE_ID_PREFIX = "optimistic_user_";
+export const STREAMING_ASSISTANT_MESSAGE_ID_PREFIX = "streaming_assistant_";
+
 export function createStreamingAssistantMessage(id: string, createdAt: string): SessionMessageItem {
   return {
     id,
@@ -18,6 +21,18 @@ export function createStreamingAssistantMessage(id: string, createdAt: string): 
 export function isStreamingAssistantMessage(m: SessionMessageItem): boolean {
   const meta = m.meta && typeof m.meta === "object" ? (m.meta as Record<string, unknown>) : null;
   return Boolean(meta?.streaming);
+}
+
+function isOptimisticUserMessage(m: SessionMessageItem): boolean {
+  return m.role === "user" && m.id.startsWith(OPTIMISTIC_USER_MESSAGE_ID_PREFIX);
+}
+
+function isLocalAssistantPlaceholderMessage(m: SessionMessageItem): boolean {
+  if (m.role !== "assistant") return false;
+  if (!m.id.startsWith(STREAMING_ASSISTANT_MESSAGE_ID_PREFIX) && !isStreamingAssistantMessage(m)) {
+    return false;
+  }
+  return !assistantMessageHasVisibleContent(m);
 }
 
 /** 助手消息是否有可展示正文（过滤思考块后非空）。 */
@@ -55,6 +70,63 @@ export function sessionHasAssistantThinkingPlaceholder(
   sending: boolean,
 ): boolean {
   return messages.some((m, i) => shouldShowAssistantThinkingPlaceholder(m, messages, i, sending));
+}
+
+export function mergeFreshMessagesWithLocalPending(
+  fresh: SessionMessageItem[],
+  current: SessionMessageItem[],
+): SessionMessageItem[] {
+  const merged = [...fresh];
+  const mergedUserClientMessageIds = new Set(
+    merged
+      .filter((m) => m.role === "user" && typeof m.message_id === "string" && m.message_id.trim().length > 0)
+      .map((m) => (m.message_id as string).trim()),
+  );
+  const mergedIds = new Set(merged.map((m) => m.id));
+
+  for (const message of current) {
+    if (!isOptimisticUserMessage(message)) continue;
+    const clientMessageId = typeof message.message_id === "string" ? message.message_id.trim() : "";
+    if ((clientMessageId && mergedUserClientMessageIds.has(clientMessageId)) || mergedIds.has(message.id)) {
+      continue;
+    }
+    merged.push(message);
+    mergedIds.add(message.id);
+    if (clientMessageId) mergedUserClientMessageIds.add(clientMessageId);
+  }
+
+  const localAssistantPlaceholder = [...current].reverse().find(isLocalAssistantPlaceholderMessage);
+  if (!localAssistantPlaceholder || mergedIds.has(localAssistantPlaceholder.id)) {
+    return merged;
+  }
+
+  const localOptimisticUser = [...current].reverse().find(isOptimisticUserMessage);
+  const matchingFreshUser =
+    localOptimisticUser && typeof localOptimisticUser.message_id === "string"
+      ? merged.find(
+          (message) =>
+            message.role === "user" &&
+            typeof message.message_id === "string" &&
+            message.message_id.trim() === localOptimisticUser.message_id?.trim(),
+        )
+      : undefined;
+  const priorAssistantIds = new Set(
+    current
+      .filter((message) => message.role === "assistant" && !isLocalAssistantPlaceholderMessage(message))
+      .map((message) => message.id),
+  );
+  const freshHasNewAssistantActivity = merged.some((message) => {
+    if (message.role !== "assistant") return false;
+    if (matchingFreshUser) {
+      return message.message_index > matchingFreshUser.message_index;
+    }
+    return !priorAssistantIds.has(message.id);
+  });
+  if (!freshHasNewAssistantActivity) {
+    merged.push(localAssistantPlaceholder);
+  }
+
+  return merged;
 }
 
 export function finalizeStreamingAssistantMessage(

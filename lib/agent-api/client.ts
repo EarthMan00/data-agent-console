@@ -1,11 +1,6 @@
 import { consumeChatSendStream, type ChatStreamHandlers } from "@/lib/agent-api/chat-stream";
 import { getAgentHttpApiBase, getAgentWsOrigin } from "@/lib/agent-api/config";
 import type { TaskExecutionStepStatus } from "@/lib/agent-events";
-import {
-  createFrontendMockArtifactBlob,
-  getFrontendMockArtifactText,
-  openFrontendMockUtf8TextReader,
-} from "@/lib/frontend-mock-artifacts";
 import type {
   AdminUserRow,
   ChatSendResult,
@@ -24,8 +19,6 @@ import type {
   UserFavoriteCreateBody,
   UserFavoriteDetailDto,
   UserFavoriteListDto,
-  AdminRole,
-  AdminPermission,
   AdminPlan,
   AdminPromptCategory,
   AdminPromptTemplate,
@@ -370,6 +363,25 @@ export async function adminDeleteUser(accessToken: string, userId: string): Prom
   if (res.ok) return;
   const data = await safeJson(res);
   throw new AgentApiError("delete user failed", res.status, data);
+}
+
+function sanitizeAdminPlanWriteBody(
+  body: {
+    code?: string;
+    name?: string;
+    level?: number;
+    can_use_tools?: boolean;
+    features?: Record<string, unknown>;
+  } & Record<string, unknown>,
+): {
+  code?: string;
+  name?: string;
+  level?: number;
+  can_use_tools?: boolean;
+  features?: Record<string, unknown>;
+} {
+  const { code, name, level, can_use_tools, features } = body;
+  return { code, name, level, can_use_tools, features };
 }
 
 export async function refreshAccessToken(refreshToken: string): Promise<string> {
@@ -790,11 +802,6 @@ export async function downloadAuthorizedFile(
   downloadPath: string,
   fallbackFilename: string,
 ): Promise<void> {
-  const mock = createFrontendMockArtifactBlob(downloadPath, fallbackFilename);
-  if (mock) {
-    triggerBrowserDownload(mock.blob, mock.filename || fallbackFilename);
-    return;
-  }
   const path = downloadPath.startsWith("/") ? downloadPath : `/${downloadPath}`;
   const res = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
@@ -817,8 +824,6 @@ export async function downloadAuthorizedFile(
 
 /** 带 Bearer 拉取文本（用于预览 CSV/JSON 等）。 */
 export async function fetchAuthorizedText(accessToken: string, downloadPath: string): Promise<string> {
-  const mock = getFrontendMockArtifactText(downloadPath);
-  if (mock !== null) return mock;
   const path = downloadPath.startsWith("/") ? downloadPath : `/${downloadPath}`;
   const res = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
@@ -967,8 +972,6 @@ export async function openAuthorizedUtf8TextStream(
   accessToken: string,
   downloadPath: string,
 ): Promise<ReadableStreamDefaultReader<string>> {
-  const mockReader = openFrontendMockUtf8TextReader(downloadPath);
-  if (mockReader) return mockReader;
   const path = downloadPath.startsWith("/") ? downloadPath : `/${downloadPath}`;
   const res = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
@@ -1133,63 +1136,6 @@ export function taskWebSocketAuthPayload(accessToken: string): string {
   return JSON.stringify({ type: "auth", access_token: accessToken });
 }
 
-// --- Roles ---
-
-export async function adminListRoles(accessToken: string): Promise<{ roles: AdminRole[] }> {
-  const res = await fetch(apiUrl("/admin/roles"), {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  const data = await safeJson(res);
-  if (!res.ok) throw new AgentApiError("list roles failed", res.status, data);
-  return data as { roles: AdminRole[] };
-}
-
-export async function adminListPermissions(accessToken: string): Promise<{ permissions: AdminPermission[] }> {
-  const res = await fetch(apiUrl("/admin/permissions"), {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  const data = await safeJson(res);
-  if (!res.ok) throw new AgentApiError("list permissions failed", res.status, data);
-  return data as { permissions: AdminPermission[] };
-}
-
-export async function adminCreateRole(
-  accessToken: string,
-  body: { name: string; code: string; description?: string; permission_ids?: string[] },
-): Promise<{ role: AdminRole }> {
-  const res = await fetch(apiUrl("/admin/roles"), {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await safeJson(res);
-  if (!res.ok) throw new AgentApiError("create role failed", res.status, data);
-  return data as { role: AdminRole };
-}
-
-export async function adminPatchRole(
-  accessToken: string, roleId: string,
-  body: { name?: string; description?: string; permission_ids?: string[] },
-): Promise<{ role: AdminRole }> {
-  const res = await fetch(apiUrl(`/admin/roles/${encodeURIComponent(roleId)}`), {
-    method: "PATCH",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await safeJson(res);
-  if (!res.ok) throw new AgentApiError("patch role failed", res.status, data);
-  return data as { role: AdminRole };
-}
-
-export async function adminDeleteRole(accessToken: string, roleId: string): Promise<void> {
-  const res = await fetch(apiUrl(`/admin/roles/${encodeURIComponent(roleId)}`), {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (res.ok) return;
-  throw new AgentApiError("delete role failed", res.status, await safeJson(res));
-}
-
 // --- Plans ---
 
 export async function adminListPlans(accessToken: string): Promise<{ plans: AdminPlan[] }> {
@@ -1203,12 +1149,12 @@ export async function adminListPlans(accessToken: string): Promise<{ plans: Admi
 
 export async function adminCreatePlan(
   accessToken: string,
-  body: { code: string; name: string; level?: number; can_use_tools?: boolean; tool_allowlist?: string[]; features?: Record<string, unknown> },
+  body: { code: string; name: string; level?: number; can_use_tools?: boolean; features?: Record<string, unknown> },
 ): Promise<{ plan: AdminPlan }> {
   const res = await fetch(apiUrl("/admin/plans"), {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(sanitizeAdminPlanWriteBody(body)),
   });
   const data = await safeJson(res);
   if (!res.ok) throw new AgentApiError("create plan failed", res.status, data);
@@ -1217,12 +1163,12 @@ export async function adminCreatePlan(
 
 export async function adminPatchPlan(
   accessToken: string, planId: string,
-  body: { name?: string; level?: number; can_use_tools?: boolean; tool_allowlist?: string[]; features?: Record<string, unknown> },
+  body: { name?: string; level?: number; can_use_tools?: boolean; features?: Record<string, unknown> },
 ): Promise<{ plan: AdminPlan }> {
   const res = await fetch(apiUrl(`/admin/plans/${encodeURIComponent(planId)}`), {
     method: "PATCH",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(sanitizeAdminPlanWriteBody(body)),
   });
   const data = await safeJson(res);
   if (!res.ok) throw new AgentApiError("patch plan failed", res.status, data);
@@ -1236,20 +1182,6 @@ export async function adminDeletePlan(accessToken: string, planId: string): Prom
   });
   if (res.ok) return;
   throw new AgentApiError("delete plan failed", res.status, await safeJson(res));
-}
-
-// --- User roles ---
-
-export async function adminSetUserRoles(
-  accessToken: string, userId: string, roleIds: string[],
-): Promise<void> {
-  const res = await fetch(apiUrl(`/admin/users/${encodeURIComponent(userId)}/roles`), {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ role_ids: roleIds }),
-  });
-  if (res.ok) return;
-  throw new AgentApiError("set user roles failed", res.status, await safeJson(res));
 }
 
 // --- Prompts ---

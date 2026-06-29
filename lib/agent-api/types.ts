@@ -349,31 +349,12 @@ export type UserFavoriteCreateBody = {
   copy_artifact_id?: string | null;
 };
 
-export type AdminRole = {
-  id: string;
-  name: string;
-  code: string;
-  description: string | null;
-  is_system: boolean;
-  permission_ids: string[];
-  user_count: number;
-};
-
-export type AdminPermission = {
-  id: string;
-  code: string;
-  name: string;
-  resource: string;
-  description: string | null;
-};
-
 export type AdminPlan = {
   id: string;
   code: string;
   name: string;
   level: number;
   can_use_tools: boolean;
-  tool_allowlist: string[];
   features: Record<string, unknown>;
   user_count: number;
   created_at: string | null;

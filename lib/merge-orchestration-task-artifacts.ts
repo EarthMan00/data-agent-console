@@ -342,7 +342,9 @@ export function alignStepsWithBundlesForReplay(
   return aligned.map((step) => {
     if (step.status !== "done" && step.status !== "error") return step;
     if (!step.runtimeHint && !step.runtimeStartedAt) return step;
-    const { runtimeHint: _hint, runtimeStartedAt: _startedAt, ...rest } = step;
+    const rest = { ...step };
+    delete rest.runtimeHint;
+    delete rest.runtimeStartedAt;
     return rest;
   });
 }

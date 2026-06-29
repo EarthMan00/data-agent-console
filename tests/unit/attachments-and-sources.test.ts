@@ -7,6 +7,16 @@ describe("attachments and source helpers", () => {
     expect(sanitizeObjective("请分析 @seller-sprite 美国站评论 @google")).toBe("请分析 美国站评论");
   });
 
+  it("preserves line breaks in multiline objectives", () => {
+    expect(sanitizeObjective("Line one\nLine two\n\nLine three")).toBe("Line one\nLine two\n\nLine three");
+  });
+
+  it("preserves paragraph breaks while stripping datasource mentions", () => {
+    expect(
+      sanitizeObjective("Analyze @seller-sprite top listings\n\nCompare review trends @google"),
+    ).toBe("Analyze top listings\n\nCompare review trends");
+  });
+
   it("infers attachment file types from extension", () => {
     expect(inferAttachmentType("report.pdf")).toBe("pdf");
     expect(inferAttachmentType("voice.m4a")).toBe("audio");

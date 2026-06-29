@@ -5,6 +5,7 @@ import {
   composerDraftContainsSuggestion,
   createComposerPrefillStorageValue,
   parseDatasourceMentions,
+  parseComposerPrefillStorageValue,
   removeFromComposerDraft,
 } from "@/lib/composer-prefill";
 import { homeDataSourceItems } from "@/lib/home-capability-items";
@@ -114,5 +115,17 @@ describe("composer datasource mention parser", () => {
     expect(parsed.selectedSourceIds).toEqual([]);
     expect(parsed.sourcePlacements).toEqual([]);
     expect(parsed.text).toBe("使用@不存在工具这个工具：继续保留原文");
+  });
+
+  it("decodes escaped unicode literals before hydrating composer prefill text", () => {
+    const raw = JSON.stringify({
+      text: "\\u9700\\u8981\\u5206\\u6790\\u4e9a\\u9a6c\\u900a\\u7684\\u6d41\\u91cf\\u6765\\u6e90\\uff1f\\n\\u8bf7\\u7ee7\\u7eed",
+      selectedSourceIds: [],
+      sourcePlacements: [],
+    });
+
+    const parsed = parseComposerPrefillStorageValue(raw, homeDataSourceItems);
+
+    expect(parsed.text).toBe("需要分析亚马逊的流量来源？\n请继续");
   });
 });

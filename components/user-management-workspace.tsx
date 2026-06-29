@@ -1,8 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-
-import { AliceShell } from "@/components/alice-shell";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -66,19 +64,19 @@ export function UserManagementWorkspace() {
 
   const submitCreate = async () => {
     if (!platformAgent?.auth) return;
-    const u = newUsername.trim();
-    const p = newPassword;
-    if (u.length < 2 || p.length < 4) {
+    const username = newUsername.trim();
+    if (username.length < 2 || newPassword.length < 4) {
       setNotice("用户名至少 2 个字符，密码至少 4 个字符。");
       return;
     }
+
     setCreateBusy(true);
     setNotice("");
     try {
       await platformAgent.withFreshToken(async (token) => {
         await adminCreateUser(token, {
-          username: u,
-          password: p,
+          username,
+          password: newPassword,
           account_kind: newAccountKind,
           status: "active",
         });
@@ -103,6 +101,7 @@ export function UserManagementWorkspace() {
       setNotice("新密码至少 4 个字符。");
       return;
     }
+
     setPwdBusy(true);
     setNotice("");
     try {
@@ -141,118 +140,120 @@ export function UserManagementWorkspace() {
   };
 
   return (
-    <AliceShell currentPath="/user-management" currentRunLabel="用户管理">
-      <div className="mx-auto max-w-admin-content px-8 pb-12 pt-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-title-3 font-semibold leading-8 text-foreground">用户管理</h1>
-            <p className="mt-2 text-sm leading-6 text-text-tertiary">
-              查看账号与类型；仅管理员可访问本页。新建账号可选择普通用户或高级用户（不可创建管理员）。
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" size="sm" className="rounded-control" onClick={() => void refresh()}>
-              刷新
-            </Button>
-            <Button type="button" size="sm" className="rounded-control" onClick={() => setCreateOpen(true)}>
-              新增账号
-            </Button>
-          </div>
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-title-3 font-semibold leading-8 text-foreground">用户管理</h1>
+          <p className="mt-2 text-sm leading-6 text-text-tertiary">
+            管理平台账号。当前账号模型只区分普通用户和高级用户，管理员账号不允许在这里新建或删除。
+          </p>
         </div>
-
-        {notice ? <p className="mt-4 text-sm text-danger">{notice}</p> : null}
-
-        <div className="mt-8 overflow-hidden rounded-popover border border-border bg-bg-surface shadow-surface">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-border bg-fill-hover text-xs font-medium uppercase tracking-wide text-text-tertiary">
-              <tr>
-                <th className="px-4 py-3">用户名</th>
-                <th className="px-4 py-3">用户 ID</th>
-                <th className="px-4 py-3">邮箱</th>
-                <th className="px-4 py-3">用户类型</th>
-                <th className="px-4 py-3">状态</th>
-                <th className="px-4 py-3 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-text-disabled">
-                    加载中…
-                  </td>
-                </tr>
-              ) : users.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-text-disabled">
-                    暂无用户
-                  </td>
-                </tr>
-              ) : (
-                users.map((row) => {
-                  const isAdminRole = row.role === "admin";
-                  const kindLabel = describeUserKind(row);
-                  return (
-                    <tr key={row.user_id} className="border-b border-border-subtle last:border-0">
-                      <td className="px-4 py-3 font-medium text-foreground">{row.username}</td>
-                      <td className="max-w-52 truncate px-4 py-3 font-mono text-xs text-text-tertiary" title={row.user_id}>
-                        {row.user_id}
-                      </td>
-                      <td className="px-4 py-3 text-text-tertiary">{row.email ?? "—"}</td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-xs ${
-                            isAdminRole
-                              ? "bg-violet-100 text-violet-800"
-                              : kindLabel === "高级用户"
-                                ? "bg-success-bg text-success"
-                                : "bg-fill-hover text-text-secondary"
-                          }`}
-                        >
-                          {kindLabel}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-text-tertiary">{row.status}</td>
-                      <td className="px-4 py-3 text-right">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 rounded-md text-body text-text-secondary"
-                          onClick={() => {
-                            setPwdTarget(row);
-                            setPwdValue("");
-                          }}
-                        >
-                          修改密码
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 rounded-md text-body text-danger hover:text-danger-hover disabled:opacity-40"
-                          disabled={isAdminRole}
-                          title={isAdminRole ? "不可删除管理员账号" : undefined}
-                          onClick={() => setDeleteTarget(row)}
-                        >
-                          删除
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" size="sm" className="rounded-control" onClick={() => void refresh()}>
+            刷新
+          </Button>
+          <Button type="button" size="sm" className="rounded-control" onClick={() => setCreateOpen(true)}>
+            新增账号
+          </Button>
         </div>
       </div>
 
-      <Dialog open={createOpen} onOpenChange={(o) => !o && setCreateOpen(false)}>
+      {notice ? <p className="mt-4 text-sm text-danger">{notice}</p> : null}
+
+      <div className="mt-8 overflow-hidden rounded-popover border border-border bg-bg-surface shadow-surface">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-border bg-fill-hover text-xs font-medium uppercase tracking-wide text-text-tertiary">
+            <tr>
+              <th className="px-4 py-3">用户名</th>
+              <th className="px-4 py-3">用户 ID</th>
+              <th className="px-4 py-3">邮箱</th>
+              <th className="px-4 py-3">账号类型</th>
+              <th className="px-4 py-3">状态</th>
+              <th className="px-4 py-3 text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-text-disabled">
+                  加载中…
+                </td>
+              </tr>
+            ) : users.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-text-disabled">
+                  暂无用户
+                </td>
+              </tr>
+            ) : (
+              users.map((row) => {
+                const isAdminRole = row.role === "admin";
+                const kindLabel = describeUserKind(row);
+                return (
+                  <tr key={row.user_id} className="border-b border-border-subtle last:border-0">
+                    <td className="px-4 py-3 font-medium text-foreground">{row.username}</td>
+                    <td className="max-w-52 truncate px-4 py-3 font-mono text-xs text-text-tertiary" title={row.user_id}>
+                      {row.user_id}
+                    </td>
+                    <td className="px-4 py-3 text-text-tertiary">{row.email ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${
+                          isAdminRole
+                            ? "bg-violet-100 text-violet-800"
+                            : kindLabel === "高级用户"
+                              ? "bg-success-bg text-success"
+                              : "bg-fill-hover text-text-secondary"
+                        }`}
+                      >
+                        {kindLabel}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-text-tertiary">{row.status}</td>
+                    <td className="px-4 py-3 text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 rounded-md text-body text-text-secondary"
+                        onClick={() => {
+                          setPwdTarget(row);
+                          setPwdValue("");
+                        }}
+                      >
+                        修改密码
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 rounded-md text-body text-danger hover:text-danger-hover disabled:opacity-40"
+                        disabled={isAdminRole}
+                        title={isAdminRole ? "不可删除管理员账号" : undefined}
+                        onClick={() => setDeleteTarget(row)}
+                      >
+                        删除
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <Dialog open={createOpen} onOpenChange={(open) => !open && setCreateOpen(false)}>
         <DialogContent className="max-w-md rounded-card" aria-describedby={undefined}>
           <DialogTitle className="text-title-1 text-foreground">新增账号</DialogTitle>
           <div className="grid gap-3 pt-2">
             <div className="grid gap-1">
               <label className="text-xs text-text-tertiary">用户名</label>
-              <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} className="h-9 rounded-control" />
+              <Input
+                value={newUsername}
+                onChange={(e) => setNewUsername(e.target.value)}
+                className="h-9 rounded-control"
+              />
             </div>
             <div className="grid gap-1">
               <label className="text-xs text-text-tertiary">密码</label>
@@ -265,21 +266,33 @@ export function UserManagementWorkspace() {
               />
             </div>
             <div className="grid gap-1">
-              <label className="text-xs text-text-tertiary">用户类型</label>
+              <label className="text-xs text-text-tertiary">账号类型</label>
               <select
                 value={newAccountKind}
                 onChange={(e) => setNewAccountKind(e.target.value as "standard" | "premium")}
                 className="h-9 rounded-control border border-border bg-bg-surface px-3 text-sm text-foreground"
               >
-                <option value="standard">普通用户（仅对话，不含工具能力）</option>
-                <option value="premium">高级用户（可使用工具）</option>
+                <option value="standard">普通用户，仅文本对话</option>
+                <option value="premium">高级用户，可使用 skills 工具</option>
               </select>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" size="sm" className="rounded-control" onClick={() => setCreateOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-control"
+                onClick={() => setCreateOpen(false)}
+              >
                 取消
               </Button>
-              <Button type="button" size="sm" className="rounded-control" disabled={createBusy} onClick={() => void submitCreate()}>
+              <Button
+                type="button"
+                size="sm"
+                className="rounded-control"
+                disabled={createBusy}
+                onClick={() => void submitCreate()}
+              >
                 {createBusy ? "提交中…" : "创建"}
               </Button>
             </div>
@@ -287,10 +300,10 @@ export function UserManagementWorkspace() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!pwdTarget} onOpenChange={(o) => !o && setPwdTarget(null)}>
+      <Dialog open={!!pwdTarget} onOpenChange={(open) => !open && setPwdTarget(null)}>
         <DialogContent className="max-w-md rounded-card" aria-describedby={undefined}>
           <DialogTitle className="text-title-1 text-foreground">
-            修改密码{pwdTarget ? `：${pwdTarget.username}` : ""}
+            修改密码{pwdTarget ? `（${pwdTarget.username}）` : ""}
           </DialogTitle>
           <p className="text-sm text-text-tertiary">直接设置新密码，无需验证旧密码。</p>
           <div className="grid gap-3 pt-2">
@@ -305,10 +318,22 @@ export function UserManagementWorkspace() {
               />
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" size="sm" className="rounded-control" onClick={() => setPwdTarget(null)}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-control"
+                onClick={() => setPwdTarget(null)}
+              >
                 取消
               </Button>
-              <Button type="button" size="sm" className="rounded-control" disabled={pwdBusy} onClick={() => void submitPassword()}>
+              <Button
+                type="button"
+                size="sm"
+                className="rounded-control"
+                disabled={pwdBusy}
+                onClick={() => void submitPassword()}
+              >
                 {pwdBusy ? "保存中…" : "保存"}
               </Button>
             </div>
@@ -316,14 +341,20 @@ export function UserManagementWorkspace() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <DialogContent className="max-w-md rounded-card" aria-describedby={undefined}>
           <DialogTitle className="text-title-1 text-foreground">确认删除</DialogTitle>
           <p className="text-sm text-text-tertiary">
-            确定删除用户「{deleteTarget?.username}」？该用户在库中的会话、任务等关联数据将一并删除，且不可恢复。
+            确定删除用户“{deleteTarget?.username}”？该用户在库中的会话、任务等关联数据会一并删除，且不可恢复。
           </p>
           <div className="flex justify-end gap-2 pt-4">
-            <Button type="button" variant="outline" size="sm" className="rounded-control" onClick={() => setDeleteTarget(null)}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-control"
+              onClick={() => setDeleteTarget(null)}
+            >
               取消
             </Button>
             <Button
@@ -333,11 +364,11 @@ export function UserManagementWorkspace() {
               disabled={deleteBusy}
               onClick={() => void submitDelete()}
             >
-              {deleteBusy ? "删除中…" : "确定删除"}
+              {deleteBusy ? "删除中…" : "确认删除"}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
-    </AliceShell>
+    </div>
   );
 }

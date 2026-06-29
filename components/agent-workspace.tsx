@@ -78,7 +78,6 @@ import {
   type TaskRunLike,
   toCapabilitySafeTitle,
 } from "@/components/agent-workspace-view-models";
-import { isFrontendMockSessionId } from "@/lib/frontend-mock-session";
 
 export {
   buildAcknowledgement,
@@ -132,7 +131,6 @@ export function AgentWorkspace() {
   const run = runId ? (runs.find((item) => item.id === runId) ?? null) : null;
   const report = run ? (reports.find((item) => item.id === run.reportId) ?? null) : null;
   const { refreshHistory } = useAliceShellState();
-  const frontendMockSession = isFrontendMockSessionId(historySessionId);
 
   // Ensure the session list reflects newly-created sessions as soon as we
   // enter a task view (every entry point: homepage, template, replay, etc.).
@@ -147,7 +145,7 @@ export function AgentWorkspace() {
     platformRouteReady &&
     isPlatformBackendEnabled() &&
     Boolean(historySessionId) &&
-    (Boolean(platformAgent) || frontendMockSession);
+    Boolean(platformAgent);
   const awaitingAgentRouteParams =
     platformRouteReady &&
     isPlatformBackendEnabled() &&
@@ -262,7 +260,10 @@ function AgentRunWorkspaceView({
   // 模块级 abortPollRef 保证 Strict Mode 双挂载时新旧闭包共享同一 ref
 
   const composerMode = composerModes[run.id] ?? (run.mode === "专业模式" ? "深度模式" : "普通模式");
-  const selectedSourceIds = selectedSourceOverrides[run.id] ?? [];
+  const selectedSourceIds = useMemo(
+    () => selectedSourceOverrides[run.id] ?? [],
+    [selectedSourceOverrides, run.id],
+  );
   const currentComposerVersion = composerVersion[run.id] ?? 0;
   const {
     dataSourceGroups: composerDataSourceGroups,
@@ -629,7 +630,7 @@ function AgentRunWorkspaceView({
     });
   }, [executeRound, run.id, run.latestRoundId, run.objective, run.selectedCapabilities, run.status]);
 
-  const appendNote = async (valueOverride?: string) => {
+  const appendNote = useCallback(async (valueOverride?: string) => {
     const value = sanitizeObjective(valueOverride ?? draft);
     if (!value) return;
 
@@ -686,11 +687,21 @@ function AgentRunWorkspaceView({
       attachments: queuedAttachments[run.id] ?? [],
       attachmentFiles: queuedAttachmentFiles[run.id] ?? [],
     });
-  };
+  }, [
+    composerShowsStop,
+    draft,
+    executeRound,
+    latestRoundModel?.postTaskGuidance,
+    queuedAttachments,
+    queuedAttachmentFiles,
+    roundModels,
+    run,
+    selectedSourceIds,
+  ]);
 
-  const submitGuidanceSuggestion = (item: string) => {
+  const submitGuidanceSuggestion = useCallback((item: string) => {
     void appendNote(item);
-  };
+  }, [appendNote]);
 
   const interactiveGuidanceRoundId = useMemo(
     () =>
@@ -706,7 +717,7 @@ function AgentRunWorkspaceView({
       if (roundId !== interactiveGuidanceRoundId) return undefined;
       return submitGuidanceSuggestion;
     },
-    [interactiveGuidanceRoundId],
+    [interactiveGuidanceRoundId, submitGuidanceSuggestion],
   );
 
   const applyCapability = (capabilityId: string) => {
@@ -1111,8 +1122,14 @@ function AgentRunWorkspaceView({
                         </TaskOrchestrationBlock>
                       );
 
+                      const guidanceLeading =
+                        round.uiLayout === "tool_orchestration" && round.resultSummary
+                          ? round.resultSummary
+                          : undefined;
+
                       const guidanceBubble = round.postTaskGuidance ? (
                         <PostTaskGuidanceBubble
+                          leading={guidanceLeading}
                           content={round.postTaskGuidance}
                           datetime={round.createdAt}
                           onSuggestionToggle={guidanceSuggestionToggleForRound(round.roundId)}

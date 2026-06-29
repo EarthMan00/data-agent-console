@@ -1,18 +1,21 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { e2eConfig } from "./tests/e2e/config";
+
 export default defineConfig({
   testDir: "./tests/e2e",
+  globalSetup: "./tests/e2e/global-setup.ts",
   fullyParallel: false,
   workers: 1,
   retries: 0,
   use: {
     ...devices["Desktop Chrome"],
-    baseURL: "http://127.0.0.1:3000",
+    baseURL: e2eConfig.baseUrl,
     trace: "on-first-retry",
   },
   webServer: {
-    command: "npm run dev -- --hostname 127.0.0.1 --port 3000",
-    port: 3000,
+    command: e2eConfig.webServerCommand,
+    port: e2eConfig.port,
     reuseExistingServer: true,
     timeout: 120000,
   },

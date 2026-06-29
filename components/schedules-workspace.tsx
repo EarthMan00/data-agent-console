@@ -2113,9 +2113,6 @@ function ApiRunRecordRow({
       onNotify("该记录无关联会话，无法查看对话", "error");
       return;
     }
-    if (platformAgent) {
-      platformAgent.setActivePlatformSession(sessionId);
-    }
     const label = (r.task_title_snapshot || "").trim();
     const q = new URLSearchParams({
       sessionId,
@@ -2124,7 +2121,7 @@ function ApiRunRecordRow({
     if (label) q.set("runLabel", label);
     if (taskId) q.set("taskId", taskId);
     router.push(`/agent?${q.toString()}`);
-  }, [onNotify, platformAgent, router, sessionId, r.task_title_snapshot, taskId]);
+  }, [onNotify, router, sessionId, r.task_title_snapshot, taskId]);
 
   const onDeleteRun = useCallback(async () => {
     if (!platformAgent) {
