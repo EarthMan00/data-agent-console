@@ -418,3 +418,20 @@ export type AdminModelConfig = {
   created_at: string;
   updated_at: string;
 };
+
+export type AdminAlicePersonaTemplate = {
+  id: string;
+  name: string;
+  description: string | null;
+  identity: string;
+  communication_style: string;
+  output_contract: string;
+  safety_rules: string;
+  internal_reasoning_policy: string;
+  decompose_prompt: string;
+  error_humanize_prompt: string;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};

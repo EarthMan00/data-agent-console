@@ -18,6 +18,7 @@ const navItems = [
   { href: "/admin/users", label: "用户管理", icon: Users },
   { href: "/admin/plans", label: "套餐管理", icon: Package },
   { href: "/admin/prompts", label: "Prompt 管理", icon: BookOpen },
+  { href: "/admin/personas", label: "Persona 管理", icon: BookOpen },
   { href: "/admin/feedback", label: "反馈管理", icon: MessageCircleMore },
   { href: "/admin/models", label: "模型管理", icon: Cpu },
 ];

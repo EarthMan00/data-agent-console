@@ -26,6 +26,7 @@ describe("AdminShell", () => {
 
     expect(container.querySelector('a[href="/admin/users"]')).not.toBeNull();
     expect(container.querySelector('a[href="/admin/plans"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/admin/personas"]')).not.toBeNull();
     expect(container.querySelector('a[href="/admin/roles"]')).toBeNull();
   });
 });

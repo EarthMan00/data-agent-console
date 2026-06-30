@@ -25,6 +25,7 @@ import type {
   AdminPromptTemplateListResponse,
   AdminFeedbackEntry,
   AdminModelConfig,
+  AdminAlicePersonaTemplate,
 } from "@/lib/agent-api/types";
 
 function apiUrl(path: string): string {
@@ -1401,4 +1402,86 @@ export async function adminActivateModelConfig(accessToken: string, configId: st
   });
   if (res.ok) return;
   throw new AgentApiError("activate model config failed", res.status, await safeJson(res));
+}
+
+// --- Admin: Alice persona templates ---
+
+export async function adminListAlicePersonas(accessToken: string): Promise<{ personas: AdminAlicePersonaTemplate[] }> {
+  const res = await fetch(apiUrl("/admin/personas"), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("list Alice personas failed", res.status, data);
+  return data as { personas: AdminAlicePersonaTemplate[] };
+}
+
+export async function adminCreateAlicePersona(
+  accessToken: string,
+  body: { name: string; description?: string | null } & Partial<Pick<
+    AdminAlicePersonaTemplate,
+    | "identity"
+    | "communication_style"
+    | "output_contract"
+    | "safety_rules"
+    | "internal_reasoning_policy"
+    | "decompose_prompt"
+    | "error_humanize_prompt"
+  >>,
+): Promise<{ persona: AdminAlicePersonaTemplate }> {
+  const res = await fetch(apiUrl("/admin/personas"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("create Alice persona failed", res.status, data);
+  return data as { persona: AdminAlicePersonaTemplate };
+}
+
+export async function adminPatchAlicePersona(
+  accessToken: string,
+  personaId: string,
+  body: Partial<Pick<
+    AdminAlicePersonaTemplate,
+    | "name"
+    | "description"
+    | "identity"
+    | "communication_style"
+    | "output_contract"
+    | "safety_rules"
+    | "internal_reasoning_policy"
+    | "decompose_prompt"
+    | "error_humanize_prompt"
+  >>,
+): Promise<{ persona: AdminAlicePersonaTemplate }> {
+  const res = await fetch(apiUrl(`/admin/personas/${encodeURIComponent(personaId)}`), {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("patch Alice persona failed", res.status, data);
+  return data as { persona: AdminAlicePersonaTemplate };
+}
+
+export async function adminDeleteAlicePersona(accessToken: string, personaId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/admin/personas/${encodeURIComponent(personaId)}`), {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.ok) return;
+  throw new AgentApiError("delete Alice persona failed", res.status, await safeJson(res));
+}
+
+export async function adminActivateAlicePersona(
+  accessToken: string,
+  personaId: string,
+): Promise<{ persona: AdminAlicePersonaTemplate }> {
+  const res = await fetch(apiUrl(`/admin/personas/${encodeURIComponent(personaId)}/activate`), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("activate Alice persona failed", res.status, data);
+  return data as { persona: AdminAlicePersonaTemplate };
 }
