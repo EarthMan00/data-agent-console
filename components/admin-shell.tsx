@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, type ReactNode } from "react";
-import { clearAgentSession } from "@/lib/agent-api/session";
+import { logoutPlatformAuth } from "@/lib/agent-api/client";
+import { clearAgentSession, loadAgentSession } from "@/lib/agent-api/session";
 import { cn } from "@/lib/utils";
 import {
   BookOpen,
@@ -27,7 +28,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
+    try {
+      await logoutPlatformAuth(loadAgentSession()?.accessToken);
+    } catch {
+      // Client-side session still needs to be cleared.
+    }
     clearAgentSession();
     router.replace("/admin/login");
   }, [router]);

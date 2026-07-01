@@ -328,6 +328,154 @@ describe("PlatformSessionAgentWorkspace post-task guidance", () => {
     expect(screen.getByText("查看结果数据详情，生成这三款爆品的分析报告")).toBeInTheDocument();
   });
 
+  it("normalizes a replayed multi-step completion summary even when persisted metadata only contains task_id", async () => {
+    const taskName = "Search Amazon for cup and capture the top three listings";
+    const expectedSummary = buildTaskCompletionSummary({
+      task_id: "task-final",
+      tool_name: "skill_task",
+      status: "SUCCESS",
+      started_at: "2026-06-27T08:00:00Z",
+      finished_at: "2026-06-27T08:00:03Z",
+      artifacts: [
+        {
+          artifact_id: "artifact-1",
+          artifact_type: "result",
+          original_name: "top-cups.csv",
+          download_api: "/api/tasks/task-final/artifacts/artifact-1/download",
+        },
+      ],
+      events: [],
+      zip_download_api: null,
+      request_payload: {
+        message: taskName,
+      },
+    } as never);
+
+    agentApiMocks.listSessionMessages.mockResolvedValue({
+      messages: [
+        message("u1", "user", taskName, 0),
+        message(
+          "steps",
+          "assistant",
+          "Running the accepted multi-step task",
+          1,
+          {
+            kind: "task_execution_steps",
+            task_id: "task-root",
+            orchestration_id: "orch-1",
+            round_id: "round-1",
+            steps: [
+              { id: "round-1-step-1", label: "Collect the top three cup listings", status: "done" },
+              { id: "round-1-step-2", label: "Prepare the result handoff", status: "done" },
+            ],
+          },
+        ),
+        message(
+          "summary",
+          "assistant",
+          "多步任务已全部完成，可以在右侧查看最后一步任务结果与数据。",
+          2,
+          {
+            task_id: "task-final",
+            has_artifacts: true,
+          },
+        ),
+        message(
+          "guidance",
+          "assistant",
+          "【接下来您可以】\n1. Review the output and generate a report",
+          3,
+          {
+            kind: "post_task_guidance",
+            task_id: "task-final",
+          },
+        ),
+      ],
+      has_more: false,
+    });
+
+    render(<PlatformSessionAgentWorkspace sessionId="session-1" />);
+
+    expect(await screen.findByText(expectedSummary)).toBeInTheDocument();
+    expect(screen.queryByText("多步任务已全部完成，可以在右侧查看最后一步任务结果与数据。")).not.toBeInTheDocument();
+    expect(screen.getByText("接下来您可以试试：")).toBeInTheDocument();
+    expect(screen.getByText("Review the output and generate a report")).toBeInTheDocument();
+  });
+
+  it("normalizes the same replayed multi-step completion summary in scheduled run replay mode when task_status metadata is missing", async () => {
+    const taskName = "Search Amazon for cup and capture the top three listings";
+    const expectedSummary = buildTaskCompletionSummary({
+      task_id: "task-final",
+      tool_name: "skill_task",
+      status: "SUCCESS",
+      started_at: "2026-06-27T08:00:00Z",
+      finished_at: "2026-06-27T08:00:03Z",
+      artifacts: [
+        {
+          artifact_id: "artifact-1",
+          artifact_type: "result",
+          original_name: "top-cups.csv",
+          download_api: "/api/tasks/task-final/artifacts/artifact-1/download",
+        },
+      ],
+      events: [],
+      zip_download_api: null,
+      request_payload: {
+        message: taskName,
+      },
+    } as never);
+
+    agentApiMocks.listSessionMessages.mockResolvedValue({
+      messages: [
+        message("u1", "user", taskName, 0),
+        message(
+          "steps",
+          "assistant",
+          "Running the accepted multi-step task",
+          1,
+          {
+            kind: "task_execution_steps",
+            task_id: "task-root",
+            orchestration_id: "orch-1",
+            round_id: "round-1",
+            steps: [
+              { id: "round-1-step-1", label: "Collect the top three cup listings", status: "done" },
+              { id: "round-1-step-2", label: "Prepare the result handoff", status: "done" },
+            ],
+          },
+        ),
+        message(
+          "summary",
+          "assistant",
+          "多步任务已全部完成，可以在右侧查看最后一步任务结果与数据。",
+          2,
+          {
+            task_id: "task-final",
+            has_artifacts: true,
+          },
+        ),
+        message(
+          "guidance",
+          "assistant",
+          "【接下来您可以】\n1. Review the output and generate a report",
+          3,
+          {
+            kind: "post_task_guidance",
+            task_id: "task-final",
+          },
+        ),
+      ],
+      has_more: false,
+    });
+
+    render(<PlatformSessionAgentWorkspace sessionId="session-1" scheduledRunRecord />);
+
+    expect(await screen.findByText(expectedSummary)).toBeInTheDocument();
+    expect(screen.queryByText("多步任务已全部完成，可以在右侧查看最后一步任务结果与数据。")).not.toBeInTheDocument();
+    expect(screen.getByText("接下来您可以试试：")).toBeInTheDocument();
+    expect(screen.getByText("Review the output and generate a report")).toBeInTheDocument();
+  });
+
   it("does not promote a scheduled run replay session into the global active session", async () => {
     agentApiMocks.listSessionMessages.mockResolvedValue({
       messages: [],

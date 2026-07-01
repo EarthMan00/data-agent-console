@@ -352,6 +352,29 @@ describe("NewConversationTaskComposer", () => {
       page: 1,
       page_size: 100,
     });
+    mockFetchPublicPromptCategories.mockResolvedValue([
+      {
+        id: "source-menu-keepa-test",
+        name: "Keepa",
+        sort_order: 1,
+      },
+    ]);
+    mockFetchHomePromptRecommendations.mockImplementation(async (categoryId: string) => {
+      if (categoryId !== "source-menu-keepa-test") return [];
+      return [
+        {
+          id: "source-card-keepa-search",
+          title: "Keepa 搜索模板",
+          description: "用于构建数据源菜单",
+          prompt: "@Keepa-亚马逊-商品搜索 亚马逊美国站,搜索关键词 Sports Water Bottles",
+          meta: "",
+          capability_ids: ["keepa"],
+          replay_run_id: null,
+          replay_share_id: null,
+          sort_order: 1,
+        },
+      ];
+    });
     mockCreateUserPrompt.mockResolvedValue({
       id: "prompt-new",
       group_id: null,

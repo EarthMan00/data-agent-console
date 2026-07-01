@@ -32,17 +32,17 @@ async function seedAdminSession(context: BrowserContext, baseURL: string): Promi
   const auth = await loginAsAdmin(baseURL);
   await context.addInitScript((snapshot) => {
     try {
-      localStorage.setItem("agent_platform.access_token", snapshot.accessToken);
-      localStorage.setItem("agent_platform.refresh_token", snapshot.refreshToken);
-      localStorage.setItem("agent_platform.user_id", snapshot.userId);
-      localStorage.setItem("agent_platform.user_role", snapshot.userRole);
-      localStorage.setItem("agent_platform.user_display_name", snapshot.displayName);
+      sessionStorage.setItem("agent_platform.access_token", snapshot.accessToken);
+      sessionStorage.setItem("agent_platform.refresh_token", snapshot.refreshToken);
+      sessionStorage.setItem("agent_platform.user_id", snapshot.userId);
+      sessionStorage.setItem("agent_platform.user_role", snapshot.userRole);
+      sessionStorage.setItem("agent_platform.user_display_name", snapshot.displayName);
     } catch {
       // about:blank or restricted contexts may not expose localStorage.
     }
   }, {
     accessToken: auth.access_token,
-    refreshToken: auth.refresh_token,
+    refreshToken: "__http_only_refresh__",
     userId: auth.user_id,
     userRole: auth.user_role ?? "admin",
     displayName: e2eConfig.adminUsername,

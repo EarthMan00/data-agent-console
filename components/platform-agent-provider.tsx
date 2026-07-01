@@ -22,6 +22,7 @@ import {
   createSession,
   formatAgentApiErrorForUser,
   login,
+  logoutPlatformAuth,
   parseFastApiDetail,
   registerByEmail,
   refreshAccessToken,
@@ -33,6 +34,7 @@ import {
   AGENT_SESSION_CHANGED_EVENT,
   clearAgentSession,
   clearPlatformSessionId,
+  HTTP_ONLY_REFRESH_TOKEN_PLACEHOLDER,
   loadAgentSession,
   loadPlatformSessionId,
   saveAgentSession,
@@ -348,16 +350,46 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const activeTitleTypingDone = !loginOpen || authTitleDoneKey === activeLoginTitleKey;
 
   useEffect(() => {
-    const snap = loadAgentSession();
-    setAuth(snap);
-    if (snap) {
-      markLoggedInOnThisDevice();
-    }
-    setPlatformSessionId(loadPlatformSessionId());
-    setAuthHydrated(true);
+    let cancelled = false;
+    const hydrate = async () => {
+      const snap = loadAgentSession();
+      if (snap) {
+        if (!cancelled) {
+          setAuth(snap);
+          markLoggedInOnThisDevice();
+        }
+      } else {
+        try {
+          const nextAccess = await refreshAccessToken();
+          const checked = await checkAccessToken(nextAccess);
+          const next: AgentSessionSnapshot = {
+            accessToken: nextAccess,
+            refreshToken: HTTP_ONLY_REFRESH_TOKEN_PLACEHOLDER,
+            userId: checked.user_id ?? "",
+            displayName: checked.username ?? undefined,
+            userRole: checked.user_role ?? undefined,
+          };
+          saveAgentSession(next);
+          if (!cancelled) {
+            setAuth(next);
+            markLoggedInOnThisDevice();
+          }
+        } catch {
+          // No valid cookie-backed session to restore.
+        }
+      }
+      if (!cancelled) {
+        setPlatformSessionId(loadPlatformSessionId());
+        setAuthHydrated(true);
+      }
+    };
+    void hydrate();
     const sync = () => setAuth(loadAgentSession());
     window.addEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
-    return () => window.removeEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(AGENT_SESSION_CHANGED_EVENT, sync);
+    };
   }, []);
 
   useEffect(() => {
@@ -530,10 +562,11 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       } catch (e) {
         if (e instanceof AgentApiError && e.status === 401) {
           try {
-            const nextAccess = await refreshAccessToken(snap.refreshToken);
+            const nextAccess = await refreshAccessToken();
             const next: AgentSessionSnapshot = {
               ...snap,
               accessToken: nextAccess,
+              refreshToken: HTTP_ONLY_REFRESH_TOKEN_PLACEHOLDER,
             };
             saveAgentSession(next);
             setAuth(next);
@@ -588,7 +621,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       }
       const snap: AgentSessionSnapshot = {
         accessToken: res.access_token,
-        refreshToken: res.refresh_token,
+        refreshToken: res.refresh_token || HTTP_ONLY_REFRESH_TOKEN_PLACEHOLDER,
         userId: res.user_id,
         displayName: res.username ?? displayNameHint ?? res.user_id,
         userRole: res.user_role,
@@ -884,6 +917,13 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
           status: e instanceof AgentApiError ? e.status : undefined,
         });
       }
+    }
+    try {
+      await logoutPlatformAuth(snap?.accessToken);
+    } catch (e) {
+      console.warn("[platform-agent] logout_failed", {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
     clearAgentSession();
     setAuth(null);

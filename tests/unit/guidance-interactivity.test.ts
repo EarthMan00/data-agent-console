@@ -13,6 +13,7 @@ import {
   shouldSuppressPlainAssistantBubbleForGuidance,
   shouldSuppressStandaloneTaskResultCard,
 } from "@/lib/guidance-interactivity";
+import { buildTaskCompletionSummary } from "@/lib/task-chat-summary";
 
 function guidanceMsg(id: string, index: number, kind = "post_task_guidance"): SessionMessageItem {
   return {
@@ -251,6 +252,84 @@ describe("resolveRoundPostTaskGuidanceContent", () => {
       text: "这轮已经完成“继续”。结果数据已整理好，右侧可以直接查看。",
       sourceMessageId: "summary",
     });
+  });
+
+  it("normalizes a persisted multi-step completion summary even when task_status metadata is missing", () => {
+    const taskName = "Search Amazon for cup and capture the top three listings";
+    const messages: SessionMessageItem[] = [
+      {
+        id: "u1",
+        role: "user",
+        content: taskName,
+        created_at: "2026-05-22T10:00:00Z",
+        message_index: 0,
+        meta: {},
+      },
+      {
+        id: "steps",
+        role: "assistant",
+        content: "running",
+        created_at: "2026-05-22T10:00:01Z",
+        message_index: 1,
+        meta: {
+          kind: "task_execution_steps",
+          task_id: "task-root",
+          orchestration_id: "orch-1",
+          steps: [
+            { id: "s1", label: "Collect the top three cup listings", status: "done" },
+            { id: "s2", label: "Prepare the result handoff", status: "done" },
+          ],
+        },
+      },
+      {
+        id: "summary",
+        role: "assistant",
+        content: "多步任务已全部完成，可以在右侧查看最后一步任务结果与数据。",
+        created_at: "2026-05-22T10:00:02Z",
+        message_index: 2,
+        meta: {
+          task_id: "task-final",
+          has_artifacts: true,
+        },
+      },
+      {
+        id: "guidance",
+        role: "assistant",
+        content: "【接下来您可以】\n1. Review the output and generate a report",
+        created_at: "2026-05-22T10:00:03Z",
+        message_index: 3,
+        meta: {
+          kind: "post_task_guidance",
+          task_id: "task-final",
+        },
+      },
+    ];
+
+    const hit = resolveRoundPostTaskGuidanceContent(messages, 1, { taskId: "task-root" });
+    expect(hit?.messageId).toBe("guidance");
+    expect(hit?.leading).toBe(
+      buildTaskCompletionSummary({
+        task_id: "task-final",
+        tool_name: "skill_task",
+        status: "SUCCESS",
+        started_at: "2026-05-22T10:00:00Z",
+        finished_at: "2026-05-22T10:00:02Z",
+        artifacts: [
+          {
+            artifact_id: "artifact-1",
+            artifact_type: "result",
+            original_name: "top-cups.csv",
+            download_api: "/api/tasks/task-final/artifacts/artifact-1/download",
+          },
+        ],
+        events: [],
+        zip_download_api: null,
+        request_payload: {
+          message: taskName,
+        },
+      } as never),
+    );
+    expect(hit?.leadingMessageId).toBe("summary");
   });
 
   it("finds the nearest task outcome summary for both steps and guidance anchors", () => {

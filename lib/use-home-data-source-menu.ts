@@ -7,12 +7,7 @@ import {
   buildDataSourceGroupsFromPromptCards,
   loadHomePromptCardsOnce,
 } from "@/lib/home-prompt-data-sources";
-import {
-  homeCapabilityGroups,
-  homeDataSourceItems,
-  type HomeCapabilityGroup,
-  type HomeCapabilityItem,
-} from "@/lib/home-capability-items";
+import { type HomeCapabilityGroup, type HomeCapabilityItem } from "@/lib/home-capability-items";
 
 type UseHomeDataSourceMenuOptions = {
   enabled?: boolean;
@@ -81,8 +76,8 @@ export function useHomeDataSourceMenu({
   );
 
   return {
-    dataSourceGroups: dynamicDataSourceGroups.length > 0 ? dynamicDataSourceGroups : homeCapabilityGroups,
-    dataSourceItems: dynamicDataSourceItems.length > 0 ? dynamicDataSourceItems : homeDataSourceItems,
+    dataSourceGroups: dynamicDataSourceGroups,
+    dataSourceItems: dynamicDataSourceItems,
     dynamicDataSourceGroups,
     dynamicDataSourceItems,
     loaded,

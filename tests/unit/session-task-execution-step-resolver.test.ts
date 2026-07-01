@@ -4,6 +4,7 @@ import type { TaskExecutionStep } from "@/lib/agent-events";
 import {
   enrichStepsRuntimeFromBundles,
   enrichTaskExecutionStepsRuntime,
+  hydrateTaskExecutionMessagesFromLiveState,
   resolveStaleTaskExecutionSteps,
 } from "@/lib/session-task-execution-step-resolver";
 
@@ -98,6 +99,57 @@ describe("enrichTaskExecutionStepsRuntime", () => {
     expect(enriched[0]?.runtimeHint).toBe("正在搜索亚马逊");
     expect(enriched[0]?.runtimeStartedAt).toBe("2026-06-20T00:01:00.000Z");
     expect(enriched[1]?.runtimeHint).toBeUndefined();
+  });
+});
+
+describe("hydrateTaskExecutionMessagesFromLiveState", () => {
+  it("remaps the latest orchestration steps message to the terminal subtask id so live completion UI can resolve summary and guidance immediately", () => {
+    const messages = [
+      {
+        id: "u1",
+        role: "user",
+        content: "run multi-step collection",
+        created_at: "2026-06-20T00:00:00.000Z",
+        message_index: 0,
+        meta: {},
+      },
+      {
+        id: "steps",
+        role: "assistant",
+        content: "running",
+        created_at: "2026-06-20T00:00:01.000Z",
+        message_index: 1,
+        meta: {
+          kind: "task_execution_steps",
+          task_id: "task-root",
+          orchestration_id: "orch-1",
+          steps: [
+            { id: "s1", label: "step 1", status: "done" },
+            { id: "s2", label: "step 2", status: "running" },
+          ],
+        },
+      },
+    ] as never[];
+
+    const hydrated = hydrateTaskExecutionMessagesFromLiveState(messages, {
+      task: {
+        task_id: "task-final",
+        status: "SUCCESS",
+        started_at: "2026-06-20T00:00:02.000Z",
+        finished_at: "2026-06-20T00:00:05.000Z",
+      } as never,
+      orchestrationSteps: [
+        { status: "SUCCESS" } as never,
+        { status: "SUCCESS" } as never,
+      ],
+    });
+
+    const meta = hydrated[1]?.meta as Record<string, unknown>;
+    expect(meta.task_id).toBe("task-final");
+    expect(meta.steps).toEqual([
+      { id: "s1", label: "step 1", status: "done" },
+      { id: "s2", label: "step 2", status: "done" },
+    ]);
   });
 });
 

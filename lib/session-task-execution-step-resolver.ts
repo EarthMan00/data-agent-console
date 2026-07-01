@@ -179,12 +179,21 @@ export function hydrateTaskExecutionMessagesFromLiveState(
       orchestrationSteps: orchestrationId ? orchestrationSteps : null,
     });
 
-    if (stepsEqual(steps, resolved)) return message;
+    const terminalTaskId =
+      task && !isTaskInFlight(task) && typeof task.task_id === "string" ? task.task_id.trim() : "";
+    const shouldAdoptTerminalTaskId =
+      Boolean(orchestrationId) &&
+      terminalTaskId.length > 0 &&
+      terminalTaskId !== taskId &&
+      resolved.every((step) => step.status === "done" || step.status === "error");
+
+    if (!shouldAdoptTerminalTaskId && stepsEqual(steps, resolved)) return message;
     changed = true;
     return {
       ...message,
       meta: {
         ...meta,
+        ...(shouldAdoptTerminalTaskId ? { task_id: terminalTaskId } : {}),
         steps: serializeStepsForMeta(resolved),
       },
     };

@@ -34,6 +34,10 @@ function apiUrl(path: string): string {
   return `${base}${p}`;
 }
 
+function appRouteUrl(path: string): string {
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
 function triggerBrowserDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -197,7 +201,7 @@ function buildPasswordLoginBody(account: string, password: string): Record<strin
 
 export async function login(account: string, password: string): Promise<LoginResponse> {
   const body = buildPasswordLoginBody(account, password);
-  const res = await fetch(apiUrl("/api/auth/login"), {
+  const res = await fetch(appRouteUrl("/api/platform-auth/login"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -385,11 +389,10 @@ function sanitizeAdminPlanWriteBody(
   return { code, name, level, can_use_tools, features };
 }
 
-export async function refreshAccessToken(refreshToken: string): Promise<string> {
-  const res = await fetch(apiUrl("/api/auth/refresh"), {
+export async function refreshAccessToken(): Promise<string> {
+  const res = await fetch(appRouteUrl("/api/platform-auth/refresh"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refreshToken }),
   });
   const data = await parseJson(res);
   if (!res.ok) {
@@ -401,6 +404,20 @@ export async function refreshAccessToken(refreshToken: string): Promise<string> 
     throw new AgentApiError("invalid refresh response shape", res.status, data);
   }
   return access_token;
+}
+
+export async function logoutPlatformAuth(accessToken?: string): Promise<void> {
+  const headers: HeadersInit = { "Content-Type": "application/json" };
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+  const res = await fetch(appRouteUrl("/api/platform-auth/logout"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({}),
+  });
+  if (res.ok) return;
+  throw new AgentApiError("logout failed", res.status, await safeJson(res));
 }
 
 export async function checkAccessToken(accessToken: string): Promise<TokenCheckResponse> {
@@ -1125,16 +1142,17 @@ export async function ensurePostTaskGuidance(
   return data as { task_id: string; post_task_guidance: string | null };
 }
 
-/** 任务事件 WebSocket URL（勿再把 token 放在 query，以免进入代理/浏览器日志）。连接成功后应立刻发送 {@link taskWebSocketAuthPayload}。 */
+/** Task event WebSocket URL. Do not put access tokens in the query string. */
 export function buildTaskWsUrl(taskId: string): string {
   const root = getAgentWsOrigin();
   const base = root.endsWith("/") ? root.slice(0, -1) : root;
   return `${base}/ws/tasks/${taskId}`;
 }
 
-/** 浏览器 WebSocket 无法自定义 Header 时，在 onopen 后发送此字符串完成鉴权。 */
-export function taskWebSocketAuthPayload(accessToken: string): string {
-  return JSON.stringify({ type: "auth", access_token: accessToken });
+/** Browser WebSocket auth uses Sec-WebSocket-Protocol because custom headers are unavailable. */
+export function buildTaskWsSubprotocols(accessToken: string): string[] {
+  const token = accessToken.trim();
+  return token ? [`auth-token.${token}`] : [];
 }
 
 // --- Plans ---

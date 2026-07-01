@@ -50,6 +50,22 @@ function terminalTaskStatus(meta: Record<string, unknown> | undefined): string {
   return TERMINAL_TASK_STATUSES.has(status) ? status : "";
 }
 
+function inferTerminalTaskStatusFromContent(content: string): string {
+  const text = content.trim();
+  if (!text) return "";
+  if (/^任务已完成/.test(text) || /^多步任务已全部完成/.test(text)) return "SUCCESS";
+  if (/^任务执行失败/.test(text) || /^多步任务在执行过程中失败/.test(text)) return "FAILED";
+  if (/^任务执行超时/.test(text) || /^多步任务执行超时/.test(text)) return "TIMEOUT";
+  if (/^任务已终止/.test(text) || /^多步任务已由用户终止/.test(text)) return "CANCELLED";
+  return "";
+}
+
+function contentImpliesTaskArtifacts(content: string): boolean {
+  const text = content.trim();
+  if (!text) return false;
+  return /右侧查看|任务结果|结果与数据|CSV|报告|数据/.test(text);
+}
+
 function terminalTaskSnapshotSummary(
   taskSnapshot: TaskResponse | null | undefined,
   requestedTaskId?: string | null,
@@ -114,7 +130,7 @@ function buildSyntheticTaskOutcomeSummary(
     return fromTaskSnapshot.text;
   }
 
-  const status = terminalTaskStatus(meta);
+  const status = terminalTaskStatus(meta) || inferTerminalTaskStatusFromContent(message.content || "");
   if (!status) return null;
 
   const taskName = resolveTaskNameFromRoundContext(messages, messageIndex, taskId);
@@ -128,7 +144,7 @@ function buildSyntheticTaskOutcomeSummary(
     zip_download_api: null,
     events: [],
     artifacts:
-      meta?.has_artifacts === true
+      meta?.has_artifacts === true || contentImpliesTaskArtifacts(message.content || "")
         ? [
             {
               artifact_id: "synthetic-task-artifact",

@@ -29,7 +29,7 @@ export async function refreshPlatformAccessToken(): Promise<string | null> {
     return null;
   }
   try {
-    const next = await refreshAccessToken(snap.refreshToken);
+    const next = await refreshAccessToken();
     saveAgentSession({ ...snap, accessToken: next });
     notifyAgentSessionChanged();
     return next;
