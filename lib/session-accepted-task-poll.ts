@@ -200,18 +200,22 @@ export async function pollAcceptedPlatformTaskInSession(
     await withFreshToken(async (token) => {
       if (orchId) {
         const orch = await getToolOrchestration(token, orchId);
+        const lastWithId = [...orch.steps].reverse().find((s) => s.task_id);
+        const latestTaskIdForMeta =
+          typeof lastWithId?.task_id === "string" && lastWithId.task_id.trim()
+            ? lastWithId.task_id.trim()
+            : undefined;
         const rowStatuses = orch.steps.map((st) => mapServerOrchestrationStepStatus(st.status));
         const runtimeStartedAtByIndex = stepDefs.map(
           (_, index) => orch.steps[index]?.task_started_at ?? undefined,
         );
         if (rowStatuses.length === stepDefs.length) {
-          await persistRows(token, rowStatuses, undefined, runtimeStartedAtByIndex);
+          await persistRows(token, rowStatuses, latestTaskIdForMeta, runtimeStartedAtByIndex);
         } else if (rowStatuses.length > 0) {
           const padded = stepDefs.map((_, i) => rowStatuses[i] ?? ("pending" as TaskExecutionStepStatus));
-          await persistRows(token, padded, undefined, runtimeStartedAtByIndex);
+          await persistRows(token, padded, latestTaskIdForMeta, runtimeStartedAtByIndex);
         }
         if (orch.finished || orch.awaiting_clarification) done = true;
-        const lastWithId = [...orch.steps].reverse().find((s) => s.task_id);
         if (lastWithId?.task_id) {
           lastTask = await getTask(token, lastWithId.task_id);
           options?.onTaskUpdate?.(lastTask);

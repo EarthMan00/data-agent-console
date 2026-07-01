@@ -133,7 +133,6 @@ These items are intentionally deferred for now:
 - add a cross-repo E2E workflow that boots `data-agent-server`, PostgreSQL, migrations, and the frontend together
 - expand automation coverage for the remaining high-priority manual scenarios in `docs/test-cases-master.md`
 - further streamline the repo docs once the runtime and test surface stop changing as quickly
-- add an admin-managed Alice persona module with publishable versions so new chats pick up the latest persona immediately while existing chats, reopened history sessions, and scheduled-task conversations stay pinned to the persona version they started with
 
 ## Important constraints
 

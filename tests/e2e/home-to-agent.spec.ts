@@ -22,7 +22,8 @@ test.describe.serial("home to agent", () => {
     await appPage.getByTestId("task-composer-submit").click();
 
     await expect(appPage).toHaveURL(/\/agent\?sessionId=/, { timeout: 60000 });
-    await expect(appPage.getByTestId("agent-user-input-card")).toBeVisible({ timeout: 60000 });
-    await expect(appPage.getByText(message)).toBeVisible();
+    const userInputCard = appPage.getByTestId("agent-user-input-card");
+    await expect(userInputCard).toBeVisible({ timeout: 60000 });
+    await expect(userInputCard).toContainText(message);
   });
 });

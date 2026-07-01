@@ -19,6 +19,8 @@ jobs:
             command: npm run test:unit
           - label: Component Tests
             command: npm run test:component
+          - label: Production Build
+            command: npm run build
 
     steps:
       - name: Checkout
