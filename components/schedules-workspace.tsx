@@ -88,9 +88,14 @@ import {
   type ScheduleKind,
 } from "@/lib/schedule-payloads";
 import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
-import { parseComposerPrefillStorageValue, parseDatasourceMentions, type ComposerSourcePlacement } from "@/lib/composer-prefill";
+import {
+  insertDatasourceMentions,
+  parseComposerPrefillStorageValue,
+  parseDatasourceMentions,
+  type ComposerSourcePlacement,
+} from "@/lib/composer-prefill";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
-import { type HomeCapabilityItem } from "@/lib/home-capability-items";
+import { getHomeCapabilityItem, type HomeCapabilityItem } from "@/lib/home-capability-items";
 import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
 import { stashScheduleTrialAttachmentFiles } from "@/lib/schedule-trial-attachment-files";
 import {
@@ -111,13 +116,13 @@ const WORKFLOW_STATUS_OPTIONS = ["全部状态", "生效中", "已暂停", "已�
 const RUN_STATUS_OPTIONS = ["全部状态", "运行成功", "运行失败", "运行超时"] as const;
 const DEFAULT_GROUP_VALUE = "__default__";
 
-function serializeScheduleComposerPrompt(text: string, sourceIds: string[], dataSourceItems: HomeCapabilityItem[]) {
-  const sourceText = sourceIds
-    .map((id) => dataSourceItems.find((item) => item.id === id && item.id !== "scenarios")?.label)
-    .filter((label): label is string => Boolean(label))
-    .map((label) => `@${label}`)
-    .join(" ");
-  return `${sourceText ? `${sourceText} ` : ""}${text}`.trim();
+function serializeScheduleComposerPrompt(
+  text: string,
+  sourceIds: string[],
+  sourcePlacements: ComposerSourcePlacement[],
+  dataSourceItems: HomeCapabilityItem[],
+) {
+  return insertDatasourceMentions(text, sourceIds, sourcePlacements, dataSourceItems);
 }
 
 function sortGroupsByCreatedAsc(groups: UserScheduledTaskGroupDto[]) {
@@ -487,6 +492,7 @@ export function SchedulesWorkspace() {
     editPromptBaselineRef.current = serializeScheduleComposerPrompt(
       taskPrompt.text,
       taskPrompt.selectedSourceIds,
+      taskPrompt.sourcePlacements,
       scheduleDataSourceItems,
     );
   }, [scheduleDataSourceItems]);
@@ -559,12 +565,13 @@ export function SchedulesWorkspace() {
   );
   const tryRunSubmitBlocked = taskEnabled && !hasValidNextExecution;
   const serializedPrompt = useMemo(
-    () => serializeScheduleComposerPrompt(prompt, scheduleSourceIds, scheduleDataSourceItems),
-    [prompt, scheduleSourceIds, scheduleDataSourceItems],
+    () => serializeScheduleComposerPrompt(prompt, scheduleSourceIds, scheduleSourcePlacements, scheduleDataSourceItems),
+    [prompt, scheduleSourceIds, scheduleSourcePlacements, scheduleDataSourceItems],
   );
   const addScheduleComposerSource = useCallback((capabilityId: string) => {
-    const item = scheduleDataSourceItems.find((entry) => entry.id === capabilityId && entry.id !== "scenarios");
+    const item = scheduleDataSourceItems.find((entry) => entry.id === capabilityId) ?? getHomeCapabilityItem(capabilityId);
     if (!item) return;
+    if (item.id === "scenarios") return;
     setScheduleSuppressTemplateCompletion(false);
     setScheduleSourceIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
   }, [scheduleDataSourceItems]);
@@ -1096,6 +1103,7 @@ export function SchedulesWorkspace() {
                       dataSourceItems={scheduleDataSourceItems}
                       selectedSourceIds={scheduleSourceIds}
                       sourcePlacements={scheduleSourcePlacements}
+                      onSourcePlacementsChange={setScheduleSourcePlacements}
                       suppressTemplateCompletion={scheduleSuppressTemplateCompletion}
                       onToolSelect={addScheduleComposerSource}
                       onSourceRemove={removeScheduleComposerSource}

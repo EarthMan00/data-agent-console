@@ -288,6 +288,7 @@ export function AliceHomePage() {
         sessionId: sid,
         prompt: nextQuery,
         selectedSourceIds: selectedCapabilities,
+        sourcePlacements: pending?.sourcePlacements ?? sourcePlacements,
         sendKind: "pending",
       });
       stashHomeSessionLaunchFiles(sid, pending?.pendingFiles ?? pendingHomeFiles);
@@ -325,7 +326,7 @@ export function AliceHomePage() {
   }, [activeRunId, launching, launchAgent, platformAgent?.auth]);
 
   const applyComposerTool = (capabilityId: string) => {
-    const item = composerDataSourceItems.find((source) => source.id === capabilityId);
+    const item = composerDataSourceItems.find((source) => source.id === capabilityId) ?? getHomeCapabilityItem(capabilityId);
     if (!item || item.id === "scenarios") return;
     setSuppressTemplateCompletion(false);
     setSelectedSourceIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
@@ -428,6 +429,7 @@ export function AliceHomePage() {
                   onModeChange={setComposerMode}
                   selectedSourceIds={selectedSourceIds}
                   sourcePlacements={sourcePlacements}
+                  onSourcePlacementsChange={setSourcePlacements}
                   suppressTemplateCompletion={suppressTemplateCompletion}
                   dataSourceGroups={composerDataSourceGroups}
                   dataSourceItems={composerDataSourceItems}
@@ -563,4 +565,3 @@ export function AliceHomePage() {
     </AliceShell>
   );
 }
-

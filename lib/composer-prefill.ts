@@ -33,6 +33,10 @@ type MentionResolution = {
   score: number;
 };
 
+type ParseDatasourceMentionsOptions = {
+  allowedSourceIds?: Iterable<string>;
+};
+
 const MENTION_PATTERN = /(^|[^A-Za-z0-9_])@([^\s@，。；、,.!?！？:：]+)/g;
 const PARTIAL_MENTION_MIN_LENGTH = 3;
 const STRIPPABLE_TOOL_SUFFIXES = ["模拟", "工具"] as const;
@@ -52,6 +56,22 @@ function uniqueSourcePlacements(placements: ComposerSourcePlacement[]) {
     seen.add(placement.sourceId);
     return true;
   });
+}
+
+export function normalizeComposerSourcePlacements(
+  placements: ComposerSourcePlacement[],
+  textLength = Number.POSITIVE_INFINITY,
+) {
+  const safeTextLength = Number.isFinite(textLength) ? Math.max(0, textLength) : Number.POSITIVE_INFINITY;
+  return uniqueSourcePlacements(
+    placements
+      .filter((placement) => placement.sourceId && Number.isFinite(placement.offset))
+      .map((placement) => ({
+        sourceId: placement.sourceId,
+        offset: Math.min(Math.max(0, placement.offset), safeTextLength),
+      }))
+      .sort((a, b) => a.offset - b.offset),
+  );
 }
 
 function decodeEscapedUnicodeLiterals(value: string) {
@@ -135,8 +155,9 @@ function mentionLabelsFor(item: HomeCapabilityItem) {
 
 function buildMentionToolCandidates(dataSourceItems: HomeCapabilityItem[]) {
   const candidates = new Map<string, MentionToolCandidate>();
+  const sourceItems = dataSourceItems.length > 0 ? dataSourceItems : homeDataSourceItems;
 
-  dataSourceItems.forEach((item) => {
+  sourceItems.forEach((item) => {
     mentionLabelsFor(item).forEach((label) => {
       mentionAliasesFor(label).forEach((alias) => {
         const normalizedLabel = normalizeMentionLabel(alias);
@@ -150,6 +171,18 @@ function buildMentionToolCandidates(dataSourceItems: HomeCapabilityItem[]) {
   });
 
   return Array.from(candidates.values()).sort((a, b) => b.normalizedLabel.length - a.normalizedLabel.length);
+}
+
+function resolveDataSourceItems(dataSourceItems: HomeCapabilityItem[]) {
+  return dataSourceItems.length > 0 ? dataSourceItems : homeDataSourceItems;
+}
+
+function findDataSourceItemById(sourceId: string, dataSourceItems: HomeCapabilityItem[]) {
+  return (
+    dataSourceItems.find((item) => item.id === sourceId) ??
+    homeDataSourceItems.find((item) => item.id === sourceId) ??
+    null
+  );
 }
 
 function resolveMentionBody(body: string, candidates: MentionToolCandidate[]): MentionResolution | null {
@@ -178,12 +211,52 @@ function resolveMentionBody(body: string, candidates: MentionToolCandidate[]): M
   return best;
 }
 
+export function insertDatasourceMentions(
+  text: string,
+  sourceIds: string[],
+  sourcePlacements: ComposerSourcePlacement[] = [],
+  dataSourceItems: HomeCapabilityItem[] = getDataSourceItems(),
+) {
+  const sourceItems = resolveDataSourceItems(dataSourceItems);
+  const promptText = text.trim();
+  const uniqueSourceIds = uniqueIds(sourceIds).filter((sourceId) => sourceId && sourceId !== "scenarios");
+  if (uniqueSourceIds.length === 0) return promptText;
+
+  const sourceIdSet = new Set(uniqueSourceIds);
+  const placedIds = new Set<string>();
+  const placements = normalizeComposerSourcePlacements(sourcePlacements, promptText.length).filter((placement) =>
+    sourceIdSet.has(placement.sourceId),
+  );
+
+  let cursor = 0;
+  let placedText = "";
+  placements.forEach((placement) => {
+    const item = findDataSourceItemById(placement.sourceId, sourceItems);
+    if (!item || placedIds.has(placement.sourceId)) return;
+    placedText += promptText.slice(cursor, placement.offset);
+    placedText += `@${item.label} `;
+    cursor = placement.offset;
+    placedIds.add(placement.sourceId);
+  });
+  placedText += promptText.slice(cursor);
+
+  const leadingMentions = uniqueSourceIds
+    .filter((sourceId) => !placedIds.has(sourceId))
+    .map((sourceId) => findDataSourceItemById(sourceId, sourceItems)?.label)
+    .filter((label): label is string => Boolean(label))
+    .map((label) => `@${label}`);
+
+  return [...leadingMentions, placedText].filter(Boolean).join(" ").replace(/[ \t]{2,}/g, " ").trim();
+}
+
 export function parseDatasourceMentions(
   text: string,
   dataSourceItems: HomeCapabilityItem[] = getDataSourceItems(),
+  options: ParseDatasourceMentionsOptions = {},
 ): ComposerPrefill {
   const sourceText = decodeEscapedUnicodeLiterals(text);
   const tools = buildMentionToolCandidates(dataSourceItems);
+  const allowedSourceIds = options.allowedSourceIds ? new Set(options.allowedSourceIds) : null;
   const selectedSourceIds: string[] = [];
   const sourcePlacements: ComposerSourcePlacement[] = [];
   let cursor = 0;
@@ -198,7 +271,7 @@ export function parseDatasourceMentions(
     const resolution = resolveMentionBody(body, tools);
     nextText += sourceText.slice(cursor, matchStart);
 
-    if (resolution) {
+    if (resolution && (!allowedSourceIds || allowedSourceIds.has(resolution.id))) {
       nextText += prefix;
       sourcePlacements.push({ sourceId: resolution.id, offset: nextText.length });
       selectedSourceIds.push(resolution.id);
@@ -218,7 +291,7 @@ export function parseDatasourceMentions(
   return {
     text: normalizedText,
     selectedSourceIds: uniqueIds(selectedSourceIds),
-    sourcePlacements: uniqueSourcePlacements(sourcePlacements).map((placement) => ({
+    sourcePlacements: normalizeComposerSourcePlacements(sourcePlacements).map((placement) => ({
       ...placement,
       offset: Math.max(0, placement.offset - trimOffset),
     })),

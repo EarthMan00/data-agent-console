@@ -43,6 +43,7 @@ import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import {
   appendToComposerDraft,
   composerDraftContainsSuggestion,
+  insertDatasourceMentions,
   type ComposerSourcePlacement,
   parseComposerPrefillStorageValue,
   removeFromComposerDraft,
@@ -902,13 +903,8 @@ export function PlatformSessionAgentWorkspace({
     setSourcePlacements((current) => current.filter((placement) => placement.sourceId !== capabilityId));
   }, []);
 
-  const buildComposerMessage = useCallback((text: string, sourceIds: string[]) => {
-    const sourceMentions = sourceIds
-      .map((id) => composerDataSourceItems.find((item) => item.id === id)?.label)
-      .filter((label): label is string => Boolean(label))
-      .map((label) => `@${label}`)
-      .join(" ");
-    return [sourceMentions, text.trim()].filter(Boolean).join(" ").trim();
+  const buildComposerMessage = useCallback((text: string, sourceIds: string[], placements: ComposerSourcePlacement[]) => {
+    return insertDatasourceMentions(text, sourceIds, placements, composerDataSourceItems);
   }, [composerDataSourceItems]);
 
   useEffect(() => {
@@ -2188,14 +2184,16 @@ export function PlatformSessionAgentWorkspace({
   const sendPreparedMessage = useCallback(async ({
     rawText,
     sourceIds,
+    sourcePlacements: preparedSourcePlacements = [],
     files,
   }: {
     rawText: string;
     sourceIds: string[];
+    sourcePlacements?: ComposerSourcePlacement[];
     files: File[];
   }) => {
     const trimmedText = rawText.trim();
-    const text = buildComposerMessage(trimmedText, sourceIds);
+    const text = buildComposerMessage(trimmedText, sourceIds, preparedSourcePlacements);
     const filesToSend = files;
     if ((!trimmedText && filesToSend.length === 0) || sending) return false;
     const maxChars = getChatMessageMaxChars();
@@ -2320,9 +2318,10 @@ export function PlatformSessionAgentWorkspace({
     await sendPreparedMessage({
       rawText: textOverride ?? draft,
       sourceIds: textOverride === undefined ? selectedSourceIds : [],
+      sourcePlacements: textOverride === undefined ? sourcePlacements : [],
       files: textOverride === undefined ? pendingFiles : [],
     });
-  }, [draft, pendingFiles, selectedSourceIds, sendPreparedMessage]);
+  }, [draft, pendingFiles, selectedSourceIds, sendPreparedMessage, sourcePlacements]);
 
   useEffect(() => {
     if (scheduleTrial || scheduledRunRecord || !platformAgent?.auth) return;
@@ -2334,6 +2333,7 @@ export function PlatformSessionAgentWorkspace({
         await sendPreparedMessage({
           rawText: homeLaunchMeta.prompt,
           sourceIds: homeLaunchMeta.selectedSourceIds,
+          sourcePlacements: homeLaunchMeta.sourcePlacements ?? [],
           files: launchFiles,
         });
       } finally {
@@ -3014,6 +3014,7 @@ export function PlatformSessionAgentWorkspace({
                 onModeChange={() => {}}
                 selectedSourceIds={selectedSourceIds}
                 sourcePlacements={sourcePlacements}
+                onSourcePlacementsChange={setSourcePlacements}
                 dataSourceGroups={composerDataSourceGroups}
                 dataSourceItems={composerDataSourceItems}
                 onToolSelect={addComposerSource}
