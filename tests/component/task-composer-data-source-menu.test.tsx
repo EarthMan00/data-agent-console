@@ -237,7 +237,11 @@ describe("task composer data source menu", () => {
     expect(popover).toHaveClass("overflow-hidden", "rounded-popover");
     expect(listbox).toHaveStyle({ height: "360px" });
     expect(screen.getByTestId("task-composer-source-category-pane")).toHaveClass("h-full", "overflow-y-auto");
-    expect(screen.getByTestId("task-composer-source-option-pane")).toHaveClass("h-full", "overflow-y-auto");
+    const sourceOptionPane = screen.getByTestId("task-composer-source-option-pane");
+    expect(sourceOptionPane).toHaveClass("h-full", "overflow-y-auto");
+    const sourceSectionHeading = within(sourceOptionPane).getAllByTestId("task-composer-source-section-heading")[0];
+    expect(sourceSectionHeading).toHaveClass("mb-2");
+    expect(sourceSectionHeading).not.toHaveClass("sticky");
     const amazonCategory = within(listbox).getByRole("button", { name: "亚马逊前台" });
     await userEvent.click(amazonCategory);
 
@@ -367,7 +371,11 @@ describe("task composer data source menu", () => {
     expect(mentionMenu).toHaveClass("overflow-hidden");
     expect(mentionMenu).toHaveStyle({ width: "760px" });
     expect(screen.getByTestId("task-composer-mention-category-pane")).toBeInTheDocument();
-    expect(screen.getByTestId("task-composer-mention-option-pane")).toBeInTheDocument();
+    const mentionOptionPane = screen.getByTestId("task-composer-mention-option-pane");
+    expect(mentionOptionPane).toBeInTheDocument();
+    const mentionSectionHeading = within(mentionOptionPane).getAllByTestId("task-composer-source-section-heading")[0];
+    expect(mentionSectionHeading).toHaveClass("mb-2");
+    expect(mentionSectionHeading).not.toHaveClass("sticky");
     expect(within(mentionMenu).getByRole("button", { name: "Keepa" })).toBeInTheDocument();
     expect(within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ })).toBeInTheDocument();
   });

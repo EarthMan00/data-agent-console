@@ -105,6 +105,9 @@ const DATA_SOURCE_MENU_NAVIGATION_KEYS = new Set([
 ]);
 
 const DATA_SOURCE_GRID_COLUMNS = 2;
+const DATA_SOURCE_SECTION_SCROLL_GAP = 10;
+const DATA_SOURCE_SECTION_HEADING_CLASS =
+  "mb-2 flex items-center gap-2 text-body font-semibold leading-5 text-foreground";
 const EDITOR_IGNORED_TEXT_SELECTOR = "[data-tool-token='true'], [data-template-ghost='true']";
 const TEMPLATE_SLOT_SELECTOR = "[data-template-slot='true']";
 const EMPTY_TEMPLATE_SLOT_TEXT = "\u200b";
@@ -151,11 +154,25 @@ function scrollItemIntoPane(item: HTMLElement | null | undefined, pane: HTMLElem
   }
 }
 
+function scrollSectionIntoPane(section: HTMLElement | null | undefined, pane: HTMLElement | null | undefined) {
+  if (!section || !pane) return;
+  pane.scrollTop = Math.max(0, section.offsetTop - DATA_SOURCE_SECTION_SCROLL_GAP);
+}
+
 function estimateDataSourceMenuHeight(groupCount: number, maxHeight: number) {
   if (groupCount <= 0) return 180;
   const categoryColumnHeight = groupCount * 40 + 16;
   const optionPaneHeight = groupCount * 134 + 24;
   return Math.min(maxHeight, Math.max(180, categoryColumnHeight, optionPaneHeight));
+}
+
+function DataSourceGroupHeading({ label }: { label: string }) {
+  return (
+    <div className={DATA_SOURCE_SECTION_HEADING_CLASS} data-testid="task-composer-source-section-heading">
+      <span className="h-4 w-0.5 rounded-full bg-primary" />
+      {label}
+    </div>
+  );
 }
 
 function createComposerAttachment(file: File, index: number): ComposerAttachment {
@@ -815,11 +832,13 @@ export function TaskComposer({
   const sourceButtonTriggerRef = useRef<HTMLButtonElement | null>(null);
   const sourceButtonItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const sourceButtonCategoryRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const sourceButtonGroupSectionRefs = useRef<Array<HTMLElement | null>>([]);
   const sourceButtonListRef = useRef<HTMLDivElement | null>(null);
   const sourceButtonOptionPaneRef = useRef<HTMLDivElement | null>(null);
   const sourceButtonHighlightedIndexRef = useRef(-1);
   const toolItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const mentionCategoryRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const mentionGroupSectionRefs = useRef<Array<HTMLElement | null>>([]);
   const toolListRef = useRef<HTMLDivElement | null>(null);
   const mentionOptionPaneRef = useRef<HTMLDivElement | null>(null);
   const highlightedToolIndexRef = useRef(-1);
@@ -1407,6 +1426,9 @@ export function TaskComposer({
     const firstIndex = getGroupFirstToolIndexByGroupIndex(safeGroupIndex);
     if (firstIndex < 0) return;
     updateHighlightedToolIndex(firstIndex, focusTarget === "item");
+    requestAnimationFrame(() => {
+      scrollSectionIntoPane(mentionGroupSectionRefs.current[safeGroupIndex], mentionOptionPaneRef.current);
+    });
     if (focusTarget === "category") focusMentionCategory(safeGroupIndex);
   };
 
@@ -1415,6 +1437,9 @@ export function TaskComposer({
     const firstIndex = getGroupFirstToolIndexByGroupIndex(safeGroupIndex);
     if (firstIndex < 0) return;
     updateSourceButtonHighlightedIndex(firstIndex, focusTarget === "item");
+    requestAnimationFrame(() => {
+      scrollSectionIntoPane(sourceButtonGroupSectionRefs.current[safeGroupIndex], sourceButtonOptionPaneRef.current);
+    });
     if (focusTarget === "category") focusSourceButtonCategory(safeGroupIndex);
   };
 
@@ -2705,12 +2730,15 @@ export function TaskComposer({
                               data-testid="task-composer-mention-option-pane"
                               className="h-full min-h-0 overflow-y-auto overscroll-contain bg-bg-surface p-3"
                             >
-                              {activeSourceButtonToolGroups.map((group) => (
-                                <section key={group.id} className="pb-5 last:pb-1">
-                                  <div className="mb-2 flex items-center gap-2 text-body font-semibold leading-5 text-foreground">
-                                    <span className="h-4 w-0.5 rounded-full bg-primary" />
-                                    {group.label}
-                                  </div>
+                              {activeSourceButtonToolGroups.map((group, groupIndex) => (
+                                <section
+                                  key={group.id}
+                                  ref={(node) => {
+                                    mentionGroupSectionRefs.current[groupIndex] = node;
+                                  }}
+                                  className="pb-5 last:pb-1"
+                                >
+                                  <DataSourceGroupHeading label={group.label} />
                                   <div className="grid grid-cols-2 gap-2.5">
                                     {group.items.map((item) => {
                                       const index = activeFilteredTools.findIndex((tool) => tool.id === item.id);
@@ -2914,13 +2942,16 @@ export function TaskComposer({
 	                      })}
 	                    </div>
 	                    <div ref={sourceButtonOptionPaneRef} data-testid="task-composer-source-option-pane" className="h-full min-h-0 overflow-y-auto overscroll-contain bg-bg-surface p-3">
-	                      {activeSourceButtonToolGroups.map((group) => (
-	                        <section key={group.id} className="pb-5 last:pb-1">
-	                          <div className="mb-2 flex items-center gap-2 text-body font-semibold leading-5 text-foreground">
-	                            <span className="h-4 w-0.5 rounded-full bg-primary" />
-	                            {group.label}
-	                          </div>
-	                          <div className="grid grid-cols-2 gap-2.5">
+		                      {activeSourceButtonToolGroups.map((group, groupIndex) => (
+		                        <section
+		                          key={group.id}
+		                          ref={(node) => {
+		                            sourceButtonGroupSectionRefs.current[groupIndex] = node;
+		                          }}
+		                          className="pb-5 last:pb-1"
+		                        >
+		                          <DataSourceGroupHeading label={group.label} />
+		                          <div className="grid grid-cols-2 gap-2.5">
 	                            {group.items.map((item) => {
 	                              const index = activeFilteredTools.findIndex((tool) => tool.id === item.id);
 	                              return (
