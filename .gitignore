@@ -51,3 +51,4 @@ next-env.d.ts
 .eslintcache
 .idea/
 .copilot-specs-cache/
+.env.local

@@ -85,9 +85,14 @@ function JsonArtifactDataTable({ columns, rows }: { columns: string[]; rows: str
 type TaskSingleDataArtifactPreviewProps = {
   artifact: PlatformTaskArtifactRef;
   withFreshToken: (run: (token: string) => Promise<void>) => Promise<void>;
+  onPreviewScrollChange?: (scrolled: boolean) => void;
 };
 
-export function TaskSingleDataArtifactPreview({ artifact, withFreshToken }: TaskSingleDataArtifactPreviewProps) {
+export function TaskSingleDataArtifactPreview({
+  artifact,
+  withFreshToken,
+  onPreviewScrollChange,
+}: TaskSingleDataArtifactPreviewProps) {
   const ext = extOf(artifact.original_name);
   const isCsv = ext === "csv";
   const isJson = ext === "json" || ext === "jsonl";
@@ -138,6 +143,7 @@ export function TaskSingleDataArtifactPreview({ artifact, withFreshToken }: Task
           downloadApi={artifact.download_api}
           withFreshToken={withFreshToken}
           sidePanel
+          onScrollStateChange={onPreviewScrollChange}
         />
       </div>
     );

@@ -88,13 +88,14 @@ function mockMatchMedia(matchesByQuery: Record<string, boolean>) {
   });
 }
 
-function renderShellWithResultPanel() {
+function renderShellWithResultPanel({ headerContentScrolled = false }: { headerContentScrolled?: boolean } = {}) {
   render(
     <AliceShellRoot>
       <AliceShell
         currentPath="/agent"
         contentScrollMode="child"
         currentRunLabel="测试任务"
+        headerContentScrolled={headerContentScrolled}
         rightRail={<div data-testid="agent-preview-panel">任务执行结果</div>}
       >
         <div data-testid="chat-content">聊天内容</div>
@@ -183,16 +184,40 @@ describe("AliceShell right rail layout", () => {
     renderShellWithResultPanel();
 
     const grid = await screen.findByTestId("workspace-main-grid");
-    expect(grid).toHaveClass("lg:grid-cols-[minmax(360px,42%)_minmax(680px,58%)]");
+    expect(grid).toHaveClass("lg:grid-cols-[minmax(360px,1fr)_8px_minmax(0,760px)]");
     expect(grid).toHaveClass("overflow-hidden");
     expect(grid).not.toHaveClass("lg:grid-workspace-rail");
+    const separator = screen.getByRole("separator", { name: "调整对话和结果宽度" });
+    expect(separator).toBeInTheDocument();
+    expect(separator).toHaveClass("bg-[#fff]");
+    expect(separator.className).not.toContain("hover:bg-[rgba");
+    expect(separator.className).not.toContain("bg-[rgba");
     await waitFor(() => {
       expect(document.querySelector("main aside [data-testid='agent-preview-panel']")).toBeInTheDocument();
     });
-    expect(document.querySelector('[data-testid="workspace-right-rail"]')).toHaveClass("lg:border-t");
-    expect(document.querySelector('[data-testid="workspace-right-rail"]')).not.toHaveClass("lg:border-t-0");
+    const leftPane = screen.getByTestId("workspace-left-pane");
+    const rightRail = screen.getByTestId("workspace-right-rail");
+    const runHeader = screen.getByTestId("workspace-run-header");
+    expect(leftPane).toContainElement(runHeader);
+    expect(runHeader).not.toHaveClass("after:bg-[linear-gradient(180deg,#0f172a12,#0f172a00)]");
+    expect(within(runHeader).getByText("测试任务")).toBeInTheDocument();
+    expect(rightRail).not.toContainElement(runHeader);
+    expect(document.querySelector('[data-testid="workspace-right-rail"]')).not.toHaveClass("lg:border-t");
+    expect(rightRail).toHaveClass("bg-bg-surface");
+    expect(rightRail).not.toHaveClass("backdrop-blur-xl");
     expect(document.querySelector("main > div > div [data-testid='agent-preview-panel']")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "任务执行结果抽屉" })).not.toBeInTheDocument();
+  });
+
+  it("adds a subtle header gradient when the left chat content has scrolled", async () => {
+    mockMatchMedia({
+      "(max-width: 767px)": false,
+      "(max-width: 1023px)": false,
+    });
+    renderShellWithResultPanel({ headerContentScrolled: true });
+
+    const runHeader = await screen.findByTestId("workspace-run-header");
+    expect(runHeader).toHaveClass("after:bg-[linear-gradient(180deg,#0f172a12,#0f172a00)]");
   });
 
   it("supports drag sorting history tasks in the sidebar", async () => {

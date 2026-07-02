@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject, type UIEvent } from "react";
 import { Loader2 } from "@/components/ui/tabler-icons";
 
 import { openAuthorizedUtf8TextStream } from "@/lib/agent-api/client";
@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 const INITIAL_DATA_ROWS = 50;
 const PAGE_SIZE = 100;
 const MAX_DISPLAY_ROWS = 25_000;
+const SIDE_PANEL_COLUMN_MIN_WIDTH = 96;
+const SIDE_PANEL_COLUMN_MAX_WIDTH = 340;
 
 type LazyCsvArtifactTableProps = {
   downloadApi?: string;
@@ -21,6 +23,7 @@ type LazyCsvArtifactTableProps = {
   inlineUtf8Text?: string;
   /** 右侧任务栏：占满中间区域高度；表头单行 …；单元格最多 3 行换行后 …；title 悬停全文 */
   sidePanel?: boolean;
+  onScrollStateChange?: (scrolled: boolean) => void;
 };
 
 function mergeCsvRowsIntoState(
@@ -58,16 +61,33 @@ function ingestRows(
   return nextHeader;
 }
 
-/** 侧栏：列宽上限 300；表头单行 …；单元格 line-clamp 放在内层，避免 td 设 -webkit-box 破坏表格列布局 */
+/** 侧栏：表头单行 …；单元格 line-clamp 放在内层，避免 td 设 -webkit-box 破坏表格列布局 */
 const headerClamp =
-  "h-12 max-w-panel-sm min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-middle px-3 pb-3 pt-3";
-const bodyCellSidePanelTd = "max-w-panel-sm min-w-0 align-top p-0";
+  "h-11 min-w-0 !whitespace-nowrap !break-normal overflow-hidden border-r border-border-subtle p-0 align-middle last:border-r-0";
+const bodyCellSidePanelTd = "min-w-0 align-top p-0";
 const bodyCellSidePanelInner =
   "block min-w-0 max-w-full whitespace-normal break-words px-3 py-2 text-xs leading-snug line-clamp-3";
 const bodyCellDefault =
   "max-w-panel-sm min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-top";
 
-export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Text, sidePanel }: LazyCsvArtifactTableProps) {
+function sidePanelColumnWidth(header: string | undefined, index: number): number {
+  const label = (header ?? "").trim().toLowerCase();
+  if (/^(位置|序号|rank|index|position)$/i.test(label)) return 68;
+  if (label === "asin") return 168;
+  if (/(链接|link|url|地址)/i.test(label)) return 300;
+  if (/(标题|title)/i.test(label)) return 180;
+  if (/(标签|选项|分类|category|label|tag)/i.test(label)) return 300;
+  const base = Math.max(SIDE_PANEL_COLUMN_MIN_WIDTH, Math.min(SIDE_PANEL_COLUMN_MAX_WIDTH, (header?.length ?? 8) * 14 + 56));
+  return index === 0 ? Math.min(base, 120) : base;
+}
+
+export function LazyCsvArtifactTable({
+  downloadApi,
+  withFreshToken,
+  inlineUtf8Text,
+  sidePanel,
+  onScrollStateChange,
+}: LazyCsvArtifactTableProps) {
   const [header, setHeader] = useState<string[] | null>(null);
   const [dataRows, setDataRows] = useState<string[][]>([]);
   const [initLoading, setInitLoading] = useState(true);
@@ -268,6 +288,12 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Te
     }
   }, [streamDone, hitCap, initLoading, pumpRows]);
 
+  const handleScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    onScrollStateChange?.(event.currentTarget.scrollTop > 0);
+  }, [onScrollStateChange]);
+
+  useEffect(() => () => onScrollStateChange?.(false), [onScrollStateChange]);
+
   useEffect(() => {
     if (initLoading || streamDone || hitCap) return;
     const el = sentinelRef.current;
@@ -287,6 +313,10 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Te
   }, [initLoading, streamDone, hitCap, onLoadMore, dataRows.length]);
 
   const colCount = Math.max(1, header?.length ?? (dataRows[0]?.length ?? 1));
+  const sidePanelColumnWidths = sidePanel
+    ? Array.from({ length: colCount }, (_, i) => sidePanelColumnWidth(header?.[i], i))
+    : [];
+  const sidePanelTableMinWidth = sidePanelColumnWidths.reduce((sum, width) => sum + width, 0);
 
   if (error) {
     return <p className={cn("text-caption text-danger", !sidePanel && "mt-3")}>{error}</p>;
@@ -310,19 +340,32 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Te
   return (
     <div
       className={cn(
-        "flex w-full min-w-0 flex-col rounded-control border border-border bg-bg-surface",
+        "flex w-full min-w-0 flex-col rounded-control border border-border-subtle bg-bg-surface",
         outerMaxH,
         !sidePanel && "mt-3",
       )}
     >
-      <div ref={scrollRootRef} className="min-h-0 min-w-0 flex-1 overflow-auto">
-        <Table data-testid="lazy-csv-table" className="w-max min-w-full max-w-full table-auto">
+      <div ref={scrollRootRef} className="min-h-0 min-w-0 flex-1 overflow-auto" onScroll={handleScroll}>
+        <Table
+          data-testid="lazy-csv-table"
+          className={sidePanel ? "w-full table-fixed" : "w-max min-w-full max-w-full table-auto"}
+          style={sidePanel ? { minWidth: `${sidePanelTableMinWidth}px` } : undefined}
+        >
+          {sidePanel ? (
+            <colgroup>
+              {sidePanelColumnWidths.map((width, i) => (
+                <col key={`col-${i}`} style={{ width: `${width}px` }} />
+              ))}
+            </colgroup>
+          ) : null}
           {header ? (
-            <TableHeader className="sticky top-0 z-layer-base bg-bg-subtle shadow-hairline">
-              <TableRow className="border-border hover:bg-transparent">
+            <TableHeader className="sticky top-0 z-layer-base bg-bg-subtle shadow-none">
+              <TableRow className="border-border-subtle hover:bg-transparent">
                 {header.map((h, i) => (
                   <TableHead key={`h-${i}`} className={headerClamp} title={h}>
-                    {h}
+                    <span className="block min-w-0 max-w-full overflow-hidden text-ellipsis px-3 py-2">
+                      {h}
+                    </span>
                   </TableHead>
                 ))}
               </TableRow>
@@ -330,7 +373,7 @@ export function LazyCsvArtifactTable({ downloadApi, withFreshToken, inlineUtf8Te
           ) : null}
           <TableBody>
             {dataRows.map((row, ri) => (
-              <TableRow key={`r-${ri}`} className="hover:bg-bg-subtle">
+              <TableRow key={`r-${ri}`} className="border-border-subtle hover:bg-bg-subtle">
                 {Array.from({ length: colCount }, (_, ci) => {
                   const cell = row[ci] ?? "";
                   const columnHeader = header?.[ci];

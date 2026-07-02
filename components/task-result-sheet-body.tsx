@@ -97,24 +97,48 @@ type TaskResultSheetBodyProps = {
   sheet: TaskResultSheet;
   viewMode: "table" | "code";
   withFreshToken: (run: (token: string) => Promise<void>) => Promise<void>;
+  onPreviewScrollChange?: (scrolled: boolean) => void;
 };
 
-export function TaskResultSheetBody({ sheet, viewMode, withFreshToken }: TaskResultSheetBodyProps) {
+export function TaskResultSheetBody({
+  sheet,
+  viewMode,
+  withFreshToken,
+  onPreviewScrollChange,
+}: TaskResultSheetBodyProps) {
   if (sheet.primary) {
-    return <TaskSingleDataArtifactPreview artifact={sheet.primary} withFreshToken={withFreshToken} />;
+    return (
+      <TaskSingleDataArtifactPreview
+        artifact={sheet.primary}
+        withFreshToken={withFreshToken}
+        onPreviewScrollChange={onPreviewScrollChange}
+      />
+    );
   }
 
   if (sheet.csv && sheet.json) {
     if (viewMode === "table") {
       return (
-        <LazyCsvArtifactTable downloadApi={sheet.csv.download_api} withFreshToken={withFreshToken} sidePanel />
+        <LazyCsvArtifactTable
+          downloadApi={sheet.csv.download_api}
+          withFreshToken={withFreshToken}
+          sidePanel
+          onScrollStateChange={onPreviewScrollChange}
+        />
       );
     }
     return <JsonCodeBlock downloadApi={sheet.json.download_api} withFreshToken={withFreshToken} />;
   }
 
   if (sheet.csv) {
-    return <LazyCsvArtifactTable downloadApi={sheet.csv.download_api} withFreshToken={withFreshToken} sidePanel />;
+    return (
+      <LazyCsvArtifactTable
+        downloadApi={sheet.csv.download_api}
+        withFreshToken={withFreshToken}
+        sidePanel
+        onScrollStateChange={onPreviewScrollChange}
+      />
+    );
   }
 
   if (sheet.json) {

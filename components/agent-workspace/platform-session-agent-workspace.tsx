@@ -305,6 +305,7 @@ export function PlatformSessionAgentWorkspace({
   const [messages, setMessages] = useState<SessionMessageItem[]>([]);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesInnerRef = useRef<HTMLDivElement>(null);
+  const [messagesScrolled, setMessagesScrolled] = useState(false);
   const [showResultPanel, setShowResultPanel] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [resultPanelContext, setResultPanelContext] = useState<ResultPanelContext | null>(null);
@@ -1012,6 +1013,14 @@ export function PlatformSessionAgentWorkspace({
   useChatStickToBottom(messagesScrollRef, messagesInnerRef, [busy, error, messages, sending], {
     resetKey: sessionId,
   });
+
+  useEffect(() => {
+    setMessagesScrolled(false);
+  }, [sessionId]);
+
+  const handleMessagesScroll = useCallback(() => {
+    setMessagesScrolled((messagesScrollRef.current?.scrollTop ?? 0) > 0);
+  }, []);
 
   useEffect(() => {
     // 在 reset effect 中同步检查缓存：缓存命中则立即展示，不依赖后续 effect 调用时序
@@ -2401,6 +2410,7 @@ export function PlatformSessionAgentWorkspace({
       currentPath="/agent/history"
       contentScrollMode="child"
       currentRunLabel={headerLabel}
+      headerContentScrolled={messagesScrolled}
       rightRail={
         showResultPanel && resultPanelContext && platformAgent?.withFreshToken ? (
           <AgentTaskResultPanel
@@ -2439,6 +2449,7 @@ export function PlatformSessionAgentWorkspace({
         <div
           ref={messagesScrollRef}
           className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-4 pt-6 sm:px-6"
+          onScroll={handleMessagesScroll}
         >
           <div ref={messagesInnerRef} className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
             <div className="space-y-5">

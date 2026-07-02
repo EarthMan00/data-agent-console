@@ -27,6 +27,11 @@ function buildConnectSrc() {
 }
 
 function buildSecurityHeaders() {
+  const scriptSrc = ["script-src", "'self'", "'unsafe-inline'"];
+  if (process.env.NODE_ENV !== "production") {
+    scriptSrc.push("'unsafe-eval'");
+  }
+
   const csp = [
     "default-src 'self'",
     "base-uri 'self'",
@@ -37,7 +42,7 @@ function buildSecurityHeaders() {
     "img-src 'self' data: blob: https:",
     "font-src 'self' data: https:",
     "style-src 'self' 'unsafe-inline'",
-    "script-src 'self' 'unsafe-inline'",
+    scriptSrc.join(" "),
     "worker-src 'self' blob:",
     "frame-src 'self' blob:",
   ].join("; ");
