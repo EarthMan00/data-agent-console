@@ -736,7 +736,7 @@ function AgentRunWorkspaceView({
         [run.id]: currentSources.includes(item.id) ? currentSources : [...currentSources, item.id],
       };
     });
-    setNotice(`本轮已加入数据源「${item.label}」。`);
+    // setNotice(`本轮已加入数据源「${item.label}」。`);
   };
 
   const removeCapability = (capabilityId: string) => {
