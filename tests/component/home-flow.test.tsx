@@ -173,6 +173,28 @@ describe("home flow", () => {
       replay_share_id: null,
       sort_order: 3,
     };
+    const mixedMetadataCard = {
+      id: "mixed-metadata-card",
+      title: "最后一个工具来自元数据",
+      description: "prompt 已经有一个 @，最后一个工具只在 capability metadata。",
+      prompt: "@Keepa-亚马逊价格历史 查询价格历史后，再模拟前台搜索。",
+      meta: "",
+      capability_ids: ["@Keepa-亚马逊价格历史", "亚马逊前端搜索模拟"],
+      replay_run_id: null,
+      replay_share_id: null,
+      sort_order: 4,
+    };
+    const parentMetadataCard = {
+      id: "parent-metadata-card",
+      title: "分组能力补全",
+      description: "metadata 给的是分组标题，也要补成真实数据源。",
+      prompt: "@亚马逊-商品评论 先看评论，再继续做前台搜索。",
+      meta: "",
+      capability_ids: ["@亚马逊-商品评论", "亚马逊前台"],
+      replay_run_id: null,
+      replay_share_id: null,
+      sort_order: 5,
+    };
     const keepaCard = {
       id: "keepa-card",
       title: "Keepa 价格历史",
@@ -218,7 +240,7 @@ describe("home flow", () => {
       sort_order: 1,
     };
     mockFetchHomePromptRecommendations.mockImplementation((categoryId: string) => Promise.resolve({
-      scenarios: [webCard, keepaCard, excelCard, metadataOnlyCard],
+      scenarios: [webCard, keepaCard, excelCard, metadataOnlyCard, mixedMetadataCard, parentMetadataCard],
       keepa: [keepaCard, keepaSearchCard],
       web: [webCard],
       amazon: [amazonCard],
@@ -401,15 +423,50 @@ describe("home flow", () => {
     expect(screen.getByLabelText("数据源 站外实时信息检索")).toBeInTheDocument();
   });
 
-  it("does not create a datasource tag from capability metadata when the prompt has no @ mention", async () => {
+  it("creates a datasource tag from capability metadata when the prompt has no @ mention", async () => {
     renderHomePage();
 
     fireEvent.click(await screen.findByLabelText("使用示例任务 不含数据源标记的场景"));
 
     const editor = screen.getByTestId("task-composer-editor");
+    const sourceTag = screen.getByLabelText("数据源 SIF-查询ASIN的关键词");
+    const childSummary = Array.from(editor.childNodes).map((node) => {
+      if (node.nodeType === Node.TEXT_NODE) return { type: "text", text: node.textContent ?? "" };
+      const element = node as HTMLElement;
+      return { type: "tag", sourceId: element.dataset.toolId ?? "", text: element.textContent ?? "" };
+    });
+
+    expect(sourceTag).toBeInTheDocument();
+    expect(sourceTag).toHaveAttribute("data-tool-id", "SIF-查询ASIN的关键词");
+    expect(childSummary[0]).toMatchObject({ type: "tag", sourceId: "SIF-查询ASIN的关键词" });
     expect(editor).toHaveTextContent("努力思考，选择适合以下场景的工具");
-    expect(editor.querySelector("[data-tool-token='true']")).toBeNull();
     expect(editor).not.toHaveTextContent("@SIF-查询ASIN的关键词");
+  });
+
+  it("adds datasource tags for capability metadata missing after prompt mentions", async () => {
+    renderHomePage();
+
+    fireEvent.click(await screen.findByLabelText("使用示例任务 最后一个工具来自元数据"));
+
+    const editor = screen.getByTestId("task-composer-editor");
+    expect(screen.getByLabelText("数据源 Keepa-亚马逊价格历史")).toBeInTheDocument();
+    expect(screen.getByLabelText("数据源 亚马逊前端搜索模拟")).toBeInTheDocument();
+    expect(editor).toHaveTextContent("查询价格历史后，再模拟前台搜索。");
+    expect(editor).not.toHaveTextContent("@Keepa-亚马逊价格历史");
+    expect(editor).not.toHaveTextContent("@亚马逊前端搜索模拟");
+  });
+
+  it("resolves parent capability metadata into a visible datasource tag", async () => {
+    renderHomePage();
+
+    fireEvent.click(await screen.findByLabelText("使用示例任务 分组能力补全"));
+
+    const editor = screen.getByTestId("task-composer-editor");
+    expect(screen.getByLabelText("数据源 亚马逊-商品评论")).toBeInTheDocument();
+    expect(screen.getByLabelText("数据源 亚马逊前端搜索模拟")).toBeInTheDocument();
+    expect(screen.queryByLabelText("数据源 亚马逊前台")).not.toBeInTheDocument();
+    expect(editor).toHaveTextContent("先看评论，再继续做前台搜索。");
+    expect(editor).not.toHaveTextContent("@亚马逊-商品评论");
   });
 
   it("matches datasource mentions that only appear in scenario prompt cards", async () => {
