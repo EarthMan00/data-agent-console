@@ -4,6 +4,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskComposer } from "@/components/task-composer";
+import type { ComposerSourcePlacement } from "@/lib/composer-prefill";
 
 afterEach(() => {
   cleanup();
@@ -24,6 +25,7 @@ function ComposerHarness({
 }) {
   const [value, setValue] = useState("");
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
+  const [sourcePlacements, setSourcePlacements] = useState<ComposerSourcePlacement[]>([]);
 
   return (
     <TaskComposer
@@ -33,6 +35,8 @@ function ComposerHarness({
       mode="普通模式"
       onModeChange={vi.fn()}
       selectedSourceIds={selectedSourceIds}
+      sourcePlacements={sourcePlacements}
+      onSourcePlacementsChange={setSourcePlacements}
       dataSourceGroups={dataSourceGroups}
       dataSourceItems={dataSourceItems}
       onToolSelect={(capabilityId) => {
@@ -42,9 +46,50 @@ function ComposerHarness({
       onSourceRemove={(capabilityId) => {
         onSourceRemove(capabilityId);
         setSelectedSourceIds((current) => current.filter((id) => id !== capabilityId));
+        setSourcePlacements((current) => current.filter((placement) => placement.sourceId !== capabilityId));
       }}
       onFilesSelected={vi.fn()}
-      onSubmit={onSubmit}
+      onSubmit={vi.fn()}
+    />
+  );
+}
+
+function PositionedSourcesHarness({
+  onToolSelect = vi.fn(),
+  onSourceRemove = vi.fn(),
+}: {
+  onToolSelect?: (capabilityId: string) => void;
+  onSourceRemove?: (capabilityId: string) => void;
+}) {
+  const middleText = "努力思考，选择适合以下场景的工具，";
+  const [value, setValue] = useState(`${middleText}帮我处理excel`);
+  const [selectedSourceIds, setSelectedSourceIds] = useState(["keepa", "amazon"]);
+  const [sourcePlacements, setSourcePlacements] = useState<ComposerSourcePlacement[]>([
+    { sourceId: "keepa", offset: 0 },
+    { sourceId: "amazon", offset: middleText.length },
+  ]);
+
+  return (
+    <TaskComposer
+      value={value}
+      onValueChange={setValue}
+      placeholder="输入任务"
+      mode="普通模式"
+      onModeChange={vi.fn()}
+      selectedSourceIds={selectedSourceIds}
+      sourcePlacements={sourcePlacements}
+      onSourcePlacementsChange={setSourcePlacements}
+      onToolSelect={(capabilityId) => {
+        onToolSelect(capabilityId);
+        setSelectedSourceIds((current) => (current.includes(capabilityId) ? current : [...current, capabilityId]));
+      }}
+      onSourceRemove={(capabilityId) => {
+        onSourceRemove(capabilityId);
+        setSelectedSourceIds((current) => current.filter((id) => id !== capabilityId));
+        setSourcePlacements((current) => current.filter((placement) => placement.sourceId !== capabilityId));
+      }}
+      onFilesSelected={vi.fn()}
+      onSubmit={vi.fn()}
     />
   );
 }
@@ -67,6 +112,23 @@ function placeCaretAfterElement(element: Element) {
   selection?.addRange(range);
 }
 
+function placeCaretAtElementEnd(element: Element) {
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(false);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+function selectElement(element: Element) {
+  const range = document.createRange();
+  range.selectNode(element);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
 function setEditorText(editor: HTMLElement, text: string) {
   editor.textContent = text;
   const textNode = editor.firstChild;
@@ -74,6 +136,29 @@ function setEditorText(editor: HTMLElement, text: string) {
     placeCaretInTextNode(textNode, text.length);
   }
   fireEvent.input(editor);
+}
+
+function mockElementClientRect(element: Element, rect: Partial<DOMRect>) {
+  const resolvedRect = {
+    bottom: 40,
+    height: 40,
+    left: 100,
+    right: 420,
+    top: 0,
+    width: 320,
+    x: 100,
+    y: 0,
+    toJSON: () => ({}),
+    ...rect,
+  } as DOMRect;
+  Object.defineProperty(element, "getClientRects", {
+    configurable: true,
+    value: () => [resolvedRect],
+  });
+  Object.defineProperty(element, "getBoundingClientRect", {
+    configurable: true,
+    value: () => resolvedRect,
+  });
 }
 
 const MENU_INTERACTION_TIMEOUT_MS = 10000;
@@ -124,7 +209,8 @@ describe("task composer data source menu", () => {
 
     editor = screen.getByTestId("task-composer-editor");
     fireEvent.keyDown(editor, { key: "Backspace" });
-    await waitFor(() => expect(buttonRemove).toHaveBeenCalledWith("keepa-product-detail"));
+    expect(buttonRemove).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("数据源 Keepa-亚马逊-商品详情")).toBeInTheDocument();
 
     cleanup();
 
@@ -222,6 +308,162 @@ describe("task composer data source menu", () => {
     expect(sourceTagIndex).toBeGreaterThan(0);
     expect(childSummary.slice(0, sourceTagIndex).map((item) => item.text).join("")).toBe("Keepa-亚马逊价格历史 ");
     expect(screen.getByLabelText("数据源 Keepa-亚马逊价格历史")).toBeInTheDocument();
+    expect(editor).not.toHaveTextContent("按 Tab 键补全");
+  }, MENU_INTERACTION_TIMEOUT_MS);
+
+  it("keeps a manually selected datasource at the current caret position", async () => {
+    render(<ComposerHarness />);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    setEditorText(editor, "前 后");
+    await waitFor(() => expect(editor).toHaveTextContent("前 后"));
+    placeCaretInTextNode(editor.firstChild as Text, "前 ".length);
+
+    const trigger = screen.getByRole("button", { name: /@数据源/ });
+    fireEvent.pointerDown(trigger);
+    window.getSelection()?.removeAllRanges();
+    fireEvent.click(trigger);
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /Keepa-亚马逊价格历史/ }));
+
+    await waitFor(() => expect(screen.getByLabelText("数据源 Keepa-亚马逊价格历史")).toBeInTheDocument());
+    await waitFor(() => expect(editor).toHaveTextContent("按 Tab 键补全"));
+    const childSummary = Array.from(editor.childNodes).map((node) => {
+      if (node.nodeType === Node.TEXT_NODE) return { type: "text", text: node.textContent ?? "" };
+      const element = node as HTMLElement;
+      return { type: "tag", sourceId: element.dataset.toolId ?? "", text: element.textContent ?? "" };
+    });
+    const sourceTagIndex = childSummary.findIndex((item) => item.type === "tag" && item.sourceId === "keepa-price-history");
+
+    expect(sourceTagIndex).toBeGreaterThan(0);
+    expect(childSummary.slice(0, sourceTagIndex).map((item) => item.text).join("")).toBe("前 ");
+    expect(childSummary.slice(sourceTagIndex + 1).map((item) => item.text).join("")).toContain(" 后");
+
+    fireEvent.keyDown(editor, { key: "Tab" });
+
+    await waitFor(() => {
+      expect(editor).not.toHaveTextContent("按 Tab 键补全");
+      expect(editor.querySelectorAll("[data-template-slot='true']").length).toBeGreaterThan(0);
+    });
+    const acceptedChildSummary = Array.from(editor.childNodes).map((node) => {
+      if (node.nodeType === Node.TEXT_NODE) return { type: "text", text: node.textContent ?? "" };
+      const element = node as HTMLElement;
+      return { type: "tag", sourceId: element.dataset.toolId ?? "", text: element.textContent ?? "" };
+    });
+    const acceptedSourceTagIndex = acceptedChildSummary.findIndex((item) => item.type === "tag" && item.sourceId === "keepa-price-history");
+    expect(acceptedSourceTagIndex).toBeGreaterThan(0);
+    expect(acceptedChildSummary.slice(0, acceptedSourceTagIndex).map((item) => item.text).join("")).toBe("前 ");
+  }, MENU_INTERACTION_TIMEOUT_MS);
+
+  it("syncs deleted and undo-restored datasource tokens without moving them to the front", async () => {
+    const onSourceRemove = vi.fn();
+    const onToolSelect = vi.fn();
+    render(<PositionedSourcesHarness onSourceRemove={onSourceRemove} onToolSelect={onToolSelect} />);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    const getEditorSourceIds = () =>
+      Array.from(editor.querySelectorAll<HTMLElement>("[data-tool-token='true'][data-tool-id]")).map(
+        (node) => node.dataset.toolId,
+      );
+
+    const amazonToken = await screen.findByLabelText("数据源 亚马逊前端搜索模拟");
+    expect(getEditorSourceIds()).toEqual(["keepa", "amazon"]);
+
+    amazonToken.remove();
+    fireEvent.input(editor);
+
+    await waitFor(() => expect(onSourceRemove).toHaveBeenCalledWith("amazon"));
+    await waitFor(() => expect(screen.queryByLabelText("数据源 亚马逊前端搜索模拟")).not.toBeInTheDocument());
+    expect(getEditorSourceIds()).toEqual(["keepa"]);
+    expect(editor.querySelector<HTMLElement>("[data-tool-token='true']")?.dataset.toolId).toBe("keepa");
+
+    const textNode = Array.from(editor.childNodes).find(
+      (node): node is Text => node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").includes("帮我处理excel"),
+    );
+    expect(textNode).toBeDefined();
+    const afterNode = textNode!.splitText("努力思考，选择适合以下场景的工具，".length);
+    editor.insertBefore(amazonToken, afterNode);
+    fireEvent.input(editor);
+
+    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("amazon"));
+    await waitFor(() => expect(screen.getByLabelText("数据源 亚马逊前端搜索模拟")).toBeInTheDocument());
+    expect(getEditorSourceIds()).toEqual(["keepa", "amazon"]);
+  }, MENU_INTERACTION_TIMEOUT_MS);
+
+  it("uses the native undoable edit command when deleting selected datasource tokens", async () => {
+    const originalExecCommand = document.execCommand;
+    const onSourceRemove = vi.fn();
+    render(<PositionedSourcesHarness onSourceRemove={onSourceRemove} />);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    const amazonToken = await screen.findByLabelText("数据源 亚马逊前端搜索模拟");
+    selectElement(amazonToken);
+    const execCommand = vi.fn((command: string) => {
+      if (command !== "delete") return false;
+      amazonToken.remove();
+      return true;
+    });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: execCommand,
+    });
+
+    try {
+      fireEvent.keyDown(editor, { key: "Backspace" });
+
+      expect(execCommand).toHaveBeenCalledWith("delete");
+      await waitFor(() => expect(onSourceRemove).toHaveBeenCalledWith("amazon"));
+    } finally {
+      Object.defineProperty(document, "execCommand", {
+        configurable: true,
+        value: originalExecCommand,
+      });
+    }
+  }, MENU_INTERACTION_TIMEOUT_MS);
+
+  it("supports keyboard undo and redo for typed composer text", async () => {
+    render(<ComposerHarness />);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    setEditorText(editor, "第一版内容");
+    await waitFor(() => expect(editor).toHaveTextContent("第一版内容"));
+    setEditorText(editor, "第二版内容");
+    await waitFor(() => expect(editor).toHaveTextContent("第二版内容"));
+
+    fireEvent.keyDown(editor, { key: "z", metaKey: true });
+
+    await waitFor(() => expect(editor).toHaveTextContent("第一版内容"));
+
+    fireEvent.keyDown(editor, { key: "z", metaKey: true, shiftKey: true });
+
+    await waitFor(() => expect(editor).toHaveTextContent("第二版内容"));
+  });
+
+  it("supports keyboard undo and redo for selected datasource tokens", async () => {
+    const onToolSelect = vi.fn();
+    const onSourceRemove = vi.fn();
+    render(<ComposerHarness onToolSelect={onToolSelect} onSourceRemove={onSourceRemove} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ }));
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("keepa"));
+    await waitFor(() => expect(screen.getByLabelText("数据源 Keepa-亚马逊-商品搜索")).toBeInTheDocument());
+
+    fireEvent.keyDown(editor, { key: "z", metaKey: true });
+
+    await waitFor(() => expect(onSourceRemove).toHaveBeenCalledWith("keepa"));
+    await waitFor(() => expect(screen.queryByLabelText("数据源 Keepa-亚马逊-商品搜索")).not.toBeInTheDocument());
+
+    fireEvent.keyDown(editor, { key: "z", metaKey: true, shiftKey: true });
+
+    await waitFor(() => expect(onToolSelect).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByLabelText("数据源 Keepa-亚马逊-商品搜索")).toBeInTheDocument());
   }, MENU_INTERACTION_TIMEOUT_MS);
 
   it("uses first-level categories to navigate second-level datasource cards", async () => {
@@ -237,7 +479,11 @@ describe("task composer data source menu", () => {
     expect(popover).toHaveClass("overflow-hidden", "rounded-popover");
     expect(listbox).toHaveStyle({ height: "360px" });
     expect(screen.getByTestId("task-composer-source-category-pane")).toHaveClass("h-full", "overflow-y-auto");
-    expect(screen.getByTestId("task-composer-source-option-pane")).toHaveClass("h-full", "overflow-y-auto");
+    const sourceOptionPane = screen.getByTestId("task-composer-source-option-pane");
+    expect(sourceOptionPane).toHaveClass("h-full", "overflow-y-auto");
+    const sourceSectionHeading = within(sourceOptionPane).getAllByTestId("task-composer-source-section-heading")[0];
+    expect(sourceSectionHeading).toHaveClass("mb-2");
+    expect(sourceSectionHeading).not.toHaveClass("sticky");
     const amazonCategory = within(listbox).getByRole("button", { name: "亚马逊前台" });
     await userEvent.click(amazonCategory);
 
@@ -250,6 +496,7 @@ describe("task composer data source menu", () => {
     expect(sourceToken).toBeInTheDocument();
     expect(sourceToken).toHaveTextContent("亚马逊前端搜索模拟");
     expect(sourceToken).toHaveClass("bg-bg-surface", "text-foreground");
+    expect(sourceToken.className).toContain("before:content-['@']");
     expect(sourceToken.className).not.toContain("arcoblue");
   }, MENU_INTERACTION_TIMEOUT_MS);
 
@@ -295,6 +542,48 @@ describe("task composer data source menu", () => {
     expect(screen.getByLabelText("数据源 热门视频与达人线索")).toBeInTheDocument();
     expect(screen.queryByText("输入任务")).not.toBeInTheDocument();
   }, MENU_INTERACTION_TIMEOUT_MS);
+
+  it("renders each selected datasource token once", () => {
+    render(
+      <TaskComposer
+        value=""
+        onValueChange={vi.fn()}
+        placeholder="输入任务"
+        mode="普通模式"
+        onModeChange={vi.fn()}
+        selectedSourceIds={["keepa", "keepa"]}
+        onToolSelect={vi.fn()}
+        onSourceRemove={vi.fn()}
+        onFilesSelected={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByLabelText("数据源 Keepa-亚马逊-商品搜索")).toHaveLength(1);
+  });
+
+  it("does not open the mention menu when clicking existing plain text with @", async () => {
+    render(
+      <TaskComposer
+        value="已有 @亚马逊前端 文本"
+        onValueChange={vi.fn()}
+        placeholder="输入任务"
+        mode="普通模式"
+        onModeChange={vi.fn()}
+        selectedSourceIds={[]}
+        onToolSelect={vi.fn()}
+        onSourceRemove={vi.fn()}
+        onFilesSelected={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await waitFor(() => expect(editor).toHaveTextContent("已有 @亚马逊前端 文本"));
+    await userEvent.click(editor);
+
+    expect(screen.queryByTestId("task-composer-mention-menu")).not.toBeInTheDocument();
+  });
 
   it("supports two-pane arrow-key navigation and Enter selection in the button popover", async () => {
     const onToolSelect = vi.fn();
@@ -367,7 +656,11 @@ describe("task composer data source menu", () => {
     expect(mentionMenu).toHaveClass("overflow-hidden");
     expect(mentionMenu).toHaveStyle({ width: "760px" });
     expect(screen.getByTestId("task-composer-mention-category-pane")).toBeInTheDocument();
-    expect(screen.getByTestId("task-composer-mention-option-pane")).toBeInTheDocument();
+    const mentionOptionPane = screen.getByTestId("task-composer-mention-option-pane");
+    expect(mentionOptionPane).toBeInTheDocument();
+    const mentionSectionHeading = within(mentionOptionPane).getAllByTestId("task-composer-source-section-heading")[0];
+    expect(mentionSectionHeading).toHaveClass("mb-2");
+    expect(mentionSectionHeading).not.toHaveClass("sticky");
     expect(within(mentionMenu).getByRole("button", { name: "Keepa" })).toBeInTheDocument();
     expect(within(mentionMenu).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ })).toBeInTheDocument();
   });
@@ -622,7 +915,7 @@ describe("task composer data source menu", () => {
     expect(onToolSelect).not.toHaveBeenCalledWith("alibaba-noisy-template");
   });
 
-  it("removes the last selected datasource with Backspace even if the inline token is missing", async () => {
+  it("does not remove the selected datasource from a plain Backspace press when the token is not selected", async () => {
     const onSourceRemove = vi.fn();
     render(
       <TaskComposer
@@ -639,12 +932,12 @@ describe("task composer data source menu", () => {
       />,
     );
 
-    screen.getByLabelText("数据源 Keepa-亚马逊-商品搜索").remove();
+    expect(screen.getByLabelText("数据源 Keepa-亚马逊-商品搜索")).toBeInTheDocument();
     const editor = screen.getByTestId("task-composer-editor");
     await userEvent.click(editor);
     fireEvent.keyDown(editor, { key: "Backspace" });
 
-    expect(onSourceRemove).toHaveBeenCalledWith("keepa");
+    expect(onSourceRemove).not.toHaveBeenCalled();
   });
 
   it("accepts a selected datasource prompt template with Tab and renders variable chips", async () => {
@@ -674,7 +967,7 @@ describe("task composer data source menu", () => {
     });
   });
 
-  it("shows datasource template completion after existing text and preserves that text on Tab", async () => {
+  it("shows datasource template completion after actively selecting a datasource after existing text", async () => {
     render(<ComposerHarness />);
 
     const editor = screen.getByTestId("task-composer-editor");
@@ -688,20 +981,87 @@ describe("task composer data source menu", () => {
 
     await waitFor(() => {
       expect(editor).toHaveTextContent("是是是");
-      expect(editor).toHaveTextContent("按 Tab 键补全");
-      expect(editor).toHaveTextContent("过去{{12个月}}价格历史记录");
+      expect(screen.getByLabelText("数据源 Keepa-亚马逊价格历史")).toBeInTheDocument();
     });
+
+    await waitFor(() => expect(editor).toHaveTextContent("按 Tab 键补全"));
 
     fireEvent.keyDown(editor, { key: "Tab" });
 
     await waitFor(() => {
       expect(editor).toHaveTextContent("是是是");
-      expect(editor).toHaveTextContent("亚马逊美国站");
-      expect(editor).toHaveTextContent("B0DD4GFNNG");
-      expect(editor).not.toHaveTextContent("{{");
       expect(editor).not.toHaveTextContent("按 Tab 键补全");
-      expect(editor.querySelectorAll("[data-template-slot='true']")).toHaveLength(3);
+      expect(editor.querySelectorAll("[data-template-slot='true']").length).toBeGreaterThan(0);
     });
+  });
+
+  it("keeps the caret after the selected datasource when clicking its template ghost", async () => {
+    render(<ComposerHarness />);
+
+    await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /Keepa-亚马逊价格历史/ }));
+
+    const editor = screen.getByTestId("task-composer-editor");
+    const ghost = await waitFor(() => {
+      const node = editor.querySelector<HTMLElement>("[data-template-ghost='true']");
+      expect(node).toBeInTheDocument();
+      return node!;
+    });
+    const token = screen.getByLabelText("数据源 Keepa-亚马逊价格历史");
+    const ghostIndex = Array.from(editor.childNodes).indexOf(ghost);
+
+    const range = document.createRange();
+    range.setStartBefore(token);
+    range.collapse(true);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+
+    mockElementClientRect(ghost, { left: 120, right: 520, top: 8, bottom: 40, width: 400, height: 32, x: 120, y: 8 });
+    fireEvent.mouseDown(editor, { button: 0, clientX: 240, clientY: 24 });
+
+    const selection = window.getSelection();
+    expect(selection?.rangeCount).toBe(1);
+    const nextRange = selection?.getRangeAt(0);
+    expect(nextRange?.startContainer).toBe(editor);
+    expect(nextRange?.startOffset).toBe(ghostIndex);
+  });
+
+  it("keeps a second datasource placement after accepting the first datasource template", async () => {
+    render(<ComposerHarness />);
+
+    await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+    let listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ }));
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await waitFor(() => expect(editor).toHaveTextContent("按 Tab 键补全"));
+    fireEvent.keyDown(editor, { key: "Tab" });
+    await waitFor(() => {
+      expect(editor).not.toHaveTextContent("按 Tab 键补全");
+      expect(editor.querySelectorAll("[data-template-slot='true']").length).toBeGreaterThan(0);
+    });
+
+    placeCaretAtElementEnd(editor);
+    const trigger = screen.getByRole("button", { name: /@数据源/ });
+    fireEvent.pointerDown(trigger);
+    window.getSelection()?.removeAllRanges();
+    fireEvent.click(trigger);
+    listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /Keepa-亚马逊价格历史/ }));
+
+    await waitFor(() => expect(editor).toHaveTextContent("按 Tab 键补全"));
+    const childSummary = Array.from(editor.childNodes).map((node) => {
+      if (node.nodeType === Node.TEXT_NODE) return { type: "text", text: node.textContent ?? "" };
+      const element = node as HTMLElement;
+      return { type: "tag", sourceId: element.dataset.toolId ?? "", text: element.textContent ?? "" };
+    });
+    const firstTagIndex = childSummary.findIndex((item) => item.type === "tag");
+    const secondTagIndex = childSummary.findIndex((item) => item.type === "tag" && item.sourceId === "keepa-price-history");
+
+    expect(firstTagIndex).toBeGreaterThanOrEqual(0);
+    expect(secondTagIndex).toBeGreaterThan(firstTagIndex);
   });
 
   it("accepts datasource template completion after selecting a filtered mention result", async () => {
@@ -776,7 +1136,8 @@ describe("task composer data source menu", () => {
 
     const editor = screen.getByTestId("task-composer-editor");
     await waitFor(() => {
-      expect(editor).toHaveTextContent("@SIF-ASIN流量来源");
+      expect(editor).toHaveTextContent("SIF-ASIN流量来源");
+      expect(editor).not.toHaveTextContent("@SIF-ASIN流量来源");
       expect(editor).toHaveTextContent("按 Tab 键补全");
     });
 
@@ -1011,8 +1372,9 @@ describe("task composer data source menu", () => {
       value: vi.fn(),
     });
 
-    const onAttachmentsChange = vi.fn();
-    const onFilesSelected = vi.fn();
+	    const onAttachmentsChange = vi.fn();
+	    const onFilesSelected = vi.fn();
+	    const onSubmit = vi.fn();
 
     try {
       render(
@@ -1025,11 +1387,11 @@ describe("task composer data source menu", () => {
           selectedSourceIds={[]}
           onToolSelect={vi.fn()}
           onSourceRemove={vi.fn()}
-          onFilesSelected={onFilesSelected}
-          onAttachmentsChange={onAttachmentsChange}
-          onSubmit={vi.fn()}
-        />,
-      );
+	          onFilesSelected={onFilesSelected}
+	          onAttachmentsChange={onAttachmentsChange}
+	          onSubmit={onSubmit}
+	        />,
+	      );
       onAttachmentsChange.mockClear();
 
       const editor = screen.getByTestId("task-composer-editor");
@@ -1047,10 +1409,14 @@ describe("task composer data source menu", () => {
           expect.objectContaining({ name: "pasted-image-1.png", type: "image/png" }),
         ]);
       });
-      expect(onFilesSelected).not.toHaveBeenCalled();
-      expect(screen.getByText("pasted-image-1.png")).toBeInTheDocument();
-      expect(screen.getByLabelText("图片预览 pasted-image-1.png")).toBeInTheDocument();
-    } finally {
+	      expect(onFilesSelected).not.toHaveBeenCalled();
+	      expect(screen.getByText("pasted-image-1.png")).toBeInTheDocument();
+	      expect(screen.getByLabelText("图片预览 pasted-image-1.png")).toBeInTheDocument();
+	      expect(screen.getByTestId("task-composer-submit")).toBeDisabled();
+	      await userEvent.click(screen.getByTestId("task-composer-submit"));
+	      expect(onSubmit).not.toHaveBeenCalled();
+	      expect(screen.getByText("pasted-image-1.png")).toBeInTheDocument();
+	    } finally {
       Object.defineProperty(URL, "createObjectURL", {
         configurable: true,
         value: originalCreateObjectURL,

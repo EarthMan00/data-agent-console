@@ -88,13 +88,14 @@ function mockMatchMedia(matchesByQuery: Record<string, boolean>) {
   });
 }
 
-function renderShellWithResultPanel() {
+function renderShellWithResultPanel({ headerContentScrolled = false }: { headerContentScrolled?: boolean } = {}) {
   render(
     <AliceShellRoot>
       <AliceShell
         currentPath="/agent"
         contentScrollMode="child"
         currentRunLabel="测试任务"
+        headerContentScrolled={headerContentScrolled}
         rightRail={<div data-testid="agent-preview-panel">任务执行结果</div>}
       >
         <div data-testid="chat-content">聊天内容</div>
@@ -183,16 +184,136 @@ describe("AliceShell right rail layout", () => {
     renderShellWithResultPanel();
 
     const grid = await screen.findByTestId("workspace-main-grid");
-    expect(grid).toHaveClass("lg:grid-cols-[minmax(360px,42%)_minmax(680px,58%)]");
+    expect(grid).toHaveClass("lg:grid-cols-[minmax(360px,1fr)_8px_minmax(0,760px)]");
     expect(grid).toHaveClass("overflow-hidden");
     expect(grid).not.toHaveClass("lg:grid-workspace-rail");
+    const separator = screen.getByRole("separator", { name: "调整对话和结果宽度" });
+    expect(separator).toBeInTheDocument();
+    expect(separator).toHaveClass("bg-[#fff]");
+    expect(separator.className).not.toContain("hover:bg-[rgba");
+    expect(separator.className).not.toContain("bg-[rgba");
     await waitFor(() => {
       expect(document.querySelector("main aside [data-testid='agent-preview-panel']")).toBeInTheDocument();
     });
-    expect(document.querySelector('[data-testid="workspace-right-rail"]')).toHaveClass("lg:border-t");
-    expect(document.querySelector('[data-testid="workspace-right-rail"]')).not.toHaveClass("lg:border-t-0");
+    const leftPane = screen.getByTestId("workspace-left-pane");
+    const rightRail = screen.getByTestId("workspace-right-rail");
+    const runHeader = screen.getByTestId("workspace-run-header");
+    expect(leftPane).toContainElement(runHeader);
+    expect(runHeader).not.toHaveClass("after:bg-[linear-gradient(180deg,#0f172a12,#0f172a00)]");
+    expect(within(runHeader).getByText("测试任务")).toBeInTheDocument();
+    expect(rightRail).not.toContainElement(runHeader);
+    expect(document.querySelector('[data-testid="workspace-right-rail"]')).not.toHaveClass("lg:border-t");
+    expect(rightRail).toHaveClass("bg-bg-surface");
+    expect(rightRail).not.toHaveClass("backdrop-blur-xl");
     expect(document.querySelector("main > div > div [data-testid='agent-preview-panel']")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "任务执行结果抽屉" })).not.toBeInTheDocument();
+  });
+
+  it("adds a subtle header gradient when the left chat content has scrolled", async () => {
+    mockMatchMedia({
+      "(max-width: 767px)": false,
+      "(max-width: 1023px)": false,
+    });
+    renderShellWithResultPanel({ headerContentScrolled: true });
+
+    const runHeader = await screen.findByTestId("workspace-run-header");
+    expect(runHeader).toHaveClass("after:bg-[linear-gradient(180deg,#0f172a12,#0f172a00)]");
+  });
+
+  it("supports drag sorting history tasks in the sidebar", async () => {
+    vi.useFakeTimers();
+    mockMatchMedia({
+      "(max-width: 767px)": false,
+      "(max-width: 1023px)": false,
+    });
+    platformAgentMock.current = {
+      auth: { accessToken: "token", displayName: "sensen", userId: "sensen" },
+      platformSessionId: null,
+      withFreshToken: vi.fn(async (callback: (token: string) => Promise<unknown> | unknown) => callback("token")),
+      setActivePlatformSession: vi.fn(),
+      clearActivePlatformSession: vi.fn(),
+      openLogin: vi.fn(),
+    };
+    const titles: Record<string, string> = {
+      "session-alpha": "Alpha task",
+      "session-beta": "Beta task",
+      "session-gamma": "Gamma task",
+    };
+    const messageTimes: Record<string, string> = {
+      "session-alpha": "2026-06-20T10:00:00.000Z",
+      "session-beta": "2026-06-20T09:00:00.000Z",
+      "session-gamma": "2026-06-20T08:00:00.000Z",
+    };
+    agentApiMocks.listSessions.mockResolvedValue({
+      sessions: [
+        session("session-alpha", "2026-06-20T10:00:00.000Z"),
+        session("session-beta", "2026-06-20T09:00:00.000Z"),
+        session("session-gamma", "2026-06-20T08:00:00.000Z"),
+      ],
+      total: 3,
+      page: 1,
+      page_size: 20,
+    });
+    agentApiMocks.listSessionMessages.mockImplementation(async (_token: string, sessionId: string) => ({
+      messages: [
+        {
+          id: `message-${sessionId}`,
+          role: "user",
+          content: titles[sessionId] ?? sessionId,
+          created_at: messageTimes[sessionId] ?? "2026-06-20T00:00:00.000Z",
+          message_index: 0,
+        },
+      ],
+      has_more: false,
+    }));
+
+    renderShellWithResultPanel();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(950);
+    });
+    vi.useRealTimers();
+
+    const list = await screen.findByTestId("sidebar-history-list");
+    await waitFor(() => expect(within(list).getByText("Alpha task")).toBeInTheDocument());
+    const orderedText = () =>
+      within(list)
+        .getAllByTestId("sidebar-history-item")
+        .map((item) => item.textContent ?? "");
+    expect(orderedText()[0]).toContain("Alpha task");
+    expect(orderedText()[1]).toContain("Beta task");
+
+    const alphaItem = within(list).getByText("Alpha task").closest("[data-testid='sidebar-history-item']");
+    const betaItem = within(list).getByText("Beta task").closest("[data-testid='sidebar-history-item']");
+    expect(alphaItem).toBeInstanceOf(HTMLElement);
+    expect(betaItem).toBeInstanceOf(HTMLElement);
+    Object.defineProperty(alphaItem as HTMLElement, "getBoundingClientRect", {
+      value: () => ({
+        top: 0,
+        bottom: 40,
+        left: 0,
+        right: 260,
+        width: 260,
+        height: 40,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      }),
+    });
+    const dataTransfer = {
+      effectAllowed: "",
+      dropEffect: "",
+      setData: vi.fn(),
+      getData: vi.fn(() => "session-beta"),
+    };
+
+    fireEvent.dragStart(betaItem as HTMLElement, { dataTransfer });
+    fireEvent.dragOver(alphaItem as HTMLElement, { clientY: 1, dataTransfer });
+    fireEvent.drop(alphaItem as HTMLElement, { clientY: 1, dataTransfer });
+
+    await waitFor(() => {
+      expect(within(list).getAllByTestId("sidebar-history-item")[0]).toHaveTextContent("Beta task");
+    });
+    expect(JSON.parse(window.localStorage.getItem("alice:history-order-overrides") || "[]")[0]).toBe("session-beta");
   });
 
   it("supports drag sorting history tasks in the sidebar", async () => {

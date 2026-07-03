@@ -4,11 +4,30 @@ import {
   appendToComposerDraft,
   composerDraftContainsSuggestion,
   createComposerPrefillStorageValue,
+  insertDatasourceMentions,
   parseDatasourceMentions,
   parseComposerPrefillStorageValue,
   removeFromComposerDraft,
 } from "@/lib/composer-prefill";
 import { homeDataSourceItems } from "@/lib/home-capability-items";
+import type { HomeCapabilityItem } from "@/lib/home-capability-items";
+
+function requireHomeDataSource(id: string) {
+  const source = homeDataSourceItems.find((item) => item.id === id);
+  if (!source) throw new Error(`Missing home datasource fixture: ${id}`);
+  return source;
+}
+
+function makeDataSourceItem(overrides: Partial<HomeCapabilityItem> & Pick<HomeCapabilityItem, "id" | "label">): HomeCapabilityItem {
+  return {
+    promptHint: "测试工具",
+    parentId: "test-group",
+    parentLabel: "测试分组",
+    accent: "var(--color-primary)",
+    icon: "grid",
+    ...overrides,
+  };
+}
 
 describe("composer draft guidance helpers", () => {
   it("append and remove suggestion lines", () => {
@@ -38,75 +57,86 @@ describe("composer draft guidance helpers", () => {
 
 describe("composer datasource mention parser", () => {
   it("turns matched inline @ aliases into datasource selections", () => {
+    const source = requireHomeDataSource("amazon");
     const parsed = parseDatasourceMentions(
-      "1、使用@亚马逊前端搜索这个工具：帮我在美国亚马逊站搜索 women's pullover sweater",
+      `1、使用@${source.label}这个工具：帮我在美国亚马逊站搜索 women's pullover sweater`,
       homeDataSourceItems,
     );
 
-    expect(parsed.selectedSourceIds).toEqual(["amazon"]);
-    expect(parsed.sourcePlacements).toEqual([{ sourceId: "amazon", offset: 4 }]);
+    expect(parsed.selectedSourceIds).toEqual([source.id]);
+    expect(parsed.sourcePlacements).toEqual([{ sourceId: source.id, offset: 4 }]);
     expect(parsed.text).toBe("1、使用这个工具：帮我在美国亚马逊站搜索 women's pullover sweater");
-    expect(parsed.text).not.toContain("@亚马逊前端搜索");
+    expect(parsed.text).not.toContain(`@${source.label}`);
   });
 
   it("matches static Chinese @ aliases when prompt datasource ids are API capability ids", () => {
+    const source = requireHomeDataSource("keepa-price-history");
     const dynamicItems = homeDataSourceItems.map((item) =>
-      item.id === "keepa-price-history" ? { ...item, label: "keepa-price-history" } : item,
+      item.id === source.id ? { ...item, label: item.id } : item,
     );
     const parsed = parseDatasourceMentions(
-      "Keepa-亚马逊价格历史 @Keepa-亚马逊价格历史，美国站，查询ASIN:B0D5MV1S5W，过去365天数据",
+      `${source.label} @${source.label}，美国站，查询ASIN:B0D5MV1S5W，过去365天数据`,
       dynamicItems,
     );
 
-    expect(parsed.selectedSourceIds).toEqual(["keepa-price-history"]);
+    expect(parsed.selectedSourceIds).toEqual([source.id]);
     expect(parsed.sourcePlacements).toEqual([
-      { sourceId: "keepa-price-history", offset: "Keepa-亚马逊价格历史 ".length },
+      { sourceId: source.id, offset: `${source.label} `.length },
     ]);
-    expect(parsed.text).toContain("Keepa-亚马逊价格历史 ，美国站，查询ASIN:B0D5MV1S5W");
-    expect(parsed.text).not.toContain("@Keepa-亚马逊价格历史");
+    expect(parsed.text).toContain(`${source.label} ，美国站，查询ASIN:B0D5MV1S5W`);
+    expect(parsed.text).not.toContain(`@${source.label}`);
+  });
+
+  it("falls back to static datasource aliases when dynamic datasource items are not loaded yet", () => {
+    const source = requireHomeDataSource("amazon");
+    const parsed = parseDatasourceMentions(
+      `@${source.label}这个工具：帮我在美国亚马逊站搜索 travel pillow`,
+      [],
+    );
+
+    expect(parsed.selectedSourceIds).toEqual([source.id]);
+    expect(parsed.sourcePlacements).toEqual([{ sourceId: source.id, offset: 0 }]);
+    expect(parsed.text).toBe("这个工具：帮我在美国亚马逊站搜索 travel pillow");
   });
 
   it("matches dynamic datasource labels inside completion templates", () => {
+    const source = makeDataSourceItem({ id: "dynamic-analysis-source", label: "动态分析工具" });
     const dynamicItems = [
-      {
-        id: "sif-asin-traffic-source",
-        label: "SIF-ASIN流量来源",
-        promptHint: "流量来源分析",
-        parentId: "sif-group",
-        parentLabel: "Sif数据分析工具",
-        accent: "var(--color-accent-sif)",
-        icon: "store",
-      },
+      source,
     ];
     const parsed = parseDatasourceMentions(
-      "1.@SIF-ASIN流量来源: 在{{美国站}}查询ASIN为：{{B0C6CLB49N}}的流量来源。",
+      `1.@${source.label}: 在{{美国站}}查询ASIN为：{{B0C6CLB49N}}的流量来源。`,
       dynamicItems,
     );
 
-    expect(parsed.selectedSourceIds).toEqual(["sif-asin-traffic-source"]);
-    expect(parsed.sourcePlacements).toEqual([{ sourceId: "sif-asin-traffic-source", offset: 2 }]);
+    expect(parsed.selectedSourceIds).toEqual([source.id]);
+    expect(parsed.sourcePlacements).toEqual([{ sourceId: source.id, offset: 2 }]);
     expect(parsed.text).toBe("1.: 在{{美国站}}查询ASIN为：{{B0C6CLB49N}}的流量来源。");
-    expect(parsed.text).not.toContain("@SIF-ASIN流量来源");
+    expect(parsed.text).not.toContain(`@${source.label}`);
   });
 
   it("serializes composer prefill with the provided dynamic datasource items", () => {
-    const dynamicItems = [
-      {
-        id: "backend-dynamic-keepa-tool",
-        label: "后端动态Keepa工具",
-        promptHint: "动态 Keepa 搜索",
-        parentId: "source-keepa",
-        parentLabel: "Keepa",
-        accent: "var(--color-accent-keepa)",
-        icon: "line-chart",
-      },
-    ];
+    const source = makeDataSourceItem({ id: "backend-dynamic-source", label: "后端动态工具" });
+    const dynamicItems = [source];
 
-    const raw = createComposerPrefillStorageValue("@后端动态Keepa工具 查询运动水杯", dynamicItems);
+    const raw = createComposerPrefillStorageValue(`@${source.label} 查询运动水杯`, dynamicItems);
     const parsed = JSON.parse(raw);
 
     expect(parsed.text).toBe("查询运动水杯");
-    expect(parsed.selectedSourceIds).toEqual(["backend-dynamic-keepa-tool"]);
+    expect(parsed.selectedSourceIds).toEqual([source.id]);
+  });
+
+  it("inserts datasource mentions at stored placements instead of always prefixing them", () => {
+    const source = makeDataSourceItem({ id: "placed-dynamic-source", label: "定位工具" });
+
+    expect(
+      insertDatasourceMentions(
+        "先查询 再总结",
+        [source.id],
+        [{ sourceId: source.id, offset: "先查询 ".length }],
+        [source],
+      ),
+    ).toBe(`先查询 @${source.label} 再总结`);
   });
 
   it("keeps unmatched @ text as plain user input", () => {

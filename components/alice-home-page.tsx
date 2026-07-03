@@ -13,6 +13,7 @@ import { fetchPublicPromptCategories, type PublicPromptCategory } from "@/lib/ag
 import type { HomePromptCard } from "@/lib/workspace-domain-types";
 import {
   getHomeCapabilityItem,
+  type HomeCapabilityItem,
 } from "@/lib/home-capability-items";
 import { AgentWorkspace } from "@/components/agent-workspace";
 import { AssistantThreadFrame } from "@/components/assistant-thread-frame";
@@ -42,6 +43,7 @@ import {
 import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
 import { cn } from "@/lib/utils";
 import { NewConversationTaskComposer } from "@/components/new-conversation-task-composer";
+import { ALICE_LOGO_SRC } from "@/lib/brand-assets";
 
 const PENDING_HOME_TASK_STORAGE_KEY = "alice:pending-home-task-after-login";
 const PENDING_HOME_TASK_MAX_AGE_MS = 30 * 60 * 1000;
@@ -59,6 +61,40 @@ type PendingHomeTask = {
 
 function capabilityLabelFromId(capabilityId: string) {
   return capabilityId.trim().replace(/^@+/, "");
+}
+
+function resolvePromptCardCapabilitySourceIds(card: HomePromptCard, dataSourceItems: HomeCapabilityItem[]) {
+  const sourceIds: string[] = [];
+  card.capabilityIds.forEach((capabilityId) => {
+    const label = capabilityLabelFromId(capabilityId);
+    const exactIdItem = dataSourceItems.find(
+      (source) =>
+        source.id === capabilityId ||
+        source.id === label,
+    );
+    const parentItem = dataSourceItems.find(
+      (source) =>
+        source.parentId === capabilityId ||
+        source.parentId === label ||
+        source.parentLabel === capabilityId ||
+        source.parentLabel === label,
+    );
+    const idItem =
+      parentItem && exactIdItem?.id === label && exactIdItem.label === label && exactIdItem.parentLabel !== label
+        ? null
+        : exactIdItem ?? getHomeCapabilityItem(label) ?? getHomeCapabilityItem(capabilityId);
+    const labelItem = idItem || parentItem
+      ? null
+      : dataSourceItems.find(
+        (source) =>
+          source.label === capabilityId ||
+          source.label === label,
+      );
+    const item = idItem ?? parentItem ?? labelItem;
+    if (!item || item.id === "scenarios" || sourceIds.includes(item.id)) return;
+    sourceIds.push(item.id);
+  });
+  return sourceIds;
 }
 
 function savePendingHomeTaskAfterLogin(task: Omit<PendingHomeTask, "createdAt">) {
@@ -288,6 +324,7 @@ export function AliceHomePage() {
         sessionId: sid,
         prompt: nextQuery,
         selectedSourceIds: selectedCapabilities,
+        sourcePlacements: pending?.sourcePlacements ?? sourcePlacements,
         sendKind: "pending",
       });
       stashHomeSessionLaunchFiles(sid, pending?.pendingFiles ?? pendingHomeFiles);
@@ -325,7 +362,7 @@ export function AliceHomePage() {
   }, [activeRunId, launching, launchAgent, platformAgent?.auth]);
 
   const applyComposerTool = (capabilityId: string) => {
-    const item = composerDataSourceItems.find((source) => source.id === capabilityId);
+    const item = composerDataSourceItems.find((source) => source.id === capabilityId) ?? getHomeCapabilityItem(capabilityId);
     if (!item || item.id === "scenarios") return;
     setSuppressTemplateCompletion(false);
     setSelectedSourceIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
@@ -350,9 +387,22 @@ export function AliceHomePage() {
 
   const applyPromptCard = (card: HomePromptCard) => {
     const prefill = parseDatasourceMentions(card.prompt, composerDataSourceItems);
+    const selectedSourceSet = new Set(prefill.selectedSourceIds);
+    const resolvedSourceIds = resolvePromptCardCapabilitySourceIds(card, composerDataSourceItems);
+    const fallbackSourceIds =
+      prefill.selectedSourceIds.length === 0 || resolvedSourceIds.length > prefill.selectedSourceIds.length
+        ? resolvedSourceIds.filter((sourceId) => !selectedSourceSet.has(sourceId))
+        : [];
     setQuery(prefill.text);
-    setSelectedSourceIds(prefill.selectedSourceIds);
-    setSourcePlacements(prefill.sourcePlacements);
+    setSelectedSourceIds([...prefill.selectedSourceIds, ...fallbackSourceIds]);
+    setSourcePlacements(
+      fallbackSourceIds.length > 0
+        ? [
+          ...fallbackSourceIds.map((sourceId) => ({ sourceId, offset: 0 })),
+          ...prefill.sourcePlacements,
+        ]
+        : prefill.sourcePlacements,
+    );
     setSuppressTemplateCompletion(true);
     setNotice(`已载入示例任务「${card.title}」，可继续补充要求后发送。`);
   };
@@ -428,6 +478,7 @@ export function AliceHomePage() {
                   onModeChange={setComposerMode}
                   selectedSourceIds={selectedSourceIds}
                   sourcePlacements={sourcePlacements}
+                  onSourcePlacementsChange={setSourcePlacements}
                   suppressTemplateCompletion={suppressTemplateCompletion}
                   dataSourceGroups={composerDataSourceGroups}
                   dataSourceItems={composerDataSourceItems}

@@ -13,6 +13,7 @@ import {
   useState,
   type CSSProperties,
   type DragEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import {
@@ -67,6 +68,7 @@ type AliceShellProps = {
   children: ReactNode;
   rightRail?: ReactNode;
   currentRunLabel?: string;
+  headerContentScrolled?: boolean;
   mainDecoration?: ReactNode;
   contentScrollMode?: "shell" | "child";
   showTopHeader?: boolean;
@@ -75,7 +77,7 @@ type AliceShellProps = {
 
 type ShellMeta = Pick<
   AliceShellProps,
-  "currentPath" | "rightRail" | "currentRunLabel" | "mainDecoration" | "contentScrollMode" | "showTopHeader" | "mainClassName"
+  "currentPath" | "rightRail" | "currentRunLabel" | "headerContentScrolled" | "mainDecoration" | "contentScrollMode" | "showTopHeader" | "mainClassName"
 >;
 
 const ShellMetaValueContext = createContext<ShellMeta | null>(null);
@@ -116,9 +118,22 @@ const HISTORY_TITLE_OVERRIDES_KEY = "alice:history-title-overrides";
 const HISTORY_ORDER_OVERRIDES_KEY = "alice:history-order-overrides";
 const OPTIMISTIC_HISTORY_TITLE = "正在规划工作...";
 const LEGACY_OPTIMISTIC_HISTORY_TITLE = "正在思考...";
+const RESULT_RAIL_DEFAULT_WIDTH = 760;
+const RESULT_RAIL_MIN_WIDTH = 420;
+const RESULT_RAIL_MAX_WIDTH = 1040;
+const RESULT_RAIL_MIN_MAIN_WIDTH = 360;
+const RESULT_RAIL_DIVIDER_WIDTH = 8;
 const ACCOUNT_AVATAR_CLASSES = ["bg-avatar-1", "bg-avatar-2", "bg-avatar-3", "bg-avatar-4", "bg-avatar-5", "bg-avatar-6", "bg-avatar-7", "bg-avatar-8"];
 type HistoryDropPosition = "before" | "after";
 type HistoryDragTarget = { sessionId: string; position: HistoryDropPosition };
+
+function clampResultRailWidth(containerWidth: number, nextWidth: number) {
+  const available = Math.max(0, containerWidth - RESULT_RAIL_DIVIDER_WIDTH);
+  const maxByContainer = Math.max(0, available - RESULT_RAIL_MIN_MAIN_WIDTH);
+  const min = Math.min(RESULT_RAIL_MIN_WIDTH, maxByContainer);
+  const max = Math.max(min, Math.min(RESULT_RAIL_MAX_WIDTH, maxByContainer));
+  return Math.round(Math.min(Math.max(nextWidth, min), max));
+}
 
 function readHistoryTitleOverrides(): Record<string, string> {
   if (typeof window === "undefined") return {};
@@ -526,6 +541,7 @@ export function AliceShell({
   children,
   rightRail,
   currentRunLabel,
+  headerContentScrolled = false,
   mainDecoration,
   contentScrollMode = "shell",
   showTopHeader = true,
@@ -538,12 +554,13 @@ export function AliceShell({
       currentPath,
       rightRail,
       currentRunLabel,
+      headerContentScrolled,
       mainDecoration,
       contentScrollMode,
       showTopHeader,
       mainClassName,
     });
-  }, [currentPath, rightRail, currentRunLabel, mainDecoration, contentScrollMode, showTopHeader, mainClassName, setShellMeta]);
+  }, [currentPath, rightRail, currentRunLabel, headerContentScrolled, mainDecoration, contentScrollMode, showTopHeader, mainClassName, setShellMeta]);
 
   return <>{children}</>;
 }
@@ -576,6 +593,7 @@ function AliceShellInner({ children }: { children: ReactNode }) {
       currentPath={meta.currentPath}
       rightRail={meta.rightRail}
       currentRunLabel={meta.currentRunLabel}
+      headerContentScrolled={meta.headerContentScrolled}
       mainDecoration={meta.mainDecoration}
       contentScrollMode={meta.contentScrollMode}
       showTopHeader={meta.showTopHeader}
@@ -591,6 +609,7 @@ function AliceShellComponent({
   children,
   rightRail,
   currentRunLabel,
+  headerContentScrolled = false,
   mainDecoration,
   contentScrollMode = "shell",
   showTopHeader = true,
@@ -634,6 +653,9 @@ function AliceShellComponent({
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isResultRailDrawerViewport, setIsResultRailDrawerViewport] = useState(false);
   const [compactResultDrawerOpen, setCompactResultDrawerOpen] = useState(false);
+  const [resultRailWidth, setResultRailWidth] = useState(RESULT_RAIL_DEFAULT_WIDTH);
+  const [resizingResultRail, setResizingResultRail] = useState(false);
+  const workspaceMainGridRef = useRef<HTMLDivElement | null>(null);
   const historySearchInputRef = useRef<HTMLInputElement | null>(null);
   const renameHistoryInputRef = useRef<HTMLInputElement | null>(null);
   const historyListScrollRef = useRef<HTMLDivElement | null>(null);
@@ -658,6 +680,9 @@ function AliceShellComponent({
   const showCompactRightRailDrawer = Boolean(rightRail && clientMounted && !isMobileViewport && isResultRailDrawerViewport);
   const showDesktopRightRail = Boolean(rightRail && clientMounted && !isMobileViewport && !isResultRailDrawerViewport);
   const showMobileRightRailDrawer = Boolean(rightRail && clientMounted && isMobileViewport);
+  const showRunHeader = showTopHeader || Boolean(currentRunLabel);
+  const runHeaderInLeftPane = showDesktopRightRail && showRunHeader;
+  const leftPaneUsesFlexLayout = childManagedScroll || runHeaderInLeftPane;
 
   const isLoggedIn = Boolean(isPlatformBackendEnabled() && platformAgent?.auth?.accessToken);
 
@@ -680,6 +705,109 @@ function AliceShellComponent({
   useEffect(() => {
     if (!showCompactRightRailDrawer) setCompactResultDrawerOpen(false);
   }, [showCompactRightRailDrawer]);
+
+  useEffect(() => {
+    if (!showDesktopRightRail) {
+      setResizingResultRail(false);
+      return;
+    }
+    const resize = () => {
+      const rect = workspaceMainGridRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setResultRailWidth((current) => clampResultRailWidth(rect.width, current));
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, [showDesktopRightRail]);
+
+  const beginResultRailResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const grid = workspaceMainGridRef.current;
+    if (!grid) return;
+    event.preventDefault();
+    const target = event.currentTarget;
+    const pointerId = event.pointerId;
+    target.setPointerCapture?.(pointerId);
+    setResizingResultRail(true);
+
+    const update = (clientX: number) => {
+      const rect = grid.getBoundingClientRect();
+      const rawRightWidth = rect.right - clientX - RESULT_RAIL_DIVIDER_WIDTH / 2;
+      setResultRailWidth(clampResultRailWidth(rect.width, rawRightWidth));
+    };
+
+    update(event.clientX);
+
+    const onMove = (moveEvent: PointerEvent) => {
+      update(moveEvent.clientX);
+    };
+    const onEnd = () => {
+      setResizingResultRail(false);
+      if (target.hasPointerCapture?.(pointerId)) {
+        target.releasePointerCapture?.(pointerId);
+      }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onEnd);
+      window.removeEventListener("pointercancel", onEnd);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onEnd);
+    window.addEventListener("pointercancel", onEnd);
+  }, []);
+
+  const resetResultRailWidth = useCallback(() => {
+    const rect = workspaceMainGridRef.current?.getBoundingClientRect();
+    setResultRailWidth((current) =>
+      rect ? clampResultRailWidth(rect.width, RESULT_RAIL_DEFAULT_WIDTH) : current,
+    );
+  }, []);
+
+  const workspaceMainGridStyle = useMemo<CSSProperties | undefined>(() => {
+    if (!showDesktopRightRail) return undefined;
+    return {
+      gridTemplateColumns: `minmax(${RESULT_RAIL_MIN_MAIN_WIDTH}px,1fr) ${RESULT_RAIL_DIVIDER_WIDTH}px minmax(0,${resultRailWidth}px)`,
+    };
+  }, [resultRailWidth, showDesktopRightRail]);
+
+  const renderRunHeader = (placement: "main" | "left-pane") => (
+    <header
+      data-testid="workspace-run-header"
+      className={cn(
+        "flex h-14.5 shrink-0 items-center bg-bg-surface px-3 sm:px-4 md:px-6",
+        placement === "main" ? "sticky top-0 z-50" : "relative z-20",
+        headerContentScrolled &&
+          "after:pointer-events-none after:absolute after:left-0 after:right-0 after:top-full after:h-4 after:bg-[linear-gradient(180deg,#0f172a12,#0f172a00)] after:content-['']",
+      )}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <button
+          type="button"
+          aria-label="打开侧边栏"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-foreground transition hover:bg-fill-hover md:hidden"
+          onClick={() => setMobileSidebarOpen(true)}
+        >
+          <Menu className="h-5 w-5" strokeWidth={2} />
+        </button>
+        {currentRunLabel ? (
+          <div className="min-w-0 truncate text-body font-medium text-foreground">
+            {currentRunLabel}
+          </div>
+        ) : null}
+      </div>
+      {showCompactRightRailDrawer ? (
+        <button
+          type="button"
+          aria-label="查看任务执行结果"
+          className="ml-3 hidden h-9 shrink-0 items-center gap-2 rounded-control px-3 text-body font-medium text-foreground transition hover:bg-fill-hover md:inline-flex lg:hidden"
+          onClick={() => setCompactResultDrawerOpen(true)}
+        >
+          <PanelRightOpen className="h-icon-md w-icon-md" strokeWidth={1.9} />
+          查看结果
+        </button>
+      ) : null}
+    </header>
+  );
 
   useEffect(() => {
     setMobileSidebarOpen(false);
@@ -1598,70 +1726,69 @@ function AliceShellComponent({
             </header>
           ) : null}
 
-          {showTopHeader || currentRunLabel ? (
-            <header className="sticky top-0 z-50 flex h-14.5 items-center bg-bg-surface px-3 sm:px-4 md:px-6">
-              <div className="flex min-w-0 flex-1 items-center gap-3">
-                <button
-                  type="button"
-                  aria-label="打开侧边栏"
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-foreground transition hover:bg-fill-hover md:hidden"
-                  onClick={() => setMobileSidebarOpen(true)}
-                >
-                  <Menu className="h-5 w-5" strokeWidth={2} />
-                </button>
-                {currentRunLabel ? (
-                  <div className="min-w-0 truncate text-body font-medium text-foreground">
-                    {currentRunLabel}
-                  </div>
-                ) : null}
-              </div>
-              {showCompactRightRailDrawer ? (
-                <button
-                  type="button"
-                  aria-label="查看任务执行结果"
-                  className="ml-3 hidden h-9 shrink-0 items-center gap-2 rounded-control px-3 text-body font-medium text-foreground transition hover:bg-fill-hover md:inline-flex lg:hidden"
-                  onClick={() => setCompactResultDrawerOpen(true)}
-                >
-                  <PanelRightOpen className="h-icon-md w-icon-md" strokeWidth={1.9} />
-                  查看结果
-                </button>
-              ) : null}
-            </header>
-          ) : null}
+          {showRunHeader && !runHeaderInLeftPane ? renderRunHeader("main") : null}
 
           <div
+            ref={workspaceMainGridRef}
             data-testid={rightRail ? "workspace-main-grid" : undefined}
+            style={workspaceMainGridStyle}
             className={cn(
               "min-h-0 flex-1",
               childManagedScroll && "overflow-hidden",
               !showTopHeader && !currentRunLabel && "pt-16 md:pt-0",
-              showDesktopRightRail && "grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(360px,42%)_minmax(680px,58%)]",
+              showDesktopRightRail && "grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(360px,1fr)_8px_minmax(0,760px)]",
+              resizingResultRail && "select-none",
             )}
           >
             <div
+              data-testid={rightRail ? "workspace-left-pane" : undefined}
               className={cn(
                 "relative min-w-0",
-                childManagedScroll && "flex h-full min-h-0 flex-col overflow-hidden",
-                !childManagedScroll && contentScrollMode === "shell" && "overflow-visible",
-                !childManagedScroll && contentScrollMode !== "shell" && "overflow-hidden",
+                leftPaneUsesFlexLayout && "flex h-full min-h-0 flex-col overflow-hidden",
+                !leftPaneUsesFlexLayout && contentScrollMode === "shell" && "overflow-visible",
+                !leftPaneUsesFlexLayout && contentScrollMode !== "shell" && "overflow-hidden",
               )}
             >
               {mainDecoration ? <div className="pointer-events-none absolute inset-0">{mainDecoration}</div> : null}
+              {runHeaderInLeftPane ? renderRunHeader("left-pane") : null}
               <div
                 className={cn(
                   "relative z-1 min-h-0",
-                  childManagedScroll ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "h-full",
+                  leftPaneUsesFlexLayout ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "h-full",
                 )}
               >
                 {children}
               </div>
             </div>
             {showDesktopRightRail ? (
+              <button
+                type="button"
+                role="separator"
+                aria-label="调整对话和结果宽度"
+                aria-orientation="vertical"
+                aria-valuemin={RESULT_RAIL_MIN_WIDTH}
+                aria-valuemax={RESULT_RAIL_MAX_WIDTH}
+                aria-valuenow={resultRailWidth}
+                className={cn(
+                  "group relative hidden h-full min-h-0 w-2 cursor-col-resize touch-none items-stretch justify-center bg-[#fff] lg:flex",
+                )}
+                onPointerDown={beginResultRailResize}
+                onDoubleClick={resetResultRailWidth}
+              >
+                <span
+                  className={cn(
+                    "block h-full w-px bg-[var(--color-border-2)] transition-colors",
+                    resizingResultRail ? "bg-[var(--color-border-2)]" : "group-hover:bg-[var(--color-border-2)]",
+                  )}
+                  aria-hidden
+                />
+              </button>
+            ) : null}
+            {showDesktopRightRail ? (
               <aside
                 data-testid="workspace-right-rail"
                 className={cn(
-                  "flex min-h-0 min-w-0 flex-col border-l border-border bg-bg-surface/70 backdrop-blur-xl",
-                  "border-l-0 border-t lg:border-l lg:border-t",
+                  "flex min-h-0 min-w-0 flex-col bg-bg-surface",
                   childManagedScroll ? "overflow-hidden" : "overflow-visible",
                 )}
               >

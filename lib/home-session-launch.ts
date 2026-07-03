@@ -1,3 +1,4 @@
+import type { ComposerSourcePlacement } from "@/lib/composer-prefill";
 const HOME_SESSION_LAUNCH_META_KEY = "alice:homeSessionLaunchMetaV1";
 
 export type HomeSessionLaunchSendState = "pending" | "in_flight" | "done";
@@ -7,6 +8,7 @@ export type HomeSessionLaunchMetaV1 = {
   sessionId: string;
   prompt: string;
   selectedSourceIds: string[];
+  sourcePlacements?: ComposerSourcePlacement[];
   sendKind: HomeSessionLaunchSendState;
 };
 

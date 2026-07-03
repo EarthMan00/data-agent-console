@@ -19,12 +19,10 @@ import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 
 function PlatformSubtaskResultCard({
   snap,
-  isActive,
   onSelect,
   totalSteps,
 }: {
   snap: PlatformSubtaskSnapshot;
-  isActive: boolean;
   onSelect: () => void;
   totalSteps: number;
 }) {
@@ -39,7 +37,6 @@ function PlatformSubtaskResultCard({
       }
       status={status}
       isLast={snap.stepIndex >= totalSteps - 1}
-      active={isActive || status === "error"}
       onSelect={
         hasPreviewFiles
           ? () => {
@@ -54,7 +51,6 @@ function PlatformSubtaskResultCard({
 export function PlatformRoundStepTimeline({
   executionSteps,
   platformSubtasks,
-  activeHighlightTaskId,
   runId,
   setPanelSubtaskFocus,
   setPanelVisibility,
@@ -62,7 +58,7 @@ export function PlatformRoundStepTimeline({
 }: {
   executionSteps: TaskExecutionStep[];
   platformSubtasks: PlatformSubtaskSnapshot[] | undefined;
-  /** 与右侧结果区当前页签对齐的步骤 taskId（含默认选中「最新有结果的一步」） */
+  /** 现有调用保留右侧结果区当前页签 taskId；左侧完成步骤不再跟随它高亮。 */
   activeHighlightTaskId: string | null;
   runId: string;
   setPanelSubtaskFocus?: Dispatch<SetStateAction<{ taskId: string; artifacts: PlatformTaskArtifactRef[] } | null>>;
@@ -96,12 +92,10 @@ export function PlatformRoundStepTimeline({
           );
         }
         const snap = item.snap;
-        const active = activeHighlightTaskId === snap.taskId;
         return (
           <PlatformSubtaskResultCard
             key={snap.taskId}
             snap={snap}
-            isActive={active}
             totalSteps={executionSteps.length}
             onSelect={() => {
               if (onOpenSubtaskResult) {

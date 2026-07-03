@@ -13,6 +13,7 @@ const BACKEND_BASE = (
 
 /** 生产环境勿将 INTERNAL 指到公网 /agent-platform（会与浏览器请求形成 IIS/Next 回环，返回 HTML 400「错误的请求」）。 */
 function warnMisconfiguredBackendBase() {
+  if (process.env.NODE_ENV !== "production") return;
   const raw = process.env.AGENT_WEB_PLATFORM_INTERNAL_URL?.trim();
   if (!raw) return;
   try {

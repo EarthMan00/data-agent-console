@@ -95,6 +95,31 @@ describe("agent task result panel favorite feedback", () => {
     expect(within(panel).queryByText("create user favorite failed (HTTP 401)")).not.toBeInTheDocument();
   });
 
+  it("uses primary styling for active result sheets and shows header divider only after scroll", () => {
+    render(
+      <AgentTaskResultPanel
+        onClose={vi.fn()}
+        artifacts={multiSheetArtifacts}
+        taskId="mock-task"
+        withFreshToken={async (run) => {
+          await run("real-token");
+        }}
+      />,
+    );
+
+    const panel = screen.getByTestId("agent-preview-panel");
+    const header = within(panel).getByTestId("agent-result-panel-header");
+    expect(header).toHaveStyle({ boxShadow: "none" });
+    const scrollRegion = within(panel).getByTestId("agent-result-scroll-region");
+    scrollRegion.scrollTop = 24;
+    fireEvent.scroll(scrollRegion);
+    expect(header).toHaveStyle({ boxShadow: "0 1px 0 var(--color-border-1)" });
+
+    const activeTab = within(panel).getByRole("tab", { selected: true });
+    expect(activeTab).toHaveClass("text-primary");
+    expect(activeTab.querySelector(".bg-primary")).toBeInTheDocument();
+  });
+
   it("uses primary styling for active result sheets and a stronger header divider", () => {
     render(
       <AgentTaskResultPanel

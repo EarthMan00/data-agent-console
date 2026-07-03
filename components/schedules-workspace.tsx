@@ -88,9 +88,14 @@ import {
   type ScheduleKind,
 } from "@/lib/schedule-payloads";
 import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
-import { parseComposerPrefillStorageValue, parseDatasourceMentions, type ComposerSourcePlacement } from "@/lib/composer-prefill";
+import {
+  insertDatasourceMentions,
+  parseComposerPrefillStorageValue,
+  parseDatasourceMentions,
+  type ComposerSourcePlacement,
+} from "@/lib/composer-prefill";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
-import { type HomeCapabilityItem } from "@/lib/home-capability-items";
+import { getHomeCapabilityItem, type HomeCapabilityItem } from "@/lib/home-capability-items";
 import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
 import { stashScheduleTrialAttachmentFiles } from "@/lib/schedule-trial-attachment-files";
 import {
@@ -111,13 +116,13 @@ const WORKFLOW_STATUS_OPTIONS = ["全部状态", "生效中", "已暂停", "已�
 const RUN_STATUS_OPTIONS = ["全部状态", "运行成功", "运行失败", "运行超时"] as const;
 const DEFAULT_GROUP_VALUE = "__default__";
 
-function serializeScheduleComposerPrompt(text: string, sourceIds: string[], dataSourceItems: HomeCapabilityItem[]) {
-  const sourceText = sourceIds
-    .map((id) => dataSourceItems.find((item) => item.id === id && item.id !== "scenarios")?.label)
-    .filter((label): label is string => Boolean(label))
-    .map((label) => `@${label}`)
-    .join(" ");
-  return `${sourceText ? `${sourceText} ` : ""}${text}`.trim();
+function serializeScheduleComposerPrompt(
+  text: string,
+  sourceIds: string[],
+  sourcePlacements: ComposerSourcePlacement[],
+  dataSourceItems: HomeCapabilityItem[],
+) {
+  return insertDatasourceMentions(text, sourceIds, sourcePlacements, dataSourceItems);
 }
 
 function sortGroupsByCreatedAsc(groups: UserScheduledTaskGroupDto[]) {
@@ -487,6 +492,7 @@ export function SchedulesWorkspace() {
     editPromptBaselineRef.current = serializeScheduleComposerPrompt(
       taskPrompt.text,
       taskPrompt.selectedSourceIds,
+      taskPrompt.sourcePlacements,
       scheduleDataSourceItems,
     );
   }, [scheduleDataSourceItems]);
@@ -559,12 +565,13 @@ export function SchedulesWorkspace() {
   );
   const tryRunSubmitBlocked = taskEnabled && !hasValidNextExecution;
   const serializedPrompt = useMemo(
-    () => serializeScheduleComposerPrompt(prompt, scheduleSourceIds, scheduleDataSourceItems),
-    [prompt, scheduleSourceIds, scheduleDataSourceItems],
+    () => serializeScheduleComposerPrompt(prompt, scheduleSourceIds, scheduleSourcePlacements, scheduleDataSourceItems),
+    [prompt, scheduleSourceIds, scheduleSourcePlacements, scheduleDataSourceItems],
   );
   const addScheduleComposerSource = useCallback((capabilityId: string) => {
-    const item = scheduleDataSourceItems.find((entry) => entry.id === capabilityId && entry.id !== "scenarios");
+    const item = scheduleDataSourceItems.find((entry) => entry.id === capabilityId) ?? getHomeCapabilityItem(capabilityId);
     if (!item) return;
+    if (item.id === "scenarios") return;
     setScheduleSuppressTemplateCompletion(false);
     setScheduleSourceIds((current) => (current.includes(item.id) ? current : [...current, item.id]));
   }, [scheduleDataSourceItems]);
@@ -1096,6 +1103,7 @@ export function SchedulesWorkspace() {
                       dataSourceItems={scheduleDataSourceItems}
                       selectedSourceIds={scheduleSourceIds}
                       sourcePlacements={scheduleSourcePlacements}
+                      onSourcePlacementsChange={setScheduleSourcePlacements}
                       suppressTemplateCompletion={scheduleSuppressTemplateCompletion}
                       onToolSelect={addScheduleComposerSource}
                       onSourceRemove={removeScheduleComposerSource}
@@ -1440,7 +1448,7 @@ export function SchedulesWorkspace() {
         durationMs={2200}
       />
       {scheduleFormDialog}
-      <div className="px-4 pb-14 pt-5 sm:px-6 lg:px-8">
+      <div className="px-4 pb-14 pt-5 [&_button:not(:disabled)]:cursor-pointer sm:px-6 lg:px-8">
         <div className="mx-auto max-w-page-content">
           {error && !showScheduledLoadError && !showRunsLoadError ? (
             <div className="mb-4 text-sm text-danger" role="alert">
@@ -1963,7 +1971,7 @@ function ApiScheduledTaskCard({
           type="button"
           variant="subtle"
           size="sm"
-          className="h-8 shrink-0 rounded-full bg-fill-hover px-4 text-body font-semibold text-foreground hover:bg-fill-hover"
+          className="h-8 shrink-0 cursor-pointer rounded-full bg-fill-hover px-4 text-body font-semibold text-foreground hover:bg-fill-hover"
           onClick={onRun}
         >
           运行
@@ -1979,30 +1987,30 @@ function ApiScheduledTaskCard({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 shrink-0 rounded-full text-text-disabled hover:bg-fill-hover hover:text-foreground"
+              className="h-8 w-8 shrink-0 cursor-pointer rounded-full text-text-disabled hover:bg-fill-hover hover:text-foreground"
               aria-label="更多任务操作"
             >
               <MoreVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuContent align="end" className="w-44 [&_[role=menuitem]]:cursor-pointer">
             <DropdownMenuGroup>
-              <DropdownMenuItem onSelect={onEdit}>
+              <DropdownMenuItem className="cursor-pointer" onSelect={onEdit}>
                 <Pencil className="h-4 w-4" />
                 编辑
               </DropdownMenuItem>
               {canToggle ? (
-                <DropdownMenuItem onSelect={() => onToggleEnabled(!t.enabled)}>
+                <DropdownMenuItem className="cursor-pointer" onSelect={() => onToggleEnabled(!t.enabled)}>
                   <Power className="h-4 w-4" />
                   {t.enabled ? "暂停" : "启用"}
                 </DropdownMenuItem>
               ) : null}
-              <DropdownMenuItem onSelect={onMove}>
+              <DropdownMenuItem className="cursor-pointer" onSelect={onMove}>
                 <ArrowRightLeft className="h-4 w-4" />
                 移动到
               </DropdownMenuItem>
               <DropdownMenuItem
-                className="text-danger focus:bg-danger-bg focus:text-danger"
+                className="cursor-pointer text-danger focus:bg-danger-bg focus:text-danger"
                 onSelect={(event) => {
                   event.preventDefault();
                   setMenuOpen(false);
@@ -2203,14 +2211,14 @@ function ApiRunRecordRow({
                   <MoreVertical className="h-5 w-5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuContent align="end" className="w-48 [&_[role=menuitem]]:cursor-pointer">
                 <DropdownMenuGroup>
-                  <DropdownMenuItem onSelect={onViewProcess}>
+                  <DropdownMenuItem className="cursor-pointer" onSelect={onViewProcess}>
                     <Eye className="h-4 w-4 shrink-0" />
                     查看执行过程
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    className="text-danger focus:bg-danger-bg focus:text-danger"
+                    className="cursor-pointer text-danger focus:bg-danger-bg focus:text-danger"
                     onSelect={(event) => {
                       event.preventDefault();
                       setMenuOpen(false);

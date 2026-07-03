@@ -134,15 +134,15 @@ export function SimpleUserBubble({
   return (
     <div className="flex w-full justify-end" data-testid="agent-user-input-card">
       <div className={cn("group flex flex-col items-end gap-2", SIMPLE_CHAT_BUBBLE_MAX)}>
-        <div className="mb-1 text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-          {formatTimeForBubble(datetime)}
-        </div>
         {attachments.length > 0 ? <UserMessageAttachmentCards attachments={attachments} /> : null}
         {visibleText ? (
           <div className="shrink-0 rounded-panel bg-fill-hover px-4 py-3 text-body leading-7 text-foreground shadow-none">
             <div className="break-words whitespace-pre-wrap">{visibleText}</div>
           </div>
         ) : null}
+        <div className="text-right text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          {formatTimeForBubble(datetime)}
+        </div>
       </div>
     </div>
   );

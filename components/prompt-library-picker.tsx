@@ -14,6 +14,7 @@ import { Bookmark, CornerDownLeft, Loader2, Plus, Search } from "@/components/ui
 import { AgentApiError, parseFastApiDetail } from "@/lib/agent-api/client";
 import type { UserPromptDto, UserPromptGroupDto } from "@/lib/agent-api/types";
 import { createUserPrompt, listUserPromptGroups, listUserPrompts } from "@/lib/agent-api/user-prompts";
+import { insertDatasourceMentions, type ComposerSourcePlacement } from "@/lib/composer-prefill";
 import type { HomeCapabilityItem } from "@/lib/home-capability-items";
 import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
 import { cn } from "@/lib/utils";
@@ -88,22 +89,13 @@ function filterPrompts(prompts: UserPromptDto[], search: string) {
   );
 }
 
-function sourceMarkerForPrompt(sourceId: string, dataSourceItems: HomeCapabilityItem[]) {
-  const item = dataSourceItems.find((source) => source.id === sourceId);
-  const label = item?.label ?? sourceId.replace(/^@+/, "");
-  return label ? `@${label}` : "";
-}
-
 function serializePromptWithSources(
   promptText: string,
   sourceIds: string[],
+  sourcePlacements: ComposerSourcePlacement[],
   dataSourceItems: HomeCapabilityItem[],
 ) {
-  const prompt = promptText.trim();
-  const markers = Array.from(new Set(sourceIds))
-    .map((sourceId) => sourceMarkerForPrompt(sourceId, dataSourceItems))
-    .filter((marker) => marker && !prompt.includes(marker));
-  return [...markers, prompt].filter(Boolean).join(" ");
+  return insertDatasourceMentions(promptText, sourceIds, sourcePlacements, dataSourceItems);
 }
 
 export function PromptLibraryPicker({
@@ -129,6 +121,7 @@ export function PromptLibraryPicker({
   const [formTitle, setFormTitle] = useState("");
   const [formPrompt, setFormPrompt] = useState("");
   const [formSourceIds, setFormSourceIds] = useState<string[]>([]);
+  const [formSourcePlacements, setFormSourcePlacements] = useState<ComposerSourcePlacement[]>([]);
   const [formGroupId, setFormGroupId] = useState<string | null>(null);
   const {
     dataSourceGroups: composerDataSourceGroups,
@@ -202,6 +195,7 @@ export function PromptLibraryPicker({
     setFormTitle("");
     setFormPrompt("");
     setFormSourceIds([]);
+    setFormSourcePlacements([]);
     setFormGroupId(filter.kind === "group" ? filter.id : null);
     setSaveOpen(true);
   };
@@ -212,6 +206,7 @@ export function PromptLibraryPicker({
 
   const removeFormSource = useCallback((capabilityId: string) => {
     setFormSourceIds((current) => current.filter((id) => id !== capabilityId));
+    setFormSourcePlacements((current) => current.filter((placement) => placement.sourceId !== capabilityId));
   }, []);
 
   const submitCreate = async () => {
@@ -227,7 +222,7 @@ export function PromptLibraryPicker({
       await platformAgent.withFreshToken(async (token) => {
         await createUserPrompt(token, {
           title: formTitle.trim(),
-          prompt_text: serializePromptWithSources(formPrompt, formSourceIds, composerDataSourceItems),
+          prompt_text: serializePromptWithSources(formPrompt, formSourceIds, formSourcePlacements, composerDataSourceItems),
           group_id: formGroupId,
         });
       });
@@ -465,6 +460,8 @@ export function PromptLibraryPicker({
                   mode="普通模式"
                   onModeChange={() => undefined}
                   selectedSourceIds={formSourceIds}
+                  sourcePlacements={formSourcePlacements}
+                  onSourcePlacementsChange={setFormSourcePlacements}
                   onToolSelect={addFormSource}
                   onSourceRemove={removeFormSource}
                   dataSourceGroups={composerDataSourceGroups}

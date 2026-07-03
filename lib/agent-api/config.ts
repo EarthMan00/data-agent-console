@@ -3,6 +3,7 @@
  *
  * 局域网内其他设备访问时，勿把 API 指到 127.0.0.1（会指向访客本机）。
  * 可设 NEXT_PUBLIC_AGENT_API_USE_PROXY=1，HTTP 经 Next 同源路径 /agent-platform 转发到本机 8000。
+ * 开发环境未显式配置直连 origin 时，默认走同源代理，避免本地首次启动被 public env 卡住。
  */
 
 const AGENT_PLATFORM_PROXY_PREFIX = "/agent-platform";
@@ -13,7 +14,10 @@ export function isAgentRealApiEnabled(): boolean {
 
 /** 为 true 时，浏览器只请求当前页面的 origin + /agent-platform，由 next.config rewrites 转到后端。 */
 export function isAgentApiProxyEnabled(): boolean {
-  return (process.env.NEXT_PUBLIC_AGENT_API_USE_PROXY ?? "").trim() === "1";
+  const proxyFlag = (process.env.NEXT_PUBLIC_AGENT_API_USE_PROXY ?? "").trim();
+  if (proxyFlag) return proxyFlag === "1";
+  if (process.env.NEXT_PUBLIC_AGENT_API_ORIGIN?.trim()) return false;
+  return process.env.NODE_ENV !== "production";
 }
 
 export function getAgentApiOrigin(): string {

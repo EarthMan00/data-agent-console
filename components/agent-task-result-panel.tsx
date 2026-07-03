@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type UIEvent } from "react";
 import { Download, Menu, Star, X } from "@/components/ui/tabler-icons";
 
 import { AutoToast } from "@/components/auto-toast";
@@ -289,6 +289,7 @@ export function AgentTaskResultPanel({
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastVariant, setToastVariant] = useState<"default" | "error">("default");
+  const [contentScrolled, setContentScrolled] = useState(false);
 
   const showToast = useCallback((message: string, variant: "default" | "error" = "default") => {
     setToastVariant(variant);
@@ -356,6 +357,14 @@ export function AgentTaskResultPanel({
 
   const showSubtaskSheetBar = Boolean(subtaskResultTabs && subtaskResultTabs.length > 1 && onSubtaskSelect);
 
+  const handleContentScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    setContentScrolled(event.currentTarget.scrollTop > 0);
+  }, []);
+
+  useEffect(() => {
+    setContentScrolled(false);
+  }, [activeSheet?.id, taskStatus, tid]);
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-bg-surface" data-testid="agent-preview-panel">
       <AutoToast
@@ -367,7 +376,13 @@ export function AgentTaskResultPanel({
         }}
         durationMs={2200}
       />
-      <div className="flex shrink-0 flex-col gap-1 border-b border-border-strong bg-bg-surface px-3 py-2 shadow-hairline sm:px-4">
+      <div
+        data-testid="agent-result-panel-header"
+        className="relative z-layer-base flex shrink-0 flex-col gap-1 bg-bg-surface px-3 py-2 sm:px-4"
+        style={{
+          boxShadow: contentScrolled ? "0 1px 0 var(--color-border-1)" : "none",
+        }}
+      >
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-body font-medium text-foreground">任务执行结果</div>
@@ -458,11 +473,24 @@ export function AgentTaskResultPanel({
             </p>
           </div>
         ) : null}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto px-3 pt-2 sm:px-4">
+        <div
+          data-testid="agent-result-scroll-region"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto px-3 pt-2 sm:px-4"
+          onScroll={handleContentScroll}
+        >
           {withFreshToken && useSheetUi && activeSheet ? (
-            <TaskResultSheetBody sheet={activeSheet} viewMode={viewMode} withFreshToken={withFreshToken} />
+            <TaskResultSheetBody
+              sheet={activeSheet}
+              viewMode={viewMode}
+              withFreshToken={withFreshToken}
+              onPreviewScrollChange={setContentScrolled}
+            />
           ) : withFreshToken && !useSheetUi && fallbackPrimary ? (
-            <TaskSingleDataArtifactPreview artifact={fallbackPrimary} withFreshToken={withFreshToken} />
+            <TaskSingleDataArtifactPreview
+              artifact={fallbackPrimary}
+              withFreshToken={withFreshToken}
+              onPreviewScrollChange={setContentScrolled}
+            />
           ) : taskStatus === "FAILED" ? (
             <p className="text-body leading-6 text-text-secondary">
               任务未产生可展示的数据文件（CSV/JSON 等），详情请查看上方错误信息。

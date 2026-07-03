@@ -15,7 +15,11 @@ import {
 import { createPortal } from "react-dom";
 import { ArrowUp, ChevronDown, CornerDownLeft, Paperclip, X } from "@/components/ui/tabler-icons";
 import { PromptLibraryPicker } from "@/components/prompt-library-picker";
-import { parseDatasourceMentions, type ComposerSourcePlacement } from "@/lib/composer-prefill";
+import {
+  normalizeComposerSourcePlacements,
+  parseDatasourceMentions,
+  type ComposerSourcePlacement,
+} from "@/lib/composer-prefill";
 
 import {
   homeCapabilityGroups,
@@ -41,6 +45,7 @@ type TaskComposerProps = {
   dataSourceItems?: HomeCapabilityItem[];
   onToolSelect: (capabilityId: string) => void;
   onSourceRemove: (capabilityId: string) => void;
+  onSourcePlacementsChange?: (placements: ComposerSourcePlacement[]) => void;
   onFilesSelected: (files: FileList) => void;
   onAttachmentsChange?: (files: File[]) => void;
   onSubmit: () => void;
@@ -105,8 +110,12 @@ const DATA_SOURCE_MENU_NAVIGATION_KEYS = new Set([
 ]);
 
 const DATA_SOURCE_GRID_COLUMNS = 2;
+const DATA_SOURCE_SECTION_SCROLL_GAP = 10;
+const DATA_SOURCE_SECTION_HEADING_CLASS =
+  "mb-2 flex items-center gap-2 text-body font-semibold leading-5 text-foreground";
 const EDITOR_IGNORED_TEXT_SELECTOR = "[data-tool-token='true'], [data-template-ghost='true']";
 const TEMPLATE_SLOT_SELECTOR = "[data-template-slot='true']";
+const MENTION_CURSOR_NAVIGATION_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
 const EMPTY_TEMPLATE_SLOT_TEXT = "\u200b";
 const EMPTY_TEMPLATE_SLOT_TEXT_PATTERN = /\u200b/g;
 const EMPTY_SOURCE_PLACEMENTS: ComposerSourcePlacement[] = [];
@@ -114,6 +123,22 @@ const EMPTY_SOURCE_PLACEMENTS: ComposerSourcePlacement[] = [];
 type PromptTemplatePart =
   | { kind: "text"; text: string }
   | { kind: "slot"; text: string };
+
+type SyncEditorInteractionOptions = {
+  allowOpeningMention?: boolean;
+};
+
+type SyncEditorValueOptions = {
+  syncSourceSelection?: boolean;
+};
+
+type ComposerHistorySnapshot = {
+  value: string;
+  selectedSourceIds: string[];
+  sourcePlacements: ComposerSourcePlacement[];
+};
+
+const COMPOSER_HISTORY_LIMIT = 100;
 
 function getAttachmentExtension(name: string) {
   const dotIndex = name.lastIndexOf(".");
@@ -151,11 +176,25 @@ function scrollItemIntoPane(item: HTMLElement | null | undefined, pane: HTMLElem
   }
 }
 
+function scrollSectionIntoPane(section: HTMLElement | null | undefined, pane: HTMLElement | null | undefined) {
+  if (!section || !pane) return;
+  pane.scrollTop = Math.max(0, section.offsetTop - DATA_SOURCE_SECTION_SCROLL_GAP);
+}
+
 function estimateDataSourceMenuHeight(groupCount: number, maxHeight: number) {
   if (groupCount <= 0) return 180;
   const categoryColumnHeight = groupCount * 40 + 16;
   const optionPaneHeight = groupCount * 134 + 24;
   return Math.min(maxHeight, Math.max(180, categoryColumnHeight, optionPaneHeight));
+}
+
+function DataSourceGroupHeading({ label }: { label: string }) {
+  return (
+    <div className={DATA_SOURCE_SECTION_HEADING_CLASS} data-testid="task-composer-source-section-heading">
+      <span className="h-4 w-0.5 rounded-full bg-primary" />
+      {label}
+    </div>
+  );
 }
 
 function createComposerAttachment(file: File, index: number): ComposerAttachment {
@@ -316,6 +355,23 @@ function getPlainText(container: HTMLElement) {
     .join("");
 }
 
+function getSourcePlacementsFromEditor(container: HTMLElement) {
+  let offset = 0;
+  const placements: ComposerSourcePlacement[] = [];
+
+  Array.from(container.childNodes).forEach((node) => {
+    if (node instanceof HTMLElement && node.dataset.templateGhost === "true") return;
+    if (node instanceof HTMLElement && node.dataset.toolToken === "true") {
+      const sourceId = node.dataset.toolId;
+      if (sourceId) placements.push({ sourceId, offset });
+      return;
+    }
+    offset += normalizeTemplateSlotPlainText(node.textContent ?? "").length;
+  });
+
+  return normalizeComposerSourcePlacements(placements, offset);
+}
+
 function normalizeComposerPlainText(text: string) {
   return normalizeTemplateSlotPlainText(text).replace(/\u00a0/g, " ").replace(/^[ \t]+/, "");
 }
@@ -342,47 +398,19 @@ function getSourcePlacementKey(placements: ComposerSourcePlacement[]) {
   return placements.map((placement) => `${placement.sourceId}:${placement.offset}`).join("|");
 }
 
-function getToolTokenNearCaret(container: HTMLElement, direction: "backward" | "forward") {
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return null;
-  const { anchorNode, anchorOffset } = selection;
-  if (!anchorNode || !container.contains(anchorNode)) return null;
+function getComposerHistorySnapshotKey(snapshot: ComposerHistorySnapshot) {
+  return [
+    snapshot.value,
+    snapshot.selectedSourceIds.join(","),
+    getSourcePlacementKey(snapshot.sourcePlacements),
+  ].join("\u001f");
+}
 
-  const resolveTokenFromNode = (node: Node | null, step: "previousSibling" | "nextSibling"): HTMLElement | null => {
-    let current = node;
-    while (current) {
-      if (current instanceof HTMLElement && current.dataset.toolToken === "true") {
-        return current;
-      }
-      if (current.nodeType === Node.TEXT_NODE && (current.textContent ?? "").trim() !== "") {
-        return null;
-      }
-      current = current[step];
-    }
-    return null;
-  };
-
-  if (anchorNode.nodeType === Node.TEXT_NODE) {
-    const textContent = anchorNode.textContent ?? "";
-    const leading = textContent.slice(0, anchorOffset);
-    const trailing = textContent.slice(anchorOffset);
-
-    if (direction === "backward" && leading.trim() !== "") return null;
-    if (direction === "forward" && trailing.trim() !== "") return null;
-
-    return resolveTokenFromNode(
-      direction === "backward" ? anchorNode.previousSibling : anchorNode.nextSibling,
-      direction === "backward" ? "previousSibling" : "nextSibling",
-    );
-  }
-
-  const siblings = anchorNode.childNodes;
-  const seed =
-    direction === "backward"
-      ? siblings[Math.max(0, anchorOffset - 1)] ?? null
-      : siblings[Math.min(siblings.length - 1, anchorOffset)] ?? null;
-
-  return resolveTokenFromNode(seed, direction === "backward" ? "previousSibling" : "nextSibling");
+function pushComposerHistorySnapshot(stack: ComposerHistorySnapshot[], snapshot: ComposerHistorySnapshot) {
+  const last = stack[stack.length - 1];
+  if (last && getComposerHistorySnapshotKey(last) === getComposerHistorySnapshotKey(snapshot)) return;
+  stack.push(snapshot);
+  if (stack.length > COMPOSER_HISTORY_LIMIT) stack.shift();
 }
 
 function moveCaretAfterNode(node: Node) {
@@ -649,6 +677,13 @@ function createTemplateGhostNode(template: string, phase: "visible" | "fading") 
   return span;
 }
 
+function getTemplateGhostDisplayText(template: string, toolId: string, dataSourceItems: HomeCapabilityItem[]) {
+  const prefill = parseDatasourceMentions(template, dataSourceItems);
+  if (prefill.selectedSourceIds.length === 0) return template;
+  if (prefill.selectedSourceIds.some((sourceId) => sourceId !== toolId)) return template;
+  return prefill.text || template;
+}
+
 function appendPromptTemplateNodes(container: HTMLElement, template: string) {
   parsePromptTemplate(template).forEach((part) => {
     if (!part.text) return;
@@ -695,6 +730,27 @@ function placeCaretBeforeNode(container: HTMLElement, node: Node) {
   selection.removeAllRanges();
   selection.addRange(range);
   container.focus();
+}
+
+function isPointInsideElement(element: HTMLElement, clientX: number, clientY: number) {
+  const rects = Array.from(element.getClientRects());
+  const hitRects = rects.length > 0 ? rects : [element.getBoundingClientRect()];
+  return hitRects.some(
+    (rect) =>
+      rect.width > 0 &&
+      rect.height > 0 &&
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom,
+  );
+}
+
+function placeCaretBeforeTemplateGhostAtPoint(container: HTMLElement, clientX: number, clientY: number) {
+  const ghost = container.querySelector<HTMLElement>("[data-template-ghost='true']");
+  if (!ghost || !isPointInsideElement(ghost, clientX, clientY)) return false;
+  placeCaretBeforeNode(container, ghost);
+  return true;
 }
 
 function renderHighlightedText(text: string, query: string) {
@@ -757,7 +813,7 @@ function createToolTokenNode({
   token.dataset.toolId = capabilityId;
   token.dataset.sourceTag = capabilityId;
   token.className =
-    "mx-1 inline-flex h-7 max-w-[220px] items-center gap-1.5 whitespace-nowrap rounded-control border border-border bg-bg-surface px-2.5 align-middle text-body font-medium leading-none text-foreground shadow-surface";
+    "mx-1 inline-flex h-7 max-w-[220px] items-center gap-1.5 whitespace-nowrap rounded-control border border-border bg-bg-surface px-2.5 align-middle text-body font-medium leading-none text-foreground shadow-surface before:shrink-0 before:text-text-secondary before:content-['@']";
   token.setAttribute("contenteditable", "false");
   token.setAttribute("aria-label", `数据源 ${label}`);
 
@@ -785,6 +841,7 @@ export function TaskComposer({
   dataSourceItems = homeDataSourceItems,
   onToolSelect,
   onSourceRemove,
+  onSourcePlacementsChange,
   onFilesSelected,
   onAttachmentsChange,
   onSubmit,
@@ -801,7 +858,7 @@ export function TaskComposer({
   placeholderClassName,
   sendButtonClassName,
   suppressTemplateCompletion = false,
-  sourcePlacements = [],
+  sourcePlacements = EMPTY_SOURCE_PLACEMENTS,
   sourceMenuSide = "bottom",
   onPromptUse,
 }: TaskComposerProps) {
@@ -815,11 +872,13 @@ export function TaskComposer({
   const sourceButtonTriggerRef = useRef<HTMLButtonElement | null>(null);
   const sourceButtonItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const sourceButtonCategoryRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const sourceButtonGroupSectionRefs = useRef<Array<HTMLElement | null>>([]);
   const sourceButtonListRef = useRef<HTMLDivElement | null>(null);
   const sourceButtonOptionPaneRef = useRef<HTMLDivElement | null>(null);
   const sourceButtonHighlightedIndexRef = useRef(-1);
   const toolItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const mentionCategoryRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const mentionGroupSectionRefs = useRef<Array<HTMLElement | null>>([]);
   const toolListRef = useRef<HTMLDivElement | null>(null);
   const mentionOptionPaneRef = useRef<HTMLDivElement | null>(null);
   const highlightedToolIndexRef = useRef(-1);
@@ -827,9 +886,15 @@ export function TaskComposer({
   const mentionRangeRef = useRef<{ start: number; end: number } | null>(null);
   const suppressExternalSyncRef = useRef(false);
   const pendingEditorEndPlacementRef = useRef(false);
-  const syncEditorInteractionStateRef = useRef<(editor: HTMLElement) => void>(() => {});
+  const lastEditorSelectionRef = useRef<{ start: number; end: number } | null>(null);
+  const syncEditorInteractionStateRef = useRef<(editor: HTMLElement, options?: SyncEditorInteractionOptions) => void>(() => {});
   const onAttachmentsChangeRef = useRef(onAttachmentsChange);
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
+  const sourcePlacementKeyRef = useRef(getSourcePlacementKey(sourcePlacements));
+  const currentHistorySnapshotRef = useRef<ComposerHistorySnapshot | null>(null);
+  const undoHistoryRef = useRef<ComposerHistorySnapshot[]>([]);
+  const redoHistoryRef = useRef<ComposerHistorySnapshot[]>([]);
+  const restoringHistoryRef = useRef(false);
 
   const [sourceButtonOpen, setSourceButtonOpen] = useState(false);
   const [sourceButtonHighlightedIndex, setSourceButtonHighlightedIndex] = useState(-1);
@@ -846,7 +911,8 @@ export function TaskComposer({
   const [highlightedToolIndex, setHighlightedToolIndex] = useState(-1);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [optimisticSourceIds, setOptimisticSourceIds] = useState<string[]>([]);
-  const canSubmit = hasText || attachments.length > 0;
+  const [localSourcePlacements, setLocalSourcePlacements] = useState<ComposerSourcePlacement[]>(sourcePlacements);
+  const canSubmit = hasText;
   const handleSubmit = () => {
     if (showStop) {
       onStop?.();
@@ -872,16 +938,21 @@ export function TaskComposer({
   const [acceptedTemplateToolId, setAcceptedTemplateToolId] = useState<string | null>(null);
   const [acceptedTemplatePrefix, setAcceptedTemplatePrefix] = useState("");
   const [internalSuppressTemplateCompletion, setInternalSuppressTemplateCompletion] = useState(false);
+  const [pendingTemplateSuggestionToolId, setPendingTemplateSuggestionToolId] = useState<string | null>(null);
   const blurTimeoutRef = useRef<number | null>(null);
   const preserveMentionFocusRef = useRef(false);
 
-  const filteredTools = useMemo(() => dataSourceItems, [dataSourceItems]);
+  const filteredTools = useMemo(
+    () => (dataSourceItems.length > 0 ? dataSourceItems : homeDataSourceItems),
+    [dataSourceItems],
+  );
 
   const effectiveSelectedSourceIds = useMemo(
-    () => [
-      ...selectedSourceIds,
-      ...optimisticSourceIds.filter((id) => !selectedSourceIds.includes(id)),
-    ],
+    () =>
+      Array.from(new Set([
+        ...selectedSourceIds,
+        ...optimisticSourceIds.filter((id) => !selectedSourceIds.includes(id)),
+      ])),
     [optimisticSourceIds, selectedSourceIds],
   );
 
@@ -893,6 +964,29 @@ export function TaskComposer({
     return () => window.clearTimeout(timer);
   }, [optimisticSourceIds.length, selectedSourceIds]);
 
+  const syncSourcePlacements = useCallback((nextPlacements: ComposerSourcePlacement[]) => {
+    const normalizedPlacements = normalizeComposerSourcePlacements(nextPlacements);
+    const nextKey = getSourcePlacementKey(normalizedPlacements);
+    if (sourcePlacementKeyRef.current === nextKey) return;
+    sourcePlacementKeyRef.current = nextKey;
+    setLocalSourcePlacements(normalizedPlacements);
+    onSourcePlacementsChange?.(normalizedPlacements);
+  }, [onSourcePlacementsChange]);
+  const externalSourcePlacements = useMemo(() => normalizeComposerSourcePlacements(sourcePlacements), [sourcePlacements]);
+  const effectiveSourcePlacements = externalSourcePlacements.length > 0 ? externalSourcePlacements : localSourcePlacements;
+  const buildHistorySnapshot = useCallback((): ComposerHistorySnapshot => {
+    const knownToolIds = new Set(filteredTools.map((item) => item.id));
+    const selectedIds = effectiveSelectedSourceIds.filter((id) => knownToolIds.has(id));
+    const selectedIdSet = new Set(selectedIds);
+    return {
+      value,
+      selectedSourceIds: selectedIds,
+      sourcePlacements: normalizeComposerSourcePlacements(effectiveSourcePlacements, value.length).filter((placement) =>
+        selectedIdSet.has(placement.sourceId),
+      ),
+    };
+  }, [effectiveSelectedSourceIds, effectiveSourcePlacements, filteredTools, value]);
+
   const selectedSources = useMemo(
     () =>
       effectiveSelectedSourceIds
@@ -900,10 +994,39 @@ export function TaskComposer({
         .filter((item): item is (typeof filteredTools)[number] => Boolean(item)),
     [effectiveSelectedSourceIds, filteredTools],
   );
+  const syncSourceSelectionFromEditor = useCallback(
+    (editor: HTMLElement) => {
+      const knownToolIds = new Set(filteredTools.map((item) => item.id));
+      const currentTokenIds = Array.from(new Set(getTokenIds(editor).filter(Boolean))).filter((id) =>
+        knownToolIds.has(id),
+      );
+      const currentTokenIdSet = new Set(currentTokenIds);
+      const selectedIdSet = new Set(effectiveSelectedSourceIds);
+      const removedIds = effectiveSelectedSourceIds.filter(
+        (id) => knownToolIds.has(id) && !currentTokenIdSet.has(id),
+      );
+      const addedIds = currentTokenIds.filter((id) => !selectedIdSet.has(id));
+
+      if (removedIds.length > 0) {
+        setOptimisticSourceIds((current) => current.filter((id) => !removedIds.includes(id)));
+        removedIds.forEach(onSourceRemove);
+        if (acceptedTemplateToolId && removedIds.includes(acceptedTemplateToolId)) {
+          setAcceptedTemplateToolId(null);
+          setAcceptedTemplatePrefix("");
+        }
+      }
+
+      if (addedIds.length > 0) {
+        setOptimisticSourceIds((current) => Array.from(new Set([...current, ...addedIds])));
+        addedIds.forEach(onToolSelect);
+      }
+    },
+    [acceptedTemplateToolId, effectiveSelectedSourceIds, filteredTools, onSourceRemove, onToolSelect],
+  );
   const inlineSourcePlacements = useMemo(() => {
     const selectedSet = new Set(effectiveSelectedSourceIds);
     const seen = new Set<string>();
-    return sourcePlacements
+    return effectiveSourcePlacements
       .filter((placement) => selectedSet.has(placement.sourceId))
       .map((placement) => ({
         sourceId: placement.sourceId,
@@ -915,12 +1038,17 @@ export function TaskComposer({
         seen.add(placement.sourceId);
         return true;
       });
-  }, [effectiveSelectedSourceIds, sourcePlacements, value.length]);
-  const inlineSourcePlacementKey = useMemo(() => getSourcePlacementKey(inlineSourcePlacements), [inlineSourcePlacements]);
+  }, [effectiveSelectedSourceIds, effectiveSourcePlacements, value.length]);
   const renderedPlainValue = useMemo(() => getPromptTemplatePlainText(value), [value]);
 
   const templateSuggestion = useMemo(() => {
-    const source = [...selectedSources].reverse().find((item) => getCapabilityPromptTemplates(item).length > 0);
+    const pendingSource = pendingTemplateSuggestionToolId
+      ? selectedSources.find((item) => item.id === pendingTemplateSuggestionToolId)
+      : null;
+    const source =
+      pendingSource && getCapabilityPromptTemplates(pendingSource).length > 0
+        ? pendingSource
+        : [...selectedSources].reverse().find((item) => getCapabilityPromptTemplates(item).length > 0);
     if (!source) return null;
     const templates = getCapabilityPromptTemplates(source);
     const templateIndex = 0;
@@ -933,7 +1061,7 @@ export function TaskComposer({
       templates,
       plainText: getPromptTemplatePlainText(template),
     };
-  }, [selectedSources]);
+  }, [pendingTemplateSuggestionToolId, selectedSources]);
 
   const acceptedTemplateRender = useMemo(() => {
     if (!acceptedTemplateToolId) return null;
@@ -954,11 +1082,16 @@ export function TaskComposer({
   }, [acceptedTemplateToolId, selectedSources]);
 
   const templateGhostRender = useMemo(() => {
+    const shouldShowForPendingSource =
+      pendingTemplateSuggestionToolId !== null &&
+      templateSuggestion?.toolId === pendingTemplateSuggestionToolId;
+    const shouldShowForEmptyDraft = renderedPlainValue.trim().length === 0;
     if (
       suppressTemplateCompletion ||
       internalSuppressTemplateCompletion ||
       mentionOpen ||
       acceptedTemplateRender ||
+      (!shouldShowForEmptyDraft && !shouldShowForPendingSource) ||
       !templateSuggestion
     ) {
       return null;
@@ -966,8 +1099,18 @@ export function TaskComposer({
     return {
       ...templateSuggestion,
       phase: "visible" as const,
+      displayTemplate: getTemplateGhostDisplayText(templateSuggestion.template, templateSuggestion.toolId, filteredTools),
     };
-  }, [acceptedTemplateRender, internalSuppressTemplateCompletion, mentionOpen, suppressTemplateCompletion, templateSuggestion]);
+  }, [
+    acceptedTemplateRender,
+    filteredTools,
+    internalSuppressTemplateCompletion,
+    mentionOpen,
+    pendingTemplateSuggestionToolId,
+    renderedPlainValue,
+    suppressTemplateCompletion,
+    templateSuggestion,
+  ]);
 
   const acceptedTemplatePrefill = useMemo(() => {
     if (!acceptedTemplateRender) return null;
@@ -978,17 +1121,22 @@ export function TaskComposer({
     () => getSourcePlacementKey(acceptedTemplateSourcePlacements),
     [acceptedTemplateSourcePlacements],
   );
+  const renderedInlineSourcePlacements = acceptedTemplateRender ? EMPTY_SOURCE_PLACEMENTS : inlineSourcePlacements;
+  const renderedInlineSourcePlacementKey = useMemo(
+    () => getSourcePlacementKey(renderedInlineSourcePlacements),
+    [renderedInlineSourcePlacements],
+  );
   const renderedSourceIds = useMemo(() => {
     const placedIds = new Set([
-      ...inlineSourcePlacements.map((placement) => placement.sourceId),
+      ...renderedInlineSourcePlacements.map((placement) => placement.sourceId),
       ...acceptedTemplateSourcePlacements.map((placement) => placement.sourceId),
     ]);
     return [
       ...selectedSources.filter((source) => !placedIds.has(source.id)).map((source) => source.id),
-      ...inlineSourcePlacements.map((placement) => placement.sourceId),
+      ...renderedInlineSourcePlacements.map((placement) => placement.sourceId),
       ...acceptedTemplateSourcePlacements.map((placement) => placement.sourceId),
     ];
-  }, [acceptedTemplateSourcePlacements, inlineSourcePlacements, selectedSources]);
+  }, [acceptedTemplateSourcePlacements, renderedInlineSourcePlacements, selectedSources]);
 
   const mentionQuery = useMemo(() => {
     if (!mentionRange) return "";
@@ -998,7 +1146,7 @@ export function TaskComposer({
 
   const sourceButtonToolGroups = useMemo(
     () =>
-      dataSourceGroups
+      (dataSourceGroups.length > 0 ? dataSourceGroups : homeCapabilityGroups)
         .map((group) => ({
           ...group,
           items: group.items.filter((item) => filteredTools.some((tool) => tool.id === item.id)),
@@ -1293,6 +1441,12 @@ export function TaskComposer({
     });
   }, []);
 
+  const rememberEditorSelection = useCallback((editor: HTMLElement | null) => {
+    if (!editor) return;
+    const offsets = getSelectionOffsets(editor);
+    if (offsets) lastEditorSelectionRef.current = offsets;
+  }, []);
+
   const closeMentionMenu = useCallback(() => {
     preserveMentionFocusRef.current = false;
     setMentionOpen(false);
@@ -1304,6 +1458,77 @@ export function TaskComposer({
     setHighlightedToolIndex(-1);
   }, [clearMenuSnapshot]);
 
+  useEffect(() => {
+    const nextSnapshot = buildHistorySnapshot();
+    const currentSnapshot = currentHistorySnapshotRef.current;
+    if (!currentSnapshot) {
+      currentHistorySnapshotRef.current = nextSnapshot;
+      return;
+    }
+
+    if (getComposerHistorySnapshotKey(currentSnapshot) === getComposerHistorySnapshotKey(nextSnapshot)) return;
+    if (restoringHistoryRef.current) {
+      currentHistorySnapshotRef.current = nextSnapshot;
+      restoringHistoryRef.current = false;
+      return;
+    }
+
+    pushComposerHistorySnapshot(undoHistoryRef.current, currentSnapshot);
+    redoHistoryRef.current = [];
+    currentHistorySnapshotRef.current = nextSnapshot;
+  }, [buildHistorySnapshot]);
+
+  const applyHistorySnapshot = useCallback((snapshot: ComposerHistorySnapshot) => {
+    const currentSourceIdSet = new Set(effectiveSelectedSourceIds);
+    const nextSourceIdSet = new Set(snapshot.selectedSourceIds);
+
+    restoringHistoryRef.current = true;
+    currentHistorySnapshotRef.current = snapshot;
+    setAcceptedTemplateToolId(null);
+    setAcceptedTemplatePrefix("");
+    setPendingTemplateSuggestionToolId(null);
+    setInternalSuppressTemplateCompletion(snapshot.selectedSourceIds.length > 0);
+    setOptimisticSourceIds(snapshot.selectedSourceIds);
+    syncSourcePlacements(snapshot.sourcePlacements);
+    effectiveSelectedSourceIds.forEach((id) => {
+      if (!nextSourceIdSet.has(id)) onSourceRemove(id);
+    });
+    snapshot.selectedSourceIds.forEach((id) => {
+      if (!currentSourceIdSet.has(id)) onToolSelect(id);
+    });
+    onValueChange(snapshot.value);
+    closeMentionMenu();
+    setSourceButtonOpen(false);
+    requestAnimationFrame(() => {
+      focusEditor();
+    });
+  }, [
+    closeMentionMenu,
+    effectiveSelectedSourceIds,
+    focusEditor,
+    onSourceRemove,
+    onToolSelect,
+    onValueChange,
+    syncSourcePlacements,
+  ]);
+
+  const handleComposerHistoryShortcut = useCallback((event: KeyboardEvent<HTMLElement>) => {
+    const key = event.key.toLowerCase();
+    const isUndo = (event.metaKey || event.ctrlKey) && key === "z" && !event.shiftKey;
+    const isRedo = (event.metaKey || event.ctrlKey) && (key === "y" || (key === "z" && event.shiftKey));
+    if ((!isUndo && !isRedo) || event.altKey) return false;
+
+    const sourceStack = isRedo ? redoHistoryRef.current : undoHistoryRef.current;
+    const targetSnapshot = sourceStack.pop();
+    if (!targetSnapshot) return false;
+
+    event.preventDefault();
+    const currentSnapshot = currentHistorySnapshotRef.current ?? buildHistorySnapshot();
+    pushComposerHistorySnapshot(isRedo ? undoHistoryRef.current : redoHistoryRef.current, currentSnapshot);
+    applyHistorySnapshot(targetSnapshot);
+    return true;
+  }, [applyHistorySnapshot, buildHistorySnapshot]);
+
   const handlePromptLibraryUse = useCallback((promptText: string) => {
     setSourceButtonOpen(false);
     clearMenuSnapshot();
@@ -1311,6 +1536,7 @@ export function TaskComposer({
     setModeOpen(false);
     setAcceptedTemplateToolId(null);
     setAcceptedTemplatePrefix("");
+    setPendingTemplateSuggestionToolId(null);
 
     if (onPromptUse) {
       setInternalSuppressTemplateCompletion(false);
@@ -1407,6 +1633,9 @@ export function TaskComposer({
     const firstIndex = getGroupFirstToolIndexByGroupIndex(safeGroupIndex);
     if (firstIndex < 0) return;
     updateHighlightedToolIndex(firstIndex, focusTarget === "item");
+    requestAnimationFrame(() => {
+      scrollSectionIntoPane(mentionGroupSectionRefs.current[safeGroupIndex], mentionOptionPaneRef.current);
+    });
     if (focusTarget === "category") focusMentionCategory(safeGroupIndex);
   };
 
@@ -1415,6 +1644,9 @@ export function TaskComposer({
     const firstIndex = getGroupFirstToolIndexByGroupIndex(safeGroupIndex);
     if (firstIndex < 0) return;
     updateSourceButtonHighlightedIndex(firstIndex, focusTarget === "item");
+    requestAnimationFrame(() => {
+      scrollSectionIntoPane(sourceButtonGroupSectionRefs.current[safeGroupIndex], sourceButtonOptionPaneRef.current);
+    });
     if (focusTarget === "category") focusSourceButtonCategory(safeGroupIndex);
   };
 
@@ -1735,13 +1967,14 @@ export function TaskComposer({
     });
   }, []);
 
-  const syncMentionState = (nextValue: string, caret: number) => {
+  const syncMentionState = (nextValue: string, caret: number, allowOpening = true) => {
     const prefix = nextValue.slice(0, caret);
     const match = prefix.match(/@([^\s@]*)$/);
     if (!match) {
       closeMentionMenu();
       return;
     }
+    if (!allowOpening && !mentionOpen) return;
 
     const nextQuery = match[1] ?? "";
     const previousRange = mentionRangeRef.current;
@@ -1794,28 +2027,33 @@ export function TaskComposer({
     };
   }, [isMentionSearchMode, mentionAnchorTop, mentionOpen, updateMentionMenuPosition]);
 
-  const removeLastSource = () => {
-    const lastSource = selectedSources[selectedSources.length - 1];
-    if (!lastSource) return;
-    removeToolFromEditor(lastSource.id);
-  };
-
-  const syncEditorValue = useCallback(() => {
+  const syncEditorValue = useCallback((options: SyncEditorValueOptions = {}) => {
     const editor = editorRef.current;
     if (!editor) return "";
     const nextValue = normalizeComposerPlainText(getPlainText(editor));
+    syncSourcePlacements(getSourcePlacementsFromEditor(editor));
+    if (options.syncSourceSelection !== false) {
+      syncSourceSelectionFromEditor(editor);
+    }
     if (acceptedTemplateToolId && !effectiveSelectedSourceIds.includes(acceptedTemplateToolId)) {
       setAcceptedTemplateToolId(null);
       setAcceptedTemplatePrefix("");
     }
     onValueChange(nextValue);
     return nextValue;
-  }, [acceptedTemplateToolId, effectiveSelectedSourceIds, onValueChange]);
+  }, [
+    acceptedTemplateToolId,
+    effectiveSelectedSourceIds,
+    onValueChange,
+    syncSourcePlacements,
+    syncSourceSelectionFromEditor,
+  ]);
 
-  const syncEditorInteractionState = (editor: HTMLElement) => {
+  const syncEditorInteractionState = (editor: HTMLElement, options: SyncEditorInteractionOptions = {}) => {
     const nextValue = syncEditorValue();
     const offsets = getSelectionOffsets(editor);
-    syncMentionState(nextValue, offsets?.start ?? nextValue.length);
+    if (offsets) lastEditorSelectionRef.current = offsets;
+    syncMentionState(nextValue, offsets?.start ?? nextValue.length, options.allowOpeningMention ?? true);
   };
 
   useEffect(() => {
@@ -1832,7 +2070,7 @@ export function TaskComposer({
       if (frame) window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         frame = 0;
-        syncEditorInteractionStateRef.current(editor);
+        syncEditorInteractionStateRef.current(editor, { allowOpeningMention: false });
       });
     };
 
@@ -1845,32 +2083,24 @@ export function TaskComposer({
     };
   }, []);
 
-  const deleteSelectionWithSources = useCallback((editor: HTMLElement) => {
+  const deleteSelectionWithSources = useCallback((editor: HTMLElement, key: "Backspace" | "Delete") => {
     const selectedToolIds = getSelectedToolTokenIds(editor);
     if (selectedToolIds.length === 0) return false;
 
     const selection = window.getSelection();
-    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-    if (!selection || !range) return false;
-
+    if (!selection?.rangeCount) return false;
     suppressExternalSyncRef.current = true;
-    range.deleteContents();
-    selectedToolIds.forEach((id) => {
-      editor.querySelector<HTMLElement>(`[data-tool-token='true'][data-tool-id='${id}']`)?.remove();
-      setOptimisticSourceIds((current) => current.filter((sourceId) => sourceId !== id));
-      onSourceRemove(id);
-    });
-    normalizeEditorContent(editor);
-    syncEditorValue();
-    closeMentionMenu();
+    const command = key === "Backspace" ? "delete" : "forwardDelete";
+    if (typeof document.execCommand !== "function" || !document.execCommand(command)) {
+      suppressExternalSyncRef.current = false;
+      return false;
+    }
 
-    const nextRange = document.createRange();
-    nextRange.selectNodeContents(editor);
-    nextRange.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(nextRange);
+    normalizeEditorContent(editor);
+    syncEditorInteractionStateRef.current(editor, { allowOpeningMention: false });
+    closeMentionMenu();
     return true;
-  }, [closeMentionMenu, onSourceRemove, syncEditorValue]);
+  }, [closeMentionMenu]);
 
   const deleteTemplateSlotAtBoundary = useCallback((editor: HTMLElement, key: "Backspace" | "Delete") => {
     const slotState = getTemplateSlotSelectionState(editor);
@@ -1926,42 +2156,6 @@ export function TaskComposer({
     return true;
   }, [closeMentionMenu, syncEditorValue]);
 
-  const removeToolFromEditor = useCallback((capabilityId: string) => {
-    setInternalSuppressTemplateCompletion(false);
-    const editor = editorRef.current;
-    if (!editor) {
-      setOptimisticSourceIds((current) => current.filter((id) => id !== capabilityId));
-      onSourceRemove(capabilityId);
-      return;
-    }
-    const token = editor.querySelector<HTMLElement>(`[data-tool-token='true'][data-tool-id='${capabilityId}']`);
-    if (!token) {
-      setOptimisticSourceIds((current) => current.filter((id) => id !== capabilityId));
-      onSourceRemove(capabilityId);
-      if (acceptedTemplateToolId === capabilityId) {
-        setAcceptedTemplateToolId(null);
-        setAcceptedTemplatePrefix("");
-      }
-      return;
-    }
-    const trailingSpace =
-      token.nextSibling?.nodeType === Node.TEXT_NODE && token.nextSibling.textContent?.startsWith(" ")
-        ? token.nextSibling
-        : null;
-    token.remove();
-    trailingSpace?.remove();
-    normalizeEditorContent(editor);
-    suppressExternalSyncRef.current = true;
-    syncEditorValue();
-    setOptimisticSourceIds((current) => current.filter((id) => id !== capabilityId));
-    onSourceRemove(capabilityId);
-    if (acceptedTemplateToolId === capabilityId) {
-      setAcceptedTemplateToolId(null);
-      setAcceptedTemplatePrefix("");
-    }
-    requestAnimationFrame(() => focusEditor(false));
-  }, [acceptedTemplateToolId, focusEditor, onSourceRemove, syncEditorValue]);
-
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -1973,7 +2167,7 @@ export function TaskComposer({
       ? `${acceptedTemplateRender.toolId}:${acceptedTemplateRender.templateIndex}:${acceptedTemplatePrefill?.text ?? acceptedTemplateRender.template}:${acceptedTemplateSourcePlacementKey}`
       : "";
     const nextGhostRenderKey = templateGhostRender
-      ? `${templateGhostRender.toolId}:${templateGhostRender.templateIndex}:${templateGhostRender.phase}:${templateGhostRender.template}`
+      ? `${templateGhostRender.toolId}:${templateGhostRender.templateIndex}:${templateGhostRender.phase}:${templateGhostRender.displayTemplate}:${templateGhostRender.template}`
       : "";
     const currentTemplateToolId = editor.dataset.templateToolId ?? "";
     const currentGhostToolId = editor.dataset.templateGhostToolId ?? "";
@@ -1992,7 +2186,7 @@ export function TaskComposer({
       currentGhostToolId === nextGhostToolId &&
       currentTemplateRenderKey === nextTemplateRenderKey &&
       currentGhostRenderKey === nextGhostRenderKey &&
-      currentSourcePlacementKey === inlineSourcePlacementKey
+      currentSourcePlacementKey === renderedInlineSourcePlacementKey
     ) {
       suppressExternalSyncRef.current = false;
     } else if (
@@ -2002,19 +2196,29 @@ export function TaskComposer({
       currentGhostToolId !== nextGhostToolId ||
       currentTemplateRenderKey !== nextTemplateRenderKey ||
       currentGhostRenderKey !== nextGhostRenderKey ||
-      currentSourcePlacementKey !== inlineSourcePlacementKey
+      currentSourcePlacementKey !== renderedInlineSourcePlacementKey
     ) {
       editor.innerHTML = "";
       editor.dataset.templateToolId = nextTemplateToolId;
       editor.dataset.templateGhostToolId = nextGhostToolId;
       editor.dataset.templateRenderKey = nextTemplateRenderKey;
       editor.dataset.templateGhostRenderKey = nextGhostRenderKey;
-      editor.dataset.sourcePlacementKey = inlineSourcePlacementKey;
+      editor.dataset.sourcePlacementKey = renderedInlineSourcePlacementKey;
       const placedSourceIds = new Set([
-        ...inlineSourcePlacements.map((placement) => placement.sourceId),
+        ...renderedInlineSourcePlacements.map((placement) => placement.sourceId),
         ...acceptedTemplateSourcePlacements.map((placement) => placement.sourceId),
       ]);
       const unplacedSources = selectedSources.filter((source) => !placedSourceIds.has(source.id));
+      let templateGhostAppended = false;
+      const appendTemplateGhost = () => {
+        if (!templateGhostRender || templateGhostAppended) return;
+        const ghost = createTemplateGhostNode(templateGhostRender.displayTemplate, templateGhostRender.phase);
+        editor.appendChild(ghost);
+        templateGhostAppended = true;
+        if (document.activeElement === editor) {
+          requestAnimationFrame(() => placeCaretBeforeNode(editor, ghost));
+        }
+      };
       const appendToolToken = (source: (typeof selectedSources)[number]) => {
         editor.appendChild(
           createToolTokenNode({
@@ -2024,6 +2228,7 @@ export function TaskComposer({
             accent: source.accent,
           }),
         );
+        if (source.id === templateGhostRender?.toolId) appendTemplateGhost();
         editor.appendChild(document.createTextNode(" "));
       };
       unplacedSources.forEach(appendToolToken);
@@ -2034,9 +2239,9 @@ export function TaskComposer({
           acceptedTemplateSourcePlacements,
           selectedSources,
         );
-      } else if (inlineSourcePlacements.length > 0) {
+      } else if (renderedInlineSourcePlacements.length > 0) {
         let textCursor = 0;
-        inlineSourcePlacements.forEach((placement) => {
+        renderedInlineSourcePlacements.forEach((placement) => {
           const source = selectedSources.find((item) => item.id === placement.sourceId);
           if (!source) return;
           appendPromptTemplateNodes(editor, value.slice(textCursor, placement.offset));
@@ -2048,18 +2253,14 @@ export function TaskComposer({
               accent: source.accent,
             }),
           );
+          if (source.id === templateGhostRender?.toolId) appendTemplateGhost();
           textCursor = placement.offset;
         });
         appendPromptTemplateNodes(editor, value.slice(textCursor));
+        appendTemplateGhost();
       } else {
         appendPromptTemplateNodes(editor, value);
-        if (templateGhostRender) {
-          const ghost = createTemplateGhostNode(templateGhostRender.template, templateGhostRender.phase);
-          editor.appendChild(ghost);
-          if (document.activeElement === editor) {
-            requestAnimationFrame(() => placeCaretBeforeNode(editor, ghost));
-          }
-        }
+        appendTemplateGhost();
       }
       normalizeEditorContent(editor);
       pendingEditorEndPlacementRef.current = !templateGhostRender;
@@ -2077,8 +2278,8 @@ export function TaskComposer({
     acceptedTemplatePrefill,
     acceptedTemplateSourcePlacementKey,
     acceptedTemplateSourcePlacements,
-    inlineSourcePlacementKey,
-    inlineSourcePlacements,
+    renderedInlineSourcePlacementKey,
+    renderedInlineSourcePlacements,
     renderedSourceIds,
     renderedPlainValue,
     selectedSources,
@@ -2091,6 +2292,9 @@ export function TaskComposer({
     const editor = editorRef.current;
     if (!tool || !editor) return;
     setInternalSuppressTemplateCompletion(false);
+    setAcceptedTemplateToolId(null);
+    setAcceptedTemplatePrefix("");
+    setPendingTemplateSuggestionToolId(getCapabilityPromptTemplates(tool).length > 0 ? tool.id : null);
 
     editor.focus();
     suppressExternalSyncRef.current = true;
@@ -2102,6 +2306,10 @@ export function TaskComposer({
       selection?.getRangeAt(0).deleteContents();
       closeMentionMenu();
     } else {
+      const savedSelection = lastEditorSelectionRef.current;
+      if (savedSelection) {
+        setSelectionByOffsets(editor, savedSelection.start, savedSelection.end);
+      }
       const selection = window.getSelection();
       if (!selection || selection.rangeCount === 0 || !editor.contains(selection.anchorNode)) {
         const range = document.createRange();
@@ -2140,7 +2348,7 @@ export function TaskComposer({
     selection?.addRange(nextRange);
 
     normalizeEditorContent(editor);
-    syncEditorValue();
+    syncEditorValue({ syncSourceSelection: false });
     if (!effectiveSelectedSourceIds.includes(capabilityId)) {
       setOptimisticSourceIds((current) => (current.includes(capabilityId) ? current : [...current, capabilityId]));
       onToolSelect(capabilityId);
@@ -2148,6 +2356,7 @@ export function TaskComposer({
   };
 
   const stopDataSourceOptionPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
     event.stopPropagation();
   };
 
@@ -2163,11 +2372,57 @@ export function TaskComposer({
 
   const acceptTemplateSuggestion = () => {
     if (!templateGhostRender) return false;
+    const pendingPlacement =
+      pendingTemplateSuggestionToolId === templateGhostRender.toolId
+        ? inlineSourcePlacements.find((placement) => placement.sourceId === pendingTemplateSuggestionToolId)
+        : null;
+    if (pendingPlacement && renderedPlainValue.trim().length > 0) {
+      const prefill = parseDatasourceMentions(templateGhostRender.template, filteredTools);
+      const before = value.slice(0, pendingPlacement.offset);
+      const after = value.slice(pendingPlacement.offset);
+      const separator = prefill.text && after && !/\s$/.test(prefill.text) && !/^\s/.test(after) ? " " : "";
+      const insertedText = `${prefill.text}${separator}`;
+      const insertedTextLength = getPromptTemplatePlainText(insertedText).length;
+      const nextSourcePlacements = normalizeComposerSourcePlacements(
+        [
+          ...effectiveSourcePlacements.map((placement) =>
+            placement.offset > pendingPlacement.offset
+              ? { ...placement, offset: placement.offset + insertedTextLength }
+              : placement,
+          ),
+          ...prefill.sourcePlacements.map((placement) => ({
+            sourceId: placement.sourceId,
+            offset: pendingPlacement.offset + placement.offset,
+          })),
+        ],
+        getPromptTemplatePlainText(`${before}${insertedText}${after}`).length,
+      );
+      const newlySelectedSourceIds = prefill.selectedSourceIds.filter((id) => !effectiveSelectedSourceIds.includes(id));
+
+      setAcceptedTemplateToolId(null);
+      setAcceptedTemplatePrefix("");
+      setPendingTemplateSuggestionToolId(null);
+      syncSourcePlacements(nextSourcePlacements);
+      if (newlySelectedSourceIds.length > 0) {
+        setOptimisticSourceIds((current) =>
+          Array.from(new Set([...current, ...newlySelectedSourceIds])),
+        );
+        newlySelectedSourceIds.forEach(onToolSelect);
+      }
+      onValueChange(`${before}${insertedText}${after}`);
+      closeMentionMenu();
+      requestAnimationFrame(() => {
+        focusEditor();
+      });
+      return true;
+    }
+
     const prefix = getTemplateCompletionPrefix(value);
     const prefill = parseDatasourceMentions(`${prefix}${templateGhostRender.template}`, filteredTools);
     const newlySelectedSourceIds = prefill.selectedSourceIds.filter((id) => !effectiveSelectedSourceIds.includes(id));
     setAcceptedTemplateToolId(templateGhostRender.toolId);
     setAcceptedTemplatePrefix(prefix);
+    setPendingTemplateSuggestionToolId(null);
     if (newlySelectedSourceIds.length > 0) {
       setOptimisticSourceIds((current) =>
         Array.from(new Set([...current, ...newlySelectedSourceIds])),
@@ -2183,6 +2438,7 @@ export function TaskComposer({
   };
 
   const openSourceButtonMenu = (initialIndex = -1) => {
+    rememberEditorSelection(editorRef.current);
     closeMentionMenu();
     setModeOpen(false);
     captureMenuSnapshot();
@@ -2195,6 +2451,7 @@ export function TaskComposer({
   };
 
   const openSourceButtonMenuAndFocusItem = (initialIndex = 0) => {
+    rememberEditorSelection(editorRef.current);
     closeMentionMenu();
     setModeOpen(false);
     captureMenuSnapshot();
@@ -2411,20 +2668,6 @@ export function TaskComposer({
           <div className={cn(isHeroMinimal ? "px-4 pb-2 pt-2" : "px-4 pb-3 pt-3")}>
             <div
             className="px-1"
-            onKeyDownCapture={(event) => {
-              if ((event.key !== "Backspace" && event.key !== "Delete") || selectedSources.length === 0) return;
-              const activeElement = document.activeElement;
-              if (activeElement === editorRef.current) {
-                return;
-              }
-
-              const insideSourceTag =
-                activeElement instanceof HTMLElement && activeElement.closest("[data-source-tag]");
-              if (insideSourceTag) {
-                event.preventDefault();
-                removeLastSource();
-              }
-            }}
           >
             <div className={cn(isHeroMinimal ? "min-h-composer-hero" : "min-h-22")}>
               <div className={cn("relative", isHeroMinimal ? "min-h-attachment-thumb" : "min-h-18")}>
@@ -2465,16 +2708,27 @@ export function TaskComposer({
                         handleMentionMenuKeyDown(event);
                         event.stopPropagation();
                       }}
+                      onMouseDown={(event) => {
+                        if (event.button !== 0) return;
+                        if (!placeCaretBeforeTemplateGhostAtPoint(event.currentTarget, event.clientX, event.clientY)) return;
+                        event.preventDefault();
+                        rememberEditorSelection(event.currentTarget);
+                      }}
                       onBeforeInput={(event) => {
+                        setPendingTemplateSuggestionToolId(null);
                         normalizeSelectionOutsideToolToken(event.currentTarget);
                       }}
                       onPaste={(event) => {
+                        setPendingTemplateSuggestionToolId(null);
                         handleEditorPaste(event, syncEditorValue, showAttachmentButton ? appendAttachmentFiles : undefined);
                       }}
                       onInput={(event) => {
                         syncEditorInteractionState(event.currentTarget);
                       }}
                       onKeyDown={(event) => {
+                        if (handleComposerHistoryShortcut(event)) {
+                          return;
+                        }
                         normalizeSelectionOutsideToolToken(event.currentTarget);
                         if (mentionOpen && DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) {
                           return;
@@ -2490,7 +2744,7 @@ export function TaskComposer({
                         }
                         if (
                           (event.key === "Backspace" || event.key === "Delete") &&
-                          deleteSelectionWithSources(event.currentTarget)
+                          deleteSelectionWithSources(event.currentTarget, event.key)
                         ) {
                           event.preventDefault();
                           return;
@@ -2502,34 +2756,8 @@ export function TaskComposer({
                           event.preventDefault();
                           return;
                         }
-                        const nearbyToken =
-                          event.key === "Backspace"
-                            ? getToolTokenNearCaret(event.currentTarget, "backward")
-                            : event.key === "Delete"
-                              ? getToolTokenNearCaret(event.currentTarget, "forward")
-                              : null;
                         if (event.key === "Tab" && acceptTemplateSuggestion()) {
                           event.preventDefault();
-                          return;
-                        }
-                        if (
-                          (event.key === "Backspace" || event.key === "Delete") &&
-                          nearbyToken?.dataset.toolId
-                        ) {
-                          event.preventDefault();
-                          removeToolFromEditor(nearbyToken.dataset.toolId);
-                          return;
-                        }
-                        if (
-                          (event.key === "Backspace" || event.key === "Delete") &&
-                          (() => {
-                            const offsets = getSelectionOffsets(event.currentTarget);
-                            return ((offsets?.start ?? 0) === 0 || !value.length) && (offsets?.start ?? 0) === (offsets?.end ?? 0);
-                          })() &&
-                          selectedSources.length > 0
-                        ) {
-                          event.preventDefault();
-                          removeLastSource();
                           return;
                         }
                         if (submitOnEnter && event.key === "Enter" && !event.shiftKey) {
@@ -2543,12 +2771,14 @@ export function TaskComposer({
                       }}
                       onClick={(event) => {
                         normalizeSelectionOutsideToolToken(event.currentTarget);
-                        syncEditorInteractionState(event.currentTarget);
+                        syncEditorInteractionState(event.currentTarget, { allowOpeningMention: false });
                       }}
                       onKeyUp={(event) => {
                         if (mentionOpen && DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) return;
                         if (event.key === "Tab" || event.key === "Enter" || event.key === "Escape") return;
-                        syncEditorInteractionState(event.currentTarget);
+                        syncEditorInteractionState(event.currentTarget, {
+                          allowOpeningMention: !MENTION_CURSOR_NAVIGATION_KEYS.has(event.key),
+                        });
                       }}
                       onFocus={(event) => {
                         clearPendingBlurClose();
@@ -2561,7 +2791,8 @@ export function TaskComposer({
                           });
                         }
                       }}
-                      onBlur={() => {
+                      onBlur={(event) => {
+                        rememberEditorSelection(event.currentTarget);
                         queueCloseMentionMenuIfFocusOutside();
                       }}
                       className={cn(
@@ -2705,12 +2936,15 @@ export function TaskComposer({
                               data-testid="task-composer-mention-option-pane"
                               className="h-full min-h-0 overflow-y-auto overscroll-contain bg-bg-surface p-3"
                             >
-                              {activeSourceButtonToolGroups.map((group) => (
-                                <section key={group.id} className="pb-5 last:pb-1">
-                                  <div className="mb-2 flex items-center gap-2 text-body font-semibold leading-5 text-foreground">
-                                    <span className="h-4 w-0.5 rounded-full bg-primary" />
-                                    {group.label}
-                                  </div>
+                              {activeSourceButtonToolGroups.map((group, groupIndex) => (
+                                <section
+                                  key={group.id}
+                                  ref={(node) => {
+                                    mentionGroupSectionRefs.current[groupIndex] = node;
+                                  }}
+                                  className="pb-5 last:pb-1"
+                                >
+                                  <DataSourceGroupHeading label={group.label} />
                                   <div className="grid grid-cols-2 gap-2.5">
                                     {group.items.map((item) => {
                                       const index = activeFilteredTools.findIndex((tool) => tool.id === item.id);
@@ -2839,19 +3073,22 @@ export function TaskComposer({
                         : "border-border text-foreground hover:border-border hover:bg-bg-subtle",
                     )}
                     type="button"
-	                    onClick={() => {
-	                      if (sourceButtonOpen) {
-	                        closeSourceButtonMenu();
-	                      } else {
-	                        openSourceButtonMenu();
-	                      }
+                    onPointerDown={() => {
+                      rememberEditorSelection(editorRef.current);
+                    }}
+                    onClick={() => {
+                      if (sourceButtonOpen) {
+                        closeSourceButtonMenu();
+                      } else {
+                        openSourceButtonMenu();
+                      }
                     }}
                     onKeyDown={(event) => {
-	                      if (event.key === "Escape" && sourceButtonOpen) {
-	                        event.preventDefault();
-	                        closeSourceButtonMenu();
-	                        return;
-	                      }
+                      if (event.key === "Escape" && sourceButtonOpen) {
+                        event.preventDefault();
+                        closeSourceButtonMenu();
+                        return;
+                      }
                       if (sourceButtonOpen && DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) {
                         handleSourceButtonMenuKeyDown(event);
                         return;
@@ -2914,13 +3151,16 @@ export function TaskComposer({
 	                      })}
 	                    </div>
 	                    <div ref={sourceButtonOptionPaneRef} data-testid="task-composer-source-option-pane" className="h-full min-h-0 overflow-y-auto overscroll-contain bg-bg-surface p-3">
-	                      {activeSourceButtonToolGroups.map((group) => (
-	                        <section key={group.id} className="pb-5 last:pb-1">
-	                          <div className="mb-2 flex items-center gap-2 text-body font-semibold leading-5 text-foreground">
-	                            <span className="h-4 w-0.5 rounded-full bg-primary" />
-	                            {group.label}
-	                          </div>
-	                          <div className="grid grid-cols-2 gap-2.5">
+		                      {activeSourceButtonToolGroups.map((group, groupIndex) => (
+		                        <section
+		                          key={group.id}
+		                          ref={(node) => {
+		                            sourceButtonGroupSectionRefs.current[groupIndex] = node;
+		                          }}
+		                          className="pb-5 last:pb-1"
+		                        >
+		                          <DataSourceGroupHeading label={group.label} />
+		                          <div className="grid grid-cols-2 gap-2.5">
 	                            {group.items.map((item) => {
 	                              const index = activeFilteredTools.findIndex((tool) => tool.id === item.id);
 	                              return (

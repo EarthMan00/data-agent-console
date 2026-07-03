@@ -245,6 +245,7 @@ function AgentRunWorkspaceView({
   const [agentRoundInFlight, setAgentRoundInFlight] = useState(false);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesInnerRef = useRef<HTMLDivElement>(null);
+  const [messagesScrolled, setMessagesScrolled] = useState(false);
 
   useEffect(() => {
     if (run && currentRunId !== run.id) {
@@ -254,7 +255,12 @@ function AgentRunWorkspaceView({
 
   useEffect(() => {
     setAgentRoundInFlight(false);
+    setMessagesScrolled(false);
   }, [run.id]);
+
+  const handleMessagesScroll = useCallback(() => {
+    setMessagesScrolled((messagesScrollRef.current?.scrollTop ?? 0) > 0);
+  }, []);
 
   // abort 仅由用户主动停止（stopCurrentRound）触发，不随组件卸载自动中止
   // 模块级 abortPollRef 保证 Strict Mode 双挂载时新旧闭包共享同一 ref
@@ -793,6 +799,7 @@ function AgentRunWorkspaceView({
       currentPath="/agent"
       contentScrollMode="child"
       currentRunLabel={run.title}
+      headerContentScrolled={messagesScrolled}
       rightRail={
         showRightRail ? (
           showTaskResultPanel ? (
@@ -850,6 +857,7 @@ function AgentRunWorkspaceView({
         <div
           ref={messagesScrollRef}
           className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-4 pt-6 sm:px-6"
+          onScroll={handleMessagesScroll}
         >
           <div ref={messagesInnerRef} className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
             <div className="space-y-5">

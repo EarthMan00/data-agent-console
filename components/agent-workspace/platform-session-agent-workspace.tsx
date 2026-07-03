@@ -43,6 +43,7 @@ import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import {
   appendToComposerDraft,
   composerDraftContainsSuggestion,
+  insertDatasourceMentions,
   type ComposerSourcePlacement,
   parseComposerPrefillStorageValue,
   removeFromComposerDraft,
@@ -305,6 +306,7 @@ export function PlatformSessionAgentWorkspace({
   const [messages, setMessages] = useState<SessionMessageItem[]>([]);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesInnerRef = useRef<HTMLDivElement>(null);
+  const [messagesScrolled, setMessagesScrolled] = useState(false);
   const [showResultPanel, setShowResultPanel] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [resultPanelContext, setResultPanelContext] = useState<ResultPanelContext | null>(null);
@@ -901,14 +903,11 @@ export function PlatformSessionAgentWorkspace({
     setSourcePlacements((current) => current.filter((placement) => placement.sourceId !== capabilityId));
   }, []);
 
-  const buildComposerMessage = useCallback((text: string, sourceIds: string[]) => {
-    const sourceMentions = sourceIds
-      .map((id) => composerDataSourceItems.find((item) => item.id === id)?.label)
-      .filter((label): label is string => Boolean(label))
-      .map((label) => `@${label}`)
-      .join(" ");
-    return [sourceMentions, text.trim()].filter(Boolean).join(" ").trim();
-  }, [composerDataSourceItems]);
+  const buildComposerMessage = useCallback(
+    (text: string, sourceIds: string[], placements: ComposerSourcePlacement[]) =>
+      insertDatasourceMentions(text, sourceIds, placements, composerDataSourceItems),
+    [composerDataSourceItems],
+  );
 
   useEffect(() => {
     setSelectedSourceIds([]);
@@ -1012,6 +1011,14 @@ export function PlatformSessionAgentWorkspace({
   useChatStickToBottom(messagesScrollRef, messagesInnerRef, [busy, error, messages, sending], {
     resetKey: sessionId,
   });
+
+  useEffect(() => {
+    setMessagesScrolled(false);
+  }, [sessionId]);
+
+  const handleMessagesScroll = useCallback(() => {
+    setMessagesScrolled((messagesScrollRef.current?.scrollTop ?? 0) > 0);
+  }, []);
 
   useEffect(() => {
     // 在 reset effect 中同步检查缓存：缓存命中则立即展示，不依赖后续 effect 调用时序
@@ -2179,20 +2186,26 @@ export function PlatformSessionAgentWorkspace({
   const sendPreparedMessage = useCallback(async ({
     rawText,
     sourceIds,
+    sourcePlacements: preparedSourcePlacements = [],
     files,
   }: {
     rawText: string;
     sourceIds: string[];
+    sourcePlacements?: ComposerSourcePlacement[];
     files: File[];
   }) => {
     const trimmedText = rawText.trim();
-    const text = buildComposerMessage(trimmedText, sourceIds);
+    const text = buildComposerMessage(trimmedText, sourceIds, preparedSourcePlacements);
     const filesToSend = files;
     if ((!trimmedText && filesToSend.length === 0) || sending) return false;
     const maxChars = getChatMessageMaxChars();
     if (text.length > maxChars) {
       setError(`\u6d88\u606f\u8fc7\u957f\uff08${text.length} \u5b57\uff09\uff0c\u8bf7\u63a7\u5236\u5728 ${maxChars} \u5b57\u4ee5\u5185\u3002`);
       return false;
+    }
+    if (bundlesAllTerminal && orchestrationBundlesForUi.length > 0) {
+      pendingSessionResultAutoOpenRef.current = false;
+      sessionResultAutoFollowRef.current = false;
     }
     if (!platformAgent?.auth) {
       platformAgent?.openLogin("\u8bf7\u5148\u767b\u5f55\u540e\u518d\u53d1\u9001\u6d88\u606f\u3002");
@@ -2298,6 +2311,8 @@ export function PlatformSessionAgentWorkspace({
     return true;
   }, [
     buildComposerMessage,
+    bundlesAllTerminal,
+    orchestrationBundlesForUi.length,
     platformAgent,
     reload,
     refreshHistoryNow,
@@ -2311,9 +2326,10 @@ export function PlatformSessionAgentWorkspace({
     await sendPreparedMessage({
       rawText: textOverride ?? draft,
       sourceIds: textOverride === undefined ? selectedSourceIds : [],
+      sourcePlacements: textOverride === undefined ? sourcePlacements : [],
       files: textOverride === undefined ? pendingFiles : [],
     });
-  }, [draft, pendingFiles, selectedSourceIds, sendPreparedMessage]);
+  }, [draft, pendingFiles, selectedSourceIds, sendPreparedMessage, sourcePlacements]);
 
   useEffect(() => {
     if (scheduleTrial || scheduledRunRecord || !platformAgent?.auth) return;
@@ -2325,6 +2341,7 @@ export function PlatformSessionAgentWorkspace({
         await sendPreparedMessage({
           rawText: homeLaunchMeta.prompt,
           sourceIds: homeLaunchMeta.selectedSourceIds,
+          sourcePlacements: homeLaunchMeta.sourcePlacements ?? [],
           files: launchFiles,
         });
       } finally {
@@ -2401,6 +2418,7 @@ export function PlatformSessionAgentWorkspace({
       currentPath="/agent/history"
       contentScrollMode="child"
       currentRunLabel={headerLabel}
+      headerContentScrolled={messagesScrolled}
       rightRail={
         showResultPanel && resultPanelContext && platformAgent?.withFreshToken ? (
           <AgentTaskResultPanel
@@ -2439,6 +2457,7 @@ export function PlatformSessionAgentWorkspace({
         <div
           ref={messagesScrollRef}
           className="hide-scrollbar-y min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-4 pt-6 sm:px-6"
+          onScroll={handleMessagesScroll}
         >
           <div ref={messagesInnerRef} className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
             <div className="space-y-5">
@@ -3003,6 +3022,7 @@ export function PlatformSessionAgentWorkspace({
                 onModeChange={() => {}}
                 selectedSourceIds={selectedSourceIds}
                 sourcePlacements={sourcePlacements}
+                onSourcePlacementsChange={setSourcePlacements}
                 dataSourceGroups={composerDataSourceGroups}
                 dataSourceItems={composerDataSourceItems}
                 onToolSelect={addComposerSource}

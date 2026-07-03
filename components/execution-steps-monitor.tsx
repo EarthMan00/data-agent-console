@@ -144,7 +144,7 @@ export function ExecutionRuntimeTag({ steps }: { steps: TaskExecutionStep[] | un
 }
 
 function StepStatusMark({ status }: { status: TaskExecutionStep["status"] }) {
-  if (status === "running" || status === "awaiting_input") {
+  if (isHighlightedStepStatus(status)) {
     return (
       <DotmSquare11
         ariaLabel="步骤执行中"
@@ -173,6 +173,10 @@ function StepStatusMark({ status }: { status: TaskExecutionStep["status"] }) {
   return <span className="mt-1 inline-flex h-3 w-3 rounded-full border border-border-strong bg-bg-surface" />;
 }
 
+function isHighlightedStepStatus(status: TaskExecutionStep["status"]) {
+  return status === "running" || status === "awaiting_input";
+}
+
 export function ExecutionTimelineRow({
   label,
   status,
@@ -188,7 +192,7 @@ export function ExecutionTimelineRow({
   onSelect?: () => void;
   testId?: string;
 }) {
-  const emphasized = active || status === "running" || status === "awaiting_input" || isLast;
+  const emphasized = active || isHighlightedStepStatus(status);
   const awaitingInput = status === "awaiting_input";
   const rowClass = cn(
     "relative flex w-full min-w-0 items-start gap-3 py-1.5 text-left transition-colors",
@@ -243,7 +247,7 @@ export function ExecutionStepCard({
       label={humanizeStepLabelForUi(step.label)}
       status={step.status}
       isLast={stepIndex >= total - 1}
-      active={step.status !== "done" && step.status !== "pending"}
+      active={isHighlightedStepStatus(step.status)}
       testId="execution-step-card"
     />
   );
@@ -266,7 +270,6 @@ export function StepResultPendingCard({
       label={humanizeStepLabelForUi(label)}
       status={status}
       isLast={stepIndex >= total - 1}
-      active={status !== "done"}
     />
   );
 }

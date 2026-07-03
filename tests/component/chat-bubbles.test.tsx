@@ -47,11 +47,14 @@ describe("chat bubbles", () => {
     expect(screen.getByText(/PNG/)).toBeInTheDocument();
   });
 
-  it("shows question times above on hover and assistant times left below", () => {
+  it("shows question times right below on hover and assistant times left below", () => {
     const datetime = "2026-06-14T10:11:15.000+08:00";
     const { rerender } = render(<SimpleUserBubble text="请分析附件" datetime={datetime} />);
 
-    expect(screen.getByText(/2026/)).toHaveClass("opacity-0", "group-hover:opacity-100");
+    const userText = screen.getByText("请分析附件");
+    const userTime = screen.getByText(/2026/);
+    expect(userTime).toHaveClass("text-right", "opacity-0", "group-hover:opacity-100");
+    expect(userText.compareDocumentPosition(userTime) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     rerender(<AliceMessageBubble body="好的，马上分析。" datetime={datetime} />);
 
