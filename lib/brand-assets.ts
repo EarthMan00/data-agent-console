@@ -1,1 +1,1 @@
-export const ALICE_LOGO_SRC = "/alice-logo.png";
+export const ALICE_LOGO_SRC = "/alice-avatar-transparent.png";

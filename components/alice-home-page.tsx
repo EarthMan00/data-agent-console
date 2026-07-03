@@ -42,6 +42,7 @@ import {
 import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
 import { cn } from "@/lib/utils";
 import { NewConversationTaskComposer } from "@/components/new-conversation-task-composer";
+import { ALICE_LOGO_SRC } from "@/lib/brand-assets";
 
 const PENDING_HOME_TASK_STORAGE_KEY = "alice:pending-home-task-after-login";
 const PENDING_HOME_TASK_MAX_AGE_MS = 30 * 60 * 1000;
@@ -400,7 +401,7 @@ export function AliceHomePage() {
         <section className="mx-auto w-full max-w-page-content px-4 pt-44 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 sm:gap-5">
             <Image
-              src="/alice-logo.png"
+              src={ALICE_LOGO_SRC}
               alt="Alice"
               width={76}
               height={76}
