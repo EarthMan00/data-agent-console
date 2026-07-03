@@ -769,7 +769,7 @@ function createToolTokenNode({
   token.dataset.toolId = capabilityId;
   token.dataset.sourceTag = capabilityId;
   token.className =
-    "mx-1 inline-flex h-7 max-w-[220px] items-center gap-1.5 whitespace-nowrap rounded-control border border-border bg-bg-surface px-2.5 align-middle text-body font-medium leading-none text-foreground shadow-surface";
+    "mx-1 inline-flex h-7 max-w-[220px] items-center gap-1.5 whitespace-nowrap rounded-control border border-border bg-bg-surface px-2.5 align-middle text-body font-medium leading-none text-foreground shadow-surface before:shrink-0 before:text-text-secondary before:content-['@']";
   token.setAttribute("contenteditable", "false");
   token.setAttribute("aria-label", `数据源 ${label}`);
 
@@ -1054,9 +1054,7 @@ export function TaskComposer({
 
   const acceptedTemplatePrefill = useMemo(() => {
     if (!acceptedTemplateRender) return null;
-    return parseDatasourceMentions(`${acceptedTemplatePrefix}${acceptedTemplateRender.template}`, filteredTools, {
-      allowedSourceIds: [acceptedTemplateRender.toolId],
-    });
+    return parseDatasourceMentions(`${acceptedTemplatePrefix}${acceptedTemplateRender.template}`, filteredTools);
   }, [acceptedTemplatePrefix, acceptedTemplateRender, filteredTools]);
   const acceptedTemplateSourcePlacements = acceptedTemplatePrefill?.sourcePlacements ?? EMPTY_SOURCE_PLACEMENTS;
   const acceptedTemplateSourcePlacementKey = useMemo(
@@ -2248,9 +2246,7 @@ export function TaskComposer({
         ? inlineSourcePlacements.find((placement) => placement.sourceId === pendingTemplateSuggestionToolId)
         : null;
     if (pendingPlacement && renderedPlainValue.trim().length > 0) {
-      const prefill = parseDatasourceMentions(templateGhostRender.template, filteredTools, {
-        allowedSourceIds: [templateGhostRender.toolId],
-      });
+      const prefill = parseDatasourceMentions(templateGhostRender.template, filteredTools);
       const before = value.slice(0, pendingPlacement.offset);
       const after = value.slice(pendingPlacement.offset);
       const separator = prefill.text && after && !/\s$/.test(prefill.text) && !/^\s/.test(after) ? " " : "";
@@ -2291,9 +2287,7 @@ export function TaskComposer({
     }
 
     const prefix = getTemplateCompletionPrefix(value);
-    const prefill = parseDatasourceMentions(`${prefix}${templateGhostRender.template}`, filteredTools, {
-      allowedSourceIds: [templateGhostRender.toolId],
-    });
+    const prefill = parseDatasourceMentions(`${prefix}${templateGhostRender.template}`, filteredTools);
     const newlySelectedSourceIds = prefill.selectedSourceIds.filter((id) => !effectiveSelectedSourceIds.includes(id));
     setAcceptedTemplateToolId(templateGhostRender.toolId);
     setAcceptedTemplatePrefix(prefix);

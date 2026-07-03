@@ -33,10 +33,6 @@ type MentionResolution = {
   score: number;
 };
 
-type ParseDatasourceMentionsOptions = {
-  allowedSourceIds?: Iterable<string>;
-};
-
 const MENTION_PATTERN = /(^|[^A-Za-z0-9_])@([^\s@，。；、,.!?！？:：]+)/g;
 const PARTIAL_MENTION_MIN_LENGTH = 3;
 const STRIPPABLE_TOOL_SUFFIXES = ["模拟", "工具"] as const;
@@ -252,11 +248,9 @@ export function insertDatasourceMentions(
 export function parseDatasourceMentions(
   text: string,
   dataSourceItems: HomeCapabilityItem[] = getDataSourceItems(),
-  options: ParseDatasourceMentionsOptions = {},
 ): ComposerPrefill {
   const sourceText = decodeEscapedUnicodeLiterals(text);
   const tools = buildMentionToolCandidates(dataSourceItems);
-  const allowedSourceIds = options.allowedSourceIds ? new Set(options.allowedSourceIds) : null;
   const selectedSourceIds: string[] = [];
   const sourcePlacements: ComposerSourcePlacement[] = [];
   let cursor = 0;
@@ -271,7 +265,7 @@ export function parseDatasourceMentions(
     const resolution = resolveMentionBody(body, tools);
     nextText += sourceText.slice(cursor, matchStart);
 
-    if (resolution && (!allowedSourceIds || allowedSourceIds.has(resolution.id))) {
+    if (resolution) {
       nextText += prefix;
       sourcePlacements.push({ sourceId: resolution.id, offset: nextText.length });
       selectedSourceIds.push(resolution.id);

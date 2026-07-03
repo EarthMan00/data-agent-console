@@ -429,6 +429,7 @@ describe("task composer data source menu", () => {
     expect(sourceToken).toBeInTheDocument();
     expect(sourceToken).toHaveTextContent("亚马逊前端搜索模拟");
     expect(sourceToken).toHaveClass("bg-bg-surface", "text-foreground");
+    expect(sourceToken.className).toContain("before:content-['@']");
     expect(sourceToken.className).not.toContain("arcoblue");
   }, MENU_INTERACTION_TIMEOUT_MS);
 
@@ -963,132 +964,6 @@ describe("task composer data source menu", () => {
     expect(secondTagIndex).toBeGreaterThan(firstTagIndex);
   });
 
-  it("does not add extra datasource tokens when accepting the third selected datasource template", async () => {
-    const onToolSelect = vi.fn();
-    const customDataSourceGroups: Parameters<typeof TaskComposer>[0]["dataSourceGroups"] = [
-      {
-        id: "custom-group",
-        label: "常用工具",
-        accent: "var(--color-primary)",
-        icon: "grid",
-        items: [
-          {
-            id: "sif-keyword",
-            label: "SIF-查询ASIN的关键词",
-            promptHint: "关键词查询",
-            parentId: "custom-group",
-            parentLabel: "常用工具",
-            accent: "var(--color-primary)",
-            icon: "grid",
-          },
-          {
-            id: "excel-process",
-            label: "智能Excel处理",
-            promptHint: "Excel处理",
-            parentId: "custom-group",
-            parentLabel: "常用工具",
-            accent: "var(--color-primary)",
-            icon: "grid",
-          },
-          {
-            id: "image-group",
-            label: "按商品主图相似度分组",
-            promptHint: "图片分组",
-            promptTemplate: "先用@智能数据查询 获取商品，再用@亚马逊前端搜索模拟 校验{{关键词}}，按主图相似度分组",
-            parentId: "custom-group",
-            parentLabel: "常用工具",
-            accent: "var(--color-primary)",
-            icon: "grid",
-          },
-          {
-            id: "smart-query",
-            label: "智能数据查询",
-            promptHint: "数据查询",
-            parentId: "custom-group",
-            parentLabel: "常用工具",
-            accent: "var(--color-primary)",
-            icon: "grid",
-          },
-          {
-            id: "amazon-search",
-            label: "亚马逊前端搜索模拟",
-            promptHint: "前台搜索",
-            parentId: "custom-group",
-            parentLabel: "常用工具",
-            accent: "var(--color-primary)",
-            icon: "grid",
-          },
-        ],
-      },
-    ];
-    const customDataSourceItems = customDataSourceGroups.flatMap((group) => group.items);
-    const prefixText = "努力思考，选择适合以下场景的工具，";
-
-    function ThirdDatasourceHarness() {
-      const [value, setValue] = useState(`${prefixText}帮我处理excel，`);
-      const [selectedSourceIds, setSelectedSourceIds] = useState(["sif-keyword", "excel-process"]);
-      const [sourcePlacements, setSourcePlacements] = useState<ComposerSourcePlacement[]>([
-        { sourceId: "sif-keyword", offset: 0 },
-        { sourceId: "excel-process", offset: prefixText.length },
-      ]);
-
-      return (
-        <TaskComposer
-          value={value}
-          onValueChange={setValue}
-          placeholder="输入任务"
-          mode="普通模式"
-          onModeChange={vi.fn()}
-          selectedSourceIds={selectedSourceIds}
-          sourcePlacements={sourcePlacements}
-          onSourcePlacementsChange={setSourcePlacements}
-          dataSourceGroups={customDataSourceGroups}
-          dataSourceItems={customDataSourceItems}
-          onToolSelect={(capabilityId) => {
-            onToolSelect(capabilityId);
-            setSelectedSourceIds((current) => (current.includes(capabilityId) ? current : [...current, capabilityId]));
-          }}
-          onSourceRemove={(capabilityId) => {
-            setSelectedSourceIds((current) => current.filter((id) => id !== capabilityId));
-            setSourcePlacements((current) => current.filter((placement) => placement.sourceId !== capabilityId));
-          }}
-          onFilesSelected={vi.fn()}
-          onSubmit={vi.fn()}
-        />
-      );
-    }
-
-    render(<ThirdDatasourceHarness />);
-
-    const editor = screen.getByTestId("task-composer-editor");
-    placeCaretAtElementEnd(editor);
-    const trigger = screen.getByRole("button", { name: /@数据源/ });
-    fireEvent.pointerDown(trigger);
-    window.getSelection()?.removeAllRanges();
-    fireEvent.click(trigger);
-    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
-    fireEvent.click(within(listbox).getByRole("option", { name: /按商品主图相似度分组/ }));
-
-    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("image-group"));
-    await waitFor(() => expect(editor).toHaveTextContent("按 Tab 键补全"));
-    expect(editor.querySelectorAll("[data-tool-token='true'][data-tool-id]")).toHaveLength(3);
-
-    fireEvent.keyDown(editor, { key: "Tab" });
-
-    await waitFor(() => {
-      const tokenIds = Array.from(editor.querySelectorAll<HTMLElement>("[data-tool-token='true'][data-tool-id]")).map(
-        (node) => node.dataset.toolId,
-      );
-      expect(tokenIds).toEqual(["sif-keyword", "excel-process", "image-group"]);
-      expect(tokenIds).not.toContain("smart-query");
-      expect(tokenIds).not.toContain("amazon-search");
-      expect(editor).toHaveTextContent("@智能数据查询");
-      expect(editor).toHaveTextContent("@亚马逊前端搜索模拟");
-      expect(editor).not.toHaveTextContent("{{");
-      expect(editor).not.toHaveTextContent("按 Tab 键补全");
-    });
-  }, MENU_INTERACTION_TIMEOUT_MS);
-
   it("accepts datasource template completion after selecting a filtered mention result", async () => {
     const onToolSelect = vi.fn();
     render(<ComposerHarness onToolSelect={onToolSelect} />);
@@ -1187,7 +1062,7 @@ describe("task composer data source menu", () => {
     });
   });
 
-  it("does not auto-select secondary datasource tokens from an accepted completion template", async () => {
+  it("adds secondary datasource tokens when an accepted completion template references another datasource", async () => {
     const onToolSelect = vi.fn();
     const customDataSourceGroups: Parameters<typeof TaskComposer>[0]["dataSourceGroups"] = [
       {
@@ -1242,19 +1117,22 @@ describe("task composer data source menu", () => {
 
     await waitFor(() => {
       expect(onToolSelect).toHaveBeenCalledWith("primary-source");
-      expect(onToolSelect).not.toHaveBeenCalledWith("secondary-source");
+      expect(onToolSelect).toHaveBeenCalledWith("secondary-source");
       const tokenIds = Array.from(editor.querySelectorAll<HTMLElement>("[data-tool-token='true'][data-tool-id]")).map(
         (node) => node.dataset.toolId,
       );
-      expect(tokenIds).toEqual(["primary-source"]);
+      expect(tokenIds).toEqual(["primary-source", "secondary-source"]);
       expect(screen.getByLabelText("数据源 主数据源")).toBeInTheDocument();
-      expect(screen.queryByLabelText("数据源 辅助数据源")).not.toBeInTheDocument();
+      const secondaryToken = screen.getByLabelText("数据源 辅助数据源");
+      expect(secondaryToken).toBeInTheDocument();
+      expect(secondaryToken.previousSibling?.textContent).toContain("先用");
+      expect(secondaryToken.nextSibling?.textContent).toMatch(/^ 查询/);
       expect(
         Array.from(editor.childNodes)
           .filter((node) => node.nodeType === Node.TEXT_NODE)
           .map((node) => node.textContent ?? "")
           .join(""),
-      ).toContain("@辅助数据源");
+      ).not.toContain("@辅助数据源");
       expect(editor.querySelectorAll("[data-template-slot='true']")).toHaveLength(1);
       expect(editor).not.toHaveTextContent("{{");
       expect(editor).not.toHaveTextContent("按 Tab 键补全");
