@@ -3032,7 +3032,7 @@ export function TaskComposer({
                       <button
                         type="button"
                         aria-label={`删除附件 ${attachment.name}`}
-                        className="absolute -right-1.5 -top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-fill-active text-primary-foreground transition hover:bg-fill-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
+                        className="absolute -right-1.5 -top-1.5 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-fill-active text-primary-foreground transition hover:bg-fill-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
                         onClick={() => removeAttachment(attachment.id)}
                       >
                         <X className="h-4 w-4" strokeWidth={2.4} />
@@ -3067,7 +3067,7 @@ export function TaskComposer({
                     variant="outline"
                     size="sm"
                     className={cn(
-                      "h-8 rounded-control bg-bg-surface px-3 text-body font-medium shadow-none",
+                      "h-8 cursor-pointer rounded-control bg-bg-surface px-3 text-body font-medium shadow-none",
                       isHeroMinimal
                         ? "border-border text-foreground hover:border-border-strong hover:bg-fill-hover"
                         : "border-border text-foreground hover:border-border hover:bg-bg-subtle",
@@ -3243,7 +3243,7 @@ export function TaskComposer({
                     variant="ghost"
                     size="sm"
                     className={cn(
-                      "h-8 rounded-control border px-3 text-body font-medium",
+                      "h-8 cursor-pointer rounded-control border px-3 text-body font-medium",
                       isHeroMinimal
                         ? "border-transparent text-foreground hover:border-border hover:bg-fill-hover hover:text-foreground"
                         : "border-transparent text-text-tertiary hover:border-border hover:bg-bg-subtle hover:text-foreground",
@@ -3326,14 +3326,14 @@ export function TaskComposer({
                   size="icon"
                   aria-label={showStop ? "停止任务" : "发送任务"}
                   data-testid="task-composer-submit"
-                  className={
+                  className={cn(
+                    resolvedSendButtonClassName,
                     showStop
-                      ? cn(
-                          resolvedSendButtonClassName,
-                          "shrink-0 rounded-full border-transparent !bg-primary p-0 text-primary-foreground shadow-none transition hover:!bg-primary/85 focus-visible:ring-2 focus-visible:ring-primary/20",
-                        )
-                      : resolvedSendButtonClassName
-                  }
+                      ? "shrink-0 cursor-pointer rounded-full border-transparent !bg-primary p-0 text-primary-foreground shadow-none transition hover:!bg-primary/85 focus-visible:ring-2 focus-visible:ring-primary/20"
+                      : canSubmit
+                        ? "cursor-pointer"
+                        : "disabled:pointer-events-auto disabled:cursor-not-allowed",
+                  )}
                 >
                   {showStop ? (
                     <span className="block h-4 w-4 rounded-xxs bg-bg-surface" aria-hidden />

@@ -246,7 +246,7 @@ export function PromptLibraryPicker({
             aria-label="提示词库"
             aria-expanded={open}
             className={cn(
-              "h-8 rounded-control border px-3 text-body font-medium",
+              "h-8 cursor-pointer rounded-control border px-3 text-body font-medium",
               isHeroMinimal
                 ? "border-transparent text-foreground hover:border-border hover:bg-fill-hover hover:text-foreground"
                 : "border-transparent text-text-tertiary hover:border-border hover:bg-bg-subtle hover:text-foreground",
