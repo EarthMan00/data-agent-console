@@ -732,6 +732,27 @@ function placeCaretBeforeNode(container: HTMLElement, node: Node) {
   container.focus();
 }
 
+function isPointInsideElement(element: HTMLElement, clientX: number, clientY: number) {
+  const rects = Array.from(element.getClientRects());
+  const hitRects = rects.length > 0 ? rects : [element.getBoundingClientRect()];
+  return hitRects.some(
+    (rect) =>
+      rect.width > 0 &&
+      rect.height > 0 &&
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom,
+  );
+}
+
+function placeCaretBeforeTemplateGhostAtPoint(container: HTMLElement, clientX: number, clientY: number) {
+  const ghost = container.querySelector<HTMLElement>("[data-template-ghost='true']");
+  if (!ghost || !isPointInsideElement(ghost, clientX, clientY)) return false;
+  placeCaretBeforeNode(container, ghost);
+  return true;
+}
+
 function renderHighlightedText(text: string, query: string) {
   const normalizedQuery = query.trim();
   if (!normalizedQuery) return text;
@@ -2686,6 +2707,12 @@ export function TaskComposer({
                         if (!mentionOpen || !DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) return;
                         handleMentionMenuKeyDown(event);
                         event.stopPropagation();
+                      }}
+                      onMouseDown={(event) => {
+                        if (event.button !== 0) return;
+                        if (!placeCaretBeforeTemplateGhostAtPoint(event.currentTarget, event.clientX, event.clientY)) return;
+                        event.preventDefault();
+                        rememberEditorSelection(event.currentTarget);
                       }}
                       onBeforeInput={(event) => {
                         setPendingTemplateSuggestionToolId(null);

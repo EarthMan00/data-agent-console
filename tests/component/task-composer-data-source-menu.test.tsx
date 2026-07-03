@@ -138,6 +138,29 @@ function setEditorText(editor: HTMLElement, text: string) {
   fireEvent.input(editor);
 }
 
+function mockElementClientRect(element: Element, rect: Partial<DOMRect>) {
+  const resolvedRect = {
+    bottom: 40,
+    height: 40,
+    left: 100,
+    right: 420,
+    top: 0,
+    width: 320,
+    x: 100,
+    y: 0,
+    toJSON: () => ({}),
+    ...rect,
+  } as DOMRect;
+  Object.defineProperty(element, "getClientRects", {
+    configurable: true,
+    value: () => [resolvedRect],
+  });
+  Object.defineProperty(element, "getBoundingClientRect", {
+    configurable: true,
+    value: () => resolvedRect,
+  });
+}
+
 const MENU_INTERACTION_TIMEOUT_MS = 10000;
 
 describe("task composer data source menu", () => {
@@ -970,6 +993,39 @@ describe("task composer data source menu", () => {
       expect(editor).not.toHaveTextContent("按 Tab 键补全");
       expect(editor.querySelectorAll("[data-template-slot='true']").length).toBeGreaterThan(0);
     });
+  });
+
+  it("keeps the caret after the selected datasource when clicking its template ghost", async () => {
+    render(<ComposerHarness />);
+
+    await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /Keepa-亚马逊价格历史/ }));
+
+    const editor = screen.getByTestId("task-composer-editor");
+    const ghost = await waitFor(() => {
+      const node = editor.querySelector<HTMLElement>("[data-template-ghost='true']");
+      expect(node).toBeInTheDocument();
+      return node!;
+    });
+    const token = screen.getByLabelText("数据源 Keepa-亚马逊价格历史");
+    const ghostIndex = Array.from(editor.childNodes).indexOf(ghost);
+
+    const range = document.createRange();
+    range.setStartBefore(token);
+    range.collapse(true);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+
+    mockElementClientRect(ghost, { left: 120, right: 520, top: 8, bottom: 40, width: 400, height: 32, x: 120, y: 8 });
+    fireEvent.mouseDown(editor, { button: 0, clientX: 240, clientY: 24 });
+
+    const selection = window.getSelection();
+    expect(selection?.rangeCount).toBe(1);
+    const nextRange = selection?.getRangeAt(0);
+    expect(nextRange?.startContainer).toBe(editor);
+    expect(nextRange?.startOffset).toBe(ghostIndex);
   });
 
   it("keeps a second datasource placement after accepting the first datasource template", async () => {
