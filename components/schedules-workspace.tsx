@@ -1083,7 +1083,7 @@ export function SchedulesWorkspace() {
                       maxLength={SCHEDULE_TITLE_MAX_LENGTH}
                       onChange={(e) => setTitle(e.target.value)}
                       placeholder="请输入任务名称"
-                      className="h-10 rounded-control border-transparent bg-fill-hover px-3 pr-14 text-sm text-foreground placeholder:text-text-disabled focus-visible:ring-0"
+                      className="h-10 rounded-control border-transparent bg-fill-hover pl-5 pr-14 text-sm text-foreground placeholder:text-text-tertiary focus-visible:ring-0"
                     />
                     <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-tertiary">
                       {title.length}/{SCHEDULE_TITLE_MAX_LENGTH}
@@ -1097,6 +1097,7 @@ export function SchedulesWorkspace() {
                       value={prompt}
                       onValueChange={(value) => setPrompt(value.slice(0, SCHEDULE_PROMPT_MAX_LENGTH))}
                       placeholder="需要分析亚马逊的流量来源？试试 @Sif-亚马逊-流量来源分析。"
+                      placeholderClassName="top-1.5 text-body leading-6 text-text-tertiary"
                       mode={scheduleComposerMode}
                       onModeChange={setScheduleComposerMode}
                       dataSourceGroups={scheduleDataSourceGroups}
