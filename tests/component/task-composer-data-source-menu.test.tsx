@@ -399,6 +399,50 @@ describe("task composer data source menu", () => {
     }
   }, MENU_INTERACTION_TIMEOUT_MS);
 
+  it("supports keyboard undo and redo for typed composer text", async () => {
+    render(<ComposerHarness />);
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    setEditorText(editor, "第一版内容");
+    await waitFor(() => expect(editor).toHaveTextContent("第一版内容"));
+    setEditorText(editor, "第二版内容");
+    await waitFor(() => expect(editor).toHaveTextContent("第二版内容"));
+
+    fireEvent.keyDown(editor, { key: "z", metaKey: true });
+
+    await waitFor(() => expect(editor).toHaveTextContent("第一版内容"));
+
+    fireEvent.keyDown(editor, { key: "z", metaKey: true, shiftKey: true });
+
+    await waitFor(() => expect(editor).toHaveTextContent("第二版内容"));
+  });
+
+  it("supports keyboard undo and redo for selected datasource tokens", async () => {
+    const onToolSelect = vi.fn();
+    const onSourceRemove = vi.fn();
+    render(<ComposerHarness onToolSelect={onToolSelect} onSourceRemove={onSourceRemove} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /Keepa-亚马逊-商品搜索/ }));
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await waitFor(() => expect(onToolSelect).toHaveBeenCalledWith("keepa"));
+    await waitFor(() => expect(screen.getByLabelText("数据源 Keepa-亚马逊-商品搜索")).toBeInTheDocument());
+
+    fireEvent.keyDown(editor, { key: "z", metaKey: true });
+
+    await waitFor(() => expect(onSourceRemove).toHaveBeenCalledWith("keepa"));
+    await waitFor(() => expect(screen.queryByLabelText("数据源 Keepa-亚马逊-商品搜索")).not.toBeInTheDocument());
+
+    fireEvent.keyDown(editor, { key: "z", metaKey: true, shiftKey: true });
+
+    await waitFor(() => expect(onToolSelect).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByLabelText("数据源 Keepa-亚马逊-商品搜索")).toBeInTheDocument());
+  }, MENU_INTERACTION_TIMEOUT_MS);
+
   it("uses first-level categories to navigate second-level datasource cards", async () => {
     const onToolSelect = vi.fn();
     render(<ComposerHarness onToolSelect={onToolSelect} />);

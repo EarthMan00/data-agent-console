@@ -132,6 +132,14 @@ type SyncEditorValueOptions = {
   syncSourceSelection?: boolean;
 };
 
+type ComposerHistorySnapshot = {
+  value: string;
+  selectedSourceIds: string[];
+  sourcePlacements: ComposerSourcePlacement[];
+};
+
+const COMPOSER_HISTORY_LIMIT = 100;
+
 function getAttachmentExtension(name: string) {
   const dotIndex = name.lastIndexOf(".");
   if (dotIndex < 0 || dotIndex === name.length - 1) return "";
@@ -388,6 +396,21 @@ function getSelectedToolTokenIds(container: HTMLElement) {
 
 function getSourcePlacementKey(placements: ComposerSourcePlacement[]) {
   return placements.map((placement) => `${placement.sourceId}:${placement.offset}`).join("|");
+}
+
+function getComposerHistorySnapshotKey(snapshot: ComposerHistorySnapshot) {
+  return [
+    snapshot.value,
+    snapshot.selectedSourceIds.join(","),
+    getSourcePlacementKey(snapshot.sourcePlacements),
+  ].join("\u001f");
+}
+
+function pushComposerHistorySnapshot(stack: ComposerHistorySnapshot[], snapshot: ComposerHistorySnapshot) {
+  const last = stack[stack.length - 1];
+  if (last && getComposerHistorySnapshotKey(last) === getComposerHistorySnapshotKey(snapshot)) return;
+  stack.push(snapshot);
+  if (stack.length > COMPOSER_HISTORY_LIMIT) stack.shift();
 }
 
 function moveCaretAfterNode(node: Node) {
@@ -847,6 +870,10 @@ export function TaskComposer({
   const onAttachmentsChangeRef = useRef(onAttachmentsChange);
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const sourcePlacementKeyRef = useRef(getSourcePlacementKey(sourcePlacements));
+  const currentHistorySnapshotRef = useRef<ComposerHistorySnapshot | null>(null);
+  const undoHistoryRef = useRef<ComposerHistorySnapshot[]>([]);
+  const redoHistoryRef = useRef<ComposerHistorySnapshot[]>([]);
+  const restoringHistoryRef = useRef(false);
 
   const [sourceButtonOpen, setSourceButtonOpen] = useState(false);
   const [sourceButtonHighlightedIndex, setSourceButtonHighlightedIndex] = useState(-1);
@@ -926,6 +953,18 @@ export function TaskComposer({
   }, [onSourcePlacementsChange]);
   const externalSourcePlacements = useMemo(() => normalizeComposerSourcePlacements(sourcePlacements), [sourcePlacements]);
   const effectiveSourcePlacements = externalSourcePlacements.length > 0 ? externalSourcePlacements : localSourcePlacements;
+  const buildHistorySnapshot = useCallback((): ComposerHistorySnapshot => {
+    const knownToolIds = new Set(filteredTools.map((item) => item.id));
+    const selectedIds = effectiveSelectedSourceIds.filter((id) => knownToolIds.has(id));
+    const selectedIdSet = new Set(selectedIds);
+    return {
+      value,
+      selectedSourceIds: selectedIds,
+      sourcePlacements: normalizeComposerSourcePlacements(effectiveSourcePlacements, value.length).filter((placement) =>
+        selectedIdSet.has(placement.sourceId),
+      ),
+    };
+  }, [effectiveSelectedSourceIds, effectiveSourcePlacements, filteredTools, value]);
 
   const selectedSources = useMemo(
     () =>
@@ -1397,6 +1436,77 @@ export function TaskComposer({
     highlightedToolIndexRef.current = -1;
     setHighlightedToolIndex(-1);
   }, [clearMenuSnapshot]);
+
+  useEffect(() => {
+    const nextSnapshot = buildHistorySnapshot();
+    const currentSnapshot = currentHistorySnapshotRef.current;
+    if (!currentSnapshot) {
+      currentHistorySnapshotRef.current = nextSnapshot;
+      return;
+    }
+
+    if (getComposerHistorySnapshotKey(currentSnapshot) === getComposerHistorySnapshotKey(nextSnapshot)) return;
+    if (restoringHistoryRef.current) {
+      currentHistorySnapshotRef.current = nextSnapshot;
+      restoringHistoryRef.current = false;
+      return;
+    }
+
+    pushComposerHistorySnapshot(undoHistoryRef.current, currentSnapshot);
+    redoHistoryRef.current = [];
+    currentHistorySnapshotRef.current = nextSnapshot;
+  }, [buildHistorySnapshot]);
+
+  const applyHistorySnapshot = useCallback((snapshot: ComposerHistorySnapshot) => {
+    const currentSourceIdSet = new Set(effectiveSelectedSourceIds);
+    const nextSourceIdSet = new Set(snapshot.selectedSourceIds);
+
+    restoringHistoryRef.current = true;
+    currentHistorySnapshotRef.current = snapshot;
+    setAcceptedTemplateToolId(null);
+    setAcceptedTemplatePrefix("");
+    setPendingTemplateSuggestionToolId(null);
+    setInternalSuppressTemplateCompletion(snapshot.selectedSourceIds.length > 0);
+    setOptimisticSourceIds(snapshot.selectedSourceIds);
+    syncSourcePlacements(snapshot.sourcePlacements);
+    effectiveSelectedSourceIds.forEach((id) => {
+      if (!nextSourceIdSet.has(id)) onSourceRemove(id);
+    });
+    snapshot.selectedSourceIds.forEach((id) => {
+      if (!currentSourceIdSet.has(id)) onToolSelect(id);
+    });
+    onValueChange(snapshot.value);
+    closeMentionMenu();
+    setSourceButtonOpen(false);
+    requestAnimationFrame(() => {
+      focusEditor();
+    });
+  }, [
+    closeMentionMenu,
+    effectiveSelectedSourceIds,
+    focusEditor,
+    onSourceRemove,
+    onToolSelect,
+    onValueChange,
+    syncSourcePlacements,
+  ]);
+
+  const handleComposerHistoryShortcut = useCallback((event: KeyboardEvent<HTMLElement>) => {
+    const key = event.key.toLowerCase();
+    const isUndo = (event.metaKey || event.ctrlKey) && key === "z" && !event.shiftKey;
+    const isRedo = (event.metaKey || event.ctrlKey) && (key === "y" || (key === "z" && event.shiftKey));
+    if ((!isUndo && !isRedo) || event.altKey) return false;
+
+    const sourceStack = isRedo ? redoHistoryRef.current : undoHistoryRef.current;
+    const targetSnapshot = sourceStack.pop();
+    if (!targetSnapshot) return false;
+
+    event.preventDefault();
+    const currentSnapshot = currentHistorySnapshotRef.current ?? buildHistorySnapshot();
+    pushComposerHistorySnapshot(isRedo ? undoHistoryRef.current : redoHistoryRef.current, currentSnapshot);
+    applyHistorySnapshot(targetSnapshot);
+    return true;
+  }, [applyHistorySnapshot, buildHistorySnapshot]);
 
   const handlePromptLibraryUse = useCallback((promptText: string) => {
     setSourceButtonOpen(false);
@@ -2589,6 +2699,9 @@ export function TaskComposer({
                         syncEditorInteractionState(event.currentTarget);
                       }}
                       onKeyDown={(event) => {
+                        if (handleComposerHistoryShortcut(event)) {
+                          return;
+                        }
                         normalizeSelectionOutsideToolToken(event.currentTarget);
                         if (mentionOpen && DATA_SOURCE_MENU_NAVIGATION_KEYS.has(event.key)) {
                           return;
