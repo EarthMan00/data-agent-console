@@ -449,7 +449,7 @@ export function AliceHomePage() {
         <section className="mx-auto w-full max-w-page-content px-4 pt-44 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 sm:gap-5">
             <Image
-              src="/alice-logo.png"
+              src={ALICE_LOGO_SRC}
               alt="Alice"
               width={76}
               height={76}
@@ -614,4 +614,3 @@ export function AliceHomePage() {
     </AliceShell>
   );
 }
-
