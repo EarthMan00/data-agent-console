@@ -47,6 +47,32 @@ import { ALICE_LOGO_SRC } from "@/lib/brand-assets";
 
 const PENDING_HOME_TASK_STORAGE_KEY = "alice:pending-home-task-after-login";
 const PENDING_HOME_TASK_MAX_AGE_MS = 30 * 60 * 1000;
+const GREETING_HOVER_ICONS = [
+  "¯\\_(ツ)_/¯",
+  "(⌐■_■)",
+  "ʕ•ᴥ•ʔ",
+  "\\ (•◡•) /",
+  "(>‿<)",
+  "ᕙ(⇀‸↼‶)ᕗ",
+];
+const HOME_TIME_GREETINGS = {
+  morning: {
+    short: "早上好。",
+    full: "早上好，有什么可以帮你的吗？",
+  },
+  afternoon: {
+    short: "下午好。",
+    full: "下午好，准备好创建点什么了吗？",
+  },
+  evening: {
+    short: "晚上好。",
+    full: "晚上好，需要什么帮助吗？",
+  },
+  lateNight: {
+    short: "还在忙？",
+    full: "还在忙？我可以帮你。",
+  },
+};
 type HomeComposerMode = "普通模式" | "深度模式";
 
 type PendingHomeTask = {
@@ -61,6 +87,79 @@ type PendingHomeTask = {
 
 function capabilityLabelFromId(capabilityId: string) {
   return capabilityId.trim().replace(/^@+/, "");
+}
+
+function nextGreetingHoverIconIndex(currentIndex: number) {
+  if (GREETING_HOVER_ICONS.length <= 1) return 0;
+  let nextIndex = Math.floor(Math.random() * GREETING_HOVER_ICONS.length);
+  let attempts = 0;
+  while (nextIndex === currentIndex && attempts < GREETING_HOVER_ICONS.length) {
+    nextIndex = Math.floor(Math.random() * GREETING_HOVER_ICONS.length);
+    attempts += 1;
+  }
+  return nextIndex === currentIndex ? (currentIndex + 1) % GREETING_HOVER_ICONS.length : nextIndex;
+}
+
+function getHomeTimeGreeting(date = new Date()) {
+  const hour = date.getHours();
+  if (hour < 6) return HOME_TIME_GREETINGS.lateNight;
+  if (hour < 12) return HOME_TIME_GREETINGS.morning;
+  if (hour < 18) return HOME_TIME_GREETINGS.afternoon;
+  return HOME_TIME_GREETINGS.evening;
+}
+
+function InteractiveGreetingToken({
+  name,
+  showWave,
+}: {
+  name: string;
+  showWave: boolean;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [iconIndex, setIconIndex] = useState(0);
+
+  const showHoverIcon = useCallback(() => {
+    setIconIndex(nextGreetingHoverIconIndex);
+    setHovered(true);
+  }, []);
+
+  const hideHoverIcon = useCallback(() => {
+    setHovered(false);
+  }, []);
+
+  return (
+    <span
+      data-testid="home-greeting-switch"
+      data-state={hovered ? "hovered" : "default"}
+      tabIndex={0}
+      onMouseEnter={showHoverIcon}
+      onMouseLeave={hideHoverIcon}
+      onFocus={showHoverIcon}
+      onBlur={hideHoverIcon}
+      className={cn(
+        "mdata-home-greeting-switch relative -ml-2 inline-flex h-10 min-w-0 max-w-full cursor-pointer items-center justify-start overflow-hidden rounded-lg px-2 align-baseline",
+        hovered ? "bg-fill-hover" : "hover:bg-fill-hover active:bg-fill-active",
+      )}
+    >
+      <span
+        key={hovered ? `icon-${iconIndex}` : `name-${name}-${showWave}`}
+        data-state={hovered ? "hovered" : "default"}
+        className={cn(
+          "mdata-home-greeting-token inline-flex min-w-0 items-center whitespace-nowrap leading-none",
+          hovered ? "font-mono text-[0.85em] font-bold text-text-secondary" : "truncate",
+        )}
+      >
+        {hovered ? (
+          GREETING_HOVER_ICONS[iconIndex]
+        ) : (
+          <>
+            <span className="truncate">{name}</span>
+            {showWave ? <span className="mdata-home-wave ml-2 inline-block shrink-0">👋</span> : null}
+          </>
+        )}
+      </span>
+    </span>
+  );
 }
 
 function resolvePromptCardCapabilitySourceIds(card: HomePromptCard, dataSourceItems: HomeCapabilityItem[]) {
@@ -158,9 +257,10 @@ export function AliceHomePage() {
   const hydratedAuth = canPersonalizeGreeting && platformAgent?.authHydrated ? platformAgent.auth : null;
   const userCachePrefix = hydratedAuth?.userId ?? (platformAgent?.authHydrated ? HOME_PROMPT_ANONYMOUS_CACHE_KEY : null);
   const greetingName = hydratedAuth
-    ? (hydratedAuth.displayName || hydratedAuth.userId || "伙伴").trim()
-    : "伙伴";
-  const greetingTitle = `你好，${greetingName}`;
+    ? (hydratedAuth.displayName || hydratedAuth.userId || "朋友").trim()
+    : "朋友";
+  const hasPersonalizedGreeting = Boolean(hydratedAuth?.displayName?.trim() || hydratedAuth?.userId?.trim());
+  const homeTimeGreeting = getHomeTimeGreeting();
   const homePromptCacheKey = userCachePrefix && activeCategoryId ? `${userCachePrefix}:cat:${activeCategoryId}` : null;
   const cachedPromptCards = homePromptCacheKey ? getCachedHomePromptCards(homePromptCacheKey) : null;
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
@@ -457,12 +557,14 @@ export function AliceHomePage() {
               draggable={false}
               priority
             />
-            <div className="flex min-w-0 flex-col gap-2">
-              <h1 className="mdata-home-title m-0 truncate font-semibold text-foreground">
-                {greetingTitle}
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <h1 className="mdata-home-title m-0 flex min-w-0 max-w-full items-center overflow-hidden font-semibold text-foreground">
+                <span className="shrink-0">你好，</span>
+                <InteractiveGreetingToken name={greetingName} showWave={!hasPersonalizedGreeting} />
               </h1>
-              <div className="text-title-2 font-normal text-text-secondary">
-                你的跨境数据运营搭档，24h 随时在线
+              <div className="mdata-home-subtitle font-semibold text-text-disabled">
+                <span className="sm:hidden">{homeTimeGreeting.short}</span>
+                <span className="hidden sm:inline">{homeTimeGreeting.full}</span>
               </div>
             </div>
           </div>
