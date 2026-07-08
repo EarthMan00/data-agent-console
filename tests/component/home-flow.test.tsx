@@ -263,12 +263,37 @@ describe("home flow", () => {
   it("renders readable greeting and placeholder copy on a fresh home page", async () => {
     renderHomePage();
 
-    expect(await screen.findByText("你的跨境数据运营搭档，24h 随时在线")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/早上好，有什么可以帮你的吗？|下午好，准备好创建点什么了吗？|晚上好，需要什么帮助吗？|还在忙？我可以帮你。/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("你的跨境数据运营搭档，24h 随时在线")).not.toBeInTheDocument();
     expect(
       screen.getByText("需要分析亚马逊的流量来源？试试 @Sif-亚马逊 流量来源分析。"),
     ).toBeInTheDocument();
     expect(screen.queryByText(/\\u9700\\u8981/)).not.toBeInTheDocument();
     expect(screen.queryByText(/浣犵殑/)).not.toBeInTheDocument();
+  });
+
+  it("swaps the default greeting token on hover and restores it on leave", async () => {
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.2);
+
+    try {
+      renderHomePage();
+
+      const greetingSwitch = await screen.findByTestId("home-greeting-switch");
+      expect(screen.getByText("朋友")).toBeInTheDocument();
+      expect(screen.getByText("👋")).toBeInTheDocument();
+
+      fireEvent.mouseEnter(greetingSwitch);
+      expect(screen.getByText("(⌐■_■)")).toBeInTheDocument();
+      expect(screen.queryByText("👋")).not.toBeInTheDocument();
+
+      fireEvent.mouseLeave(greetingSwitch);
+      expect(screen.getByText("朋友")).toBeInTheDocument();
+      expect(screen.getByText("👋")).toBeInTheDocument();
+    } finally {
+      randomSpy.mockRestore();
+    }
   });
 
   it("routes a fresh home task into the real session workspace instead of the local run view", async () => {
