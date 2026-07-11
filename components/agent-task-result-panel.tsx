@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type UIEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { Download, Menu, Star, X } from "@/components/ui/tabler-icons";
 
 import { AutoToast } from "@/components/auto-toast";
@@ -188,10 +188,15 @@ export function AgentTaskResultPanel({
   const sheets = useMemo(() => buildTaskResultSheets(artifacts ?? []), [artifacts]);
   const fallbackPrimary = pickPrimaryTaskDataArtifact(artifacts ?? []);
   const useSheetUi = sheets.length > 0;
+  const hasDisplayableResultContent = useSheetUi || Boolean(fallbackPrimary);
   const displayErrorMessage = useMemo(
     () => humanizeTaskErrorMessage(errorMessage ?? ""),
     [errorMessage],
   );
+  const taskFailed = (taskStatus ?? "").toUpperCase() === "FAILED";
+  const showFailureBanner = Boolean(taskFailed && displayErrorMessage && !hasDisplayableResultContent);
+  const logFailureOutsideBanner = Boolean(taskFailed && displayErrorMessage && hasDisplayableResultContent);
+  const loggedFailureKeyRef = useRef<string | null>(null);
 
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "code">("table");
@@ -365,6 +370,18 @@ export function AgentTaskResultPanel({
     setContentScrolled(false);
   }, [activeSheet?.id, taskStatus, tid]);
 
+  useEffect(() => {
+    if (!logFailureOutsideBanner) return;
+    const key = `${tid || "unknown-task"}:${displayErrorMessage}`;
+    if (loggedFailureKeyRef.current === key) return;
+    loggedFailureKeyRef.current = key;
+    console.warn("[agent-task-result-panel] task failed with displayable results", {
+      taskId: tid || null,
+      taskStatus,
+      errorMessage: displayErrorMessage,
+    });
+  }, [displayErrorMessage, logFailureOutsideBanner, taskStatus, tid]);
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-bg-surface" data-testid="agent-preview-panel">
       <AutoToast
@@ -463,7 +480,7 @@ export function AgentTaskResultPanel({
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {(taskStatus === "FAILED" && displayErrorMessage) ? (
+        {showFailureBanner ? (
           <div className="shrink-0 border-b border-danger-border bg-danger-bg px-3 py-3 sm:px-4">
             <div className="flex items-start gap-2">
               <span className="mt-0.5 shrink-0 text-sm font-semibold text-danger">执行失败</span>
@@ -491,7 +508,7 @@ export function AgentTaskResultPanel({
               withFreshToken={withFreshToken}
               onPreviewScrollChange={setContentScrolled}
             />
-          ) : taskStatus === "FAILED" ? (
+          ) : taskFailed ? (
             <p className="text-body leading-6 text-text-secondary">
               任务未产生可展示的数据文件（CSV/JSON 等），详情请查看上方错误信息。
             </p>
