@@ -15,8 +15,6 @@ describe("ExecutionStepCard", () => {
           status: "awaiting_input",
           roundId: "round-1",
         }}
-        stepIndex={0}
-        total={2}
       />,
     );
 
@@ -26,7 +24,7 @@ describe("ExecutionStepCard", () => {
     expect(warningText).toHaveTextContent("1. 进入亚马逊美国站前台，围绕目标关键词搜索");
   });
 
-  it("does not highlight a completed step just because it is the last row", () => {
+  it("does not render the vertical timeline connector between execution rows", () => {
     render(
       <ExecutionStepCard
         step={{
@@ -36,8 +34,23 @@ describe("ExecutionStepCard", () => {
           status: "done",
           roundId: "round-1",
         }}
-        stepIndex={0}
-        total={1}
+      />,
+    );
+
+    const card = screen.getByTestId("execution-step-card");
+    expect(card.querySelector(".border-l")).not.toBeInTheDocument();
+  });
+
+  it("does not highlight a completed step", () => {
+    render(
+      <ExecutionStepCard
+        step={{
+          id: "done-step",
+          label: "已完成步骤",
+          order: 0,
+          status: "done",
+          roundId: "round-1",
+        }}
       />,
     );
 

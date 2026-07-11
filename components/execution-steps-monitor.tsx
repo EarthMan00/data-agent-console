@@ -180,14 +180,12 @@ function isHighlightedStepStatus(status: TaskExecutionStep["status"]) {
 export function ExecutionTimelineRow({
   label,
   status,
-  isLast,
   active = false,
   onSelect,
   testId,
 }: {
   label: string;
   status: TaskExecutionStep["status"];
-  isLast: boolean;
   active?: boolean;
   onSelect?: () => void;
   testId?: string;
@@ -201,9 +199,6 @@ export function ExecutionTimelineRow({
   const content = (
     <>
       <span className="relative flex w-5 shrink-0 justify-center pt-0.5" aria-hidden>
-        {!isLast ? (
-          <span className="absolute left-1/2 top-6 h-[calc(100%+10px)] -translate-x-1/2 border-l border-dashed border-border" />
-        ) : null}
         <StepStatusMark status={status} />
       </span>
       <span
@@ -235,18 +230,13 @@ export function ExecutionTimelineRow({
 /** 当前正在排队或执行中的步骤（非终态） */
 export function ExecutionStepCard({
   step,
-  stepIndex,
-  total,
 }: {
   step: TaskExecutionStep;
-  stepIndex: number;
-  total: number;
 }) {
   return (
     <ExecutionTimelineRow
       label={humanizeStepLabelForUi(step.label)}
       status={step.status}
-      isLast={stepIndex >= total - 1}
       active={isHighlightedStepStatus(step.status)}
       testId="execution-step-card"
     />
@@ -255,13 +245,9 @@ export function ExecutionStepCard({
 
 /** 步骤已终态但尚未拉到结果快照时的占位。 */
 export function StepResultPendingCard({
-  stepIndex,
-  total,
   label,
   status,
 }: {
-  stepIndex: number;
-  total: number;
   label: string;
   status: "done" | "error";
 }) {
@@ -269,7 +255,6 @@ export function StepResultPendingCard({
     <ExecutionTimelineRow
       label={humanizeStepLabelForUi(label)}
       status={status}
-      isLast={stepIndex >= total - 1}
     />
   );
 }
@@ -282,8 +267,8 @@ export function ExecutionStepsHistoryList({ steps }: { steps: TaskExecutionStep[
   const ordered = [...steps].sort((a, b) => a.order - b.order);
   return (
     <div className="space-y-0">
-      {ordered.map((step, stepIndex) => (
-        <ExecutionStepCard key={step.id} step={step} stepIndex={stepIndex} total={ordered.length} />
+      {ordered.map((step) => (
+        <ExecutionStepCard key={step.id} step={step} />
       ))}
     </div>
   );
@@ -300,8 +285,6 @@ export function ExecutionStepsMonitor({ steps }: { steps: TaskExecutionStep[] })
             <ExecutionStepCard
               key={`e-${item.step.id}`}
               step={item.step}
-              stepIndex={item.stepIndex}
-              total={item.total}
             />
           );
         }
@@ -309,8 +292,6 @@ export function ExecutionStepsMonitor({ steps }: { steps: TaskExecutionStep[] })
           return (
             <StepResultPendingCard
               key={`rp-${item.stepIndex}`}
-              stepIndex={item.stepIndex}
-              total={item.total}
               label={item.label}
               status={item.status}
             />
