@@ -49,7 +49,7 @@ function ComposerHarness({
         setSourcePlacements((current) => current.filter((placement) => placement.sourceId !== capabilityId));
       }}
       onFilesSelected={vi.fn()}
-      onSubmit={vi.fn()}
+      onSubmit={onSubmit}
     />
   );
 }
@@ -1159,6 +1159,50 @@ describe("task composer data source menu", () => {
       expect(editor.querySelectorAll("[data-template-slot='true']")).toHaveLength(2);
       expect(editor).not.toHaveTextContent("{{");
       expect(editor).not.toHaveTextContent("按 Tab 键补全");
+    });
+  });
+
+  it("does not repeat the selected datasource in completion ghost when template uses a dash variant", async () => {
+    const customDataSourceGroups: Parameters<typeof TaskComposer>[0]["dataSourceGroups"] = [
+      {
+        id: "tiktok-group",
+        label: "TikTok电商数据助手",
+        accent: "var(--color-primary)",
+        icon: "tiktok",
+        items: [
+          {
+            id: "echotik-product-search",
+            label: "EchoTik-TikTok商品搜索",
+            promptHint: "商品搜索",
+            promptTemplate:
+              "@EchoTik–TikTok商品搜索：{{美国站}}搜索 商品分类为:{{男士钱包}}，按照最近{{7}}天销售数量做排序",
+            parentId: "tiktok-group",
+            parentLabel: "TikTok电商数据助手",
+            accent: "var(--color-primary)",
+            icon: "tiktok",
+          },
+        ],
+      },
+    ];
+    const customDataSourceItems = customDataSourceGroups.flatMap((group) => group.items);
+
+    render(
+      <ComposerHarness
+        dataSourceGroups={customDataSourceGroups}
+        dataSourceItems={customDataSourceItems}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /@数据源/ }));
+    const listbox = await screen.findByRole("listbox", { name: "数据源列表" });
+    fireEvent.click(within(listbox).getByRole("option", { name: /EchoTik-TikTok商品搜索/ }));
+
+    const editor = screen.getByTestId("task-composer-editor");
+    await waitFor(() => {
+      expect(screen.getByLabelText("数据源 EchoTik-TikTok商品搜索")).toBeInTheDocument();
+      expect(editor).toHaveTextContent("按 Tab 键补全");
+      expect(editor).toHaveTextContent("：{{美国站}}搜索");
+      expect(editor).not.toHaveTextContent("@EchoTik");
     });
   });
 

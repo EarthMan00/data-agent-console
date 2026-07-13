@@ -34,6 +34,7 @@ type MentionResolution = {
 };
 
 const MENTION_PATTERN = /(^|[^A-Za-z0-9_])@([^\s@，。；、,.!?！？:：]+)/g;
+const MENTION_DASH_VARIANT_PATTERN = /[‐‑‒–—―−]/g;
 const PARTIAL_MENTION_MIN_LENGTH = 3;
 const STRIPPABLE_TOOL_SUFFIXES = ["模拟", "工具"] as const;
 
@@ -101,7 +102,7 @@ function parseStoredSourcePlacements(value: unknown) {
 }
 
 function normalizeMentionLabel(value: string) {
-  return value.trim().toLocaleLowerCase();
+  return value.trim().normalize("NFKC").replace(MENTION_DASH_VARIANT_PATTERN, "-").toLocaleLowerCase();
 }
 
 function mentionAliasesFor(label: string) {
