@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 type TableDataCellContentProps = {
   value: string;
   columnHeader?: string;
-  /** 侧栏表格：内层 line-clamp 包裹纯文本 */
+  /** 侧栏表格：内层包裹纯文本，具体截断/滚动策略由调用方通过 textClassName 决定 */
   sidePanel?: boolean;
   textClassName?: string;
 };
@@ -50,7 +50,7 @@ export function TableDataCellContent({
     return (
       <span
         className={cn(
-          "block min-w-0 max-w-full whitespace-normal break-words px-3 py-2 text-xs leading-snug line-clamp-3",
+          "block min-w-0 max-w-full whitespace-normal break-words px-3 py-2 text-xs leading-snug",
           textClassName,
         )}
         title={trimmed}

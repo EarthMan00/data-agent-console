@@ -61,12 +61,12 @@ function ingestRows(
   return nextHeader;
 }
 
-/** 侧栏：表头单行 …；单元格 line-clamp 放在内层，避免 td 设 -webkit-box 破坏表格列布局 */
+/** 侧栏：表头单行 …；单元格文本在内层滚动，避免长文本撑爆整行或被截断。 */
 const headerClamp =
   "h-11 min-w-0 !whitespace-nowrap !break-normal overflow-hidden border-r border-border-subtle p-0 align-middle last:border-r-0";
 const bodyCellSidePanelTd = "min-w-0 align-top p-0";
 const bodyCellSidePanelInner =
-  "block min-w-0 max-w-full whitespace-normal break-words px-3 py-2 text-xs leading-snug line-clamp-3";
+  "block max-h-24 min-w-0 max-w-full overflow-auto overscroll-contain whitespace-normal break-words px-3 py-2 text-xs leading-snug";
 const bodyCellDefault =
   "max-w-panel-sm min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-top";
 

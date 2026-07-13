@@ -20,6 +20,11 @@ describe("LazyCsvArtifactTable", () => {
     expect(asinHeader).toHaveClass("h-11", "align-middle", "p-0");
     expect(asinHeader.querySelector("span")).toHaveClass("px-3", "py-2");
     expect(asinHeader).not.toHaveClass("align-top");
+    const titleCell = screen
+      .getByText("Stanley style insulated sports bottle 40oz")
+      .closest("span");
+    expect(titleCell).toHaveClass("overflow-auto", "max-h-24");
+    expect(titleCell).not.toHaveClass("line-clamp-3");
 
     const scrollRoot = screen.getByTestId("lazy-csv-table").parentElement;
     expect(scrollRoot).toBeInstanceOf(HTMLElement);
