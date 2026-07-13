@@ -1010,6 +1010,7 @@ export function PlatformSessionAgentWorkspace({
 
   useChatStickToBottom(messagesScrollRef, messagesInnerRef, [busy, error, messages, sending], {
     resetKey: sessionId,
+    followContentResize: false,
   });
 
   useEffect(() => {

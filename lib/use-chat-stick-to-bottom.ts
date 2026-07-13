@@ -15,6 +15,8 @@ export type UseChatStickToBottomOptions = {
   thresholdPx?: number;
   /** 切换会话/任务时重置为自动贴底（如 runId、sessionId） */
   resetKey?: string | number | null;
+  /** 内容自身尺寸变化时是否继续贴底；历史会话追问会逐步插入任务卡，关闭后可避免视口被反复拉动。 */
+  followContentResize?: boolean;
 };
 
 /**
@@ -29,6 +31,7 @@ export function useChatStickToBottom(
   const stickRef = useRef(true);
   const thresholdPx = options?.thresholdPx ?? DEFAULT_THRESHOLD_PX;
   const resetKey = options?.resetKey;
+  const followContentResize = options?.followContentResize ?? true;
 
   const scrollToBottomIfStuck = useCallback(() => {
     const el = scrollRef.current;
@@ -65,11 +68,13 @@ export function useChatStickToBottom(
 
     scrollToBottomIfStuck();
 
+    if (!followContentResize) return undefined;
+
     const ro = new ResizeObserver(() => scrollToBottomIfStuck());
     ro.observe(inner);
     return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- watchDeps 由调用方显式传入
-  }, [scrollRef, contentRef, scrollToBottomIfStuck, ...watchDeps]);
+  }, [scrollRef, contentRef, followContentResize, scrollToBottomIfStuck, ...watchDeps]);
 
   return { scrollToBottomIfStuck };
 }
