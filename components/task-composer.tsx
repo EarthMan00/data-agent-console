@@ -2806,7 +2806,7 @@ export function TaskComposer({
                   {!value && selectedSources.length === 0 ? (
                     <div
                       className={cn(
-                        "pointer-events-none absolute left-px max-w-lg leading-7",
+                        "pointer-events-none absolute left-px right-2 whitespace-pre-wrap break-words leading-7",
                         isHeroMinimal
                           ? "top-2 text-body text-text-tertiary"
                           : "top-1 text-body text-text-disabled",

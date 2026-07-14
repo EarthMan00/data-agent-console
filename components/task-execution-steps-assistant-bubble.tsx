@@ -114,9 +114,9 @@ export function TaskExecutionStepsAssistantBubble({
 
   const awaitingUserInput = ordered.some((s) => s.status === "awaiting_input");
 
-  const [manualExecutionExpanded, setManualExecutionExpanded] = useState(false);
+  const [manualExecutionExpanded, setManualExecutionExpanded] = useState<boolean | null>(null);
 
-  const executionExpanded = executionActive || manualExecutionExpanded || awaitingUserInput;
+  const executionExpanded = manualExecutionExpanded ?? (executionActive || awaitingUserInput);
 
   const executionTitleTag = ordered.some(
     (step) => step.status === "running" && (step.runtimeHint || step.runtimeStartedAt),

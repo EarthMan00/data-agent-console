@@ -20,11 +20,9 @@ import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 function PlatformSubtaskResultCard({
   snap,
   onSelect,
-  totalSteps,
 }: {
   snap: PlatformSubtaskSnapshot;
   onSelect: () => void;
-  totalSteps: number;
 }) {
   const hasPreviewFiles = hasTabularTaskResultFiles(snap.artifacts);
   const status = snap.outcome === "failed" ? "error" : "done";
@@ -36,7 +34,6 @@ function PlatformSubtaskResultCard({
           : compactText(snap.label, 200)
       }
       status={status}
-      isLast={snap.stepIndex >= totalSteps - 1}
       onSelect={
         hasPreviewFiles
           ? () => {
@@ -75,8 +72,6 @@ export function PlatformRoundStepTimeline({
             <ExecutionStepCard
               key={`exec-${item.step.id}-${item.stepIndex}`}
               step={item.step}
-              stepIndex={item.stepIndex}
-              total={item.total}
             />
           );
         }
@@ -84,8 +79,6 @@ export function PlatformRoundStepTimeline({
           return (
             <StepResultPendingCard
               key={`rp-${item.stepIndex}`}
-              stepIndex={item.stepIndex}
-              total={item.total}
               label={item.label}
               status={item.status}
             />
@@ -96,7 +89,6 @@ export function PlatformRoundStepTimeline({
           <PlatformSubtaskResultCard
             key={snap.taskId}
             snap={snap}
-            totalSteps={executionSteps.length}
             onSelect={() => {
               if (onOpenSubtaskResult) {
                 onOpenSubtaskResult(snap.taskId);

@@ -28,7 +28,6 @@ import {
   MessageCircleMore,
   PanelLeft,
   PanelLeftExpand,
-  PanelRightOpen,
   Plus,
   Search,
   SparkleHighlight,
@@ -652,7 +651,6 @@ function AliceShellComponent({
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isResultRailDrawerViewport, setIsResultRailDrawerViewport] = useState(false);
-  const [compactResultDrawerOpen, setCompactResultDrawerOpen] = useState(false);
   const [resultRailWidth, setResultRailWidth] = useState(RESULT_RAIL_DEFAULT_WIDTH);
   const [resizingResultRail, setResizingResultRail] = useState(false);
   const workspaceMainGridRef = useRef<HTMLDivElement | null>(null);
@@ -677,9 +675,8 @@ function AliceShellComponent({
   const sidebarExpandedWidth = 300;
   const sidebarCollapsedWidth = 68;
   const effectiveSidebarCollapsed = !isMobileViewport && sidebarCollapsed;
-  const showCompactRightRailDrawer = Boolean(rightRail && clientMounted && !isMobileViewport && isResultRailDrawerViewport);
-  const showDesktopRightRail = Boolean(rightRail && clientMounted && !isMobileViewport && !isResultRailDrawerViewport);
-  const showMobileRightRailDrawer = Boolean(rightRail && clientMounted && isMobileViewport);
+  const showDesktopRightRail = Boolean(rightRail && clientMounted && !isResultRailDrawerViewport);
+  const showMobileRightRailDrawer = Boolean(rightRail && clientMounted && isResultRailDrawerViewport);
   const showRunHeader = showTopHeader || Boolean(currentRunLabel);
   const runHeaderInLeftPane = showDesktopRightRail && showRunHeader;
   const leftPaneUsesFlexLayout = childManagedScroll || runHeaderInLeftPane;
@@ -701,10 +698,6 @@ function AliceShellComponent({
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
-
-  useEffect(() => {
-    if (!showCompactRightRailDrawer) setCompactResultDrawerOpen(false);
-  }, [showCompactRightRailDrawer]);
 
   useEffect(() => {
     if (!showDesktopRightRail) {
@@ -795,17 +788,6 @@ function AliceShellComponent({
           </div>
         ) : null}
       </div>
-      {showCompactRightRailDrawer ? (
-        <button
-          type="button"
-          aria-label="查看任务执行结果"
-          className="ml-3 hidden h-9 shrink-0 items-center gap-2 rounded-control px-3 text-body font-medium text-foreground transition hover:bg-fill-hover md:inline-flex lg:hidden"
-          onClick={() => setCompactResultDrawerOpen(true)}
-        >
-          <PanelRightOpen className="h-icon-md w-icon-md" strokeWidth={1.9} />
-          查看结果
-        </button>
-      ) : null}
     </header>
   );
 
@@ -1799,51 +1781,9 @@ function AliceShellComponent({
         </main>
       </div>
 
-      {showCompactRightRailDrawer ? (
-        <div
-          className={cn(
-            "fixed inset-0 z-mobile-sheet hidden transition md:block lg:hidden",
-            compactResultDrawerOpen ? "pointer-events-auto" : "pointer-events-none",
-          )}
-          role="dialog"
-          aria-modal={compactResultDrawerOpen ? "true" : undefined}
-          aria-hidden={!compactResultDrawerOpen}
-          aria-label="任务执行结果"
-        >
-          <button
-            type="button"
-            aria-label="关闭任务执行结果"
-            className={cn(
-              "absolute inset-0 bg-overlay-bg backdrop-blur-soft transition-opacity",
-              compactResultDrawerOpen ? "opacity-100" : "opacity-0",
-            )}
-            onClick={() => setCompactResultDrawerOpen(false)}
-          />
-          <aside
-            className={cn(
-              "absolute bottom-0 right-0 top-0 flex w-[min(720px,calc(100vw-80px))] min-w-0 flex-col border-l border-border bg-bg-surface shadow-side-strong transition-transform duration-200 ease-out",
-              compactResultDrawerOpen ? "translate-x-0" : "translate-x-full",
-            )}
-          >
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-              <div className="truncate text-title-1 font-semibold leading-6 text-foreground">任务执行结果</div>
-              <button
-                type="button"
-                aria-label="关闭任务执行结果"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-control text-text-tertiary transition hover:bg-fill-hover hover:text-foreground"
-                onClick={() => setCompactResultDrawerOpen(false)}
-              >
-                <X className="h-5 w-5" strokeWidth={1.8} />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-hidden">{rightRail}</div>
-          </aside>
-        </div>
-      ) : null}
-
       {showMobileRightRailDrawer ? (
         <div
-          className="fixed inset-0 z-mobile-sheet flex items-end justify-center bg-overlay-bg backdrop-blur-soft md:hidden"
+          className="fixed inset-0 z-modal flex items-end justify-center bg-overlay-bg backdrop-blur-soft"
           role="dialog"
           aria-modal="true"
           aria-label="任务执行结果抽屉"

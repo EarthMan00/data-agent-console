@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
@@ -61,6 +61,8 @@ function renderPanel(token = "real-token") {
 }
 
 describe("agent task result panel favorite feedback", () => {
+  let consoleWarnSpy: ReturnType<typeof vi.spyOn> | null = null;
+
   beforeEach(() => {
     apiMocks.createUserFavorite.mockReset();
     apiMocks.deleteUserFavorite.mockReset();
@@ -68,6 +70,11 @@ describe("agent task result panel favorite feedback", () => {
     apiMocks.getFavoriteByTask.mockReset();
     apiMocks.getFavoriteByTask.mockResolvedValue({ favorited: false, favorite_id: null });
     apiMocks.createUserFavorite.mockResolvedValue({ id: "favorite-1" });
+  });
+
+  afterEach(() => {
+    consoleWarnSpy?.mockRestore();
+    consoleWarnSpy = null;
   });
 
   it("shows a global success toast for favorite actions without an inline panel notice", async () => {
@@ -120,12 +127,15 @@ describe("agent task result panel favorite feedback", () => {
     expect(activeTab.querySelector(".bg-primary")).toBeInTheDocument();
   });
 
-  it("uses primary styling for active result sheets and a stronger header divider", () => {
+  it("hides the failure banner when failed tasks still have displayable result content", async () => {
+    consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     render(
       <AgentTaskResultPanel
         onClose={vi.fn()}
-        artifacts={multiSheetArtifacts}
+        artifacts={artifacts}
         taskId="mock-task"
+        taskStatus="FAILED"
+        errorMessage="报告生成失败：模型已响应，但没有生成可用的报告内容。"
         withFreshToken={async (run) => {
           await run("real-token");
         }}
@@ -133,11 +143,37 @@ describe("agent task result panel favorite feedback", () => {
     );
 
     const panel = screen.getByTestId("agent-preview-panel");
-    const header = within(panel).getByText("任务执行结果").closest(".border-b");
-    expect(header).toHaveClass("border-border-strong", "shadow-hairline");
+    expect(within(panel).queryByText("执行失败")).not.toBeInTheDocument();
+    expect(within(panel).queryByText(/报告生成失败/)).not.toBeInTheDocument();
 
-    const activeTab = within(panel).getByRole("tab", { selected: true });
-    expect(activeTab).toHaveClass("text-primary");
-    expect(activeTab.querySelector(".bg-primary")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        "[agent-task-result-panel] task failed with displayable results",
+        expect.objectContaining({
+          taskId: "mock-task",
+          taskStatus: "FAILED",
+          errorMessage: expect.stringContaining("报告生成失败"),
+        }),
+      );
+    });
+  });
+
+  it("keeps the failure banner when failed tasks have no displayable result content", () => {
+    render(
+      <AgentTaskResultPanel
+        onClose={vi.fn()}
+        artifacts={[]}
+        taskId="mock-task"
+        taskStatus="FAILED"
+        errorMessage="报告生成失败：模型已响应，但没有生成可用的报告内容。"
+        withFreshToken={async (run) => {
+          await run("real-token");
+        }}
+      />,
+    );
+
+    const panel = screen.getByTestId("agent-preview-panel");
+    expect(within(panel).getByText("执行失败")).toBeInTheDocument();
+    expect(within(panel).getByText(/报告生成失败/)).toBeInTheDocument();
   });
 });

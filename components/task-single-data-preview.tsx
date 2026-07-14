@@ -25,7 +25,7 @@ const jsonHeaderClamp =
   "h-12 max-w-panel-sm min-w-0 !whitespace-nowrap !break-normal overflow-hidden text-ellipsis align-middle px-3 pb-3 pt-3";
 const jsonBodyCellTd = "max-w-panel-sm min-w-0 align-top p-0";
 const jsonBodyCellInner =
-  "block min-w-0 max-w-full whitespace-normal break-words px-3 py-2 text-xs leading-snug line-clamp-3";
+  "block max-h-24 min-w-0 max-w-full overflow-auto overscroll-contain whitespace-normal break-words px-3 py-2 text-xs leading-snug";
 
 function JsonArtifactDataTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
   const colCount = Math.max(1, columns.length);

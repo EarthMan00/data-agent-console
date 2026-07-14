@@ -267,9 +267,11 @@ describe("home flow", () => {
       await screen.findByText(/早上好，有什么可以帮你的吗？|下午好，准备好创建点什么了吗？|晚上好，需要什么帮助吗？|还在忙？我可以帮你。/),
     ).toBeInTheDocument();
     expect(screen.queryByText("你的跨境数据运营搭档，24h 随时在线")).not.toBeInTheDocument();
-    expect(
-      screen.getByText("需要分析亚马逊的流量来源？试试 @Sif-亚马逊 流量来源分析。"),
-    ).toBeInTheDocument();
+    const placeholder = screen.getByText("需要分析亚马逊的流量来源？试试 @Sif-亚马逊 流量来源分析。");
+    expect(placeholder).toBeInTheDocument();
+    expect(placeholder).toHaveClass("right-2", "whitespace-pre-wrap", "break-words");
+    expect(placeholder).not.toHaveClass("truncate");
+    expect(placeholder).not.toHaveClass("max-w-lg");
     expect(screen.queryByText(/\\u9700\\u8981/)).not.toBeInTheDocument();
     expect(screen.queryByText(/浣犵殑/)).not.toBeInTheDocument();
   });

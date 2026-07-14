@@ -156,7 +156,7 @@ describe("AliceShell right rail layout", () => {
     expect(document.querySelector("main aside [data-testid='agent-preview-panel']")).not.toBeInTheDocument();
   });
 
-  it("keeps chat in the main pane and shows task results in a right drawer on compact tablet widths", async () => {
+  it("shows task results in the mobile result drawer on widths below the desktop breakpoint", async () => {
     mockMatchMedia({
       "(max-width: 767px)": false,
       "(max-width: 1023px)": true,
@@ -168,10 +168,10 @@ describe("AliceShell right rail layout", () => {
     });
     expect(document.querySelector("main [data-testid='agent-preview-panel']")).not.toBeInTheDocument();
     expect(document.querySelector("main aside [data-testid='agent-preview-panel']")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看任务执行结果" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "查看任务执行结果" }));
-
-    const drawer = await screen.findByRole("dialog", { name: "任务执行结果" });
+    const drawer = await screen.findByRole("dialog", { name: "任务执行结果抽屉" });
+    expect(drawer).toHaveClass("z-modal");
     expect(drawer).toContainElement(screen.getByTestId("agent-preview-panel"));
     expect(drawer).not.toContainElement(screen.getByTestId("chat-content"));
   });
