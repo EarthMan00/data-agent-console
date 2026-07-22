@@ -52,3 +52,6 @@ next-env.d.ts
 .idea/
 .copilot-specs-cache/
 .env.local
+
+# Local Git worktrees
+.worktrees/
