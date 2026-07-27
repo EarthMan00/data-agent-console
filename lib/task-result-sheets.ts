@@ -79,7 +79,7 @@ export function buildTaskResultSheets(artifacts: PlatformTaskArtifactRef[] | und
       jsonMatch ? indexOf(jsonMatch.artifact_id) : -1,
     );
     const tabLabel =
-      jsonMatch && fuzzy.length > 0 ? fuzzy : labelFromFilename(csv.original_name);
+      jsonMatch && fuzzy.length > 0 ? labelFromFilename(fuzzy) : labelFromFilename(csv.original_name);
     sheets.push({
       id: csv.artifact_id,
       label: tabLabel,

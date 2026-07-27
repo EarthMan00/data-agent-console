@@ -77,6 +77,40 @@ function basenameOnly(name: string): string {
   return parts[parts.length - 1] ?? n;
 }
 
+const FORBIDDEN_ARTIFACT_NAME_TOKEN_RE =
+  /(?:^|[^a-z0-9])(?:tool(?:_?name)?|capability|operation|raw(?:_?args?)?|provider|credential|token|secret|api[_-]?key)(?:$|[^a-z0-9])/i;
+const FORBIDDEN_ARTIFACT_ASSIGNMENT_RE =
+  /(?:tool(?:_?name)?|capability|operation|raw(?:_?args?)?|provider|credential|token|secret|api[_-]?key)\s*[:=]/i;
+
+function artifactExtensionForUi(originalName: string, artifactType?: string): string {
+  const base = basenameOnly(originalName);
+  const match = base.match(/\.([a-z0-9]{1,10})$/i);
+  if (match?.[1]) return `.${match[1].toLowerCase()}`;
+  const type = (artifactType ?? "").trim().toLowerCase();
+  return /^(?:csv|json|jsonl|md|markdown|html|htm|pdf|zip|txt)$/.test(type)
+    ? `.${type}`
+    : "";
+}
+
+function safeArtifactStemForUi(originalName: string): string {
+  const base = basenameOnly(originalName);
+  const stem = base.replace(/\.[^.]+$/, "") || base;
+  const neutral = stripInternalToolNamesForUi(stem).trim();
+  if (
+    !neutral ||
+    FORBIDDEN_ARTIFACT_NAME_TOKEN_RE.test(neutral) ||
+    FORBIDDEN_ARTIFACT_ASSIGNMENT_RE.test(neutral)
+  ) {
+    return "结果";
+  }
+  const safe = neutral
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[.\s-]+|[.\s-]+$/g, "")
+    .trim();
+  return safe || "结果";
+}
+
 /** 结果 Tab / 卡片等 UI 展示用文件名（不含内部工具品牌词） */
 export function artifactDisplayLabelForUi(originalName: string): string {
   const base = basenameOnly(originalName);
@@ -86,22 +120,34 @@ export function artifactDisplayLabelForUi(originalName: string): string {
   if (ALICE_INTERNAL_RESULT_RE.test(base) || CHATEXCEL_RESULT_RE.test(base)) {
     return "任务日志";
   }
-  const stem = base.replace(/\.[^.]+$/, "") || base;
-  const neutral = stripInternalToolNamesForUi(stem).trim();
-  return neutral || stem || "结果";
+  return safeArtifactStemForUi(base);
 }
 
 /** 单文件下载时的建议保存名 */
-export function artifactDownloadNameForUi(originalName: string): string {
+export function artifactDownloadNameForUi(originalName: string, artifactType?: string): string {
   const base = basenameOnly(originalName);
   if (LINKFOX_REPORT_NAME_RE.test(base) || DATA_REPORT_NAME_RE.test(base)) {
     return "数据报告.html";
   }
-  const extMatch = base.match(/(\.[^.]+)$/);
-  const ext = extMatch?.[1] ?? "";
+  const ext = artifactExtensionForUi(base, artifactType);
   const label = artifactDisplayLabelForUi(base);
-  if (ext && !label.endsWith(ext)) {
-    return `${label}${ext}`;
-  }
-  return base || "download";
+  return `${label}${ext}`;
+}
+
+/** Keep only public artifact identity/routing fields and a safe basename. */
+export function projectTaskArtifactForUi(
+  artifact: PlatformTaskArtifactRef,
+): PlatformTaskArtifactRef {
+  return {
+    artifact_id: artifact.artifact_id,
+    artifact_type: artifact.artifact_type,
+    original_name: artifactDownloadNameForUi(artifact.original_name, artifact.artifact_type),
+    download_api: artifact.download_api,
+  };
+}
+
+export function projectTaskArtifactsForUi(
+  artifacts: PlatformTaskArtifactRef[],
+): PlatformTaskArtifactRef[] {
+  return artifacts.map(projectTaskArtifactForUi);
 }

@@ -16,10 +16,17 @@ import {
 } from "@/lib/agent-api/client";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
 import { buildFavoriteSnapshotFromArtifacts } from "@/lib/build-favorite-snapshot";
-import { artifactDownloadNameForUi, listDownloadableTaskArtifacts, pickPrimaryTaskDataArtifact } from "@/lib/platform-task-artifacts";
+import {
+  artifactDownloadNameForUi,
+  filterArtifactsForTaskResultPanel,
+  listDownloadableTaskArtifacts,
+  pickPrimaryTaskDataArtifact,
+  projectTaskArtifactsForUi,
+} from "@/lib/platform-task-artifacts";
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import {
   buildTaskResultSheets,
+  downloadTargetForSheet,
   sheetSupportsTableCodeToggle,
   type TaskResultSheet,
 } from "@/lib/task-result-sheets";
@@ -39,6 +46,8 @@ type AgentTaskResultPanelProps = {
   bundleDownloadName?: string | null;
   zipDownloadApi?: string | null;
   taskId?: string | null;
+  /** Favorite identity is independent from the legacy Task download fallback. */
+  favoriteSourceTaskId?: string | null;
   /** 展示「最后生成时间」 */
   resultGeneratedAt?: string | null;
   /** 编排多步且多步有表格类结果时：底部 Excel 式 sheet 页签（调用方保证后执行的在前面） */
@@ -177,6 +186,7 @@ export function AgentTaskResultPanel({
   bundleDownloadName,
   zipDownloadApi,
   taskId,
+  favoriteSourceTaskId,
   resultGeneratedAt,
   subtaskResultTabs,
   activeSubtaskTaskId,
@@ -185,8 +195,13 @@ export function AgentTaskResultPanel({
   taskStatus,
 }: AgentTaskResultPanelProps) {
   const tid = (taskId ?? "").trim();
-  const sheets = useMemo(() => buildTaskResultSheets(artifacts ?? []), [artifacts]);
-  const fallbackPrimary = pickPrimaryTaskDataArtifact(artifacts ?? []);
+  const favoriteIdentity = (favoriteSourceTaskId ?? taskId ?? "").trim();
+  const publicArtifacts = useMemo(
+    () => projectTaskArtifactsForUi(filterArtifactsForTaskResultPanel(artifacts ?? [])),
+    [artifacts],
+  );
+  const sheets = useMemo(() => buildTaskResultSheets(publicArtifacts), [publicArtifacts]);
+  const fallbackPrimary = pickPrimaryTaskDataArtifact(publicArtifacts);
   const useSheetUi = sheets.length > 0;
   const hasDisplayableResultContent = useSheetUi || Boolean(fallbackPrimary);
   const displayErrorMessage = useMemo(
@@ -229,9 +244,19 @@ export function AgentTaskResultPanel({
 
   const bundleDownloadPath = effectiveBundleDownloadPath({ bundleDownloadApi, zipDownloadApi, taskId });
   const downloadableArtifacts = useMemo(
-    () => listDownloadableTaskArtifacts(artifacts ?? []),
-    [artifacts],
+    () => listDownloadableTaskArtifacts(publicArtifacts),
+    [publicArtifacts],
   );
+
+  const activeArtifactDownloadTarget = useMemo(() => {
+    const target = activeSheet ? downloadTargetForSheet(activeSheet, viewMode) : fallbackPrimary;
+    if (!target) return downloadableArtifacts[0] ?? null;
+    return (
+      downloadableArtifacts.find((artifact) => artifact.artifact_id === target.artifact_id) ??
+      downloadableArtifacts[0] ??
+      null
+    );
+  }, [activeSheet, downloadableArtifacts, fallbackPrimary, viewMode]);
 
   /** 多文件打包：编排多步且正在查看某一子任务时只打该任务，否则用整轮 bundle */
   const multiFileDownloadPath = useMemo(() => {
@@ -245,7 +270,23 @@ export function AgentTaskResultPanel({
     if (!withFreshToken) return;
 
     if (downloadableArtifacts.length > 1) {
-      if (!multiFileDownloadPath) return;
+      if (!multiFileDownloadPath) {
+        if (!activeArtifactDownloadTarget) return;
+        void withFreshToken(async (token) => {
+          await downloadAuthorizedFile(
+            token,
+            activeArtifactDownloadTarget.download_api,
+            safeFilename(
+              artifactDownloadNameForUi(
+                activeArtifactDownloadTarget.original_name,
+                activeArtifactDownloadTarget.artifact_type,
+              ),
+              "download",
+            ),
+          );
+        });
+        return;
+      }
       void withFreshToken(async (token) => {
         const name = (bundleDownloadName ?? "").trim() || `${tid || "task"}.zip`;
         await downloadAuthorizedFile(token, multiFileDownloadPath, name);
@@ -259,7 +300,10 @@ export function AgentTaskResultPanel({
         await downloadAuthorizedFile(
           token,
           target.download_api,
-          safeFilename(artifactDownloadNameForUi(target.original_name), "download"),
+          safeFilename(
+            artifactDownloadNameForUi(target.original_name, target.artifact_type),
+            "download",
+          ),
         );
       });
       return;
@@ -274,6 +318,7 @@ export function AgentTaskResultPanel({
       });
     }
   }, [
+    activeArtifactDownloadTarget,
     bundleDownloadName,
     bundleDownloadPath,
     downloadableArtifacts,
@@ -302,10 +347,10 @@ export function AgentTaskResultPanel({
   }, []);
 
   const refreshFavoriteState = useCallback(async () => {
-    if (!withFreshToken || !tid) return;
+    if (!withFreshToken || !favoriteIdentity) return;
     try {
       await withFreshToken(async (token) => {
-        const r = await getFavoriteByTask(token, tid);
+        const r = await getFavoriteByTask(token, favoriteIdentity);
         setFavorited(r.favorited);
         setFavoriteId(r.favorite_id);
       });
@@ -313,14 +358,14 @@ export function AgentTaskResultPanel({
       setFavorited(false);
       setFavoriteId(null);
     }
-  }, [tid, withFreshToken]);
+  }, [favoriteIdentity, withFreshToken]);
 
   useEffect(() => {
     void refreshFavoriteState();
   }, [refreshFavoriteState]);
 
   const toggleFavorite = async () => {
-    if (!withFreshToken || !tid || !primaryForFavorite) {
+    if (!withFreshToken || !favoriteIdentity || !primaryForFavorite) {
       showToast("当前无可收藏的结果文件。", "error");
       return;
     }
@@ -336,13 +381,13 @@ export function AgentTaskResultPanel({
         return;
       }
       const built = await buildFavoriteSnapshotFromArtifacts(withFreshToken, {
-        artifacts: artifacts ?? [],
+        artifacts: publicArtifacts,
       });
       let createdFavoriteId: string | null = null;
       await withFreshToken(async (token) => {
         const created = await createUserFavorite(token, {
           title: built.title,
-          source_task_id: tid,
+          source_task_id: favoriteIdentity,
           snapshot: built.snapshot,
           copy_artifact_id: built.copy_artifact_id ?? null,
         });
@@ -453,7 +498,7 @@ export function AgentTaskResultPanel({
               aria-label={favorited ? "取消收藏报告" : "收藏报告"}
               variant="outline"
               size="sm"
-              disabled={favoriteBusy || !tid}
+              disabled={favoriteBusy || !favoriteIdentity}
               className="h-8 shrink-0 gap-1.5 rounded-control border-border bg-bg-surface px-2.5 text-xs text-foreground hover:bg-fill-hover"
               onClick={() => void toggleFavorite()}
             >

@@ -774,6 +774,7 @@ export function PlatformSessionAgentWorkspace({
           selectedStep && selectedStep.artifacts.length > 0 ? (
             <AgentTaskResultPanel
               artifacts={selectedStep.artifacts}
+              favoriteSourceTaskId={selectedStep.task_id}
               withFreshToken={withFreshToken}
               taskStatus={selectedStep.status}
               onClose={() => setSelectedResult(null)}

@@ -47,6 +47,21 @@ const multiSheetArtifacts: PlatformTaskArtifactRef[] = [
   },
 ];
 
+const roundPairedArtifacts: PlatformTaskArtifactRef[] = [
+  {
+    artifact_id: "round-csv",
+    artifact_type: "csv",
+    original_name: "sales-result.csv",
+    download_api: "/api/chat-rounds/round-1/artifacts/round-csv/download",
+  },
+  {
+    artifact_id: "round-json",
+    artifact_type: "json",
+    original_name: "sales-result.json",
+    download_api: "/api/chat-rounds/round-1/artifacts/round-json/download",
+  },
+];
+
 function renderPanel(token = "real-token") {
   return render(
     <AgentTaskResultPanel
@@ -100,6 +115,101 @@ describe("agent task result panel favorite feedback", () => {
 
     expect(await screen.findByText("收藏失败，请稍后重试")).toBeInTheDocument();
     expect(within(panel).queryByText("create user favorite failed (HTTP 401)")).not.toBeInTheDocument();
+  });
+
+  it("downloads the active Round artifact for a multi-artifact table/code sheet without a legacy task route", async () => {
+    const withFreshToken = vi.fn(async (run: (token: string) => Promise<void>) => {
+      await run("round-token");
+    });
+    render(
+      <AgentTaskResultPanel
+        onClose={vi.fn()}
+        artifacts={roundPairedArtifacts}
+        withFreshToken={withFreshToken}
+      />,
+    );
+
+    const panel = screen.getByTestId("agent-preview-panel");
+    const download = within(panel).getByRole("button", { name: "下载当前结果" });
+    fireEvent.click(download);
+    await waitFor(() => {
+      expect(apiMocks.downloadAuthorizedFile).toHaveBeenLastCalledWith(
+        "round-token",
+        "/api/chat-rounds/round-1/artifacts/round-csv/download",
+        "sales-result.csv",
+      );
+    });
+
+    fireEvent.click(within(panel).getByRole("button", { name: "代码" }));
+    fireEvent.click(download);
+    await waitFor(() => {
+      expect(apiMocks.downloadAuthorizedFile).toHaveBeenLastCalledWith(
+        "round-token",
+        "/api/chat-rounds/round-1/artifacts/round-json/download",
+        "sales-result.json",
+      );
+    });
+    expect(withFreshToken).toHaveBeenCalled();
+    expect(apiMocks.downloadAuthorizedFile.mock.calls.flat().join(" ")).not.toContain("/api/tasks/");
+  });
+
+  it("uses a favorite source identity without enabling the legacy task download fallback", async () => {
+    const favoriteSourceTaskId = "round-owned-step-task-id";
+    render(
+      <AgentTaskResultPanel
+        onClose={vi.fn()}
+        artifacts={artifacts}
+        favoriteSourceTaskId={favoriteSourceTaskId}
+        withFreshToken={async (run) => {
+          await run("round-token");
+        }}
+      />,
+    );
+
+    const panel = screen.getByTestId("agent-preview-panel");
+    await waitFor(() => {
+      expect(apiMocks.getFavoriteByTask).toHaveBeenCalledWith("round-token", favoriteSourceTaskId);
+    });
+    const favorite = within(panel).getByRole("button", { name: "收藏报告" });
+    expect(favorite).toBeEnabled();
+    expect(panel).not.toHaveTextContent(favoriteSourceTaskId);
+
+    fireEvent.click(favorite);
+    await waitFor(() => {
+      expect(apiMocks.createUserFavorite).toHaveBeenCalledWith(
+        "round-token",
+        expect.objectContaining({ source_task_id: favoriteSourceTaskId }),
+      );
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "取消收藏报告" }));
+    await waitFor(() => {
+      expect(apiMocks.deleteUserFavorite).toHaveBeenCalledWith("round-token", "favorite-1");
+    });
+    expect(apiMocks.downloadAuthorizedFile).not.toHaveBeenCalled();
+  });
+
+  it("keeps an explicit legacy bundle route authoritative for multi-artifact downloads", async () => {
+    render(
+      <AgentTaskResultPanel
+        onClose={vi.fn()}
+        artifacts={roundPairedArtifacts}
+        taskId="legacy-task"
+        bundleDownloadApi="/api/tasks/legacy-task/download"
+        bundleDownloadName="legacy-bundle.zip"
+        withFreshToken={async (run) => {
+          await run("legacy-token");
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "下载当前结果" }));
+    await waitFor(() => {
+      expect(apiMocks.downloadAuthorizedFile).toHaveBeenCalledWith(
+        "legacy-token",
+        "/api/tasks/legacy-task/download",
+        "legacy-bundle.zip",
+      );
+    });
   });
 
   it("uses primary styling for active result sheets and shows header divider only after scroll", () => {
