@@ -64,6 +64,23 @@ function createPlatformAgentMock(auth: null | { accessToken: string; userId?: st
   };
 }
 
+type TestLoginContinuation = {
+  onAuthenticated: () => void;
+  onCancelled: () => void;
+};
+
+function installReplacingLoginLifecycle(agent: ReturnType<typeof createPlatformAgentMock>) {
+  const installed: TestLoginContinuation[] = [];
+  let current: TestLoginContinuation | null = null;
+  agent.openLogin.mockImplementation((_banner: string, continuation: TestLoginContinuation) => {
+    const previous = current;
+    current = continuation;
+    installed.push(continuation);
+    previous?.onCancelled();
+  });
+  return installed;
+}
+
 vi.mock("@/components/platform-agent-provider", () => ({
   useOptionalPlatformAgent: () => mockPlatformAgent.current,
 }));
@@ -402,6 +419,85 @@ describe("home flow", () => {
       [],
     );
     await waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
+  });
+
+  it("launches only the latest homepage request when login continuation replacement cancels the previous one", async () => {
+    const unauthenticatedAgent = createPlatformAgentMock();
+    const continuations = installReplacingLoginLifecycle(unauthenticatedAgent);
+    mockPlatformAgent.current = unauthenticatedAgent;
+    const view = renderHomePage();
+    const editor = await screen.findByTestId("task-composer-editor");
+
+    await userEvent.click(editor);
+    await userEvent.type(editor, "request A");
+    await userEvent.click(screen.getByTestId("task-composer-submit"));
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "request B");
+    await userEvent.click(screen.getByTestId("task-composer-submit"));
+
+    expect(continuations).toHaveLength(2);
+    expect(mockCreateInitialChatRound).not.toHaveBeenCalled();
+    act(() => continuations[1]?.onAuthenticated());
+    mockPlatformAgent.current = createPlatformAgentMock({ accessToken: "access-token", userId: "user-1" });
+    view.rerender(<AliceHomePage />);
+
+    await waitFor(() => expect(mockCreateInitialChatRound).toHaveBeenCalledTimes(1));
+    expect(mockCreateInitialChatRound).toHaveBeenCalledWith(
+      "fresh-token",
+      "request B",
+      "a62430bc-1417-4b95-9432-937b331a7d7a",
+      [],
+    );
+  });
+
+  it("does not let a stale authenticated continuation activate the replacement request", async () => {
+    const unauthenticatedAgent = createPlatformAgentMock();
+    const continuations = installReplacingLoginLifecycle(unauthenticatedAgent);
+    mockPlatformAgent.current = unauthenticatedAgent;
+    const view = renderHomePage();
+    const editor = await screen.findByTestId("task-composer-editor");
+
+    await userEvent.click(editor);
+    await userEvent.type(editor, "request A");
+    await userEvent.click(screen.getByTestId("task-composer-submit"));
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "request B");
+    await userEvent.click(screen.getByTestId("task-composer-submit"));
+
+    expect(continuations).toHaveLength(2);
+    act(() => continuations[0]?.onAuthenticated());
+    mockPlatformAgent.current = createPlatformAgentMock({ accessToken: "access-token", userId: "user-1" });
+    view.rerender(<AliceHomePage />);
+    await waitFor(() => expect(screen.getByTestId("task-composer-editor")).toBeInTheDocument());
+    expect(mockCreateInitialChatRound).not.toHaveBeenCalled();
+
+    act(() => continuations[1]?.onAuthenticated());
+    await waitFor(() => expect(mockCreateInitialChatRound).toHaveBeenCalledTimes(1));
+    expect(mockCreateInitialChatRound.mock.calls[0]?.[1]).toBe("request B");
+  });
+
+  it("does not launch the replacement homepage request after its own continuation is cancelled", async () => {
+    const unauthenticatedAgent = createPlatformAgentMock();
+    const continuations = installReplacingLoginLifecycle(unauthenticatedAgent);
+    mockPlatformAgent.current = unauthenticatedAgent;
+    const view = renderHomePage();
+    const editor = await screen.findByTestId("task-composer-editor");
+
+    await userEvent.click(editor);
+    await userEvent.type(editor, "request A");
+    await userEvent.click(screen.getByTestId("task-composer-submit"));
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "request B");
+    await userEvent.click(screen.getByTestId("task-composer-submit"));
+
+    expect(continuations).toHaveLength(2);
+    act(() => continuations[1]?.onCancelled());
+    mockPlatformAgent.current = createPlatformAgentMock({ accessToken: "access-token", userId: "user-1" });
+    view.rerender(<AliceHomePage />);
+
+    await waitFor(() => expect(screen.getByTestId("task-composer-editor")).toBeInTheDocument());
+    expect(mockCreateInitialChatRound).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it("revokes the pending homepage intent when login is cancelled", async () => {

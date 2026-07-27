@@ -227,7 +227,7 @@ export function AliceHomePage() {
   const [pendingHomeFiles, setPendingHomeFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
   const [launching, setLaunching] = useState(false);
-  const [pendingLoginLaunchReady, setPendingLoginLaunchReady] = useState(false);
+  const [pendingLoginLaunchReady, setPendingLoginLaunchReady] = useState<PendingHomeTask | null>(null);
   const [appliedPromptId, setAppliedPromptId] = useState<string | null>(null);
   const [composerPulse, setComposerPulse] = useState(false);
   const [suppressTemplateCompletion, setSuppressTemplateCompletion] = useState(false);
@@ -242,6 +242,14 @@ export function AliceHomePage() {
   const prevActiveRunIdRef = useRef<string | null>(null);
   const pendingHomeTaskAfterLoginRef = useRef<PendingHomeTask | null>(null);
   const pendingInitialRoundRef = useRef<PendingInitialRoundAttempt | null>(null);
+
+  useEffect(() => {
+    return () => {
+      // Invalidate callbacks retained by a login surface after this homepage
+      // instance no longer owns the pending request.
+      pendingHomeTaskAfterLoginRef.current = null;
+    };
+  }, []);
 
   const resetHomeComposer = useCallback(() => {
     setQuery("");
@@ -370,12 +378,16 @@ export function AliceHomePage() {
         pendingFiles: pending?.pendingFiles ?? pendingHomeFiles,
       };
       pendingHomeTaskAfterLoginRef.current = pendingAfterLogin;
-      setPendingLoginLaunchReady(false);
+      setPendingLoginLaunchReady(null);
       platformAgent.openLogin("登录后将继续发送当前任务。", {
-        onAuthenticated: () => setPendingLoginLaunchReady(true),
+        onAuthenticated: () => {
+          if (pendingHomeTaskAfterLoginRef.current !== pendingAfterLogin) return;
+          setPendingLoginLaunchReady(pendingAfterLogin);
+        },
         onCancelled: () => {
+          if (pendingHomeTaskAfterLoginRef.current !== pendingAfterLogin) return;
           pendingHomeTaskAfterLoginRef.current = null;
-          setPendingLoginLaunchReady(false);
+          setPendingLoginLaunchReady(null);
         },
       });
       return;
@@ -434,9 +446,9 @@ export function AliceHomePage() {
   useEffect(() => {
     if (!platformAgent?.auth || !pendingLoginLaunchReady || launching || activeRunId) return;
     const pending = pendingHomeTaskAfterLoginRef.current;
+    if (pending !== pendingLoginLaunchReady) return;
     pendingHomeTaskAfterLoginRef.current = null;
-    setPendingLoginLaunchReady(false);
-    if (!pending) return;
+    setPendingLoginLaunchReady(null);
     setQuery(pending.text);
     setSelectedSourceIds(pending.selectedSourceIds);
     setSourcePlacements(pending.sourcePlacements);
