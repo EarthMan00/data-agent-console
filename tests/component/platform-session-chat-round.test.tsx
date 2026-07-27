@@ -27,12 +27,6 @@ const roundController = vi.hoisted(() => ({
 
 const api = vi.hoisted(() => ({
   listSessionMessages: vi.fn(),
-  sendSessionMessageStream: vi.fn(),
-  fetchTask: vi.fn(),
-  cancelTask: vi.fn(),
-  cancelToolOrchestration: vi.fn(),
-  postTaskTerminatedMessage: vi.fn(),
-  releaseSession: vi.fn(),
 }));
 
 const roundApi = vi.hoisted(() => ({
@@ -98,12 +92,6 @@ vi.mock("@/lib/agent-api/client", async () => {
   return {
     ...actual,
     listSessionMessages: api.listSessionMessages,
-    sendSessionMessageStream: api.sendSessionMessageStream,
-    fetchTask: api.fetchTask,
-    cancelTask: api.cancelTask,
-    cancelToolOrchestration: api.cancelToolOrchestration,
-    postTaskTerminatedMessage: api.postTaskTerminatedMessage,
-    releaseSession: api.releaseSession,
   };
 });
 
@@ -335,14 +323,8 @@ describe("PlatformSessionAgentWorkspace durable Round presentation", () => {
     view.unmount();
 
     expect(roundController.cancel).not.toHaveBeenCalled();
-    expect(api.cancelTask).not.toHaveBeenCalled();
-    expect(api.cancelToolOrchestration).not.toHaveBeenCalled();
-    expect(api.postTaskTerminatedMessage).not.toHaveBeenCalled();
-    expect(api.releaseSession).not.toHaveBeenCalled();
     expect(roundApi.createInitialChatRound).not.toHaveBeenCalled();
     expect(roundApi.createChatRound).not.toHaveBeenCalled();
-    expect(api.sendSessionMessageStream).not.toHaveBeenCalled();
-    expect(api.fetchTask).not.toHaveBeenCalled();
   });
 
   it("loads an accepted schedule trial Round without a destination-side send", async () => {
@@ -373,8 +355,6 @@ describe("PlatformSessionAgentWorkspace durable Round presentation", () => {
     expect(roundController.resume).not.toHaveBeenCalled();
     expect(roundApi.createInitialChatRound).not.toHaveBeenCalled();
     expect(roundApi.createChatRound).not.toHaveBeenCalled();
-    expect(api.sendSessionMessageStream).not.toHaveBeenCalled();
-    expect(api.fetchTask).not.toHaveBeenCalled();
   });
 
   it("uses Round cancel only, shows a disabled stopping state and waits for terminal", async () => {
@@ -382,8 +362,6 @@ describe("PlatformSessionAgentWorkspace durable Round presentation", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "停止任务" })).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "停止任务" }));
     expect(roundController.cancel).toHaveBeenCalledWith(ROUND_ID);
-    expect(api.cancelTask).not.toHaveBeenCalled();
-    expect(api.cancelToolOrchestration).not.toHaveBeenCalled();
 
     installSnapshot(snapshot({ status: "CANCEL_REQUESTED" }));
     view.rerender(<PlatformSessionAgentWorkspace sessionId={SESSION_A} />);

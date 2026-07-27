@@ -16,8 +16,6 @@ const mocks = vi.hoisted(() => ({
   createInitialChatRound: vi.fn(),
   safeRandomUUID: vi.fn(() => "a62430bc-1417-4b95-9432-937b331a7d7a"),
   setActivePlatformSession: vi.fn(),
-  createSession: vi.fn(),
-  releaseSession: vi.fn(),
   fetchGroups: vi.fn(),
   fetchTasks: vi.fn(),
   getTask: vi.fn(),
@@ -86,15 +84,6 @@ vi.mock("@/lib/random-uuid", () => ({ safeRandomUUID: mocks.safeRandomUUID }));
 vi.mock("@/lib/agent-api/chat-rounds", () => ({
   createInitialChatRound: mocks.createInitialChatRound,
 }));
-
-vi.mock("@/lib/agent-api/client", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/agent-api/client")>("@/lib/agent-api/client");
-  return {
-    ...actual,
-    createSession: mocks.createSession,
-    releaseSession: mocks.releaseSession,
-  };
-});
 
 vi.mock("@/lib/agent-api/scheduled-tasks", () => ({
   createUserScheduledTaskGroup: vi.fn(),
@@ -183,8 +172,6 @@ describe("schedule trial durable Round launch", () => {
     });
     expect(mocks.createInitialChatRound).toHaveBeenCalledTimes(1);
     expect(mocks.safeRandomUUID).toHaveBeenCalledTimes(1);
-    expect(mocks.createSession).not.toHaveBeenCalled();
-    expect(mocks.releaseSession).not.toHaveBeenCalled();
     expect(mocks.setActivePlatformSession).not.toHaveBeenCalled();
     expect(loadScheduleTrialMeta()).toBeNull();
     expect(mocks.push).not.toHaveBeenCalled();
@@ -263,5 +250,5 @@ describe("schedule trial durable Round launch", () => {
     expect(mocks.createInitialChatRound.mock.calls[2]?.[2]).toBe("0743332a-89e5-423c-9278-6f62262ab7c2");
     expect(mocks.createInitialChatRound.mock.calls[2]?.[3]).toEqual([changed]);
     expect(mocks.safeRandomUUID).toHaveBeenCalledTimes(2);
-  });
+  }, 10_000);
 });

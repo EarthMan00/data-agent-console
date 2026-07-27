@@ -13,7 +13,7 @@ import {
   ExecutionTimelineRow,
   StepResultPendingCard,
 } from "@/components/execution-steps-monitor";
-import { compactText } from "@/components/agent-workspace-view-models";
+import { compactText } from "@/lib/compact-text";
 import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import { hasTabularTaskResultFiles } from "@/lib/platform-task-artifacts";
 

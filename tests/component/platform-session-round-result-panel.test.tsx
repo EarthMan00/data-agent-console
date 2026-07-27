@@ -25,7 +25,6 @@ const api = vi.hoisted(() => ({
   createUserFavorite: vi.fn(),
   deleteUserFavorite: vi.fn(),
   downloadAuthorizedFile: vi.fn(),
-  getTask: vi.fn(),
 }));
 
 const agent = vi.hoisted(() => ({
@@ -84,7 +83,6 @@ vi.mock("@/lib/agent-api/client", async () => {
     createUserFavorite: api.createUserFavorite,
     deleteUserFavorite: api.deleteUserFavorite,
     downloadAuthorizedFile: api.downloadAuthorizedFile,
-    getTask: api.getTask,
   };
 });
 
@@ -275,7 +273,6 @@ describe("PlatformSessionAgentWorkspace real durable result panel", () => {
       );
     });
     expect(api.downloadAuthorizedFile.mock.calls.flat().join(" ")).not.toContain("/api/tasks/");
-    expect(api.getTask).not.toHaveBeenCalled();
   });
 
   it("wires the successful Step task identity only to favorite read/create/delete", async () => {
@@ -310,6 +307,5 @@ describe("PlatformSessionAgentWorkspace real durable result panel", () => {
       expect(api.deleteUserFavorite).toHaveBeenCalledWith("round-token", "favorite-round-1");
     });
     expect(api.downloadAuthorizedFile).not.toHaveBeenCalled();
-    expect(api.getTask).not.toHaveBeenCalled();
   });
 });

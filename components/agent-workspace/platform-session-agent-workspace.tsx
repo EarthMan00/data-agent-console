@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { AliceShell, useAliceShellState } from "@/components/alice-shell";
-import { compactText } from "@/components/agent-workspace-view-models";
+import { compactText } from "@/lib/compact-text";
 import { TaskComposer } from "@/components/task-composer";
 import { useOptionalPlatformAgent } from "@/components/platform-agent-provider";
 import { Button } from "@/components/ui/button";
@@ -42,7 +42,6 @@ import {
 } from "@/lib/schedule-trial-execution-presentation";
 import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
 import { roundCanStop } from "@/lib/session-execution-stop";
-import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
 import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
 import { cn } from "@/lib/utils";
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
@@ -216,12 +215,10 @@ function buildDisplayMessages(
       }
     }
 
-    if (!shouldHideAssistantMessageBubble(message)) {
-      result.push({
-        message: { ...message, content: sanitizeAssistantContent(message.content) },
-        round: null,
-      });
-    }
+    result.push({
+      message: { ...message, content: sanitizeAssistantContent(message.content) },
+      round: null,
+    });
   }
 
   for (const snapshot of snapshots.values()) {

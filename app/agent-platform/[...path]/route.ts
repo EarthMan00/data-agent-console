@@ -73,7 +73,7 @@ async function proxy(request: NextRequest, pathSegments: string[]) {
     redirect: "manual",
   };
 
-  // 无 body 的 POST（如 createSession）不能把 request.body=null 交给 fetch，否则会触发
+  // 无 body 的 POST 不能把 request.body=null 交给 fetch，否则会触发
   // undici「expected non-null body source」；有 body 时缓冲为 ArrayBuffer 再转发。
   if (mayHaveBody) {
     const buf = await request.arrayBuffer();

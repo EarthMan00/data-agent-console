@@ -19,11 +19,7 @@ test.describe.serial("agent execution", () => {
     await closeSingleWindowSession(context, baselinePage, appPage);
   });
 
-  test("shows a clear empty state for an unknown run id", async () => {
-    await expect(appPage).toHaveURL(/\/agent\?runId=run-e2e-missing/);
-    await expect(appPage.getByText("未找到任务")).toBeVisible();
-    await expect(
-      appPage.getByText("未在本地状态中找到该任务。请从首页发起研究，或确认 URL 中 runId 有效。"),
-    ).toBeVisible();
+  test("redirects an unknown legacy run id to the homepage", async () => {
+    await expect(appPage).toHaveURL(/\/$/);
   });
 });

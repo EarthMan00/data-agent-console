@@ -11,8 +11,6 @@ import {
 } from "@/lib/agent-api/session";
 
 const api = vi.hoisted(() => ({
-  createSession: vi.fn(),
-  releaseSession: vi.fn(),
   login: vi.fn(),
   logoutPlatformAuth: vi.fn(),
   refreshAccessToken: vi.fn(),
@@ -30,8 +28,6 @@ vi.mock("@/lib/agent-api/client", async () => {
   const actual = await vi.importActual<typeof import("@/lib/agent-api/client")>("@/lib/agent-api/client");
   return {
     ...actual,
-    createSession: api.createSession,
-    releaseSession: api.releaseSession,
     login: api.login,
     logoutPlatformAuth: api.logoutPlatformAuth,
     refreshAccessToken: api.refreshAccessToken,
@@ -96,9 +92,6 @@ describe("PlatformAgentProvider local-only Session selection lifecycle", () => {
     fireEvent.click(screen.getByRole("button", { name: "new conversation" }));
     expect(screen.getByTestId("selected-session")).toHaveTextContent("none");
 
-    expect(api.createSession).not.toHaveBeenCalled();
-    expect(api.releaseSession).not.toHaveBeenCalled();
-
     fireEvent.click(screen.getByRole("button", { name: "open continuation" }));
     fireEvent.click(screen.getByRole("button", { name: "open continuation" }));
     expect(loginLifecycle.cancelled).toHaveBeenCalledTimes(1);
@@ -107,7 +100,7 @@ describe("PlatformAgentProvider local-only Session selection lifecycle", () => {
     expect(loginLifecycle.authenticated).not.toHaveBeenCalled();
   });
 
-  it("login and logout do not create, release, or cancel a durable execution", async () => {
+  it("login and logout preserve the local Session selection boundary", async () => {
     render(<PlatformAgentProvider><LifecycleProbe /></PlatformAgentProvider>);
     await screen.findByRole("button", { name: "probe login" });
 
@@ -120,7 +113,5 @@ describe("PlatformAgentProvider local-only Session selection lifecycle", () => {
     fireEvent.click(screen.getByRole("button", { name: "logout" }));
     await waitFor(() => expect(api.logoutPlatformAuth).toHaveBeenCalledWith("new-token"));
 
-    expect(api.createSession).not.toHaveBeenCalled();
-    expect(api.releaseSession).not.toHaveBeenCalled();
   });
 });

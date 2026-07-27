@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ReportView } from "@/components/report-view";
 import { workspaceActions, workspaceStore } from "@/lib/workspace-store";
@@ -13,9 +13,14 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("report flow", () => {
-  it("renders summary mode and can switch to the sheet tab", () => {
+  beforeEach(() => {
+    push.mockClear();
+  });
+
+  it("returns to the encoded real platform Session", () => {
+    const platformSessionId = "f4159ee9-c863-41c8-9c1b-ffbfa193917f";
     const runId = workspaceActions.startPlatformTask({
-      platformSessionId: "session-report-test",
+      platformSessionId,
       objective: "生成一份亚马逊选品报告",
       mode: "轻量模式",
       selectedCapabilities: ["amazon"],
@@ -29,6 +34,25 @@ describe("report flow", () => {
     expect(screen.getByText("报告摘要")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "结构化表格" }));
     expect(screen.getByRole("button", { name: "保存为模板" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "返回任务页" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "返回任务页" }));
+    expect(push).toHaveBeenCalledWith(
+      `/agent?sessionId=${encodeURIComponent(platformSessionId)}`,
+    );
+  });
+
+  it("hides return navigation when the run has no real platform Session", () => {
+    const runId = workspaceActions.startPlatformTask({
+      platformSessionId: "",
+      objective: "生成一份亚马逊选品报告",
+      mode: "轻量模式",
+      selectedCapabilities: ["amazon"],
+    });
+    const reportId = workspaceStore.getSnapshot().runs.find((item) => item.id === runId)?.reportId;
+    if (!reportId) throw new Error("Failed to create report test fixture");
+    routeState.reportId = reportId;
+
+    render(<ReportView />);
+
+    expect(screen.queryByRole("button", { name: "返回任务页" })).not.toBeInTheDocument();
   });
 });

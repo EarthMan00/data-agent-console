@@ -90,9 +90,15 @@ export function ReportView() {
                   保存为模板
                 </Button>
               ) : null}
-              <Button onClick={() => router.push(`/agent?runId=${run.id}`)}>
-                返回任务页
-              </Button>
+              {run.platformSessionId ? (
+                <Button
+                  onClick={() =>
+                    router.push(`/agent?sessionId=${encodeURIComponent(run.platformSessionId!)}`)
+                  }
+                >
+                  返回任务页
+                </Button>
+              ) : null}
             </div>
           </div>
 
