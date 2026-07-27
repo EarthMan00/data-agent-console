@@ -249,7 +249,6 @@ export function PlatformSessionAgentWorkspace({
   scheduleTrial?: boolean;
   scheduledRunRecord?: boolean;
   runLabel?: string;
-  fallbackTaskId?: string;
 }) {
   const platformAgent = useOptionalPlatformAgent();
   const { refreshHistoryNow, setActiveSessionTitle } = useAliceShellState();

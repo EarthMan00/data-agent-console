@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type UIEvent } from "react";
 import { Download, Menu, Star, X } from "@/components/ui/tabler-icons";
 
 import { AutoToast } from "@/components/auto-toast";
@@ -23,7 +23,6 @@ import {
   pickPrimaryTaskDataArtifact,
   projectTaskArtifactsForUi,
 } from "@/lib/platform-task-artifacts";
-import { humanizeTaskErrorMessage } from "@/lib/platform-task-error-copy";
 import {
   buildTaskResultSheets,
   downloadTargetForSheet,
@@ -32,47 +31,15 @@ import {
 } from "@/lib/task-result-sheets";
 import { cn } from "@/lib/utils";
 
-export type AgentTaskSubtaskTab = {
-  taskId: string;
-  /** 例如「步骤 2」 */
-  label: string;
-};
-
 type AgentTaskResultPanelProps = {
   onClose: () => void;
   artifacts?: PlatformTaskArtifactRef[];
   withFreshToken?: (run: (token: string) => Promise<void>) => Promise<void>;
-  bundleDownloadApi?: string | null;
-  bundleDownloadName?: string | null;
-  zipDownloadApi?: string | null;
-  taskId?: string | null;
-  /** Favorite identity is independent from the legacy Task download fallback. */
+  /** 收藏身份独立于 Round artifact 的 owner-scoped 下载地址。 */
   favoriteSourceTaskId?: string | null;
-  /** 展示「最后生成时间」 */
-  resultGeneratedAt?: string | null;
-  /** 编排多步且多步有表格类结果时：底部 Excel 式 sheet 页签（调用方保证后执行的在前面） */
-  subtaskResultTabs?: AgentTaskSubtaskTab[];
-  activeSubtaskTaskId?: string | null;
-  onSubtaskSelect?: (taskId: string) => void;
-  /** 任务失败时的错误信息 */
-  errorMessage?: string | null;
   /** 任务状态（如 FAILED / SUCCESS） */
   taskStatus?: string | null;
 };
-
-function effectiveBundleDownloadPath(p: {
-  bundleDownloadApi?: string | null;
-  zipDownloadApi?: string | null;
-  taskId?: string | null;
-}): string | null {
-  const a = (p.bundleDownloadApi ?? "").trim();
-  if (a) return a;
-  const z = (p.zipDownloadApi ?? "").trim();
-  if (z) return z;
-  const tid = (p.taskId ?? "").trim();
-  if (tid) return `/api/tasks/${encodeURIComponent(tid)}/download`;
-  return null;
-}
 
 function safeFilename(name: string | undefined, fallback: string) {
   const n = (name ?? "").trim();
@@ -81,28 +48,15 @@ function safeFilename(name: string | undefined, fallback: string) {
   return base || fallback;
 }
 
-function formatResultDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 /** 底部横向 Excel / Google Sheets 风格工作表标签条 */
 function ExcelStyleSheetTabBar({
   tabs,
   activeId,
   onSelect,
-  dense,
 }: {
   tabs: { id: string; label: string }[];
   activeId: string | null;
   onSelect: (id: string) => void;
-  /** 同一轮下还存在「子任务」底栏时，文件层略紧凑 */
-  dense?: boolean;
 }) {
   const [sheetMenuOpen, setSheetMenuOpen] = useState(false);
 
@@ -159,7 +113,7 @@ function ExcelStyleSheetTabBar({
               onClick={() => onSelect(t.id)}
               className={cn(
                 "relative shrink-0 px-3 pb-2 pt-1.5 text-left leading-tight transition",
-                dense ? "text-caption" : "text-body",
+                "text-body",
                 active ? "font-medium text-primary" : "text-text-secondary hover:bg-fill-hover",
               )}
             >
@@ -182,20 +136,10 @@ export function AgentTaskResultPanel({
   onClose,
   artifacts,
   withFreshToken,
-  bundleDownloadApi,
-  bundleDownloadName,
-  zipDownloadApi,
-  taskId,
   favoriteSourceTaskId,
-  resultGeneratedAt,
-  subtaskResultTabs,
-  activeSubtaskTaskId,
-  onSubtaskSelect,
-  errorMessage,
   taskStatus,
 }: AgentTaskResultPanelProps) {
-  const tid = (taskId ?? "").trim();
-  const favoriteIdentity = (favoriteSourceTaskId ?? taskId ?? "").trim();
+  const favoriteIdentity = (favoriteSourceTaskId ?? "").trim();
   const publicArtifacts = useMemo(
     () => projectTaskArtifactsForUi(filterArtifactsForTaskResultPanel(artifacts ?? [])),
     [artifacts],
@@ -203,15 +147,7 @@ export function AgentTaskResultPanel({
   const sheets = useMemo(() => buildTaskResultSheets(publicArtifacts), [publicArtifacts]);
   const fallbackPrimary = pickPrimaryTaskDataArtifact(publicArtifacts);
   const useSheetUi = sheets.length > 0;
-  const hasDisplayableResultContent = useSheetUi || Boolean(fallbackPrimary);
-  const displayErrorMessage = useMemo(
-    () => humanizeTaskErrorMessage(errorMessage ?? ""),
-    [errorMessage],
-  );
   const taskFailed = (taskStatus ?? "").toUpperCase() === "FAILED";
-  const showFailureBanner = Boolean(taskFailed && displayErrorMessage && !hasDisplayableResultContent);
-  const logFailureOutsideBanner = Boolean(taskFailed && displayErrorMessage && hasDisplayableResultContent);
-  const loggedFailureKeyRef = useRef<string | null>(null);
 
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "code">("table");
@@ -242,7 +178,6 @@ export function AgentTaskResultPanel({
 
   const showTableCodeToggle = Boolean(activeSheet && sheetSupportsTableCodeToggle(activeSheet));
 
-  const bundleDownloadPath = effectiveBundleDownloadPath({ bundleDownloadApi, zipDownloadApi, taskId });
   const downloadableArtifacts = useMemo(
     () => listDownloadableTaskArtifacts(publicArtifacts),
     [publicArtifacts],
@@ -258,79 +193,27 @@ export function AgentTaskResultPanel({
     );
   }, [activeSheet, downloadableArtifacts, fallbackPrimary, viewMode]);
 
-  /** 多文件打包：编排多步且正在查看某一子任务时只打该任务，否则用整轮 bundle */
-  const multiFileDownloadPath = useMemo(() => {
-    if (subtaskResultTabs && subtaskResultTabs.length > 1 && tid) {
-      return `/api/tasks/${encodeURIComponent(tid)}/download`;
-    }
-    return bundleDownloadPath ?? (tid ? `/api/tasks/${encodeURIComponent(tid)}/download` : null);
-  }, [bundleDownloadPath, subtaskResultTabs, tid]);
-
   const downloadCurrent = useCallback(() => {
-    if (!withFreshToken) return;
-
-    if (downloadableArtifacts.length > 1) {
-      if (!multiFileDownloadPath) {
-        if (!activeArtifactDownloadTarget) return;
-        void withFreshToken(async (token) => {
-          await downloadAuthorizedFile(
-            token,
-            activeArtifactDownloadTarget.download_api,
-            safeFilename(
-              artifactDownloadNameForUi(
-                activeArtifactDownloadTarget.original_name,
-                activeArtifactDownloadTarget.artifact_type,
-              ),
-              "download",
-            ),
-          );
-        });
-        return;
-      }
-      void withFreshToken(async (token) => {
-        const name = (bundleDownloadName ?? "").trim() || `${tid || "task"}.zip`;
-        await downloadAuthorizedFile(token, multiFileDownloadPath, name);
-      });
-      return;
-    }
-
-    if (downloadableArtifacts.length === 1) {
-      const target = downloadableArtifacts[0]!;
-      void withFreshToken(async (token) => {
-        await downloadAuthorizedFile(
-          token,
-          target.download_api,
-          safeFilename(
-            artifactDownloadNameForUi(target.original_name, target.artifact_type),
-            "download",
+    if (!withFreshToken || !activeArtifactDownloadTarget) return;
+    void withFreshToken(async (token) => {
+      await downloadAuthorizedFile(
+        token,
+        activeArtifactDownloadTarget.download_api,
+        safeFilename(
+          artifactDownloadNameForUi(
+            activeArtifactDownloadTarget.original_name,
+            activeArtifactDownloadTarget.artifact_type,
           ),
-        );
-      });
-      return;
-    }
-
-    if (bundleDownloadPath) {
-      void withFreshToken(async (token) => {
-        const name =
-          (bundleDownloadName ?? "").trim() ||
-          (bundleDownloadPath.includes("task_ids=") ? `${tid || "task"}.zip` : "download");
-        await downloadAuthorizedFile(token, bundleDownloadPath, name);
-      });
-    }
+          "download",
+        ),
+      );
+    });
   }, [
     activeArtifactDownloadTarget,
-    bundleDownloadName,
-    bundleDownloadPath,
-    downloadableArtifacts,
-    multiFileDownloadPath,
-    tid,
     withFreshToken,
   ]);
 
-  const canDownloadTop = Boolean(
-    withFreshToken &&
-      (downloadableArtifacts.length > 0 || bundleDownloadPath),
-  );
+  const canDownloadTop = Boolean(withFreshToken && activeArtifactDownloadTarget);
 
   const primaryForFavorite = fallbackPrimary;
 
@@ -403,29 +286,13 @@ export function AgentTaskResultPanel({
     }
   };
 
-  const dateLine = formatResultDate(resultGeneratedAt ?? undefined);
-
-  const showSubtaskSheetBar = Boolean(subtaskResultTabs && subtaskResultTabs.length > 1 && onSubtaskSelect);
-
   const handleContentScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     setContentScrolled(event.currentTarget.scrollTop > 0);
   }, []);
 
   useEffect(() => {
     setContentScrolled(false);
-  }, [activeSheet?.id, taskStatus, tid]);
-
-  useEffect(() => {
-    if (!logFailureOutsideBanner) return;
-    const key = `${tid || "unknown-task"}:${displayErrorMessage}`;
-    if (loggedFailureKeyRef.current === key) return;
-    loggedFailureKeyRef.current = key;
-    console.warn("[agent-task-result-panel] task failed with displayable results", {
-      taskId: tid || null,
-      taskStatus,
-      errorMessage: displayErrorMessage,
-    });
-  }, [displayErrorMessage, logFailureOutsideBanner, taskStatus, tid]);
+  }, [activeSheet?.id, taskStatus]);
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-bg-surface" data-testid="agent-preview-panel">
@@ -448,9 +315,6 @@ export function AgentTaskResultPanel({
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-body font-medium text-foreground">任务执行结果</div>
-            {dateLine ? (
-              <div className="mt-0.5 text-caption text-text-tertiary">最后生成时间：{dateLine}</div>
-            ) : null}
           </div>
           <div className="flex max-w-agent-panel-controls shrink-0 flex-wrap items-center justify-end gap-1 sm:max-w-none">
             {showTableCodeToggle ? (
@@ -525,16 +389,6 @@ export function AgentTaskResultPanel({
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {showFailureBanner ? (
-          <div className="shrink-0 border-b border-danger-border bg-danger-bg px-3 py-3 sm:px-4">
-            <div className="flex items-start gap-2">
-              <span className="mt-0.5 shrink-0 text-sm font-semibold text-danger">执行失败</span>
-            </div>
-            <p className="mt-1.5 whitespace-pre-wrap text-body leading-relaxed text-danger">
-              {displayErrorMessage}
-            </p>
-          </div>
-        ) : null}
         <div
           data-testid="agent-result-scroll-region"
           className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto px-3 pt-2 sm:px-4"
@@ -564,21 +418,13 @@ export function AgentTaskResultPanel({
           )}
         </div>
 
-        {/* Excel 式底部 sheet：浅灰条 + 主色激活下划线；多子任务时栏在最底，其上方可为同任务多文件 */}
+        {/* Excel 式底部 sheet：浅灰条 + 主色激活下划线。 */}
         <div className="flex shrink-0 flex-col shadow-hairline">
           {useSheetUi && sheets.length > 1 ? (
             <ExcelStyleSheetTabBar
               tabs={sheets.map((s) => ({ id: s.id, label: s.label }))}
               activeId={activeSheet?.id ?? null}
               onSelect={(id) => setActiveSheetId(id)}
-              dense={showSubtaskSheetBar}
-            />
-          ) : null}
-          {showSubtaskSheetBar ? (
-            <ExcelStyleSheetTabBar
-              tabs={subtaskResultTabs!.map((t) => ({ id: t.taskId, label: t.label }))}
-              activeId={activeSubtaskTaskId ?? null}
-              onSelect={(id) => onSubtaskSelect!(id)}
             />
           ) : null}
         </div>

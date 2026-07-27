@@ -77,6 +77,31 @@ const FORBIDDEN_PATTERNS = [
   /\bsanitizeClarificationForUserDisplay\b/g,
   /\bsplitClarificationForDisplay\b/g,
 ] as const;
+const FORBIDDEN_FILE_PATTERNS: Record<string, readonly RegExp[]> = {
+  "components/agent-task-result-panel.tsx": [
+    /\/api\/tasks\//g,
+    /\btaskId\b/g,
+    /\bbundleDownloadApi\b/g,
+    /\bbundleDownloadName\b/g,
+    /\bzipDownloadApi\b/g,
+    /\bsubtaskResultTabs\b/g,
+    /\bactiveSubtaskTaskId\b/g,
+    /\bonSubtaskSelect\b/g,
+    /\bAgentTaskSubtaskTab\b/g,
+    /\beffectiveBundleDownloadPath\b/g,
+    /\bmultiFileDownloadPath\b/g,
+    /\bresultGeneratedAt\b/g,
+    /\berrorMessage\b/g,
+    /legacy Task download fallback/g,
+  ],
+  "components/agent-workspace.tsx": [
+    /["']taskId["']/g,
+    /\bfallbackTaskId\b/g,
+  ],
+  "components/agent-workspace/platform-session-agent-workspace.tsx": [
+    /\bfallbackTaskId\b/g,
+  ],
+};
 
 function productionSourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -95,7 +120,12 @@ describe("legacy chat execution removal", () => {
     );
     const matches = productionFiles.flatMap((file) => {
       const source = readFileSync(file, "utf8");
-      return FORBIDDEN_PATTERNS.flatMap((pattern) => {
+      const productionPath = relative(process.cwd(), file).replaceAll("\\", "/");
+      const patterns = [
+        ...FORBIDDEN_PATTERNS,
+        ...(FORBIDDEN_FILE_PATTERNS[productionPath] ?? []),
+      ];
+      return patterns.flatMap((pattern) => {
         pattern.lastIndex = 0;
         return [...source.matchAll(pattern)].map(
           (match) => `${relative(process.cwd(), file)}: ${match[0]}`,

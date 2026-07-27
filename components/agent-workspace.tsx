@@ -21,7 +21,6 @@ export function AgentWorkspace() {
   const scheduleTrial = useSearchParamFlagSnapshot("scheduleTrial");
   const scheduledRunRecord = useSearchParamFlagSnapshot("scheduledRunRecord");
   const runLabel = useSearchParamSnapshot("runLabel");
-  const fallbackTaskId = useSearchParamSnapshot("taskId");
   const validSessionId = UUID_RE.test(sessionId) ? sessionId : null;
 
   useEffect(() => {
@@ -41,7 +40,6 @@ export function AgentWorkspace() {
       scheduleTrial={scheduleTrial}
       scheduledRunRecord={scheduledRunRecord}
       runLabel={runLabel || undefined}
-      fallbackTaskId={fallbackTaskId || undefined}
     />
   );
 }
