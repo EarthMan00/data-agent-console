@@ -47,10 +47,12 @@ vi.mock("@/components/new-conversation-task-composer", () => ({
     value,
     onValueChange,
     onFilesSelected,
+    onAttachmentsChange,
   }: {
     value: string;
     onValueChange: (value: string) => void;
     onFilesSelected?: (files: FileList) => void;
+    onAttachmentsChange?: (files: File[]) => void;
   }) => (
     <div>
       <textarea
@@ -63,7 +65,10 @@ vi.mock("@/components/new-conversation-task-composer", () => ({
         type="file"
         multiple
         onChange={(event) => {
-          if (event.currentTarget.files) onFilesSelected?.(event.currentTarget.files);
+          if (event.currentTarget.files) {
+            onAttachmentsChange?.(Array.from(event.currentTarget.files));
+            if (!onAttachmentsChange) onFilesSelected?.(event.currentTarget.files);
+          }
         }}
       />
     </div>
@@ -209,5 +214,54 @@ describe("schedule trial durable Round launch", () => {
       prompt: "更新后的试跑提示词",
       editingTaskId: "task-existing",
     }));
+  });
+
+  it("reuses identity for the same File refs but changes it for a new same-metadata File", async () => {
+    const first = new File(["first payload"], "trial.csv", { type: "text/csv", lastModified: 4321 });
+    const changed = new File(["other payload"], "trial.csv", { type: "text/csv", lastModified: 4321 });
+    expect([changed.name, changed.size, changed.type, changed.lastModified]).toEqual([
+      first.name,
+      first.size,
+      first.type,
+      first.lastModified,
+    ]);
+    mocks.safeRandomUUID.mockReset();
+    mocks.safeRandomUUID
+      .mockReturnValueOnce(CLIENT_MESSAGE_ID)
+      .mockReturnValue("0743332a-89e5-423c-9278-6f62262ab7c2");
+    mocks.createInitialChatRound
+      .mockRejectedValueOnce(new Error("first response lost"))
+      .mockRejectedValueOnce(new Error("second response lost"))
+      .mockResolvedValueOnce({
+        session_id: SESSION_ID,
+        round_id: ROUND_ID,
+        assistant_message_id: ASSISTANT_ID,
+        status: "QUEUED",
+        last_event_seq: 1,
+      });
+    render(<SchedulesWorkspace />);
+
+    const editor = await screen.findByLabelText("任务输入编辑器");
+    await waitFor(() => expect(editor).toHaveValue("旧提示词"));
+    fireEvent.change(editor, { target: { value: "重试试跑" } });
+    fireEvent.change(screen.getByLabelText("试跑附件"), { target: { files: [first] } });
+
+    const launch = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存" }));
+      fireEvent.click(await screen.findByRole("button", { name: "试运行" }));
+    };
+    await launch();
+    await waitFor(() => expect(mocks.createInitialChatRound).toHaveBeenCalledTimes(1));
+    await launch();
+    await waitFor(() => expect(mocks.createInitialChatRound).toHaveBeenCalledTimes(2));
+    expect(mocks.createInitialChatRound.mock.calls[0]?.[2]).toBe(CLIENT_MESSAGE_ID);
+    expect(mocks.createInitialChatRound.mock.calls[1]?.[2]).toBe(CLIENT_MESSAGE_ID);
+
+    fireEvent.change(screen.getByLabelText("试跑附件"), { target: { files: [changed] } });
+    await launch();
+    await waitFor(() => expect(mocks.createInitialChatRound).toHaveBeenCalledTimes(3));
+    expect(mocks.createInitialChatRound.mock.calls[2]?.[2]).toBe("0743332a-89e5-423c-9278-6f62262ab7c2");
+    expect(mocks.createInitialChatRound.mock.calls[2]?.[3]).toEqual([changed]);
+    expect(mocks.safeRandomUUID).toHaveBeenCalledTimes(2);
   });
 });

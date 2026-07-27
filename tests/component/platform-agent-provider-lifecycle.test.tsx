@@ -19,6 +19,10 @@ const api = vi.hoisted(() => ({
   checkAccessToken: vi.fn(),
 }));
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
+const loginLifecycle = vi.hoisted(() => ({
+  authenticated: vi.fn(),
+  cancelled: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
@@ -44,7 +48,15 @@ function LifecycleProbe() {
       <output data-testid="selected-session">{agent.platformSessionId ?? "none"}</output>
       <button type="button" onClick={() => agent.setActivePlatformSession("a27ab89a-74bc-43f0-bb15-bb3b8387635e")}>select</button>
       <button type="button" onClick={() => agent.clearActivePlatformSession()}>new conversation</button>
-      <button type="button" onClick={() => void agent.loginWithPassword("sensen", "secret")}>login</button>
+      <button
+        type="button"
+        onClick={() => agent.openLogin("continue", {
+          onAuthenticated: loginLifecycle.authenticated,
+          onCancelled: loginLifecycle.cancelled,
+        })}
+      >open continuation</button>
+      <button type="button" onClick={() => agent.closeLogin()}>close continuation</button>
+      <button type="button" onClick={() => void agent.loginWithPassword("sensen", "secret")}>probe login</button>
       <button type="button" onClick={() => void agent.logout()}>logout</button>
     </div>
   );
@@ -86,14 +98,24 @@ describe("PlatformAgentProvider local-only Session selection lifecycle", () => {
 
     expect(api.createSession).not.toHaveBeenCalled();
     expect(api.releaseSession).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "open continuation" }));
+    fireEvent.click(screen.getByRole("button", { name: "open continuation" }));
+    expect(loginLifecycle.cancelled).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "close continuation" }));
+    expect(loginLifecycle.cancelled).toHaveBeenCalledTimes(2);
+    expect(loginLifecycle.authenticated).not.toHaveBeenCalled();
   });
 
   it("login and logout do not create, release, or cancel a durable execution", async () => {
     render(<PlatformAgentProvider><LifecycleProbe /></PlatformAgentProvider>);
-    await screen.findByRole("button", { name: "login" });
+    await screen.findByRole("button", { name: "probe login" });
 
-    fireEvent.click(screen.getByRole("button", { name: "login" }));
+    fireEvent.click(screen.getByRole("button", { name: "open continuation" }));
+    fireEvent.click(screen.getByRole("button", { name: "probe login" }));
     await waitFor(() => expect(api.login).toHaveBeenCalledWith("sensen", "secret"));
+    await waitFor(() => expect(loginLifecycle.authenticated).toHaveBeenCalledTimes(1));
+    expect(loginLifecycle.cancelled).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "select" }));
     fireEvent.click(screen.getByRole("button", { name: "logout" }));
     await waitFor(() => expect(api.logoutPlatformAuth).toHaveBeenCalledWith("new-token"));

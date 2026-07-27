@@ -40,6 +40,11 @@ import {
 import { createInitialChatRound } from "@/lib/agent-api/chat-rounds";
 import { formatAgentApiErrorForUser } from "@/lib/agent-api/client";
 import { safeRandomUUID } from "@/lib/random-uuid";
+import {
+  matchesInitialRoundAttempt,
+  rememberInitialRoundAttempt,
+  type PendingInitialRoundAttempt,
+} from "@/lib/initial-round-request-identity";
 import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
 import { cn } from "@/lib/utils";
 import { NewConversationTaskComposer } from "@/components/new-conversation-task-composer";
@@ -81,13 +86,6 @@ type PendingHomeTask = {
   composerMode: HomeComposerMode;
   pendingFiles?: File[];
 };
-
-function initialRoundSubmissionSignature(message: string, files: File[]): string {
-  return JSON.stringify([
-    message,
-    files.map((file) => [file.name, file.size, file.type, file.lastModified]),
-  ]);
-}
 
 function capabilityLabelFromId(capabilityId: string) {
   return capabilityId.trim().replace(/^@+/, "");
@@ -229,6 +227,7 @@ export function AliceHomePage() {
   const [pendingHomeFiles, setPendingHomeFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
   const [launching, setLaunching] = useState(false);
+  const [pendingLoginLaunchReady, setPendingLoginLaunchReady] = useState(false);
   const [appliedPromptId, setAppliedPromptId] = useState<string | null>(null);
   const [composerPulse, setComposerPulse] = useState(false);
   const [suppressTemplateCompletion, setSuppressTemplateCompletion] = useState(false);
@@ -242,7 +241,7 @@ export function AliceHomePage() {
   const promptGridScrollRef = useRef<HTMLDivElement | null>(null);
   const prevActiveRunIdRef = useRef<string | null>(null);
   const pendingHomeTaskAfterLoginRef = useRef<PendingHomeTask | null>(null);
-  const pendingInitialRoundRef = useRef<{ signature: string; clientMessageId: string } | null>(null);
+  const pendingInitialRoundRef = useRef<PendingInitialRoundAttempt | null>(null);
 
   const resetHomeComposer = useCallback(() => {
     setQuery("");
@@ -371,7 +370,14 @@ export function AliceHomePage() {
         pendingFiles: pending?.pendingFiles ?? pendingHomeFiles,
       };
       pendingHomeTaskAfterLoginRef.current = pendingAfterLogin;
-      platformAgent.openLogin("登录后将继续发送当前任务。");
+      setPendingLoginLaunchReady(false);
+      platformAgent.openLogin("登录后将继续发送当前任务。", {
+        onAuthenticated: () => setPendingLoginLaunchReady(true),
+        onCancelled: () => {
+          pendingHomeTaskAfterLoginRef.current = null;
+          setPendingLoginLaunchReady(false);
+        },
+      });
       return;
     }
     setLaunching(true);
@@ -384,13 +390,16 @@ export function AliceHomePage() {
         placements,
         composerDataSourceItems,
       );
-      const signature = initialRoundSubmissionSignature(message, files);
       const priorAttempt = pendingInitialRoundRef.current;
       const clientMessageId =
-        priorAttempt?.signature === signature
+        matchesInitialRoundAttempt(priorAttempt, message, files)
           ? priorAttempt.clientMessageId
           : safeRandomUUID();
-      pendingInitialRoundRef.current = { signature, clientMessageId };
+      pendingInitialRoundRef.current = rememberInitialRoundAttempt(
+        message,
+        files,
+        clientMessageId,
+      );
       const accepted = await platformAgent.withFreshToken((token) =>
         createInitialChatRound(token, message, clientMessageId, files),
       );
@@ -423,9 +432,10 @@ export function AliceHomePage() {
   ]);
 
   useEffect(() => {
-    if (!platformAgent?.auth || launching || activeRunId) return;
+    if (!platformAgent?.auth || !pendingLoginLaunchReady || launching || activeRunId) return;
     const pending = pendingHomeTaskAfterLoginRef.current;
     pendingHomeTaskAfterLoginRef.current = null;
+    setPendingLoginLaunchReady(false);
     if (!pending) return;
     setQuery(pending.text);
     setSelectedSourceIds(pending.selectedSourceIds);
@@ -433,7 +443,7 @@ export function AliceHomePage() {
     setActiveCapabilityId(pending.activeCapabilityId);
     setComposerMode(pending.composerMode);
     void launchAgent(pending.text, pending);
-  }, [activeRunId, launching, launchAgent, platformAgent?.auth]);
+  }, [activeRunId, launching, launchAgent, pendingLoginLaunchReady, platformAgent?.auth]);
 
   const applyComposerTool = (capabilityId: string) => {
     const item = composerDataSourceItems.find((source) => source.id === capabilityId) ?? getHomeCapabilityItem(capabilityId);
@@ -563,6 +573,7 @@ export function AliceHomePage() {
                   onPromptUse={applyPromptLibraryPrompt}
                   onFilesSelected={handleFilesSelected}
                   onAttachmentsChange={syncPendingHomeFiles}
+                  clearAttachmentsOnSubmit={false}
                   onSubmit={() => {
                     if (!launching) {
                       void launchAgent();

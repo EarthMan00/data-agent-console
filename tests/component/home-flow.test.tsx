@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -382,7 +382,16 @@ describe("home flow", () => {
     expect(mockCreateInitialChatRound).not.toHaveBeenCalled();
     expect(sessionStorage.getItem("alice:pending-home-task-after-login")).toBeNull();
 
+    const continuation = mockPlatformAgent.current?.openLogin.mock.calls[0]?.[1] as
+      | { onAuthenticated: () => void; onCancelled: () => void }
+      | undefined;
+    expect(continuation).toEqual({
+      onAuthenticated: expect.any(Function),
+      onCancelled: expect.any(Function),
+    });
+
     mockPlatformAgent.current = createPlatformAgentMock({ accessToken: "access-token", userId: "user-1" });
+    act(() => continuation?.onAuthenticated());
     view.rerender(<AliceHomePage />);
 
     await waitFor(() => expect(mockCreateInitialChatRound).toHaveBeenCalledTimes(1));
@@ -393,6 +402,27 @@ describe("home flow", () => {
       [],
     );
     await waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
+  });
+
+  it("revokes the pending homepage intent when login is cancelled", async () => {
+    const view = renderHomePage();
+    const editor = await screen.findByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    await userEvent.type(editor, "取消后不得发送");
+    await userEvent.click(screen.getByTestId("task-composer-submit"));
+
+    const continuation = mockPlatformAgent.current?.openLogin.mock.calls[0]?.[1] as
+      | { onAuthenticated: () => void; onCancelled: () => void }
+      | undefined;
+    expect(continuation?.onCancelled).toEqual(expect.any(Function));
+    act(() => continuation?.onCancelled());
+
+    mockPlatformAgent.current = createPlatformAgentMock({ accessToken: "later-token", userId: "later-user" });
+    view.rerender(<AliceHomePage />);
+
+    await waitFor(() => expect(screen.getByTestId("task-composer-editor")).toBeInTheDocument());
+    expect(mockCreateInitialChatRound).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it("serializes visible datasource tags into the initial Round message", async () => {

@@ -48,6 +48,8 @@ type TaskComposerProps = {
   onSourcePlacementsChange?: (placements: ComposerSourcePlacement[]) => void;
   onFilesSelected: (files: FileList) => void;
   onAttachmentsChange?: (files: File[]) => void;
+  /** Keep selected File objects for an explicit retry until the owner navigates or clears them. */
+  clearAttachmentsOnSubmit?: boolean;
   onSubmit: () => void;
   /** 任务执行中显示为停止按钮 */
   submitVariant?: "send" | "stop";
@@ -844,6 +846,7 @@ export function TaskComposer({
   onSourcePlacementsChange,
   onFilesSelected,
   onAttachmentsChange,
+  clearAttachmentsOnSubmit = true,
   onSubmit,
   submitVariant = "send",
   onStop,
@@ -920,6 +923,7 @@ export function TaskComposer({
     }
     if (!canSubmit) return;
     onSubmit();
+    if (!clearAttachmentsOnSubmit) return;
     setAttachments((current) => {
       current.forEach((attachment) => {
         if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);

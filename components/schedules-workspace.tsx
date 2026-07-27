@@ -100,6 +100,11 @@ import { getHomeCapabilityItem, type HomeCapabilityItem } from "@/lib/home-capab
 import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
 import { safeRandomUUID } from "@/lib/random-uuid";
 import {
+  matchesInitialRoundAttempt,
+  rememberInitialRoundAttempt,
+  type PendingInitialRoundAttempt,
+} from "@/lib/initial-round-request-identity";
+import {
   persistResultPushBlocksForTask,
   resultPushBlocksForEditingTask,
 } from "@/lib/schedule-result-push-storage";
@@ -124,13 +129,6 @@ function serializeScheduleComposerPrompt(
   dataSourceItems: HomeCapabilityItem[],
 ) {
   return insertDatasourceMentions(text, sourceIds, sourcePlacements, dataSourceItems);
-}
-
-function scheduleTrialSubmissionSignature(message: string, files: File[]): string {
-  return JSON.stringify([
-    message,
-    files.map((file) => [file.name, file.size, file.type, file.lastModified]),
-  ]);
 }
 
 function sortGroupsByCreatedAsc(groups: UserScheduledTaskGroupDto[]) {
@@ -321,10 +319,7 @@ export function SchedulesWorkspace() {
   /** 进入编辑时从服务器装填的提示词，用于判断「保存」前是否需先试跑 */
   const editPromptBaselineRef = useRef<string | null>(null);
   const resultPushRef = useRef<ResultPushBlock[]>([]);
-  const pendingScheduleTrialRoundRef = useRef<{
-    signature: string;
-    clientMessageId: string;
-  } | null>(null);
+  const pendingScheduleTrialRoundRef = useRef<PendingInitialRoundAttempt | null>(null);
 
   const applyResultPushBlocks = useCallback((blocks: ResultPushBlock[]) => {
     resultPushRef.current = blocks;
@@ -785,13 +780,16 @@ export function SchedulesWorkspace() {
         createGroupIdFromUrl: createGroupIdQ,
         editingTaskId: editId || null,
       });
-      const signature = scheduleTrialSubmissionSignature(serializedPrompt, schedulePendingFiles);
       const priorAttempt = pendingScheduleTrialRoundRef.current;
       const clientMessageId =
-        priorAttempt?.signature === signature
+        matchesInitialRoundAttempt(priorAttempt, serializedPrompt, schedulePendingFiles)
           ? priorAttempt.clientMessageId
           : safeRandomUUID();
-      pendingScheduleTrialRoundRef.current = { signature, clientMessageId };
+      pendingScheduleTrialRoundRef.current = rememberInitialRoundAttempt(
+        serializedPrompt,
+        schedulePendingFiles,
+        clientMessageId,
+      );
       const accepted = await platformAgent.withFreshToken((token) =>
         createInitialChatRound(token, serializedPrompt, clientMessageId, schedulePendingFiles),
       );

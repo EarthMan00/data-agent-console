@@ -52,7 +52,10 @@ const LOGIN_RETURNING_STORAGE_KEY = "alice:has-logged-in";
 const REGISTER_CODE_LENGTH = 6;
 type AuthMode = "login" | "register";
 type RegisterStep = "email" | "code" | "password";
-type LoginContinuation = () => void | Promise<void>;
+type LoginContinuation = {
+  onAuthenticated: () => void | Promise<void>;
+  onCancelled: () => void | Promise<void>;
+};
 type AuthTitleAnimationState = {
   done: boolean;
   key: string;
@@ -100,7 +103,7 @@ export type PlatformAgentContextValue = {
    */
   authValidated: boolean;
   platformSessionId: string | null;
-  openLogin: (banner?: string, afterLogin?: LoginContinuation) => void;
+  openLogin: (banner?: string, continuation?: LoginContinuation) => void;
   closeLogin: () => void;
   loginWithPassword: (account: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -303,6 +306,14 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   const suppressLoginOpenUntilRef = useRef(0);
   const loginContinuationRef = useRef<LoginContinuation | null>(null);
 
+  useEffect(() => {
+    return () => {
+      // The Provider owns the continuation reference. Component teardown drops
+      // that ownership without retaining a callback into an unmounted tree.
+      loginContinuationRef.current = null;
+    };
+  }, []);
+
   const resetRegisterForm = useCallback(() => {
     setRegisterStep("email");
     setRegisterEmail("");
@@ -405,9 +416,17 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     };
   }, [auth]);
 
-  const openLogin = useCallback((banner?: string, afterLogin?: LoginContinuation) => {
+  const openLogin = useCallback((banner?: string, continuation?: LoginContinuation) => {
     if (Date.now() < suppressLoginOpenUntilRef.current) return;
-    loginContinuationRef.current = afterLogin ?? null;
+    const previous = loginContinuationRef.current;
+    loginContinuationRef.current = continuation ?? null;
+    if (previous && previous !== continuation) {
+      void Promise.resolve(previous.onCancelled()).catch((error: unknown) => {
+        console.warn("[platform-agent] login_continuation_cancel_failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
     setAccount("");
     setPassword("");
     setAuthMode("login");
@@ -424,12 +443,20 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
 
   const closeLogin = useCallback(() => {
     suppressLoginOpenUntilRef.current = Date.now() + 650;
+    const continuation = loginContinuationRef.current;
+    loginContinuationRef.current = null;
+    if (continuation) {
+      void Promise.resolve(continuation.onCancelled()).catch((error: unknown) => {
+        console.warn("[platform-agent] login_continuation_cancel_failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
     setAccount("");
     setPassword("");
     setAuthMode("login");
     resetRegisterForm();
     setLoginError("");
-    loginContinuationRef.current = null;
     setLoginStep("account");
     setLoginTitleOverride("");
     setLoginTitleAnimation({ done: true, key: "", text: "" });
@@ -612,7 +639,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       loginContinuationRef.current = null;
       if (continuation) {
         try {
-          await continuation();
+          await continuation.onAuthenticated();
         } catch (e) {
           console.warn("[platform-agent] login_continuation_failed", {
             error: e instanceof Error ? e.message : String(e),
