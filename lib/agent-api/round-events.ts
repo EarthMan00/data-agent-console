@@ -172,9 +172,12 @@ function reduceKnownEvent(
   if (event.event_type === "assistant.reset") {
     return { ...snapshot, content: "" };
   }
-  if (event.event_type === "assistant.delta" || event.event_type === "assistant.final") {
+  if (event.event_type === "assistant.delta") {
     const content = payloadString(event.payload, "content");
     return content === undefined ? snapshot : { ...snapshot, content };
+  }
+  if (event.event_type === "assistant.final") {
+    return updateRoundFields(snapshot, event.payload);
   }
   if (event.event_type === "plan.ready") {
     const steps = plannedSteps(event.payload.steps);

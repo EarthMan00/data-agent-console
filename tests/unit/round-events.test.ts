@@ -84,6 +84,63 @@ describe("ordered Round event reducer", () => {
     expect(next.last_event_seq).toBe(5);
   });
 
+  it.each([
+    {
+      priorStatus: "GENERATING" as const,
+      finalStatus: "SUCCEEDED" as const,
+      content: "Direct answer complete.",
+    },
+    {
+      priorStatus: "EXECUTING" as const,
+      finalStatus: "PARTIAL_SUCCESS" as const,
+      content: "Data completed; report unavailable.",
+    },
+  ])(
+    "atomically applies assistant.final content and $finalStatus terminal status",
+    ({ priorStatus, finalStatus, content }) => {
+      const snapshot = { ...currentSnapshot(), status: priorStatus };
+
+      const next = applyRoundEvent(
+        snapshot,
+        event(5, "assistant.final", {
+          status: finalStatus,
+          content,
+          capability: "private.route",
+          raw_provider_output: "private",
+        }),
+      );
+
+      expect(next).toMatchObject({
+        status: finalStatus,
+        content,
+        last_event_seq: 5,
+      });
+      expect(JSON.stringify(next)).not.toContain("private.route");
+      expect(JSON.stringify(next)).not.toContain("raw_provider_output");
+    },
+  );
+
+  it("rejects unknown assistant.final statuses while still applying formal public content", () => {
+    const snapshot = { ...currentSnapshot(), status: "GENERATING" as const };
+
+    const next = applyRoundEvent(
+      snapshot,
+      event(5, "assistant.final", {
+        status: "INTERNAL_COMPLETED",
+        content: "Safe final content.",
+        internal_status_reason: "private",
+      }),
+    );
+
+    expect(next).toEqual({
+      ...snapshot,
+      content: "Safe final content.",
+      last_event_seq: 5,
+    });
+    expect(JSON.stringify(next)).not.toContain("INTERNAL_COMPLETED");
+    expect(JSON.stringify(next)).not.toContain("internal_status_reason");
+  });
+
   it("clears content on assistant.reset", () => {
     const next = applyRoundEvent(currentSnapshot(), event(5, "assistant.reset", { content: "" }));
 
