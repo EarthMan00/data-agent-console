@@ -31,6 +31,12 @@ function matchesOrchestrationStatusContent(content: string): boolean {
 export function shouldHideAssistantMessageBubble(m: SessionMessageItem): boolean {
   if (m.role !== "assistant") return false;
   const meta = messageMeta(m);
+  // A durable Round owns exactly one canonical assistant message. Its body is
+  // replaced from ChatRoundSnapshot by the workspace and must never be hidden
+  // by content heuristics that belonged to the removed orchestration runtime.
+  if (typeof meta?.round_id === "string" && typeof meta.kind !== "string") {
+    return false;
+  }
   const kind = typeof meta?.kind === "string" ? meta.kind.trim() : "";
   if (kind === "task_execution_steps") {
     // 步骤卡片由 TaskExecutionStepsAssistantBubble 渲染；
