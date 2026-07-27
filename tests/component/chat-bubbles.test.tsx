@@ -1,30 +1,15 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AliceMessageBubble, SimpleUserBubble } from "@/components/agent-workspace/chat-bubbles";
+import {
+  SimpleAssistantBubble,
+  SimpleUserBubble,
+} from "@/components/agent-workspace/chat-bubbles";
 import { UserMessageAttachmentCards } from "@/components/user-message-attachment-cards";
 
 describe("chat bubbles", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-  });
-
-  it("renders inline numbered clarification options as keyboard-focusable buttons", () => {
-    const onSuggestionToggle = vi.fn();
-    render(
-      <AliceMessageBubble
-        body="执行前需要确认一个筛选条件：是否只保留 FBA 且评分高于 4.3 的商品？ 1. 只保留 FBA 且评分高于 4.3 2. 保留全部配送方式，先按销量排序"
-        datetime="2026-06-14T10:11:15.000+08:00"
-        onSuggestionToggle={onSuggestionToggle}
-      />,
-    );
-
-    const option = screen.getByRole("button", { name: "只保留 FBA 且评分高于 4.3" });
-    expect(option).toHaveAttribute("aria-pressed", "false");
-    option.focus();
-    expect(option).toHaveFocus();
-    fireEvent.click(option);
-    expect(onSuggestionToggle).toHaveBeenCalledWith("只保留 FBA 且评分高于 4.3");
   });
 
   it("uses image thumbnails for image message attachments", () => {
@@ -56,7 +41,9 @@ describe("chat bubbles", () => {
     expect(userTime).toHaveClass("text-right", "opacity-0", "group-hover:opacity-100");
     expect(userText.compareDocumentPosition(userTime) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    rerender(<AliceMessageBubble body="好的，马上分析。" datetime={datetime} />);
+    rerender(
+      <SimpleAssistantBubble body="好的，马上分析。" datetime={datetime} typewriter={false} />,
+    );
 
     const assistantTime = screen.getByText(/2026/);
     expect(assistantTime).toHaveClass("text-left");

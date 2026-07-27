@@ -115,12 +115,6 @@ vi.mock("@/components/agent-workspace/chat-bubbles", () => ({
   ),
 }));
 
-vi.mock("@/components/task-result-summary-card", () => ({
-  TaskResultSummaryCard: ({ onToggle }: { onToggle: () => void }) => (
-    <button type="button" onClick={onToggle}>查看结果</button>
-  ),
-}));
-
 vi.mock("@/components/task-result-sheet-body", () => ({
   TaskResultSheetBody: () => <div data-testid="real-panel-sheet-body" />,
 }));

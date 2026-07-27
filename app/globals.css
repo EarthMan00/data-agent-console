@@ -174,7 +174,6 @@ body {
   --size-attachment-name-max: 260px;
   --size-panel-sm: 300px;
   --size-report-content: 1400px;
-  --size-feedback-dialog: 580px;
   --size-simple-bubble: min(100%, 720px);
   --size-simple-row: min(100%, 780px);
   --size-simple-column: min(100%, 920px);
@@ -675,9 +674,6 @@ body[arco-theme="dark"] {
     max-width: var(--size-report-content);
   }
 
-  .max-w-feedback-dialog {
-    max-width: var(--size-feedback-dialog);
-  }
 
   .max-w-simple-bubble {
     max-width: var(--size-simple-bubble);

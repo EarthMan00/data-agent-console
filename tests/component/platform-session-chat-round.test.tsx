@@ -155,12 +155,6 @@ vi.mock("@/components/agent-task-result-panel", () => ({
   ),
 }));
 
-vi.mock("@/components/task-result-summary-card", () => ({
-  TaskResultSummaryCard: ({ onToggle }: { onToggle: () => void }) => (
-    <button type="button" onClick={onToggle}>查看结果</button>
-  ),
-}));
-
 function persistedMessages(): SessionMessageItem[] {
   return [
     {

@@ -5,15 +5,32 @@ import { describe, expect, it } from "vitest";
 const PRODUCTION_ROOTS = ["app", "components", "lib"] as const;
 const SOURCE_EXTENSIONS = /\.(?:ts|tsx|js|jsx)$/;
 const FORBIDDEN_PRODUCTION_PATHS = [
+  "components/agent-workspace/attachment-utils.ts",
   "components/agent-workspace/platform-step-views.tsx",
   "components/agent-workspace/task-split-section.tsx",
+  "components/assistant-attachment-list.tsx",
   "components/execution-steps-monitor.tsx",
+  "components/feedback-dialog.tsx",
+  "components/light-rays.tsx",
+  "components/report-preview-panel.tsx",
+  "components/share-replay-page-fix.tsx",
+  "components/task-artifact-previews.tsx",
+  "components/task-result-summary-card.tsx",
+  "components/ui/badge.tsx",
+  "components/ui/flickering-grid.tsx",
+  "components/ui/switch.tsx",
+  "components/ui/toggle-group.tsx",
+  "lib/admin-request-base-url.ts",
+  "lib/agent-runtime/util.ts",
+  "lib/alice-clarification.ts",
   "lib/humanize-step-label.ts",
   "lib/mock/store.ts",
   "lib/orchestration-failure-message.ts",
   "lib/parse-decomposition-labels.ts",
   "lib/round-attachment-files.ts",
+  "lib/report-defaults.ts",
   "lib/session-clarification-flow.ts",
+  "lib/session-message-cache.ts",
   "lib/split-reveal-gate.ts",
 ] as const;
 const FORBIDDEN_PATTERNS = [
@@ -48,6 +65,17 @@ const FORBIDDEN_PATTERNS = [
   /\bAliceClarificationBubble\b/g,
   /\baliceClarificationBodyForDisplay\b/g,
   /\bpickPrimaryCsvArtifact\b/g,
+  /\bAliceMessageBubble\b/g,
+  /\bSimpleSystemBubble\b/g,
+  /\bConversationBubble\b/g,
+  /\bCollapsedStatusRow\b/g,
+  /\bToolCard\b/g,
+  /\bAliceErrorBubble\b/g,
+  /\bAssistantOutputFrame\b/g,
+  /\bORCHESTRATION_BLOCK_MAX\b/g,
+  /\bhandleSuggestionOptionKeyDown\b/g,
+  /\bsanitizeClarificationForUserDisplay\b/g,
+  /\bsplitClarificationForDisplay\b/g,
 ] as const;
 
 function productionSourceFiles(directory: string): string[] {

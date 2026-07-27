@@ -30,10 +30,6 @@ vi.mock("@/components/agent-workspace", () => ({
   AgentWorkspace: () => <div>agent workspace</div>,
 }));
 
-vi.mock("@/components/ui/flickering-grid", () => ({
-  FlickeringGrid: () => <div data-testid="flickering-grid" />,
-}));
-
 vi.mock("@/components/alice-shell", () => ({
   AliceShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   useAliceShellState: () => shellStateMock,
