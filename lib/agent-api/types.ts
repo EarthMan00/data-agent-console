@@ -36,6 +36,80 @@ export type SessionAttachmentUploadResponse = {
   attachments: SessionAttachmentUploadItem[];
 };
 
+export type ChatRoundStatus =
+  | "QUEUED"
+  | "PLANNING"
+  | "GENERATING"
+  | "EXECUTING"
+  | "WAITING_INPUT"
+  | "CANCEL_REQUESTED"
+  | "SUCCEEDED"
+  | "PARTIAL_SUCCESS"
+  | "FAILED"
+  | "CANCELLED";
+
+export type ChatRoundStep = {
+  step_id: string;
+  step_index: number;
+  label: string;
+  status:
+    | "PENDING"
+    | "RUNNING"
+    | "WAITING_INPUT"
+    | "SUCCESS"
+    | "FAILED"
+    | "CANCELLED"
+    | "SKIPPED";
+  task_id: string | null;
+  artifacts: Array<{
+    artifact_id: string;
+    artifact_type: string;
+    original_name: string;
+    download_api: string;
+  }>;
+  evidence: Record<string, unknown> | null;
+  error_code: string | null;
+  error_message: string | null;
+};
+
+export type ChatRoundSnapshot = {
+  round_id: string;
+  session_id: string;
+  status: ChatRoundStatus;
+  assistant_message_id: string;
+  content: string;
+  last_event_seq: number;
+  steps: ChatRoundStep[];
+  error_code: string | null;
+  error_message: string | null;
+};
+
+export type RoundAccepted = {
+  session_id: string;
+  round_id: string;
+  assistant_message_id: string;
+  status: ChatRoundStatus;
+  last_event_seq: number;
+};
+
+export type ChatRoundEvent = {
+  round_id: string;
+  seq: number;
+  event_type: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export class RoundEventGapError extends Error {
+  constructor(
+    public readonly expectedSeq: number,
+    public readonly actualSeq: number,
+  ) {
+    super(`round event gap: expected ${expectedSeq}, received ${actualSeq}`);
+    this.name = "RoundEventGapError";
+  }
+}
+
 export type SessionListItem = {
   session_id: string;
   status: string;
