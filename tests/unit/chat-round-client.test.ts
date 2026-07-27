@@ -166,8 +166,119 @@ describe("durable chat Round API client", () => {
     await expect(getChatRound(TOKEN, ROUND_ID)).rejects.toBeInstanceOf(AgentApiError);
     await expect(cancelChatRound(TOKEN, ROUND_ID)).rejects.toMatchObject({ status: 401 });
     await expect(
-      resumeChatRound(TOKEN, ROUND_ID, "more detail", CLIENT_MESSAGE_ID),
+      resumeChatRound(TOKEN, SESSION_ID, ROUND_ID, "more detail", CLIENT_MESSAGE_ID),
     ).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("uploads supplemental files before resuming with stable idempotency fields", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init: init ?? {} });
+      if (url.endsWith(`/api/chat/${SESSION_ID}/attachments`)) {
+        return new Response(
+          JSON.stringify({
+            attachments: [
+              {
+                attachment_id: "55555555-5555-4555-8555-555555555555",
+                name: "details.csv",
+                size: 4,
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify(accepted({ status: "QUEUED" })), {
+        status: 202,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["more"], "details.csv");
+
+    await resumeChatRound(
+      TOKEN,
+      SESSION_ID,
+      ROUND_ID,
+      "more detail",
+      CLIENT_MESSAGE_ID,
+      [file],
+    );
+
+    expect(calls.map((call) => call.url)).toEqual([
+      `/agent-platform/api/chat/${SESSION_ID}/attachments`,
+      `/agent-platform/api/chat/rounds/${ROUND_ID}/resume`,
+    ]);
+    expect(new Headers(calls[1].init.headers)).toEqual(
+      new Headers({
+        Authorization: `Bearer ${TOKEN}`,
+        "Content-Type": "application/json",
+        "X-Request-ID": CLIENT_MESSAGE_ID,
+      }),
+    );
+    expect(JSON.parse(String(calls[1].init.body))).toEqual({
+      message: "more detail",
+      client_message_id: CLIENT_MESSAGE_ID,
+      attachment_ids: ["55555555-5555-4555-8555-555555555555"],
+    });
+  });
+
+  it("resumes without an upload request when files are empty and sends empty attachment ids", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({ url: String(input), init: init ?? {} });
+        return new Response(JSON.stringify(accepted()), {
+          status: 202,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    await resumeChatRound(
+      TOKEN,
+      SESSION_ID,
+      ROUND_ID,
+      "more detail",
+      CLIENT_MESSAGE_ID,
+      [],
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe(`/agent-platform/api/chat/rounds/${ROUND_ID}/resume`);
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({
+      message: "more detail",
+      client_message_id: CLIENT_MESSAGE_ID,
+      attachment_ids: [],
+    });
+  });
+
+  it("does not call resume when supplemental attachment upload fails", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        calls.push(String(input));
+        return new Response(JSON.stringify({ detail: "upload failed" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    await expect(
+      resumeChatRound(
+        TOKEN,
+        SESSION_ID,
+        ROUND_ID,
+        "more detail",
+        CLIENT_MESSAGE_ID,
+        [new File(["more"], "details.csv")],
+      ),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(calls).toEqual([`/agent-platform/api/chat/${SESSION_ID}/attachments`]);
   });
 
   it("strictly projects a snapshot with required public Step errors and no internal fields", async () => {

@@ -285,10 +285,13 @@ export async function cancelChatRound(
 
 export async function resumeChatRound(
   accessToken: string,
+  sessionId: string,
   roundId: string,
   message: string,
   clientMessageId: string,
+  files: File[] = [],
 ): Promise<RoundAccepted> {
+  const attachments = await uploadSessionAttachments(accessToken, sessionId, files);
   const response = await fetch(
     apiUrl(`/api/chat/rounds/${encodeURIComponent(roundId)}/resume`),
     {
@@ -298,7 +301,11 @@ export async function resumeChatRound(
         "Content-Type": "application/json",
         "X-Request-ID": clientMessageId,
       },
-      body: JSON.stringify({ message, client_message_id: clientMessageId }),
+      body: JSON.stringify({
+        message,
+        client_message_id: clientMessageId,
+        attachment_ids: attachments.map((attachment) => attachment.attachment_id),
+      }),
     },
   );
   return acceptedResponse(response, "resume chat round");

@@ -114,7 +114,7 @@ export type PlatformAgentContextValue = {
   setActivePlatformSession: (sessionId: string) => void;
   /** 清除当前选中的平台会话（本地状态与 sessionStorage） */
   clearActivePlatformSession: () => void;
-  withFreshToken: (run: (token: string) => Promise<void>) => Promise<void>;
+  withFreshToken: <T>(run: (token: string) => Promise<T>) => Promise<T>;
 };
 
 const PlatformAgentContext = createContext<PlatformAgentContextValue | null>(
@@ -552,13 +552,13 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
   }, [closeLogin, loginOpen]);
 
   const withFreshToken = useCallback(
-    async (run: (token: string) => Promise<void>) => {
+    async <T,>(run: (token: string) => Promise<T>): Promise<T> => {
       const snap = auth ?? loadAgentSession();
       if (!snap) {
         throw new Error("请先登录。");
       }
       try {
-        await run(snap.accessToken);
+        return await run(snap.accessToken);
       } catch (e) {
         if (e instanceof AgentApiError && e.status === 401) {
           try {
@@ -570,8 +570,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
             };
             saveAgentSession(next);
             setAuth(next);
-            await run(nextAccess);
-            return;
+            return await run(nextAccess);
           } catch (refreshErr) {
             invalidateSessionAndRequestLogin();
             throw new AgentApiError(
