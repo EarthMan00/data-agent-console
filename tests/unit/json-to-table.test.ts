@@ -5,7 +5,6 @@ import {
   artifactDownloadNameForUi,
   filterArtifactsForTaskResultPanel,
   hasTabularTaskResultFiles,
-  pickPrimaryCsvArtifact,
   pickPrimaryTaskDataArtifact,
   shouldShowTaskResultEntryCard,
 } from "@/lib/platform-task-artifacts";
@@ -96,38 +95,6 @@ describe("pickPrimaryTaskDataArtifact", () => {
       },
     ]);
     expect(p?.original_name).toBe("data.json");
-  });
-});
-
-describe("pickPrimaryCsvArtifact", () => {
-  it("returns first csv after filtering linkfox", () => {
-    const a = pickPrimaryCsvArtifact([
-      {
-        artifact_id: "1",
-        artifact_type: "log",
-        original_name: "linkfox_result.txt",
-        download_api: "/a",
-      },
-      {
-        artifact_id: "2",
-        artifact_type: "csv",
-        original_name: "out.csv",
-        download_api: "/b",
-      },
-    ]);
-    expect(a?.original_name).toBe("out.csv");
-  });
-
-  it("returns null when primary data file is json only", () => {
-    const a = pickPrimaryCsvArtifact([
-      {
-        artifact_id: "j",
-        artifact_type: "file",
-        original_name: "a.json",
-        download_api: "/j",
-      },
-    ]);
-    expect(a).toBeNull();
   });
 });
 

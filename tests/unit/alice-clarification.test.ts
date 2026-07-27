@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatAliceClarificationForStream,
-  aliceClarificationBodyForDisplay,
   parseAliceShareUrl,
   resolveAliceShareUrl,
   sanitizeClarificationForUserDisplay,
@@ -33,7 +32,6 @@ describe("alice-clarification", () => {
   it("formats stream text without external links", () => {
     const out = formatAliceClarificationForStream("请补充类目。", "https://agent.linkfox.com/share/x");
     expect(out).toBe("请补充类目。");
-    expect(aliceClarificationBodyForDisplay(out, "https://agent.linkfox.com/share/x")).toBe("请补充类目。");
   });
 
   it("splits bullet keywords for clickable chips", () => {

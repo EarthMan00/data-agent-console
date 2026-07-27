@@ -41,12 +41,6 @@ export function sanitizeClarificationForUserDisplay(message: string): string {
   return text.trim();
 }
 
-/** @deprecated 使用 sanitizeClarificationForUserDisplay */
-export function aliceClarificationBodyForDisplay(body: string, _shareUrl: string | null): string {
-  void _shareUrl;
-  return sanitizeClarificationForUserDisplay(body);
-}
-
 /** 澄清内容写入助手流式回复（仅自然语言，无工具信息）。 */
 export function formatAliceClarificationForStream(message: string, _shareUrl: string | null): string {
   void _shareUrl;

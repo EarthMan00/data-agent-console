@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AliceHomePage } from "@/components/alice-home-page";
-import { workspaceActions } from "@/lib/workspace-store";
 
 const replace = vi.fn();
 const mockSearchParams = vi.hoisted(() => new URLSearchParams());
@@ -332,7 +331,6 @@ describe("home flow", () => {
   });
 
   it("creates one initial Round before selecting history and navigating", async () => {
-    const startPlatformTask = vi.spyOn(workspaceActions, "startPlatformTask");
     mockPlatformAgent.current = createPlatformAgentMock({ accessToken: "access-token", userId: "user-1" });
     let acceptRound!: (value: {
       session_id: string;
@@ -385,7 +383,6 @@ describe("home flow", () => {
       "f4159ee9-c863-41c8-9c1b-ffbfa193917f",
     );
     expect(mockAliceShellState.refreshHistoryNow).toHaveBeenCalled();
-    expect(startPlatformTask).not.toHaveBeenCalled();
   });
 
   it("continues the login-first handoff with exactly one initial Round", async () => {

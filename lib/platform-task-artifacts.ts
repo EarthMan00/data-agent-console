@@ -64,13 +64,6 @@ export function pickPrimaryTaskDataArtifact(artifacts: PlatformTaskArtifactRef[]
   return null;
 }
 
-/** @deprecated 使用 pickPrimaryTaskDataArtifact */
-export function pickPrimaryCsvArtifact(artifacts: PlatformTaskArtifactRef[]): PlatformTaskArtifactRef | null {
-  const p = pickPrimaryTaskDataArtifact(artifacts);
-  if (!p) return null;
-  return CSV_RE.test((p.original_name ?? "").trim()) ? p : null;
-}
-
 function basenameOnly(name: string): string {
   const n = (name ?? "").trim();
   const parts = n.split(/[/\\]/);

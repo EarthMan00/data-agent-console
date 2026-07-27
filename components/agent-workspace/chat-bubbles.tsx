@@ -350,20 +350,6 @@ export function AliceMessageBubble({
   );
 }
 
-/** @deprecated 请使用 AliceMessageBubble */
-export function AliceClarificationBubble({
-  body,
-  datetime,
-  streaming = false,
-}: {
-  body: string;
-  shareUrl?: string | null;
-  datetime: string;
-  streaming?: boolean;
-}) {
-  return <AliceMessageBubble body={body} datetime={datetime} streaming={streaming} typewriter={false} />;
-}
-
 export function SimpleSystemBubble({ message }: { message: string }) {
   return (
     <div className="flex w-full justify-start">
