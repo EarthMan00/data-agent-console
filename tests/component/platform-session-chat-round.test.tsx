@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PlatformSessionAgentWorkspace } from "@/components/agent-workspace/platform-session-agent-workspace";
 import type { ChatRoundSnapshot, SessionMessageItem } from "@/lib/agent-api/types";
+import { saveScheduleTrialMeta } from "@/lib/schedule-create-draft";
 
 const SESSION_A = "f4159ee9-c863-41c8-9c1b-ffbfa193917f";
 const SESSION_B = "a27ab89a-74bc-43f0-bb15-bb3b8387635e";
@@ -26,10 +27,17 @@ const roundController = vi.hoisted(() => ({
 
 const api = vi.hoisted(() => ({
   listSessionMessages: vi.fn(),
+  sendSessionMessageStream: vi.fn(),
+  fetchTask: vi.fn(),
   cancelTask: vi.fn(),
   cancelToolOrchestration: vi.fn(),
   postTaskTerminatedMessage: vi.fn(),
   releaseSession: vi.fn(),
+}));
+
+const roundApi = vi.hoisted(() => ({
+  createInitialChatRound: vi.fn(),
+  createChatRound: vi.fn(),
 }));
 
 const agent = vi.hoisted(() => ({
@@ -78,6 +86,11 @@ vi.mock("@/components/agent-workspace/use-chat-rounds", () => ({
   },
 }));
 
+vi.mock("@/lib/agent-api/chat-rounds", () => ({
+  createInitialChatRound: roundApi.createInitialChatRound,
+  createChatRound: roundApi.createChatRound,
+}));
+
 vi.mock("@/lib/agent-api/client", async () => {
   const actual = await vi.importActual<typeof import("@/lib/agent-api/client")>(
     "@/lib/agent-api/client",
@@ -85,6 +98,8 @@ vi.mock("@/lib/agent-api/client", async () => {
   return {
     ...actual,
     listSessionMessages: api.listSessionMessages,
+    sendSessionMessageStream: api.sendSessionMessageStream,
+    fetchTask: api.fetchTask,
     cancelTask: api.cancelTask,
     cancelToolOrchestration: api.cancelToolOrchestration,
     postTaskTerminatedMessage: api.postTaskTerminatedMessage,
@@ -215,6 +230,7 @@ function installSnapshot(value: ChatRoundSnapshot | null): void {
 describe("PlatformSessionAgentWorkspace durable Round presentation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
     roundController.calls = [];
     roundController.loading = false;
     roundController.error = "";
@@ -323,6 +339,42 @@ describe("PlatformSessionAgentWorkspace durable Round presentation", () => {
     expect(api.cancelToolOrchestration).not.toHaveBeenCalled();
     expect(api.postTaskTerminatedMessage).not.toHaveBeenCalled();
     expect(api.releaseSession).not.toHaveBeenCalled();
+    expect(roundApi.createInitialChatRound).not.toHaveBeenCalled();
+    expect(roundApi.createChatRound).not.toHaveBeenCalled();
+    expect(api.sendSessionMessageStream).not.toHaveBeenCalled();
+    expect(api.fetchTask).not.toHaveBeenCalled();
+  });
+
+  it("loads an accepted schedule trial Round without a destination-side send", async () => {
+    const trial = snapshot({ status: "SUCCEEDED", content: "试跑已完成。" });
+    const newerRound = snapshot({
+      round_id: "0743332a-89e5-423c-9278-6f62262ab7c2",
+      assistant_message_id: "84ea2356-3bf2-4f79-9ce0-5b9b60632cc3",
+      status: "EXECUTING",
+    });
+    roundController.snapshots = new Map([
+      [trial.round_id, trial],
+      [newerRound.round_id, newerRound],
+    ]);
+    roundController.activeRound = newerRound;
+    saveScheduleTrialMeta({
+      v: 2,
+      sessionId: SESSION_A,
+      roundId: ROUND_ID,
+      sendKind: "queued",
+    });
+
+    render(<PlatformSessionAgentWorkspace sessionId={SESSION_A} scheduleTrial />);
+
+    await waitFor(() => expect(api.listSessionMessages).toHaveBeenCalledWith("token", SESSION_A, 100));
+    expect(roundController.calls).toContain(SESSION_A);
+    expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
+    expect(roundController.send).not.toHaveBeenCalled();
+    expect(roundController.resume).not.toHaveBeenCalled();
+    expect(roundApi.createInitialChatRound).not.toHaveBeenCalled();
+    expect(roundApi.createChatRound).not.toHaveBeenCalled();
+    expect(api.sendSessionMessageStream).not.toHaveBeenCalled();
+    expect(api.fetchTask).not.toHaveBeenCalled();
   });
 
   it("uses Round cancel only, shows a disabled stopping state and waits for terminal", async () => {

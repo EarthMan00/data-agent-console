@@ -5,10 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AliceHomePage } from "@/components/alice-home-page";
 
 const replace = vi.fn();
-const homeSessionLaunchMocks = vi.hoisted(() => ({
-  saveHomeSessionLaunchMeta: vi.fn(),
-  stashHomeSessionLaunchFiles: vi.fn(),
-}));
+const createInitialChatRound = vi.hoisted(() => vi.fn());
+const safeRandomUUID = vi.hoisted(() => vi.fn(() => "a62430bc-1417-4b95-9432-937b331a7d7a"));
 const platformAgentMock = vi.hoisted(() => ({
   auth: { accessToken: "token", userId: "u1" },
   authHydrated: true,
@@ -18,8 +16,6 @@ const platformAgentMock = vi.hoisted(() => ({
   closeLogin: vi.fn(),
   loginWithPassword: vi.fn(),
   logout: vi.fn(),
-  beginNewHomeTaskSession: vi.fn(),
-  ensurePlatformSession: vi.fn(),
   setActivePlatformSession: vi.fn(),
   clearActivePlatformSession: vi.fn(),
   withFreshToken: vi.fn(),
@@ -47,6 +43,10 @@ vi.mock("@/components/platform-agent-provider", () => ({
   useOptionalPlatformAgent: () => platformAgentMock,
 }));
 
+vi.mock("@/lib/agent-api/chat-rounds", () => ({ createInitialChatRound }));
+
+vi.mock("@/lib/random-uuid", () => ({ safeRandomUUID }));
+
 vi.mock("@/lib/agent-runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/agent-runtime")>();
   return {
@@ -60,8 +60,6 @@ vi.mock("@/lib/agent-api/home-prompts", () => ({
   fetchHomePromptRecommendations: vi.fn(() => Promise.resolve([])),
   fetchPublicPromptCategories: vi.fn(() => Promise.resolve([])),
 }));
-
-vi.mock("@/lib/home-session-launch", () => homeSessionLaunchMocks);
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -83,16 +81,26 @@ describe("home attachments", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     replace.mockClear();
-    homeSessionLaunchMocks.saveHomeSessionLaunchMeta.mockClear();
-    homeSessionLaunchMocks.stashHomeSessionLaunchFiles.mockClear();
-    platformAgentMock.beginNewHomeTaskSession.mockResolvedValue("session-home");
+    createInitialChatRound.mockReset();
+    safeRandomUUID.mockClear();
+    createInitialChatRound.mockResolvedValue({
+      session_id: "f4159ee9-c863-41c8-9c1b-ffbfa193917f",
+      round_id: "3da8ff9a-95e2-4f9e-9788-7fda3d450fe7",
+      assistant_message_id: "46aa60a5-64dd-471d-adfe-9856a3ee17c5",
+      status: "QUEUED",
+      last_event_seq: 1,
+    });
+    platformAgentMock.withFreshToken.mockReset();
+    platformAgentMock.withFreshToken.mockImplementation(
+      async (run: (token: string) => Promise<unknown>) => run("token"),
+    );
     platformAgentMock.setActivePlatformSession.mockClear();
     shellStateMock.refreshHistoryNow.mockClear();
     shellStateMock.setActiveSessionTitle.mockClear();
     shellStateMock.upsertOptimisticHistorySession.mockClear();
   });
 
-  it("stashes only attachments still visible in the home composer before entering the session workspace", async () => {
+  it("uploads only the still-visible files in the single initial Round request", async () => {
     const first = new File(["aad"], "AAD_SSO_Vendor_Implementation_Guide.md", { type: "text/markdown" });
     const second = new File(["dump"], "LocalDumps.reg", { type: "application/octet-stream" });
     const third = new File(["cards"], "agent_linkfox_all_category_cards.xlsx", {
@@ -119,14 +127,16 @@ describe("home attachments", () => {
     await userEvent.click(screen.getByTestId("task-composer-submit"));
 
     await waitFor(() => {
-      expect(homeSessionLaunchMocks.saveHomeSessionLaunchMeta).toHaveBeenCalledTimes(1);
+      expect(createInitialChatRound).toHaveBeenCalledTimes(1);
     });
-    expect(homeSessionLaunchMocks.stashHomeSessionLaunchFiles).toHaveBeenCalledWith("session-home", [third]);
-    expect(homeSessionLaunchMocks.saveHomeSessionLaunchMeta).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId: "session-home",
-      }),
+    expect(createInitialChatRound).toHaveBeenCalledWith(
+      "token",
+      "analyze attachments",
+      "a62430bc-1417-4b95-9432-937b331a7d7a",
+      [third],
     );
-    expect(replace).toHaveBeenCalledWith("/agent?sessionId=session-home");
+    expect(replace).toHaveBeenCalledWith(
+      "/agent?sessionId=f4159ee9-c863-41c8-9c1b-ffbfa193917f",
+    );
   });
 });

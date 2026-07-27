@@ -12,6 +12,8 @@ const mockFetchPublicPromptCategories = vi.hoisted(() => vi.fn());
 const mockListUserPromptGroups = vi.hoisted(() => vi.fn());
 const mockListUserPrompts = vi.hoisted(() => vi.fn());
 const mockCreateUserPrompt = vi.hoisted(() => vi.fn());
+const mockCreateInitialChatRound = vi.hoisted(() => vi.fn());
+const mockSafeRandomUUID = vi.hoisted(() => vi.fn(() => "a62430bc-1417-4b95-9432-937b331a7d7a"));
 const mockAliceShellState = vi.hoisted(() => ({
   refreshHistoryNow: vi.fn(),
   setActiveSessionTitle: vi.fn(),
@@ -27,8 +29,6 @@ const mockPlatformAgent = vi.hoisted(() => ({
     closeLogin: ReturnType<typeof vi.fn>;
     loginWithPassword: ReturnType<typeof vi.fn>;
     logout: ReturnType<typeof vi.fn>;
-    beginNewHomeTaskSession: ReturnType<typeof vi.fn>;
-    ensurePlatformSession: ReturnType<typeof vi.fn>;
     setActivePlatformSession: ReturnType<typeof vi.fn>;
     clearActivePlatformSession: ReturnType<typeof vi.fn>;
     withFreshToken: ReturnType<typeof vi.fn>;
@@ -58,8 +58,6 @@ function createPlatformAgentMock(auth: null | { accessToken: string; userId?: st
     closeLogin: vi.fn(),
     loginWithPassword: vi.fn(),
     logout: vi.fn(),
-    beginNewHomeTaskSession: vi.fn(),
-    ensurePlatformSession: vi.fn(),
     setActivePlatformSession: vi.fn(),
     clearActivePlatformSession: vi.fn(),
     withFreshToken: vi.fn(async (run: (token: string) => Promise<unknown> | unknown) => run("fresh-token")),
@@ -68,6 +66,14 @@ function createPlatformAgentMock(auth: null | { accessToken: string; userId?: st
 
 vi.mock("@/components/platform-agent-provider", () => ({
   useOptionalPlatformAgent: () => mockPlatformAgent.current,
+}));
+
+vi.mock("@/lib/agent-api/chat-rounds", () => ({
+  createInitialChatRound: mockCreateInitialChatRound,
+}));
+
+vi.mock("@/lib/random-uuid", () => ({
+  safeRandomUUID: mockSafeRandomUUID,
 }));
 
 vi.mock("@/lib/agent-api/home-prompts", () => ({
@@ -112,6 +118,7 @@ function renderHomePage() {
 
 describe("home flow", () => {
   beforeEach(() => {
+    sessionStorage.clear();
     replace.mockClear();
     mockSearchParams.forEach((_, key) => mockSearchParams.delete(key));
     mockAliceShellState.refreshHistoryNow.mockClear();
@@ -121,6 +128,15 @@ describe("home flow", () => {
     mockListUserPromptGroups.mockReset();
     mockListUserPrompts.mockReset();
     mockCreateUserPrompt.mockReset();
+    mockCreateInitialChatRound.mockReset();
+    mockSafeRandomUUID.mockClear();
+    mockCreateInitialChatRound.mockResolvedValue({
+      session_id: "f4159ee9-c863-41c8-9c1b-ffbfa193917f",
+      round_id: "3da8ff9a-95e2-4f9e-9788-7fda3d450fe7",
+      assistant_message_id: "46aa60a5-64dd-471d-adfe-9856a3ee17c5",
+      status: "QUEUED",
+      last_event_seq: 1,
+    });
     mockListUserPromptGroups.mockResolvedValue({
       items: [],
       total: 0,
@@ -298,10 +314,19 @@ describe("home flow", () => {
     }
   });
 
-  it("routes a fresh home task into the real session workspace instead of the local run view", async () => {
+  it("creates one initial Round before selecting history and navigating", async () => {
     const startPlatformTask = vi.spyOn(workspaceActions, "startPlatformTask");
     mockPlatformAgent.current = createPlatformAgentMock({ accessToken: "access-token", userId: "user-1" });
-    mockPlatformAgent.current.beginNewHomeTaskSession.mockResolvedValue("session-home");
+    let acceptRound!: (value: {
+      session_id: string;
+      round_id: string;
+      assistant_message_id: string;
+      status: string;
+      last_event_seq: number;
+    }) => void;
+    mockCreateInitialChatRound.mockReturnValueOnce(new Promise((resolve) => {
+      acceptRound = resolve;
+    }));
 
     renderHomePage();
 
@@ -311,13 +336,106 @@ describe("home flow", () => {
     await userEvent.click(screen.getByTestId("task-composer-submit"));
 
     await waitFor(() => {
-      expect(mockPlatformAgent.current?.beginNewHomeTaskSession).toHaveBeenCalledTimes(1);
+      expect(mockCreateInitialChatRound).toHaveBeenCalledWith(
+        "fresh-token",
+        "分析 cup 的前三爆品",
+        "a62430bc-1417-4b95-9432-937b331a7d7a",
+        [],
+      );
     });
-    expect(mockAliceShellState.upsertOptimisticHistorySession).toHaveBeenCalledWith("session-home");
-    expect(mockPlatformAgent.current?.setActivePlatformSession).toHaveBeenCalledWith("session-home");
+    expect(mockCreateInitialChatRound).toHaveBeenCalledTimes(1);
+    expect(mockSafeRandomUUID).toHaveBeenCalledTimes(1);
+    expect(mockAliceShellState.upsertOptimisticHistorySession).not.toHaveBeenCalled();
+    expect(mockPlatformAgent.current?.setActivePlatformSession).not.toHaveBeenCalled();
+    expect(mockAliceShellState.refreshHistoryNow).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+
+    acceptRound({
+      session_id: "f4159ee9-c863-41c8-9c1b-ffbfa193917f",
+      round_id: "3da8ff9a-95e2-4f9e-9788-7fda3d450fe7",
+      assistant_message_id: "46aa60a5-64dd-471d-adfe-9856a3ee17c5",
+      status: "QUEUED",
+      last_event_seq: 1,
+    });
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith("/agent?sessionId=f4159ee9-c863-41c8-9c1b-ffbfa193917f");
+    });
+    expect(mockAliceShellState.upsertOptimisticHistorySession).toHaveBeenCalledWith(
+      "f4159ee9-c863-41c8-9c1b-ffbfa193917f",
+    );
+    expect(mockPlatformAgent.current?.setActivePlatformSession).toHaveBeenCalledWith(
+      "f4159ee9-c863-41c8-9c1b-ffbfa193917f",
+    );
     expect(mockAliceShellState.refreshHistoryNow).toHaveBeenCalled();
     expect(startPlatformTask).not.toHaveBeenCalled();
-    expect(replace).toHaveBeenCalledWith("/agent?sessionId=session-home");
+  });
+
+  it("continues the login-first handoff with exactly one initial Round", async () => {
+    const view = renderHomePage();
+    const editor = await screen.findByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    await userEvent.type(editor, "登录后分析库存");
+    await userEvent.click(screen.getByTestId("task-composer-submit"));
+
+    expect(mockPlatformAgent.current?.openLogin).toHaveBeenCalledTimes(1);
+    expect(mockCreateInitialChatRound).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem("alice:pending-home-task-after-login")).toBeNull();
+
+    mockPlatformAgent.current = createPlatformAgentMock({ accessToken: "access-token", userId: "user-1" });
+    view.rerender(<AliceHomePage />);
+
+    await waitFor(() => expect(mockCreateInitialChatRound).toHaveBeenCalledTimes(1));
+    expect(mockCreateInitialChatRound).toHaveBeenCalledWith(
+      "fresh-token",
+      "登录后分析库存",
+      "a62430bc-1417-4b95-9432-937b331a7d7a",
+      [],
+    );
+    await waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
+  });
+
+  it("serializes visible datasource tags into the initial Round message", async () => {
+    mockPlatformAgent.current = createPlatformAgentMock({ accessToken: "access-token", userId: "user-1" });
+    renderHomePage();
+
+    fireEvent.click(await screen.findByLabelText("使用示例任务 站外评论洞察"));
+    expect(screen.getByLabelText("数据源 站外实时信息检索")).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("task-composer-submit"));
+
+    await waitFor(() => expect(mockCreateInitialChatRound).toHaveBeenCalledTimes(1));
+    expect(mockCreateInitialChatRound.mock.calls[0]?.[1]).toBe("@站外实时信息检索 搜索 Anker 评论");
+  });
+
+  it("reuses the launch client_message_id when an accepted response is lost", async () => {
+    mockPlatformAgent.current = createPlatformAgentMock({ accessToken: "access-token", userId: "user-1" });
+    mockSafeRandomUUID.mockReset();
+    mockSafeRandomUUID
+      .mockReturnValueOnce("a62430bc-1417-4b95-9432-937b331a7d7a")
+      .mockReturnValue("0743332a-89e5-423c-9278-6f62262ab7c2");
+    mockCreateInitialChatRound
+      .mockRejectedValueOnce(new Error("accepted response lost"))
+      .mockResolvedValueOnce({
+        session_id: "f4159ee9-c863-41c8-9c1b-ffbfa193917f",
+        round_id: "3da8ff9a-95e2-4f9e-9788-7fda3d450fe7",
+        assistant_message_id: "46aa60a5-64dd-471d-adfe-9856a3ee17c5",
+        status: "QUEUED",
+        last_event_seq: 1,
+      });
+    renderHomePage();
+
+    const editor = await screen.findByTestId("task-composer-editor");
+    await userEvent.click(editor);
+    await userEvent.type(editor, "重试同一个首发请求");
+    await userEvent.click(screen.getByTestId("task-composer-submit"));
+    await waitFor(() => expect(mockCreateInitialChatRound).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText("accepted response lost")).toBeInTheDocument());
+
+    await userEvent.click(screen.getByTestId("task-composer-submit"));
+    await waitFor(() => expect(mockCreateInitialChatRound).toHaveBeenCalledTimes(2));
+    expect(mockCreateInitialChatRound.mock.calls[0]?.[2]).toBe("a62430bc-1417-4b95-9432-937b331a7d7a");
+    expect(mockCreateInitialChatRound.mock.calls[1]?.[2]).toBe("a62430bc-1417-4b95-9432-937b331a7d7a");
+    expect(mockSafeRandomUUID).toHaveBeenCalledTimes(1);
   });
 
   it("keeps prompt cards stable when selecting datasource tokens", async () => {

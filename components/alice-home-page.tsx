@@ -21,6 +21,7 @@ import { AliceShell, useAliceShellState } from "@/components/alice-shell";
 import { PlatformLogo } from "@/components/platform-logo";
 import { sanitizeObjective } from "@/lib/agent-attachments";
 import {
+  insertDatasourceMentions,
   parseComposerPrefillStorageValue,
   parseDatasourceMentions,
   type ComposerSourcePlacement,
@@ -36,17 +37,14 @@ import {
   HOME_PROMPT_ANONYMOUS_CACHE_KEY,
   loadHomePromptCardsOnce,
 } from "@/lib/home-prompt-data-sources";
-import {
-  saveHomeSessionLaunchMeta,
-  stashHomeSessionLaunchFiles,
-} from "@/lib/home-session-launch";
+import { createInitialChatRound } from "@/lib/agent-api/chat-rounds";
+import { formatAgentApiErrorForUser } from "@/lib/agent-api/client";
+import { safeRandomUUID } from "@/lib/random-uuid";
 import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
 import { cn } from "@/lib/utils";
 import { NewConversationTaskComposer } from "@/components/new-conversation-task-composer";
 import { ALICE_LOGO_SRC } from "@/lib/brand-assets";
 
-const PENDING_HOME_TASK_STORAGE_KEY = "alice:pending-home-task-after-login";
-const PENDING_HOME_TASK_MAX_AGE_MS = 30 * 60 * 1000;
 const GREETING_HOVER_ICONS = [
   "¯\\_(ツ)_/¯",
   "(⌐■_■)",
@@ -81,9 +79,15 @@ type PendingHomeTask = {
   sourcePlacements: ComposerSourcePlacement[];
   activeCapabilityId: string;
   composerMode: HomeComposerMode;
-  createdAt: number;
   pendingFiles?: File[];
 };
+
+function initialRoundSubmissionSignature(message: string, files: File[]): string {
+  return JSON.stringify([
+    message,
+    files.map((file) => [file.name, file.size, file.type, file.lastModified]),
+  ]);
+}
 
 function capabilityLabelFromId(capabilityId: string) {
   return capabilityId.trim().replace(/^@+/, "");
@@ -196,50 +200,6 @@ function resolvePromptCardCapabilitySourceIds(card: HomePromptCard, dataSourceIt
   return sourceIds;
 }
 
-function savePendingHomeTaskAfterLogin(task: Omit<PendingHomeTask, "createdAt">) {
-  try {
-    sessionStorage.setItem(
-      PENDING_HOME_TASK_STORAGE_KEY,
-      JSON.stringify({ ...task, createdAt: Date.now() } satisfies PendingHomeTask),
-    );
-  } catch {
-    // If sessionStorage is unavailable, the in-memory login prompt still preserves the typed text on screen.
-  }
-}
-
-function consumePendingHomeTaskAfterLogin(): PendingHomeTask | null {
-  try {
-    const raw = sessionStorage.getItem(PENDING_HOME_TASK_STORAGE_KEY);
-    if (!raw) return null;
-    sessionStorage.removeItem(PENDING_HOME_TASK_STORAGE_KEY);
-    const parsed = JSON.parse(raw) as Partial<PendingHomeTask>;
-    if (!parsed.text || typeof parsed.text !== "string") return null;
-    if (!parsed.createdAt || Date.now() - parsed.createdAt > PENDING_HOME_TASK_MAX_AGE_MS) return null;
-    return {
-      text: parsed.text,
-      selectedSourceIds: Array.isArray(parsed.selectedSourceIds) ? parsed.selectedSourceIds.filter((id) => typeof id === "string") : [],
-      sourcePlacements: Array.isArray(parsed.sourcePlacements)
-        ? parsed.sourcePlacements.filter(
-          (placement): placement is ComposerSourcePlacement =>
-            Boolean(
-              placement &&
-                typeof placement === "object" &&
-                "sourceId" in placement &&
-                typeof placement.sourceId === "string" &&
-                "offset" in placement &&
-                typeof placement.offset === "number",
-            ),
-        )
-        : [],
-      activeCapabilityId: typeof parsed.activeCapabilityId === "string" ? parsed.activeCapabilityId : "scenarios",
-      composerMode: parsed.composerMode === "普通模式" ? "普通模式" : "深度模式",
-      createdAt: parsed.createdAt,
-    };
-  } catch {
-    return null;
-  }
-}
-
 export function AliceHomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -281,6 +241,8 @@ export function AliceHomePage() {
   } = useHomeDataSourceMenu({ logLabel: "[source-menu-capabilities]" });
   const promptGridScrollRef = useRef<HTMLDivElement | null>(null);
   const prevActiveRunIdRef = useRef<string | null>(null);
+  const pendingHomeTaskAfterLoginRef = useRef<PendingHomeTask | null>(null);
+  const pendingInitialRoundRef = useRef<{ signature: string; clientMessageId: string } | null>(null);
 
   const resetHomeComposer = useCallback(() => {
     setQuery("");
@@ -400,42 +362,53 @@ export function AliceHomePage() {
       return;
     }
     if (!platformAgent.auth) {
-      savePendingHomeTaskAfterLogin({
+      const pendingAfterLogin: PendingHomeTask = {
         text: nextQuery,
         selectedSourceIds: effectiveSelectedSourceIds,
         sourcePlacements: pending?.sourcePlacements ?? sourcePlacements,
         activeCapabilityId: effectiveActiveCapabilityId,
         composerMode: effectiveComposerMode,
-        pendingFiles: pendingHomeFiles,
-      });
+        pendingFiles: pending?.pendingFiles ?? pendingHomeFiles,
+      };
+      pendingHomeTaskAfterLoginRef.current = pendingAfterLogin;
       platformAgent.openLogin("登录后将继续发送当前任务。");
       return;
     }
     setLaunching(true);
     try {
-      const sid = await platformAgent.beginNewHomeTaskSession();
-      if (!sid) return;
-      upsertOptimisticHistorySession(sid);
-      platformAgent.setActivePlatformSession(sid);
+      const placements = pending?.sourcePlacements ?? sourcePlacements;
+      const files = pending?.pendingFiles ?? pendingHomeFiles;
+      const message = insertDatasourceMentions(
+        nextQuery,
+        selectedCapabilities,
+        placements,
+        composerDataSourceItems,
+      );
+      const signature = initialRoundSubmissionSignature(message, files);
+      const priorAttempt = pendingInitialRoundRef.current;
+      const clientMessageId =
+        priorAttempt?.signature === signature
+          ? priorAttempt.clientMessageId
+          : safeRandomUUID();
+      pendingInitialRoundRef.current = { signature, clientMessageId };
+      const accepted = await platformAgent.withFreshToken((token) =>
+        createInitialChatRound(token, message, clientMessageId, files),
+      );
+      pendingInitialRoundRef.current = null;
+      upsertOptimisticHistorySession(accepted.session_id);
+      platformAgent.setActivePlatformSession(accepted.session_id);
       setActiveSessionTitle(nextQuery);
       void refreshHistoryNow();
-      saveHomeSessionLaunchMeta({
-        v: 1,
-        sessionId: sid,
-        prompt: nextQuery,
-        selectedSourceIds: selectedCapabilities,
-        sourcePlacements: pending?.sourcePlacements ?? sourcePlacements,
-        sendKind: "pending",
-      });
-      stashHomeSessionLaunchFiles(sid, pending?.pendingFiles ?? pendingHomeFiles);
-      setPendingHomeFiles([]);
       resetHomeComposer();
-      router.replace(`/agent?sessionId=${encodeURIComponent(sid)}`);
+      router.replace(`/agent?sessionId=${encodeURIComponent(accepted.session_id)}`);
+    } catch (error) {
+      setNotice(formatAgentApiErrorForUser(error) || "任务发起失败，请重试。");
     } finally {
       setLaunching(false);
     }
   }, [
     activeCapabilityId,
+    composerDataSourceItems,
     composerMode,
     pendingHomeFiles,
     platformAgent,
@@ -451,7 +424,8 @@ export function AliceHomePage() {
 
   useEffect(() => {
     if (!platformAgent?.auth || launching || activeRunId) return;
-    const pending = consumePendingHomeTaskAfterLogin();
+    const pending = pendingHomeTaskAfterLoginRef.current;
+    pendingHomeTaskAfterLoginRef.current = null;
     if (!pending) return;
     setQuery(pending.text);
     setSelectedSourceIds(pending.selectedSourceIds);

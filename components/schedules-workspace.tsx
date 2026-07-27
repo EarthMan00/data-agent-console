@@ -46,6 +46,7 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/compon
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { downloadAuthorizedFile, formatAgentApiErrorForUser, parseFastApiDetail } from "@/lib/agent-api/client";
+import { createInitialChatRound } from "@/lib/agent-api/chat-rounds";
 import {
   createUserScheduledTaskGroup,
   createUserScheduledTask,
@@ -97,7 +98,7 @@ import {
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import { getHomeCapabilityItem, type HomeCapabilityItem } from "@/lib/home-capability-items";
 import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
-import { stashScheduleTrialAttachmentFiles } from "@/lib/schedule-trial-attachment-files";
+import { safeRandomUUID } from "@/lib/random-uuid";
 import {
   persistResultPushBlocksForTask,
   resultPushBlocksForEditingTask,
@@ -123,6 +124,13 @@ function serializeScheduleComposerPrompt(
   dataSourceItems: HomeCapabilityItem[],
 ) {
   return insertDatasourceMentions(text, sourceIds, sourcePlacements, dataSourceItems);
+}
+
+function scheduleTrialSubmissionSignature(message: string, files: File[]): string {
+  return JSON.stringify([
+    message,
+    files.map((file) => [file.name, file.size, file.type, file.lastModified]),
+  ]);
 }
 
 function sortGroupsByCreatedAsc(groups: UserScheduledTaskGroupDto[]) {
@@ -313,6 +321,10 @@ export function SchedulesWorkspace() {
   /** 进入编辑时从服务器装填的提示词，用于判断「保存」前是否需先试跑 */
   const editPromptBaselineRef = useRef<string | null>(null);
   const resultPushRef = useRef<ResultPushBlock[]>([]);
+  const pendingScheduleTrialRoundRef = useRef<{
+    signature: string;
+    clientMessageId: string;
+  } | null>(null);
 
   const applyResultPushBlocks = useCallback((blocks: ResultPushBlock[]) => {
     resultPushRef.current = blocks;
@@ -773,16 +785,26 @@ export function SchedulesWorkspace() {
         createGroupIdFromUrl: createGroupIdQ,
         editingTaskId: editId || null,
       });
-      const sid = await platformAgent.beginNewHomeTaskSession();
-      if (!sid) {
-        setNotice("无法创建试跑会话，请登录后重试。");
-        return;
-      }
-      /** 首条消息在 agent 试跑页内发送，避免在定时页阻塞 2–3s 后已进入对话的割裂感 */
-      stashScheduleTrialAttachmentFiles(sid, schedulePendingFiles);
-      saveScheduleTrialMeta({ v: 1, sessionId: sid, taskId: null, sendKind: "pending" });
-      platformAgent.setActivePlatformSession(sid);
-      router.push(`/agent?sessionId=${encodeURIComponent(sid)}&scheduleTrial=1`);
+      const signature = scheduleTrialSubmissionSignature(serializedPrompt, schedulePendingFiles);
+      const priorAttempt = pendingScheduleTrialRoundRef.current;
+      const clientMessageId =
+        priorAttempt?.signature === signature
+          ? priorAttempt.clientMessageId
+          : safeRandomUUID();
+      pendingScheduleTrialRoundRef.current = { signature, clientMessageId };
+      const accepted = await platformAgent.withFreshToken((token) =>
+        createInitialChatRound(token, serializedPrompt, clientMessageId, schedulePendingFiles),
+      );
+      pendingScheduleTrialRoundRef.current = null;
+      saveScheduleTrialMeta({
+        v: 2,
+        sessionId: accepted.session_id,
+        roundId: accepted.round_id,
+        sendKind: "queued",
+      });
+      platformAgent.setActivePlatformSession(accepted.session_id);
+      setSchedulePendingFiles([]);
+      router.push(`/agent?sessionId=${encodeURIComponent(accepted.session_id)}&scheduleTrial=1`);
     } catch (e) {
       setNotice(formatAgentApiErrorForUser(e) || "试跑发起失败。");
     } finally {

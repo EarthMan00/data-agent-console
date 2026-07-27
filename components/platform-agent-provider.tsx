@@ -19,14 +19,12 @@ import {
   AgentApiError,
   checkUsernameAvailable,
   checkAccessToken,
-  createSession,
   formatAgentApiErrorForUser,
   login,
   logoutPlatformAuth,
   parseFastApiDetail,
   registerByEmail,
   refreshAccessToken,
-  releaseSession,
   sendRegisterEmailOtp,
 } from "@/lib/agent-api/client";
 import {
@@ -51,7 +49,6 @@ const REGISTER_INTRO_TEXT = "欢迎注册，我是 Alice，你的跨境运营助
 const REGISTER_CODE_TITLE = "请输入发送给您邮箱的验证码";
 const LOGIN_INTRO_CHAR_INTERVAL_MS = 34;
 const LOGIN_RETURNING_STORAGE_KEY = "alice:has-logged-in";
-const PENDING_HOME_TASK_STORAGE_KEY = "alice:pending-home-task-after-login";
 const REGISTER_CODE_LENGTH = 6;
 type AuthMode = "login" | "register";
 type RegisterStep = "email" | "code" | "password";
@@ -107,9 +104,6 @@ export type PlatformAgentContextValue = {
   closeLogin: () => void;
   loginWithPassword: (account: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  /** 从首页发起新研究：释放旧平台会话并创建新会话，返回新 session_id */
-  beginNewHomeTaskSession: () => Promise<string | null>;
-  ensurePlatformSession: () => Promise<boolean>;
   /** 切换到某个已存在会话（用于历史对话继续追问） */
   setActivePlatformSession: (sessionId: string) => void;
   /** 清除当前选中的平台会话（本地状态与 sessionStorage） */
@@ -430,11 +424,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
 
   const closeLogin = useCallback(() => {
     suppressLoginOpenUntilRef.current = Date.now() + 650;
-    try {
-      sessionStorage.removeItem(PENDING_HOME_TASK_STORAGE_KEY);
-    } catch {
-      // sessionStorage may be unavailable in restricted browser contexts.
-    }
     setAccount("");
     setPassword("");
     setAuthMode("login");
@@ -606,18 +595,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       username?: string;
       user_role?: string | undefined;
     }, displayNameHint?: string) => {
-      const prevSnap = loadAgentSession();
-      const prevSid = loadPlatformSessionId();
-      if (prevSnap?.accessToken && prevSid) {
-        try {
-          await releaseSession(prevSnap.accessToken, prevSid);
-        } catch (e) {
-          console.warn("[platform-agent] release_session_after_login_failed", {
-            session_id: prevSid,
-            error: e instanceof Error ? e.message : String(e),
-          });
-        }
-      }
       const snap: AgentSessionSnapshot = {
         accessToken: res.access_token,
         refreshToken: res.refresh_token || HTTP_ONLY_REFRESH_TOKEN_PLACEHOLDER,
@@ -905,18 +882,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     const snap = auth ?? loadAgentSession();
-    const sid = platformSessionId ?? loadPlatformSessionId();
-    if (snap?.accessToken && sid) {
-      try {
-        await releaseSession(snap.accessToken, sid);
-      } catch (e) {
-        console.warn("[platform-agent] release_session_on_logout_failed", {
-          session_id: sid,
-          error: e instanceof Error ? e.message : String(e),
-          status: e instanceof AgentApiError ? e.status : undefined,
-        });
-      }
-    }
     try {
       await logoutPlatformAuth(snap?.accessToken);
     } catch (e) {
@@ -928,70 +893,7 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     setAuth(null);
     setPlatformSessionId(null);
     router.push("/");
-  }, [auth, platformSessionId, router]);
-
-  const beginNewHomeTaskSession = useCallback(async (): Promise<
-    string | null
-  > => {
-    const snap = auth ?? loadAgentSession();
-    if (!snap) {
-      openLogin("请先登录后再发起任务。");
-      return null;
-    }
-    try {
-      let nextSid: string | null = null;
-      await withFreshToken(async (token) => {
-        // Release the old session in the background — we don't need to wait
-        // for it before creating the new one, and blocking here freezes the
-        // UI while a previous task may still be polling on the old token.
-        const sid = platformSessionId ?? loadPlatformSessionId();
-        if (sid) {
-          releaseSession(token, sid).catch((e) => {
-            console.warn(
-              "[platform-agent] release_session_before_new_home_failed",
-              {
-                session_id: sid,
-                error: e instanceof Error ? e.message : String(e),
-                status: e instanceof AgentApiError ? e.status : undefined,
-              },
-            );
-          });
-        }
-        const created = await createSession(token);
-        savePlatformSessionId(created.session_id);
-        setPlatformSessionId(created.session_id);
-        nextSid = created.session_id;
-      });
-      return nextSid;
-    } catch (e) {
-      openLogin(e instanceof Error ? e.message : String(e));
-      return null;
-    }
-  }, [auth, openLogin, platformSessionId, withFreshToken]);
-
-  const ensurePlatformSession = useCallback(async (): Promise<boolean> => {
-    const snap = auth ?? loadAgentSession();
-    if (!snap) {
-      openLogin("请先登录后再发送任务。");
-      return false;
-    }
-    const existing = platformSessionId ?? loadPlatformSessionId();
-    if (existing) {
-      if (!platformSessionId) setPlatformSessionId(existing);
-      return true;
-    }
-    try {
-      await withFreshToken(async (token) => {
-        const created = await createSession(token);
-        savePlatformSessionId(created.session_id);
-        setPlatformSessionId(created.session_id);
-      });
-      return true;
-    } catch (e) {
-      openLogin(e instanceof Error ? e.message : String(e));
-      return false;
-    }
-  }, [auth, openLogin, platformSessionId, withFreshToken]);
+  }, [auth, router]);
 
   const setActivePlatformSession = useCallback((sessionId: string) => {
     const sid = (sessionId || "").trim();
@@ -1043,8 +945,6 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
       closeLogin,
       loginWithPassword,
       logout,
-      beginNewHomeTaskSession,
-      ensurePlatformSession,
       setActivePlatformSession,
       clearActivePlatformSession,
       withFreshToken,
@@ -1052,10 +952,8 @@ function PlatformAgentInner({ children }: { children: ReactNode }) {
     [
       auth,
       authHydrated,
-      beginNewHomeTaskSession,
       clearActivePlatformSession,
       closeLogin,
-      ensurePlatformSession,
       loginWithPassword,
       logout,
       openLogin,

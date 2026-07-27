@@ -2,7 +2,8 @@ import type { ResultPushBlock } from "@/components/schedule-result-push";
 import type { ScheduleKind } from "./schedule-payloads";
 
 const DRAFT_KEY = "alice:scheduleCreateDraftV1";
-const TRIAL_META_KEY = "alice:scheduleTrialMetaV1";
+const TRIAL_META_KEY = "alice:scheduleTrialMetaV2";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type ScheduleCreateDraftV1 = {
   v: 1;
@@ -22,28 +23,11 @@ export type ScheduleCreateDraftV1 = {
   editingTaskId?: string | null;
 };
 
-export type ScheduleTrialSendState =
-  /** 已建会话、等待 agent 页发首条（不阻塞导航） */
-  | "pending"
-  /** 首条已发出，等接口/历史同步 */
-  | "in_flight"
-  | "accepted"
-  | "completed"
-  | "blocked"
-  | "unknown";
-
-export type ScheduleTrialMetaV1 = {
-  v: 1;
+export type ScheduleTrialMetaV2 = {
+  v: 2;
   sessionId: string;
-  taskId: string | null;
-  sendKind: ScheduleTrialSendState;
-  /** 多步编排时 POST /chat/send 202 返回，用于拉取各子任务产物 */
-  orchestrationId?: string | null;
-  /**
-   * POST /chat/.../send 202 的 execution_steps 文案，用于在会话 message.meta 仍无 task_execution_steps 时
-   * 与首页「任务拆分 / 任务执行」同构展示。
-   */
-  executionStepLabels?: string[] | null;
+  roundId: string;
+  sendKind: "queued";
 };
 
 export function saveScheduleCreateDraft(d: Omit<ScheduleCreateDraftV1, "v">): void {
@@ -75,7 +59,7 @@ export function clearScheduleCreateDraft(): void {
   }
 }
 
-export function saveScheduleTrialMeta(m: ScheduleTrialMetaV1): void {
+export function saveScheduleTrialMeta(m: ScheduleTrialMetaV2): void {
   try {
     sessionStorage.setItem(TRIAL_META_KEY, JSON.stringify(m));
   } catch {
@@ -83,13 +67,30 @@ export function saveScheduleTrialMeta(m: ScheduleTrialMetaV1): void {
   }
 }
 
-export function loadScheduleTrialMeta(): ScheduleTrialMetaV1 | null {
+export function loadScheduleTrialMeta(): ScheduleTrialMetaV2 | null {
   try {
     const raw = sessionStorage.getItem(TRIAL_META_KEY);
     if (!raw) return null;
-    const p = JSON.parse(raw) as ScheduleTrialMetaV1;
-    if (p.v !== 1) return null;
-    return p;
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const p = value as Record<string, unknown>;
+    if (
+      Object.keys(p).sort().join(",") !== "roundId,sendKind,sessionId,v" ||
+      p.v !== 2 ||
+      p.sendKind !== "queued" ||
+      typeof p.sessionId !== "string" ||
+      !UUID_RE.test(p.sessionId) ||
+      typeof p.roundId !== "string" ||
+      !UUID_RE.test(p.roundId)
+    ) {
+      return null;
+    }
+    return {
+      v: 2,
+      sessionId: p.sessionId,
+      roundId: p.roundId,
+      sendKind: "queued",
+    };
   } catch {
     return null;
   }
@@ -106,23 +107,4 @@ export function clearScheduleTrialMeta(): void {
 export function clearScheduleTrialStorage(): void {
   clearScheduleCreateDraft();
   clearScheduleTrialMeta();
-}
-
-/**
- * 试跑首条发送：从 pending 原子地改为 in_flight，避免双 effect / Strict 下重复发。
- * 已非 pending 时返回 null（含已 in_flight / 已完成等）。
- */
-export function tryClaimScheduleTrialFirstSend(targetSessionId: string): ScheduleTrialMetaV1 | null {
-  const m = loadScheduleTrialMeta();
-  if (!m || m.v !== 1) return null;
-  if (m.sessionId !== targetSessionId) return null;
-  if (m.sendKind !== "pending") return null;
-  const next: ScheduleTrialMetaV1 = { ...m, sendKind: "in_flight" };
-  saveScheduleTrialMeta(next);
-  return next;
-}
-
-export function isScheduleTrialAwaitingFirstMessage(sessionId: string, m: ScheduleTrialMetaV1 | null = loadScheduleTrialMeta()): boolean {
-  if (!m || m.sessionId !== sessionId) return false;
-  return m.sendKind === "pending" || m.sendKind === "in_flight";
 }

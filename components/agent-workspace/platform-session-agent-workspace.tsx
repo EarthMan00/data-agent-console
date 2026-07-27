@@ -30,19 +30,16 @@ import {
   parseComposerPrefillStorageValue,
   type ComposerSourcePlacement,
 } from "@/lib/composer-prefill";
-import {
-  loadHomeSessionLaunchMeta,
-  saveHomeSessionLaunchMeta,
-  takeHomeSessionLaunchFiles,
-  tryClaimHomeSessionLaunchFirstSend,
-} from "@/lib/home-session-launch";
 import { safeRandomUUID } from "@/lib/random-uuid";
 import {
   loadScheduleCreateDraft,
-  saveScheduleTrialMeta,
-  tryClaimScheduleTrialFirstSend,
+  loadScheduleTrialMeta,
 } from "@/lib/schedule-create-draft";
-import { takeScheduleTrialAttachmentFiles } from "@/lib/schedule-trial-attachment-files";
+import {
+  resolveScheduleTrialRound,
+  scheduleTrialCanSave,
+  scheduleTrialCanTerminate,
+} from "@/lib/schedule-trial-execution-presentation";
 import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
 import { roundCanStop } from "@/lib/session-execution-stop";
 import { shouldHideAssistantMessageBubble } from "@/lib/session-message-ui-filter";
@@ -311,6 +308,14 @@ export function PlatformSessionAgentWorkspace({
     roundController.activeRound?.session_id === sessionId
       ? roundController.activeRound
       : null;
+  const scheduleTrialMeta = useMemo(
+    () => (scheduleTrial && sessionId ? loadScheduleTrialMeta() : null),
+    [scheduleTrial, sessionId],
+  );
+  const scheduleTrialRound = useMemo(
+    () => resolveScheduleTrialRound(scheduleTrialMeta, sessionId, snapshots),
+    [scheduleTrialMeta, sessionId, snapshots],
+  );
 
   const reloadMessages = useCallback(
     async (preserveOptimistic = true) => {
@@ -546,49 +551,6 @@ export function PlatformSessionAgentWorkspace({
     [draft, pendingFiles, selectedSourceIds, sourcePlacements, submitPreparedMessage],
   );
 
-  // Task 16 replaces these two destination hand-offs with atomic initial-Round
-  // creation before navigation. Until then they use only the durable Round
-  // controller; no legacy send stream, poll or client-side task state remains.
-  useEffect(() => {
-    if (!scheduleTrial || scheduledRunRecord || !platformAgent?.auth) return;
-    if (!tryClaimScheduleTrialFirstSend(sessionId)) return;
-    const prompt = loadScheduleCreateDraft()?.prompt?.trim() ?? "";
-    const files = takeScheduleTrialAttachmentFiles(sessionId);
-    void (async () => {
-      const sent = await submitPreparedMessage({
-        rawText: prompt,
-        sourceIds: [],
-        placements: [],
-        files,
-      });
-      saveScheduleTrialMeta({
-        v: 1,
-        sessionId,
-        taskId: null,
-        sendKind: sent ? "accepted" : "unknown",
-      });
-    })();
-  }, [platformAgent, scheduleTrial, scheduledRunRecord, sessionId, submitPreparedMessage]);
-
-  useEffect(() => {
-    if (scheduleTrial || scheduledRunRecord || !platformAgent?.auth) return;
-    const launch = tryClaimHomeSessionLaunchFirstSend(sessionId);
-    if (!launch) return;
-    const files = takeHomeSessionLaunchFiles(sessionId);
-    void (async () => {
-      await submitPreparedMessage({
-        rawText: launch.prompt,
-        sourceIds: launch.selectedSourceIds,
-        placements: launch.sourcePlacements ?? [],
-        files,
-      });
-      const current = loadHomeSessionLaunchMeta();
-      if (current?.sessionId === sessionId) {
-        saveHomeSessionLaunchMeta({ ...current, sendKind: "done" });
-      }
-    })();
-  }, [platformAgent, scheduleTrial, scheduledRunRecord, sessionId, submitPreparedMessage]);
-
   const stopActiveRound = useCallback(async () => {
     const round = activeRound;
     if (!round || !roundCanStop(round.status)) return;
@@ -668,21 +630,25 @@ export function PlatformSessionAgentWorkspace({
   }, [platformAgent, router]);
 
   const terminateTrial = useCallback(async () => {
-    if (activeRound && roundCanStop(activeRound.status)) {
-      await stopActiveRound();
+    if (scheduleTrialRound && scheduleTrialCanTerminate(scheduleTrialRound)) {
+      try {
+        await roundController.cancel(scheduleTrialRound.round_id);
+      } catch (error) {
+        setLocalError(publicRequestError(error, "停止失败，请重试。"));
+        return;
+      }
     }
     goBackToSchedule();
-  }, [activeRound, goBackToSchedule, stopActiveRound]);
+  }, [goBackToSchedule, roundController, scheduleTrialRound]);
 
   const activeStatus = activeRound?.status ?? null;
   const waitingForInput = activeStatus === "WAITING_INPUT";
   const cancelRequested = activeStatus === "CANCEL_REQUESTED";
   const composerOwnsStop = roundCanStop(activeStatus) && !waitingForInput;
-  const trialInFlight = Boolean(activeStatus && !isTerminal(activeStatus));
-  const trialSaveReady =
-    scheduleTrial &&
-    (activeStatus === "SUCCEEDED" || activeStatus === "PARTIAL_SUCCESS") &&
-    !saveBusy;
+  const trialStatus = scheduleTrialRound?.status ?? null;
+  const trialCancelRequested = trialStatus === "CANCEL_REQUESTED";
+  const trialInFlight = Boolean(trialStatus && !isTerminal(trialStatus));
+  const trialSaveReady = scheduleTrial && scheduleTrialCanSave(scheduleTrialRound) && !saveBusy;
   const combinedError = sanitizeAssistantContent(localError || roundController.error);
 
   const composer = (
@@ -875,10 +841,10 @@ export function PlatformSessionAgentWorkspace({
                         type="button"
                         variant="ghost"
                         className="h-11 flex-1 rounded-control text-text-disabled sm:flex-initial"
-                        disabled={!activeStatus || !roundCanStop(activeStatus) || saveBusy}
+                        disabled={!scheduleTrialCanTerminate(scheduleTrialRound) || saveBusy}
                         onClick={() => void terminateTrial()}
                       >
-                        {cancelRequested ? "正在停止" : "终止"}
+                        {trialCancelRequested ? "正在停止" : "终止"}
                       </Button>
                       <Button
                         type="button"
