@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,6 +13,7 @@ const {
   mockCreateUserScheduledTask,
   mockFetchAllUserScheduledTaskGroups,
   mockFetchAllUserScheduledTasks,
+  mockFetchAllScheduledTaskRuns,
   mockFetchHomePromptRecommendations,
   mockFetchPublicPromptCategories,
   mockRunUserScheduledTaskNow,
@@ -25,6 +27,7 @@ const {
     mockCreateUserScheduledTask: vi.fn(),
     mockFetchAllUserScheduledTaskGroups: vi.fn(),
     mockFetchAllUserScheduledTasks: vi.fn(),
+    mockFetchAllScheduledTaskRuns: vi.fn(),
     mockFetchHomePromptRecommendations: vi.fn(),
     mockFetchPublicPromptCategories: vi.fn(),
     mockRunUserScheduledTaskNow: vi.fn(),
@@ -87,7 +90,7 @@ vi.mock("@/lib/agent-api/scheduled-tasks", () => ({
   deleteScheduledTaskRun: vi.fn(),
   deleteUserScheduledTask: vi.fn(),
   deleteUserScheduledTaskGroup: vi.fn(),
-  fetchAllScheduledTaskRuns: vi.fn().mockResolvedValue([]),
+  fetchAllScheduledTaskRuns: mockFetchAllScheduledTaskRuns,
   fetchAllUserScheduledTaskGroups: mockFetchAllUserScheduledTaskGroups,
   fetchAllUserScheduledTasks: mockFetchAllUserScheduledTasks,
   getUserScheduledTask: vi.fn(),
@@ -123,6 +126,26 @@ const existingTask = {
   updated_at: "2026-06-20T09:00:00Z",
 };
 
+const scheduledRun = {
+  id: "scheduled-run-1",
+  task_id: "scheduled-task-filter-id",
+  trigger_type: "schedule",
+  status: "success",
+  session_id: "f4159ee9-c863-41c8-9c1b-ffbfa193917f",
+  started_at: "2026-07-27T00:00:00Z",
+  finished_at: "2026-07-27T00:01:00Z",
+  error_message: null,
+  task_title_snapshot: "美国站日报",
+  prompt_snapshot: "生成日报",
+  group_name_snapshot: null,
+  meta: {
+    result_artifact_count: 2,
+    task_id: "legacy-skill-task",
+    round_id: "untyped-round-id-must-not-be-guessed",
+  },
+  created_at: "2026-07-27T00:00:00Z",
+};
+
 function fillRequiredCreateFields() {
   fireEvent.change(screen.getByPlaceholderText("请输入任务名称"), { target: { value: "测试任务" } });
   fireEvent.change(screen.getByLabelText("任务输入编辑器"), { target: { value: "测试提示词" } });
@@ -140,6 +163,8 @@ describe("schedules flow", () => {
     mockFetchAllUserScheduledTaskGroups.mockResolvedValue([]);
     mockFetchAllUserScheduledTasks.mockReset();
     mockFetchAllUserScheduledTasks.mockResolvedValue([existingTask]);
+    mockFetchAllScheduledTaskRuns.mockReset();
+    mockFetchAllScheduledTaskRuns.mockResolvedValue([]);
     mockFetchPublicPromptCategories.mockReset();
     mockFetchPublicPromptCategories.mockResolvedValue([
       { id: "source-keepa", name: "Keepa", sort_order: 1 },
@@ -172,6 +197,41 @@ describe("schedules flow", () => {
     expect(screen.getByRole("tab", { name: "已定时" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "运行记录" })).toBeInTheDocument();
     expect(await screen.findByText("美国站平板键盘套周监控")).toBeInTheDocument();
+  });
+
+  it("opens scheduled result artifacts through the canonical Session without a Task query", async () => {
+    mockFetchAllScheduledTaskRuns.mockResolvedValue([scheduledRun]);
+    render(<SchedulesWorkspace />);
+
+    await userEvent.click(screen.getByRole("tab", { name: "运行记录" }));
+    const openResult = await screen.findByRole("button", { name: "查看并下载报告" });
+    fireEvent.click(openResult);
+
+    await waitFor(() => {
+      expect(push).toHaveBeenCalledWith(
+        "/agent?sessionId=f4159ee9-c863-41c8-9c1b-ffbfa193917f&scheduledRunRecord=1&runLabel=%E7%BE%8E%E5%9B%BD%E7%AB%99%E6%97%A5%E6%8A%A5",
+      );
+    });
+    const destination = String(push.mock.calls.at(-1)?.[0] ?? "");
+    expect(destination).not.toContain("taskId");
+    expect(destination).not.toContain("roundId");
+    expect(destination).not.toContain("legacy-skill-task");
+  });
+
+  it("does not navigate when result artifacts have no canonical Session", async () => {
+    mockFetchAllScheduledTaskRuns.mockResolvedValue([
+      { ...scheduledRun, id: "scheduled-run-without-session", session_id: null },
+    ]);
+    render(<SchedulesWorkspace />);
+
+    await userEvent.click(screen.getByRole("tab", { name: "运行记录" }));
+    const openResult = await screen.findByRole("button", { name: "查看并下载报告" });
+    await userEvent.click(openResult);
+
+    expect(push).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText("该记录缺少关联会话，无法查看或下载报告"),
+    ).toBeInTheDocument();
   });
 
   it("shows immediate-run create controls by default", () => {

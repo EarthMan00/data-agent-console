@@ -7,7 +7,6 @@ import {
   AlarmFilled,
   ArrowRightLeft,
   ChevronDown,
-  Download,
   Eye,
   InfoCircle,
   Loader2,
@@ -45,7 +44,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { downloadAuthorizedFile, formatAgentApiErrorForUser, parseFastApiDetail } from "@/lib/agent-api/client";
+import { formatAgentApiErrorForUser, parseFastApiDetail } from "@/lib/agent-api/client";
 import { createInitialChatRound } from "@/lib/agent-api/chat-rounds";
 import {
   createUserScheduledTaskGroup,
@@ -63,11 +62,10 @@ import {
 import {
   deriveTaskUiStatus,
   formatRunRecordFinishedAtLocal,
-  getScheduledRunSkillTaskId,
   nextRunLabel,
   runStatusDisplay,
   runStatusToApi,
-  scheduledRunShowsDownloadAllReports,
+  scheduledRunHasResultArtifacts,
 } from "@/lib/agent-api/schedules-mappers";
 import { isPlatformBackendEnabled } from "@/lib/agent-runtime";
 import {
@@ -2104,38 +2102,13 @@ function ApiRunRecordRow({
 }) {
   const router = useRouter();
   const platformAgent = useOptionalPlatformAgent();
-  const [downloading, setDownloading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const st = runStatusDisplay(r.status);
   const finished = formatRunRecordFinishedAtLocal(r.finished_at ?? r.started_at);
-  const showDownload = scheduledRunShowsDownloadAllReports(r);
-  const taskId = getScheduledRunSkillTaskId(r);
   const sessionId = (r.session_id || "").trim();
-
-  const onDownloadAll = useCallback(async () => {
-    if (!taskId) {
-      onNotify("无关联任务产物，无法下载", "error");
-      return;
-    }
-    if (!platformAgent) {
-      onApiError("请登录后重试。");
-      return;
-    }
-    setDownloading(true);
-    try {
-      await platformAgent.withFreshToken(async (token) => {
-        // 后端统一按规则处理：单文件直下，多文件打包 zip，且过滤所有 *result.txt
-        await downloadAuthorizedFile(token, `/api/tasks/${taskId}/download`, `${taskId}.zip`);
-        onNotify("已开始下载", "default");
-      });
-    } catch (e) {
-      onApiError(formatAgentApiErrorForUser(e) || "下载失败");
-    } finally {
-      setDownloading(false);
-    }
-  }, [onApiError, onNotify, platformAgent, taskId]);
+  const hasResultArtifacts = scheduledRunHasResultArtifacts(r);
 
   const onViewProcess = useCallback(() => {
     if (!sessionId) {
@@ -2148,9 +2121,16 @@ function ApiRunRecordRow({
       scheduledRunRecord: "1",
     });
     if (label) q.set("runLabel", label);
-    if (taskId) q.set("taskId", taskId);
     router.push(`/agent?${q.toString()}`);
-  }, [onNotify, router, sessionId, r.task_title_snapshot, taskId]);
+  }, [onNotify, router, sessionId, r.task_title_snapshot]);
+
+  const onOpenResultArtifacts = useCallback(() => {
+    if (!sessionId) {
+      onNotify("该记录缺少关联会话，无法查看或下载报告", "error");
+      return;
+    }
+    onViewProcess();
+  }, [onNotify, onViewProcess, sessionId]);
 
   const onDeleteRun = useCallback(async () => {
     if (!platformAgent) {
@@ -2202,17 +2182,16 @@ function ApiRunRecordRow({
             </div>
           </div>
           <div className="inline-flex shrink-0 items-center gap-0.5 pl-1">
-            {showDownload ? (
+            {hasResultArtifacts ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={downloading}
-                onClick={() => void onDownloadAll()}
+                onClick={onOpenResultArtifacts}
                 className="h-9 px-2 text-sm text-foreground hover:text-foreground hover:underline"
               >
-                <Download className="h-4 w-4 shrink-0" />
-                {downloading ? "准备中…" : "下载所有报告"}
+                <Eye className="h-4 w-4 shrink-0" />
+                查看并下载报告
               </Button>
             ) : null}
             <DropdownMenu

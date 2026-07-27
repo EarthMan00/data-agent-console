@@ -101,6 +101,16 @@ const FORBIDDEN_FILE_PATTERNS: Record<string, readonly RegExp[]> = {
   "components/agent-workspace/platform-session-agent-workspace.tsx": [
     /\bfallbackTaskId\b/g,
   ],
+  "components/schedules-workspace.tsx": [
+    /\/api\/tasks\//g,
+    /\bgetScheduledRunSkillTaskId\b/g,
+    /\bonDownloadAll\b/g,
+    /\.set\(["']taskId["']/g,
+  ],
+  "lib/agent-api/schedules-mappers.ts": [
+    /\bgetScheduledRunSkillTaskId\b/g,
+    /\btask_id\b/g,
+  ],
 };
 
 function productionSourceFiles(directory: string): string[] {

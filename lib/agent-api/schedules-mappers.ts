@@ -65,28 +65,10 @@ export function runStatusDisplay(status: string) {
   return { text: status, className: "bg-bg-subtle text-text-secondary border border-border-subtle" };
 }
 
-/** 将 ISO-8601（UTC）显示为当前环境的本地时间（如中国为东八区）。 */
-/**
- * 是否展示「下载所有报告」：以后端 `meta.result_artifact_count` 为准（>0 才有可下载产物）。
- * 无该字段的老数据：若成功且带 `task_id`，仍显示入口，由点击时拉取产物列表决定。
- */
-export function scheduledRunShowsDownloadAllReports(r: ScheduledTaskRunItemApi): boolean {
-  const m = r.meta;
-  const n = m && typeof m === "object" && "result_artifact_count" in m ? Number((m as { result_artifact_count?: unknown }).result_artifact_count) : NaN;
-  if (Number.isFinite(n)) {
-    return n > 0;
-  }
-  const k = STATUS_NORM(r.status);
-  if (k !== "success") return false;
-  const tid = m && typeof m === "object" && "task_id" in m ? (m as { task_id?: unknown }).task_id : null;
-  return typeof tid === "string" && tid.length > 0;
-}
-
-export function getScheduledRunSkillTaskId(r: ScheduledTaskRunItemApi): string | null {
-  const m = r.meta;
-  if (!m || typeof m !== "object" || !("task_id" in m)) return null;
-  const t = (m as { task_id?: unknown }).task_id;
-  return typeof t === "string" && t.trim() ? t.trim() : null;
+/** 是否存在 durable Round 结果产物；不从旧 Task 标识推断。 */
+export function scheduledRunHasResultArtifacts(r: ScheduledTaskRunItemApi): boolean {
+  const count = r.meta?.result_artifact_count;
+  return typeof count === "number" && Number.isFinite(count) && count > 0;
 }
 
 export function formatRunRecordFinishedAtLocal(iso: string | null | undefined): string {
