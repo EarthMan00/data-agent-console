@@ -5,15 +5,14 @@ import { Loader2 } from "@/components/ui/tabler-icons";
 import ReactMarkdown from "react-markdown";
 
 import { HtmlArtifactIframe } from "@/components/html-artifact-iframe";
-import { ChatexcelArtifactPreview } from "@/components/chatexcel-artifact-preview";
 import { LazyCsvArtifactTable } from "@/components/lazy-csv-artifact-table";
 import { TableDataCellContent } from "@/components/table-data-cell-content";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchAuthorizedText } from "@/lib/agent-api/client";
 import type { PlatformTaskArtifactRef } from "@/lib/agent-events";
-import { parseChatexcelArtifactText } from "@/lib/chatexcel-artifact";
+import { NO_DISPLAYABLE_RESULT_MESSAGE } from "@/lib/artifact-preview-messages";
 import { parseJsonToTableData } from "@/lib/json-to-table";
-import { CHATEXCEL_RESULT_RE } from "@/lib/platform-task-artifacts";
+import { TASK_RESULT_TXT_RE } from "@/lib/platform-task-artifacts";
 import { shouldRenderTableCellAsImage } from "@/lib/table-image-url-cell";
 
 function extOf(name: string) {
@@ -99,9 +98,11 @@ export function TaskSingleDataArtifactPreview({
   const isMd = ext === "md" || ext === "markdown";
   const isHtml = ext === "html" || ext === "htm";
   const isPdf = ext === "pdf";
-  const isChatexcel = CHATEXCEL_RESULT_RE.test((artifact.original_name ?? "").trim());
+  const isInternalResultArtifact = TASK_RESULT_TXT_RE.test(
+    (artifact.original_name ?? "").trim(),
+  );
 
-  const needsTextFetch = !isCsv && !isPdf;
+  const needsTextFetch = !isCsv && !isPdf && !isInternalResultArtifact;
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(needsTextFetch);
@@ -131,11 +132,6 @@ export function TaskSingleDataArtifactPreview({
     return parseJsonToTableData(text);
   }, [isJson, text]);
 
-  const chatexcelModel = useMemo(() => {
-    if (!isChatexcel || text == null) return null;
-    return parseChatexcelArtifactText(text);
-  }, [isChatexcel, text]);
-
   if (isCsv) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -157,6 +153,14 @@ export function TaskSingleDataArtifactPreview({
     );
   }
 
+  if (isInternalResultArtifact) {
+    return (
+      <p className="text-caption text-text-secondary">
+        {NO_DISPLAYABLE_RESULT_MESSAGE}
+      </p>
+    );
+  }
+
   if (error) {
     return <p className="text-caption text-danger">{error}</p>;
   }
@@ -166,14 +170,6 @@ export function TaskSingleDataArtifactPreview({
       <div className="flex items-center gap-2 text-caption text-text-secondary">
         <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
         正在加载…
-      </div>
-    );
-  }
-
-  if (isChatexcel && chatexcelModel) {
-    return (
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <ChatexcelArtifactPreview model={chatexcelModel} />
       </div>
     );
   }

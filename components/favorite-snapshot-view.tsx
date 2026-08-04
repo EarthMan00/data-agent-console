@@ -4,10 +4,9 @@ import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 
 import { HtmlArtifactIframe } from "@/components/html-artifact-iframe";
-import { ChatexcelArtifactPreview } from "@/components/chatexcel-artifact-preview";
 import { TableDataCellContent } from "@/components/table-data-cell-content";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { parseChatexcelArtifactText } from "@/lib/chatexcel-artifact";
+import { NO_DISPLAYABLE_RESULT_MESSAGE } from "@/lib/artifact-preview-messages";
 import { parseJsonToTableData } from "@/lib/json-to-table";
 import { shouldRenderTableCellAsImage } from "@/lib/table-image-url-cell";
 
@@ -86,11 +85,6 @@ export function FavoriteSnapshotView({
     return parseJsonToTableData(content_text);
   }, [kind, content_text]);
 
-  const chatexcelModel = useMemo(() => {
-    if (kind !== "chatexcel" || !content_text) return null;
-    return parseChatexcelArtifactText(content_text);
-  }, [kind, content_text]);
-
   if (kind === "file" || kind === "pdf") {
     return (
       <div className="space-y-3 px-4 py-6 text-sm text-text-secondary">
@@ -125,11 +119,11 @@ export function FavoriteSnapshotView({
     );
   }
 
-  if (kind === "chatexcel" && chatexcelModel) {
+  if (kind === "chatexcel") {
     return (
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <ChatexcelArtifactPreview model={chatexcelModel} />
-      </div>
+      <p className="px-4 py-8 text-sm text-text-secondary">
+        {NO_DISPLAYABLE_RESULT_MESSAGE}
+      </p>
     );
   }
 

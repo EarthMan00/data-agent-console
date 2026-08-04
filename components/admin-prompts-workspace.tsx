@@ -20,6 +20,7 @@ import {
   parseFastApiDetail,
 } from "@/lib/agent-api/client";
 import type { AdminPromptCategory, AdminPromptTemplate } from "@/lib/agent-api/types";
+import { homeDataSourceItems } from "@/lib/home-capability-items";
 
 export function AdminPromptsWorkspace() {
   const platformAgent = useOptionalPlatformAgent();
@@ -54,7 +55,7 @@ export function AdminPromptsWorkspace() {
   const [teStatus, setTeStatus] = useState("draft");
   const [teActive, setTeActive] = useState(false);
   const [teMeta, setTeMeta] = useState("");
-  const [teCapIds, setTeCapIds] = useState("");
+  const [teCapabilityIds, setTeCapabilityIds] = useState<string[]>([]);
   const [teRunId, setTeRunId] = useState("");
   const [teShareId, setTeShareId] = useState("");
   const [teVars, setTeVars] = useState("");
@@ -137,13 +138,17 @@ export function AdminPromptsWorkspace() {
 
   const otc = () => {
     setTeTarget(null); setTeTitle(""); setTeDesc(""); setTePrompt(""); setTeCatId(selectedCategoryId ?? "");
-    setTeStatus("draft"); setTeActive(false); setTeMeta(""); setTeCapIds(""); setTeRunId(""); setTeShareId("");
+    setTeStatus("draft"); setTeActive(false); setTeMeta(""); setTeCapabilityIds([]); setTeRunId(""); setTeShareId("");
     setTeVars(""); setTeSort(0); setTeOpen(true);
   };
   const ote = (t: AdminPromptTemplate) => {
     setTeTarget(t); setTeTitle(t.title); setTeDesc(t.description ?? ""); setTePrompt(t.prompt_text);
     setTeCatId(t.category_id ?? ""); setTeStatus(t.status); setTeActive(t.is_active); setTeMeta(t.meta_line ?? "");
-    setTeCapIds((t.capability_ids ?? []).join(", ")); setTeRunId(t.replay_run_id ?? ""); setTeShareId(t.replay_share_id ?? "");
+    const knownDataSourceIds = new Set(homeDataSourceItems.map((item) => item.id));
+    setTeCapabilityIds(
+      (t.capability_ids ?? []).filter((capabilityId) => knownDataSourceIds.has(capabilityId)),
+    );
+    setTeRunId(t.replay_run_id ?? ""); setTeShareId(t.replay_share_id ?? "");
     setTeVars(JSON.stringify(t.variables ?? [], null, 2)); setTeSort(t.sort_order); setTeOpen(true);
   };
   const ste = async () => {
@@ -155,7 +160,7 @@ export function AdminPromptsWorkspace() {
         title: teTitle.trim(), description: teDesc.trim() || undefined, prompt_text: tePrompt,
         category_id: teCatId || undefined, status: teStatus, is_active: teActive,
         meta_line: teMeta.trim() || undefined,
-        capability_ids: teCapIds.trim() ? teCapIds.split(",").map((s) => s.trim()).filter(Boolean) : [],
+        capability_ids: teCapabilityIds,
         replay_run_id: teRunId.trim() || undefined, replay_share_id: teShareId.trim() || undefined,
         sort_order: teSort,
       };
@@ -437,9 +442,41 @@ export function AdminPromptsWorkspace() {
               <label className="text-xs text-text-tertiary">meta_line</label>
               <Input value={teMeta} onChange={(e) => setTeMeta(e.target.value)} className="h-9 rounded-control" />
             </div>
-            <div className="grid gap-1">
-              <label className="text-xs text-text-tertiary">capability_ids（逗号分隔）</label>
-              <Input value={teCapIds} onChange={(e) => setTeCapIds(e.target.value)} className="h-9 rounded-control" />
+            <div className="grid gap-2">
+              <span className="text-xs text-text-tertiary">关联数据源</span>
+              <div
+                className="grid max-h-44 grid-cols-2 gap-2 overflow-auto rounded-control border border-border bg-bg-surface p-3"
+                role="group"
+                aria-label="关联数据源"
+              >
+                {homeDataSourceItems.map((dataSource, index) => {
+                  const checkboxId = `te-data-source-${index}`;
+                  const checked = teCapabilityIds.includes(dataSource.id);
+                  return (
+                    <div key={dataSource.id} className="flex items-start gap-2">
+                      <Checkbox
+                        id={checkboxId}
+                        checked={checked}
+                        onCheckedChange={(value) => {
+                          setTeCapabilityIds((current) =>
+                            value === true
+                              ? current.includes(dataSource.id)
+                                ? current
+                                : [...current, dataSource.id]
+                              : current.filter((item) => item !== dataSource.id),
+                          );
+                        }}
+                      />
+                      <label
+                        htmlFor={checkboxId}
+                        className="text-xs leading-5 text-foreground"
+                      >
+                        {dataSource.label}
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1">

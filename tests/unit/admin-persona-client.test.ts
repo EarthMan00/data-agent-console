@@ -35,10 +35,16 @@ describe("admin persona client", () => {
   });
 
   it("creates a persona template by cloning the current active template", async () => {
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      text: async () => JSON.stringify({ persona: { id: "p1" } }),
-    }));
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => {
+        void _input;
+        void _init;
+        return {
+          ok: true,
+          text: async () => JSON.stringify({ persona: { id: "p1" } }),
+        };
+      },
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     await adminCreateAlicePersona("token-1", {
@@ -46,10 +52,10 @@ describe("admin persona client", () => {
       description: "优化广告诊断语气",
     });
 
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const init = fetchMock.mock.calls[0]?.[1];
     expect(fetchMock.mock.calls[0]?.[0]).toBe("http://agent.test/admin/personas");
-    expect(init.method).toBe("POST");
-    expect(JSON.parse(String(init.body))).toEqual({
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({
       name: "广告诊断 Alice",
       description: "优化广告诊断语气",
     });

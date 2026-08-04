@@ -70,7 +70,9 @@ function buildSecurityHeaders() {
 
 const nextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost", ...extraDevOrigins],
-  turbopack: {},
+  turbopack: {
+    root: __dirname,
+  },
   async rewrites() {
     return [];
   },

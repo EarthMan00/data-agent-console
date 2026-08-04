@@ -1,3 +1,5 @@
+import path from "node:path";
+
 export type E2EConfig = {
   adminUsername: string;
   adminPassword: string;
@@ -12,6 +14,14 @@ export type E2EConfig = {
 };
 
 type EnvLike = Record<string, string | undefined>;
+
+export type RealRoundE2EConfig = {
+  realRoundE2E: boolean;
+  roundTimeoutMs: number;
+  manifestPath: string;
+  username: string;
+  password: string;
+};
 
 function trimToDefined(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
@@ -44,4 +54,24 @@ export function resolveE2EConfig(env: EnvLike): E2EConfig {
   };
 }
 
+export function resolveRealRoundE2EConfig(env: EnvLike): RealRoundE2EConfig {
+  const manifestOverride = trimToDefined(env.PLAYWRIGHT_REAL_MANIFEST_PATH);
+  return {
+    realRoundE2E: env.RUN_REAL_CHAT_ROUND_E2E === "1",
+    roundTimeoutMs:
+      parsePositiveInteger(env.PLAYWRIGHT_REAL_ROUND_TIMEOUT_MS) ?? 1_200_000,
+    manifestPath: path.resolve(
+      manifestOverride ?? path.join("test-results", "chat-round-acceptance-manifest.json"),
+    ),
+    username: trimToDefined(env.PLAYWRIGHT_REAL_USERNAME) ?? "",
+    password: env.PLAYWRIGHT_REAL_PASSWORD ?? "",
+  };
+}
+
 export const e2eConfig = resolveE2EConfig(process.env as EnvLike);
+export const realRoundE2EConfig = resolveRealRoundE2EConfig(process.env as EnvLike);
+export const {
+  realRoundE2E,
+  roundTimeoutMs,
+  manifestPath,
+} = realRoundE2EConfig;

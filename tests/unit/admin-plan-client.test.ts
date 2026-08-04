@@ -18,22 +18,28 @@ describe("admin plan client", () => {
 
   it("omits retired tool_allowlist when creating plans", async () => {
     type CreatePlanBody = Parameters<typeof adminCreatePlan>[1];
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      text: async () =>
-        JSON.stringify({
-          plan: {
-            id: "plan-1",
-            code: "premium",
-            name: "Premium",
-            level: 1,
-            can_use_tools: true,
-            features: {},
-            user_count: 0,
-            created_at: null,
-          },
-        }),
-    }));
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => {
+        void _input;
+        void _init;
+        return {
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              plan: {
+                id: "plan-1",
+                code: "premium",
+                name: "Premium",
+                level: 1,
+                can_use_tools: true,
+                features: {},
+                user_count: 0,
+                created_at: null,
+              },
+            }),
+        };
+      },
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const createBody = {
@@ -46,8 +52,8 @@ describe("admin plan client", () => {
 
     await adminCreatePlan("token-1", createBody);
 
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    const body = JSON.parse(String(init.body));
+    const init = fetchMock.mock.calls[0]?.[1];
+    const body = JSON.parse(String(init?.body));
     expect(body).toMatchObject({
       code: "premium",
       name: "Premium",
@@ -59,22 +65,28 @@ describe("admin plan client", () => {
 
   it("omits retired tool_allowlist when patching plans", async () => {
     type PatchPlanBody = Parameters<typeof adminPatchPlan>[2];
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      text: async () =>
-        JSON.stringify({
-          plan: {
-            id: "plan-1",
-            code: "premium",
-            name: "Premium",
-            level: 1,
-            can_use_tools: true,
-            features: {},
-            user_count: 0,
-            created_at: null,
-          },
-        }),
-    }));
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => {
+        void _input;
+        void _init;
+        return {
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              plan: {
+                id: "plan-1",
+                code: "premium",
+                name: "Premium",
+                level: 1,
+                can_use_tools: true,
+                features: {},
+                user_count: 0,
+                created_at: null,
+              },
+            }),
+        };
+      },
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const patchBody = {
@@ -84,8 +96,8 @@ describe("admin plan client", () => {
 
     await adminPatchPlan("token-1", "plan-1", patchBody);
 
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    const body = JSON.parse(String(init.body));
+    const init = fetchMock.mock.calls[0]?.[1];
+    const body = JSON.parse(String(init?.body));
     expect(body).toMatchObject({
       can_use_tools: false,
     });
