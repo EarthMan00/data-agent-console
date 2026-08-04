@@ -268,12 +268,12 @@ const explicitStopCases = buildCases("explicit_stop", [
 const partialDataFailureCases = buildCases("partial_data_failure", [
   {
     caseId: "partial-data-failure-01",
-    prompt: "请至少分成两个步骤执行：第一步查询Amazon美国站公开关键词wireless earbuds的前5个真实商品并完成基础汇总；第二步查询公开关键词noise cancelling headphones的前5个真实商品数据并与第一步结果比较，第二步失败时保留第一步真实结果并如实说明。",
+    prompt: "请完成两个独立的真实数据采集目标：先查询Amazon美国站公开关键词wireless earbuds的前5个真实商品并完成基础汇总；再查询公开关键词noise cancelling headphones的前5个真实商品数据并与前一批结果比较。允许根据能力组合增加必要的数据处理步骤，不限制最终计划步骤数；如果最后一个数据采集或处理边界失败，仍须保留此前取得的真实结果并如实说明。",
     fault: "fail_boundary:last:data",
   },
   {
     caseId: "partial-data-failure-02",
-    prompt: "请严格分成两个步骤执行：第一步查询Amazon美国站公开关键词portable charger的前5个真实商品并列出价格最低商品；第二步查询公开关键词power bank的前5个实际商品数据用于比较评分与评论数，第二步失败时仍返回第一步结果。",
+    prompt: "请完成两个独立的真实数据采集目标：先查询Amazon美国站公开关键词portable charger的前5个真实商品并识别价格最低商品；再查询公开关键词power bank的前5个实际商品数据，用于比较评分与评论数。允许根据能力组合为识别最低价和比较数据增加必要的处理步骤，不限制最终计划步骤数；如果最后一个数据采集或处理边界失败，仍须返回此前已经取得的真实结果。",
     fault: "fail_boundary:last:data",
   },
 ]);
@@ -281,12 +281,12 @@ const partialDataFailureCases = buildCases("partial_data_failure", [
 const reportFailureCases = buildCases("report_failure", [
   {
     caseId: "report-failure-01",
-    prompt: "请严格分成三个阶段执行：第一阶段查询Amazon美国站公开关键词wireless earbuds的前5个真实商品数据；第二阶段严格基于第一阶段真实数据完成价格、评分与评论数分析并保留可追溯结果；第三阶段严格基于前两阶段真实产物生成包含图表和明细的完整HTML报告，第三阶段报告生成失败时仍返回前两阶段已经取得的真实数据与分析结果。",
+    prompt: "请完成以下逻辑目标：先查询Amazon美国站公开关键词wireless earbuds的前5个真实商品数据；再基于已取得的真实数据完成价格、评分与评论数分析并保留可追溯结果；最后基于此前真实产物生成包含图表和明细的完整HTML报告。允许根据能力组合增加必要的采集、处理或报告子步骤，不限制最终计划步骤数；如果最后的报告生成边界失败，仍须返回此前已经取得的真实数据与分析结果。",
     fault: "fail_boundary:last:report",
   },
   {
     caseId: "report-failure-02",
-    prompt: "请严格分成三个阶段执行：第一阶段查询Amazon美国站公开关键词travel backpack的前6个真实商品数据；第二阶段严格基于第一阶段真实数据识别价格与评分异常商品并保留可追溯分析结果；第三阶段严格基于前两阶段真实产物制作包含明细和图表的完整HTML选品报告，第三阶段报告生成失败时仍如实返回前两阶段已经取得的真实数据与分析结果。",
+    prompt: "请完成以下逻辑目标：先查询Amazon美国站公开关键词travel backpack的前6个真实商品数据；再基于已取得的真实数据识别价格与评分异常商品并保留可追溯分析结果；最后基于此前真实产物制作包含明细和图表的完整HTML选品报告。允许根据能力组合增加必要的采集、处理或报告子步骤，不限制最终计划步骤数；如果最后的报告生成边界失败，仍须如实返回此前已经取得的真实数据与分析结果。",
     fault: "fail_boundary:last:report",
   },
 ]);

@@ -153,16 +153,24 @@ describe("real chat Round E2E case matrix", () => {
     for (const item of CHAT_ROUND_E2E_CASES) {
       if (item.category === "partial_data_failure") {
         expect(item.fault).toBe("fail_boundary:last:data");
-        expect(item.prompt).toMatch(/(?:至少|不少于|严格分成)[\s\S]{0,20}(?:两个|2个)[\s\S]{0,20}步骤|第一步[\s\S]{0,200}第二步/);
-        expect(item.prompt).toMatch(/第二步[\s\S]{0,100}(?:查询|筛选|读取)[\s\S]{0,80}(?:真实|实际)[\s\S]{0,40}数据/);
+        expect(item.prompt).toMatch(/两个独立的真实数据采集目标/);
+        expect(item.prompt.match(/公开关键词/g)).toHaveLength(2);
+        expect(item.prompt).toMatch(/允许[\s\S]{0,80}增加必要的[\s\S]{0,30}步骤/);
+        expect(item.prompt).toMatch(/不限制最终计划步骤数/);
+        expect(item.prompt).toMatch(/最后一个数据采集或处理边界失败[\s\S]{0,80}(?:保留|返回)[\s\S]{0,40}真实结果/);
       } else if (item.category === "report_failure") {
         expect(item.fault).toBe("fail_boundary:last:report");
-        expect(item.prompt).toMatch(
-          /第一阶段[\s\S]{0,180}(?:真实|实际)[\s\S]{0,40}数据[\s\S]{0,180}第二阶段[\s\S]{0,180}分析[\s\S]{0,180}第三阶段[\s\S]{0,180}(?:报告|报表)/,
-        );
+        expect(item.prompt).toMatch(/先查询[\s\S]{0,100}真实商品数据/);
+        expect(item.prompt).toMatch(/再基于[\s\S]{0,80}真实数据[\s\S]{0,80}(?:分析|识别)/);
+        expect(item.prompt).toMatch(/最后基于[\s\S]{0,80}真实产物[\s\S]{0,80}完整HTML[\s\S]{0,20}报告/);
+        expect(item.prompt).toMatch(/允许[\s\S]{0,80}增加必要的[\s\S]{0,30}子步骤/);
+        expect(item.prompt).toMatch(/不限制最终计划步骤数/);
+        expect(item.prompt).toMatch(/最后的报告生成边界失败[\s\S]{0,80}返回[\s\S]{0,80}真实数据与分析结果/);
       } else {
         expect(item.fault).toBeNull();
       }
+
+      expect(item.prompt).not.toMatch(/严格分成|严格两步|严格三个阶段/);
     }
 
     for (const item of failureCases) {
