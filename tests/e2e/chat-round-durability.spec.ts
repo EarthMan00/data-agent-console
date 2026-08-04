@@ -42,6 +42,7 @@ type RoundStep = {
   status: string;
   taskId: string | null;
   evidence: JsonObject | null;
+  errorCode: string | null;
 };
 
 type RoundSnapshot = {
@@ -738,17 +739,19 @@ function parseRoundSnapshot(
     const stepStatus = raw.status;
     const taskId = raw.task_id;
     const evidence = raw.evidence;
+    const errorCode = raw.error_code;
     if (
       !Number.isSafeInteger(stepIndex) ||
       typeof stepIndex !== "number" ||
       stepIndex < 0 ||
       typeof stepStatus !== "string" ||
       !(taskId === null || isUuid(taskId)) ||
-      !(evidence === null || isObject(evidence))
+      !(evidence === null || isObject(evidence)) ||
+      !(errorCode === null || typeof errorCode === "string")
     ) {
       throw safeCaseFailure(item, "round_step_shape", identity);
     }
-    return { stepIndex, status: stepStatus, taskId, evidence };
+    return { stepIndex, status: stepStatus, taskId, evidence, errorCode };
   });
   return {
     roundId: identity.roundId,
@@ -936,12 +939,28 @@ function assertDeclaredFaultObserved(
   snapshot: RoundSnapshot,
 ): void {
   if (item.fault === null) return;
-  const match = /^fail_step:(\d+):(data|report)$/.exec(item.fault);
+  const match = /^fail_boundary:last:(data|report)$/.exec(item.fault);
   if (!match) throw safeCaseFailure(item, "declared_fault_shape", identity);
-  const stepIndex = Number.parseInt(match[1], 10);
-  const target = snapshot.steps.find((step) => step.stepIndex === stepIndex);
-  if (!target || target.status !== "FAILED") {
+  const expectedErrorCode = match[1] === "data"
+    ? "DATA_COLLECTION_FAILED"
+    : "REPORT_GENERATION_FAILED";
+  const targets = snapshot.steps.filter(
+    (step) =>
+      step.status === "FAILED" &&
+      step.errorCode === expectedErrorCode,
+  );
+  if (targets.length !== 1 || targets[0].taskId !== null) {
     throw safeCaseFailure(item, "declared_fault_not_observed", identity);
+  }
+  const target = targets[0];
+  const retainedPriorResult = snapshot.steps.some(
+    (step) =>
+      step.stepIndex < target.stepIndex &&
+      step.status === "SUCCESS" &&
+      step.taskId !== null,
+  );
+  if (!retainedPriorResult) {
+    throw safeCaseFailure(item, "declared_fault_prior_result_missing", identity);
   }
 }
 

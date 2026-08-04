@@ -18,7 +18,9 @@ export type ChatRoundE2ELifecycle =
   | "explicit_stop";
 
 export type ChatRoundTerminal = "SUCCEEDED" | "PARTIAL_SUCCESS" | "FAILED" | "CANCELLED";
-export type ChatRoundCanonicalFault = "fail_step:1:data" | "fail_step:2:report";
+export type ChatRoundCanonicalFault =
+  | "fail_boundary:last:data"
+  | "fail_boundary:last:report";
 
 export type ChatRoundE2ECase = {
   caseId: string;
@@ -267,12 +269,12 @@ const partialDataFailureCases = buildCases("partial_data_failure", [
   {
     caseId: "partial-data-failure-01",
     prompt: "请至少分成两个步骤执行：第一步查询Amazon美国站公开关键词wireless earbuds的前5个真实商品并完成基础汇总；第二步查询公开关键词noise cancelling headphones的前5个真实商品数据并与第一步结果比较，第二步失败时保留第一步真实结果并如实说明。",
-    fault: "fail_step:1:data",
+    fault: "fail_boundary:last:data",
   },
   {
     caseId: "partial-data-failure-02",
     prompt: "请严格分成两个步骤执行：第一步查询Amazon美国站公开关键词portable charger的前5个真实商品并列出价格最低商品；第二步查询公开关键词power bank的前5个实际商品数据用于比较评分与评论数，第二步失败时仍返回第一步结果。",
-    fault: "fail_step:1:data",
+    fault: "fail_boundary:last:data",
   },
 ]);
 
@@ -280,12 +282,12 @@ const reportFailureCases = buildCases("report_failure", [
   {
     caseId: "report-failure-01",
     prompt: "请严格分成三个阶段执行：第一阶段查询Amazon美国站公开关键词wireless earbuds的前5个真实商品数据；第二阶段严格基于第一阶段真实数据完成价格、评分与评论数分析并保留可追溯结果；第三阶段严格基于前两阶段真实产物生成包含图表和明细的完整HTML报告，第三阶段报告生成失败时仍返回前两阶段已经取得的真实数据与分析结果。",
-    fault: "fail_step:2:report",
+    fault: "fail_boundary:last:report",
   },
   {
     caseId: "report-failure-02",
     prompt: "请严格分成三个阶段执行：第一阶段查询Amazon美国站公开关键词travel backpack的前6个真实商品数据；第二阶段严格基于第一阶段真实数据识别价格与评分异常商品并保留可追溯分析结果；第三阶段严格基于前两阶段真实产物制作包含明细和图表的完整HTML选品报告，第三阶段报告生成失败时仍如实返回前两阶段已经取得的真实数据与分析结果。",
-    fault: "fail_step:2:report",
+    fault: "fail_boundary:last:report",
   },
 ]);
 

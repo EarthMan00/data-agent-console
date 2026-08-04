@@ -152,11 +152,11 @@ describe("real chat Round E2E case matrix", () => {
 
     for (const item of CHAT_ROUND_E2E_CASES) {
       if (item.category === "partial_data_failure") {
-        expect(item.fault).toBe("fail_step:1:data");
+        expect(item.fault).toBe("fail_boundary:last:data");
         expect(item.prompt).toMatch(/(?:至少|不少于|严格分成)[\s\S]{0,20}(?:两个|2个)[\s\S]{0,20}步骤|第一步[\s\S]{0,200}第二步/);
         expect(item.prompt).toMatch(/第二步[\s\S]{0,100}(?:查询|筛选|读取)[\s\S]{0,80}(?:真实|实际)[\s\S]{0,40}数据/);
       } else if (item.category === "report_failure") {
-        expect(item.fault).toBe("fail_step:2:report");
+        expect(item.fault).toBe("fail_boundary:last:report");
         expect(item.prompt).toMatch(
           /第一阶段[\s\S]{0,180}(?:真实|实际)[\s\S]{0,40}数据[\s\S]{0,180}第二阶段[\s\S]{0,180}分析[\s\S]{0,180}第三阶段[\s\S]{0,180}(?:报告|报表)/,
         );
