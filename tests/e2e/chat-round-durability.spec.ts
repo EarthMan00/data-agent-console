@@ -24,6 +24,7 @@ import {
   assertManifestTerminalExpectations,
   isExpectedRoundTerminal,
 } from "./chat-round-manifest";
+import { classifyDeclaredFaultOutcome } from "./chat-round-fault-outcome";
 import { agentPlatformUrl } from "./http";
 import { classifyRoundPollingStatus } from "./chat-round-status";
 
@@ -938,30 +939,15 @@ function assertDeclaredFaultObserved(
   identity: AcceptedRound,
   snapshot: RoundSnapshot,
 ): void {
-  if (item.fault === null) return;
-  const match = /^fail_boundary:last:(data|report)$/.exec(item.fault);
-  if (!match) throw safeCaseFailure(item, "declared_fault_shape", identity);
-  const expectedErrorCode = match[1] === "data"
-    ? "DATA_COLLECTION_FAILED"
-    : "REPORT_GENERATION_FAILED";
-  const targets = snapshot.steps.filter(
-    (step) =>
-      step.status === "FAILED" &&
-      step.errorCode === expectedErrorCode,
-  );
-  if (targets.length !== 1 || targets[0].taskId !== null) {
-    throw safeCaseFailure(item, "declared_fault_not_observed", identity);
+  const outcome = classifyDeclaredFaultOutcome(item.fault, snapshot.steps);
+  if (outcome.kind !== "invalid") return;
+  if (outcome.reason === "shape") {
+    throw safeCaseFailure(item, "declared_fault_shape", identity);
   }
-  const target = targets[0];
-  const retainedPriorResult = snapshot.steps.some(
-    (step) =>
-      step.stepIndex < target.stepIndex &&
-      step.status === "SUCCESS" &&
-      step.taskId !== null,
-  );
-  if (!retainedPriorResult) {
+  if (outcome.reason === "prior_result_missing") {
     throw safeCaseFailure(item, "declared_fault_prior_result_missing", identity);
   }
+  throw safeCaseFailure(item, "declared_fault_not_observed", identity);
 }
 
 async function executeCase(item: ChatRoundE2ECase): Promise<void> {
