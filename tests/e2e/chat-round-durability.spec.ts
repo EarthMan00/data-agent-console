@@ -25,6 +25,7 @@ import {
   isExpectedRoundTerminal,
 } from "./chat-round-manifest";
 import { classifyDeclaredFaultOutcome } from "./chat-round-fault-outcome";
+import { executeAuthenticatedJsonGet } from "./chat-round-read-retry";
 import { agentPlatformUrl } from "./http";
 import { classifyRoundPollingStatus } from "./chat-round-status";
 
@@ -388,18 +389,13 @@ async function authenticatedGet(
       headers: { Authorization: `Bearer ${accessToken}` },
       timeout: E2E_IO_TIMEOUT_MS,
     }));
-  let response = await request();
-  if (response.status() === 401) {
-    await response.dispose();
-    await refreshAccessToken(item, identity);
-    response = await request();
-  }
-  try {
-    if (!response.ok()) throw safeCaseFailure(item, label, identity, response.status());
-    return await readApiJson(response, item, label, identity);
-  } finally {
-    await response.dispose();
-  }
+  return executeAuthenticatedJsonGet({
+    request,
+    refresh: () => refreshAccessToken(item, identity),
+    parse: (response) => readApiJson(response, item, label, identity),
+    failure: (status) => safeCaseFailure(item, label, identity, status),
+    delay: sleep,
+  });
 }
 
 async function waitForPageCondition(
