@@ -22,6 +22,7 @@ import {
   listDownloadableTaskArtifacts,
   pickPrimaryTaskDataArtifact,
   projectTaskArtifactsForUi,
+  resultLabelForUi,
 } from "@/lib/platform-task-artifacts";
 import {
   buildTaskResultSheets,
@@ -31,14 +32,28 @@ import {
 } from "@/lib/task-result-sheets";
 import { cn } from "@/lib/utils";
 
+export type AgentTaskResultGroup = {
+  /** Stable step identity used to keep the selected result tab in sync. */
+  id: string;
+  /** Public step name used when Durable Round artifacts have anonymous names. */
+  label: string;
+  artifacts: PlatformTaskArtifactRef[];
+};
+
 type AgentTaskResultPanelProps = {
   onClose: () => void;
   artifacts?: PlatformTaskArtifactRef[];
+  /** All result-bearing steps in the current Round. */
+  resultGroups?: AgentTaskResultGroup[];
+  /** Step whose result should be selected when the panel opens or changes. */
+  activeResultGroupId?: string | null;
   withFreshToken?: (run: (token: string) => Promise<void>) => Promise<void>;
   /** 收藏身份独立于 Round artifact 的 owner-scoped 下载地址。 */
   favoriteSourceTaskId?: string | null;
   /** 任务状态（如 FAILED / SUCCESS） */
   taskStatus?: string | null;
+  /** 已公开化的步骤名称，用于匿名 Round 产物的可读命名。 */
+  resultLabel?: string | null;
 };
 
 function safeFilename(name: string | undefined, fallback: string) {
@@ -135,17 +150,90 @@ function ExcelStyleSheetTabBar({
 export function AgentTaskResultPanel({
   onClose,
   artifacts,
+  resultGroups,
+  activeResultGroupId,
   withFreshToken,
   favoriteSourceTaskId,
   taskStatus,
+  resultLabel,
 }: AgentTaskResultPanelProps) {
   const favoriteIdentity = (favoriteSourceTaskId ?? "").trim();
-  const publicArtifacts = useMemo(
-    () => projectTaskArtifactsForUi(filterArtifactsForTaskResultPanel(artifacts ?? [])),
-    [artifacts],
+  const sourceGroups = useMemo<AgentTaskResultGroup[]>(() => {
+    if (resultGroups && resultGroups.length > 0) return resultGroups;
+    return artifacts && artifacts.length > 0
+      ? [
+          {
+            id: "default",
+            label: resultLabel ?? "",
+            artifacts,
+          },
+        ]
+      : [];
+  }, [artifacts, resultGroups, resultLabel]);
+
+  const projectedGroups = useMemo(
+    () =>
+      sourceGroups
+        .map((group) => ({
+          ...group,
+          artifacts: projectTaskArtifactsForUi(
+            filterArtifactsForTaskResultPanel(group.artifacts),
+            { displayLabel: group.label },
+          ),
+        }))
+        .filter((group) => group.artifacts.length > 0),
+    [sourceGroups],
   );
-  const sheets = useMemo(() => buildTaskResultSheets(publicArtifacts), [publicArtifacts]);
-  const fallbackPrimary = pickPrimaryTaskDataArtifact(publicArtifacts);
+
+  const publicArtifacts = useMemo(
+    () => projectedGroups.flatMap((group) => group.artifacts),
+    [projectedGroups],
+  );
+
+  const sheets = useMemo(() => {
+    if (projectedGroups.length <= 1) {
+      return buildTaskResultSheets(publicArtifacts);
+    }
+
+    // Build each step independently so identically named files from two
+    // steps cannot be paired across groups. The offset preserves the existing
+    // newest-result-first ordering once the groups are combined.
+    const GROUP_SORT_OFFSET = 100_000;
+    return projectedGroups
+      .flatMap((group, groupIndex) => {
+        const groupSheets = buildTaskResultSheets(group.artifacts);
+        return groupSheets.map((sheet) => ({
+          ...sheet,
+          label:
+            groupSheets.length === 1 && group.label.trim()
+              ? resultLabelForUi(group.label)
+              : sheet.label,
+          sortKey: groupIndex * GROUP_SORT_OFFSET + sheet.sortKey,
+        }));
+      })
+      .sort((left, right) => right.sortKey - left.sortKey);
+  }, [projectedGroups, publicArtifacts]);
+
+  const preferredSheetId = useMemo(() => {
+    if (!activeResultGroupId) return null;
+    const group = projectedGroups.find((item) => item.id === activeResultGroupId);
+    if (!group) return null;
+    const groupArtifactIds = new Set(group.artifacts.map((artifact) => artifact.artifact_id));
+    return (
+      sheets.find(
+        (sheet) =>
+          groupArtifactIds.has(sheet.id) ||
+          (sheet.csv?.artifact_id ? groupArtifactIds.has(sheet.csv.artifact_id) : false) ||
+          (sheet.json?.artifact_id ? groupArtifactIds.has(sheet.json.artifact_id) : false) ||
+          (sheet.primary?.artifact_id ? groupArtifactIds.has(sheet.primary.artifact_id) : false),
+      )?.id ?? null
+    );
+  }, [activeResultGroupId, projectedGroups, sheets]);
+
+  const fallbackPrimary = useMemo(
+    () => pickPrimaryTaskDataArtifact(publicArtifacts),
+    [publicArtifacts],
+  );
   const useSheetUi = sheets.length > 0;
   const taskFailed = (taskStatus ?? "").toUpperCase() === "FAILED";
 
@@ -158,10 +246,13 @@ export function AgentTaskResultPanel({
       return;
     }
     setActiveSheetId((cur) => {
+      if (preferredSheetId && sheets.some((s) => s.id === preferredSheetId)) {
+        return preferredSheetId;
+      }
       if (cur && sheets.some((s) => s.id === cur)) return cur;
       return sheets[0]!.id;
     });
-  }, [sheets]);
+  }, [preferredSheetId, sheets]);
 
   const activeSheet: TaskResultSheet | null = useMemo(() => {
     if (!useSheetUi) return null;

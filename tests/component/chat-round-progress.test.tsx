@@ -1,10 +1,10 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import { ChatRoundProgress } from "@/components/agent-workspace/chat-round-progress";
 import type { ChatRoundStatus, ChatRoundStep } from "@/lib/agent-api/types";
 
-const COPY: Array<[ChatRoundStatus, string]> = [
+const STATUS_COPY: Array<[ChatRoundStatus, string]> = [
   ["QUEUED", "正在准备"],
   ["PLANNING", "正在理解需求并制定执行计划"],
   ["GENERATING", "正在生成回答"],
@@ -33,10 +33,108 @@ function step(overrides: Partial<ChatRoundStep>): ChatRoundStep {
 }
 
 describe("ChatRoundProgress", () => {
-  it.each(COPY)("maps %s to the exact public copy", (status, copy) => {
+  it.each(STATUS_COPY.filter(([status]) => status !== "EXECUTING"))(
+    "keeps %s available without rendering redundant status copy",
+    (status, copy) => {
     const { unmount } = render(<ChatRoundProgress status={status} steps={[]} />);
-    expect(screen.getByTestId("chat-round-status")).toHaveTextContent(copy);
+    const marker = screen.getByTestId("chat-round-progress");
+    expect(marker).toHaveAttribute("data-round-status", status);
+    expect(marker).toHaveAttribute("aria-hidden", "true");
+    expect(marker).toHaveClass("sr-only");
+    expect(marker).not.toHaveTextContent(copy);
     unmount();
+    },
+  );
+
+  it("shows the execution card as soon as execution starts before plan rows arrive", () => {
+    const view = render(<ChatRoundProgress status="EXECUTING" steps={[]} />);
+
+    expect(screen.getByText("任务执行")).toBeInTheDocument();
+    expect(screen.getByTestId("execution-steps-pending")).toBeInTheDocument();
+    expect(screen.queryByText("我正在思考，请等我一下～")).not.toBeInTheDocument();
+
+    view.rerender(
+      <ChatRoundProgress
+        status="EXECUTING"
+        steps={[step({ status: "PENDING", label: "在亚马逊美国站搜索关键词 cup，获取排名前三的爆品信息" })]}
+      />,
+    );
+    expect(screen.queryByTestId("execution-steps-pending")).not.toBeInTheDocument();
+    expect(screen.getByText("在亚马逊美国站搜索关键词 cup，获取排名前三的爆品信息")).toBeInTheDocument();
+  });
+
+  it("does not show the result entry card while another step is still executing", () => {
+    render(
+      <ChatRoundProgress
+        status="EXECUTING"
+        steps={[
+          step({
+            step_id: "completed-data",
+            status: "SUCCESS",
+            artifacts: [
+              {
+                artifact_id: "completed-artifact",
+                artifact_type: "csv",
+                original_name: "completed.csv",
+                download_api: "/api/artifacts/completed-artifact/download",
+              },
+            ],
+          }),
+          step({
+            step_id: "running-report",
+            step_index: 1,
+            status: "RUNNING",
+            artifacts: [],
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.queryByTestId("agent-result-section")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("chat-round-step")).toHaveLength(2);
+  });
+
+  it("restores the task execution card, elapsed timer, and expand interaction", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-07T04:00:05Z"));
+    try {
+      const view = render(
+        <ChatRoundProgress
+          status="EXECUTING"
+          startedAt="2026-08-07T04:00:00Z"
+          steps={[step({ status: "RUNNING", label: "采集亚马逊商品数据" })]}
+        />,
+      );
+
+      expect(screen.getByText("任务执行")).toBeInTheDocument();
+      expect(screen.getByTestId("execution-runtime-tag")).toHaveTextContent("已等待 0 分 0 秒");
+      expect(screen.getByRole("button", { name: "收起任务执行" })).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
+      expect(screen.getByText("采集亚马逊商品数据")).toBeInTheDocument();
+
+      act(() => vi.advanceTimersByTime(1000));
+      expect(screen.getByTestId("execution-runtime-tag")).toHaveTextContent("已等待 0 分 1 秒");
+
+      view.rerender(
+        <ChatRoundProgress
+          status="EXECUTING"
+          startedAt="2026-08-07T04:00:06Z"
+          steps={[step({ status: "RUNNING", label: "采集亚马逊商品数据" })]}
+        />,
+      );
+      expect(screen.getByTestId("execution-runtime-tag")).toHaveTextContent("已等待 0 分 1 秒");
+
+      fireEvent.click(screen.getByRole("button", { name: "收起任务执行" }));
+      expect(screen.getByRole("button", { name: "展开任务执行" })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+      expect(screen.queryByText("采集亚马逊商品数据")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders only allowlisted schedule and favorite evidence", () => {
@@ -75,6 +173,8 @@ describe("ChatRoundProgress", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /展开任务/ }));
+
     expect(screen.getByText(/每日竞品检查/)).toBeInTheDocument();
     expect(screen.getByText(/09:30/)).toBeInTheDocument();
     expect(screen.getByText(/d8d4064e-530c-48b3-a643-ad9ff21251d5/)).toBeInTheDocument();
@@ -101,9 +201,11 @@ describe("ChatRoundProgress", () => {
   });
 
   it("shows public artifacts and partial success boundaries without exposing internal labels", () => {
+    const onOpenStepResult = vi.fn();
     render(
       <ChatRoundProgress
         status="PARTIAL_SUCCESS"
+        onOpenStepResult={onOpenStepResult}
         steps={[
           step({
             step_id: "data",
@@ -131,13 +233,74 @@ describe("ChatRoundProgress", () => {
       />,
     );
 
-    expect(screen.getByText("已完成部分结果")).toBeInTheDocument();
-    expect(screen.getByText("result")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /展开任务/ }));
+
+    expect(screen.getByTestId("chat-round-progress")).toHaveAttribute("data-round-status", "PARTIAL_SUCCESS");
+    expect(screen.getByTestId("chat-round-progress")).not.toHaveTextContent("已完成部分结果");
+    expect(screen.getByText("任务结果")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看" }));
+    expect(onOpenStepResult).toHaveBeenCalledWith(expect.objectContaining({ step_id: "data" }));
+    expect(screen.getByRole("button", { name: "收起" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+    expect(screen.getByRole("button", { name: "查看" })).toBeInTheDocument();
+    expect(screen.queryByText("result")).not.toBeInTheDocument();
     expect(screen.getByText("生成分析报告")).toBeInTheDocument();
     expect(screen.getAllByText("未完成").length).toBeGreaterThan(0);
     expect(document.body).not.toHaveTextContent("run_linkfox_task");
     expect(document.body).not.toHaveTextContent("commerce_data.collect");
     expect(document.body).not.toHaveTextContent("不应作为成功展示");
     expect(document.body).not.toHaveTextContent("已创建");
+  });
+
+  it("keeps the result summary card synchronized with the side panel", () => {
+    const onOpenStepResult = vi.fn();
+    const onCloseStepResult = vi.fn();
+    const resultStep = step({
+      step_id: "data",
+      label: "在亚马逊美国站搜索关键词“cup”，获取排名前三的爆品信息",
+      artifacts: [
+        {
+          artifact_id: "12ca8e0d-5977-42cf-b92d-c0d4e998ac9f",
+          artifact_type: "csv",
+          original_name: "result.csv",
+          download_api: "/api/artifacts/12ca8e0d-5977-42cf-b92d-c0d4e998ac9f/download",
+        },
+      ],
+    });
+
+    const view = render(
+      <ChatRoundProgress
+        status="SUCCEEDED"
+        steps={[resultStep]}
+        openedStepId={null}
+        onOpenStepResult={onOpenStepResult}
+        onCloseStepResult={onCloseStepResult}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "查看" }));
+    expect(onOpenStepResult).toHaveBeenCalledWith(resultStep);
+
+    view.rerender(
+      <ChatRoundProgress
+        status="SUCCEEDED"
+        steps={[resultStep]}
+        openedStepId={resultStep.step_id}
+        onOpenStepResult={onOpenStepResult}
+        onCloseStepResult={onCloseStepResult}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "收起" })).toBeInTheDocument();
+
+    view.rerender(
+      <ChatRoundProgress
+        status="SUCCEEDED"
+        steps={[resultStep]}
+        openedStepId={null}
+        onOpenStepResult={onOpenStepResult}
+        onCloseStepResult={onCloseStepResult}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "查看" })).toBeInTheDocument();
   });
 });

@@ -14,6 +14,8 @@ const JSON_RE = /\.(json|jsonl)$/i;
 const MD_RE = /\.(md|markdown)$/i;
 const HTML_RE = /\.(html|htm)$/i;
 const PDF_RE = /\.pdf$/i;
+const PUBLIC_ARTIFACT_NAME_RE =
+  /^(csv|json|html)-([1-9][0-9]*)-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(csv|json|html)$/i;
 /** 侧栏可展示或下载的任务数据/报告类文件 */
 const TABULAR_RE = /\.(csv|json|jsonl|md|markdown|html|htm|pdf)$/i;
 
@@ -71,7 +73,7 @@ function basenameOnly(name: string): string {
 }
 
 const FORBIDDEN_ARTIFACT_NAME_TOKEN_RE =
-  /(?:^|[^a-z0-9])(?:tool(?:_?name)?|capability|operation|raw(?:_?args?)?|provider|credential|token|secret|api[_-]?key)(?:$|[^a-z0-9])/i;
+  /(?:^|[^a-z0-9])(?:tool(?:_?name)?|capability|operation|raw(?:_?args?)?|provider|credential|token|secret|api[_-]?key|commerce_data|scheduled_task|favorite_snapshot)(?:$|[^a-z0-9])/i;
 const FORBIDDEN_ARTIFACT_ASSIGNMENT_RE =
   /(?:tool(?:_?name)?|capability|operation|raw(?:_?args?)?|provider|credential|token|secret|api[_-]?key)\s*[:=]/i;
 
@@ -102,6 +104,48 @@ function safeArtifactStemForUi(originalName: string): string {
     .replace(/^[.\s-]+|[.\s-]+$/g, "")
     .trim();
   return safe || "结果";
+}
+
+/** 结果 Tab / 卡片等 UI 展示用文件名（不含内部工具品牌词） */
+/** Convert a public step label into a safe, readable artifact stem. */
+function safeResultLabelForUi(label: string | null | undefined): string | null {
+  const neutral = stripInternalToolNamesForUi((label ?? "").trim())
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[.\s-]+|[.\s-]+$/g, "")
+    .trim();
+  if (
+    !neutral ||
+    FORBIDDEN_ARTIFACT_NAME_TOKEN_RE.test(neutral) ||
+    FORBIDDEN_ARTIFACT_ASSIGNMENT_RE.test(neutral)
+  ) {
+    return "任务结果";
+  }
+  return neutral.slice(0, 80).trim() || "任务结果";
+}
+
+/** Public, sanitized label for a Round step's result group/tab. */
+export function resultLabelForUi(label: string | null | undefined): string {
+  return safeResultLabelForUi(label) ?? "任务结果";
+}
+
+type PublicArtifactNameParts = {
+  artifactType: "csv" | "json" | "html";
+};
+
+function publicArtifactNameParts(
+  artifact: PlatformTaskArtifactRef,
+): PublicArtifactNameParts | null {
+  const match = basenameOnly(artifact.original_name).match(PUBLIC_ARTIFACT_NAME_RE);
+  if (
+    !match ||
+    match[1].toLowerCase() !== (artifact.artifact_type ?? "").trim().toLowerCase()
+  ) {
+    return null;
+  }
+  return {
+    artifactType: match[1].toLowerCase() as PublicArtifactNameParts["artifactType"],
+  };
 }
 
 /** 结果 Tab / 卡片等 UI 展示用文件名（不含内部工具品牌词） */
@@ -141,6 +185,31 @@ export function projectTaskArtifactForUi(
 
 export function projectTaskArtifactsForUi(
   artifacts: PlatformTaskArtifactRef[],
+  options: { displayLabel?: string | null } = {},
 ): PlatformTaskArtifactRef[] {
-  return artifacts.map(projectTaskArtifactForUi);
+  const displayLabel = safeResultLabelForUi(options.displayLabel);
+  if (!displayLabel) return artifacts.map(projectTaskArtifactForUi);
+
+  const publicParts = artifacts.map(publicArtifactNameParts);
+  const typeCounts = new Map<PublicArtifactNameParts["artifactType"], number>();
+  for (const parts of publicParts) {
+    if (parts) {
+      typeCounts.set(parts.artifactType, (typeCounts.get(parts.artifactType) ?? 0) + 1);
+    }
+  }
+  const typeOrdinals = new Map<PublicArtifactNameParts["artifactType"], number>();
+
+  return artifacts.map((artifact, index) => {
+    const parts = publicParts[index];
+    if (!parts) return projectTaskArtifactForUi(artifact);
+    const ordinal = (typeOrdinals.get(parts.artifactType) ?? 0) + 1;
+    typeOrdinals.set(parts.artifactType, ordinal);
+    const hasMultiplePairs =
+      Math.max(typeCounts.get("csv") ?? 0, typeCounts.get("json") ?? 0) > 1;
+    const suffix = hasMultiplePairs && parts.artifactType !== "html" ? ` (${ordinal})` : "";
+    return {
+      ...artifact,
+      original_name: `${displayLabel}${suffix}.${parts.artifactType}`,
+    };
+  });
 }

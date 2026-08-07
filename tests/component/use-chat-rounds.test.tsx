@@ -413,6 +413,60 @@ describe("useChatRounds", () => {
     unmount();
   });
 
+  it("reconciles planned steps before an SSE proxy delivers the plan.ready event", async () => {
+    vi.useRealTimers();
+    agentClientMocks.listSessionMessages.mockResolvedValue(messagesFor());
+    const accepted: RoundAccepted = {
+      session_id: SESSION_A,
+      round_id: ROUND_A,
+      assistant_message_id: ASSISTANT_A,
+      status: "QUEUED",
+      last_event_seq: 1,
+    };
+    const planned = snapshot(ROUND_A, {
+      status: "EXECUTING",
+      last_event_seq: 3,
+      steps: [
+        {
+          step_id: "public-step-1",
+          step_index: 0,
+          label: "在亚马逊美国站搜索关键词 cup，获取排名前三的爆品信息",
+          status: "PENDING",
+          task_id: null,
+          artifacts: [],
+          evidence: null,
+          error_code: null,
+          error_message: null,
+        },
+      ],
+    });
+    roundClientMocks.createChatRound.mockResolvedValue(accepted);
+    roundClientMocks.getChatRound
+      .mockResolvedValueOnce(snapshot(ROUND_A, { status: "EXECUTING", steps: [] }))
+      .mockResolvedValue(planned);
+
+    const { result, unmount } = renderHook(() =>
+      useChatRounds({ sessionId: SESSION_A, withFreshToken }),
+    );
+    await settle();
+    expect(result.current.loading).toBe(false);
+    await act(async () => {
+      await result.current.send("搜索 cup", CLIENT_MESSAGE_ID, []);
+    });
+
+    expect(result.current.snapshots.get(ROUND_A)?.steps).toHaveLength(0);
+    await waitFor(() => expect(result.current.snapshots.get(ROUND_A)?.steps).toHaveLength(1));
+
+    expect(roundClientMocks.getChatRound).toHaveBeenCalledTimes(2);
+    expect(result.current.snapshots.get(ROUND_A)).toMatchObject({
+      status: "EXECUTING",
+      steps: expect.any(Array),
+    });
+    expect(result.current.snapshots.get(ROUND_A)?.steps[0]?.label).toContain("亚马逊");
+    expect(result.current.snapshots.get(ROUND_A)?.status).toBe("EXECUTING");
+    unmount();
+  });
+
   it("uses the server cancel response and keeps reloading until terminal", async () => {
     vi.useFakeTimers();
     roundClientMocks.cancelChatRound.mockResolvedValue(

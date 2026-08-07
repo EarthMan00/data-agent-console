@@ -107,6 +107,9 @@ vi.mock("@/components/task-composer", () => ({
 vi.mock("@/components/agent-workspace/chat-bubbles", () => ({
   SIMPLE_CHAT_COLUMN_MAX: "max-w-test",
   SimpleUserBubble: ({ text }: { text: string }) => <div>{text}</div>,
+  AssistantOutputFrame: ({ children }: { children: ReactNode }) => (
+    <div data-testid="assistant-frame">{children}</div>
+  ),
   SimpleAssistantBubble: ({ body, after }: { body: string; after?: ReactNode }) => (
     <div>
       <span>{body}</span>
@@ -221,8 +224,8 @@ describe("PlatformSessionAgentWorkspace real durable result panel", () => {
 
   it("opens earlier successful artifacts after report failure and safely downloads the active table/code Round artifact", async () => {
     render(<PlatformSessionAgentWorkspace sessionId={SESSION_ID} />);
-    await waitFor(() => expect(screen.getByText("查看结果")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("查看结果"));
+    fireEvent.click(await screen.findByRole("button", { name: /展开任务/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /采集公开数据.*查看结果/ }));
 
     const panel = await screen.findByTestId("agent-preview-panel");
     expect(within(panel).getByTestId("real-panel-sheet-body")).toBeInTheDocument();
@@ -279,8 +282,8 @@ describe("PlatformSessionAgentWorkspace real durable result panel", () => {
       },
     ]);
     render(<PlatformSessionAgentWorkspace sessionId={SESSION_ID} />);
-    await waitFor(() => expect(screen.getByText("查看结果")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("查看结果"));
+    fireEvent.click(await screen.findByRole("button", { name: /展开任务/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /采集公开数据.*查看结果/ }));
 
     const panel = await screen.findByTestId("agent-preview-panel");
     await waitFor(() => {

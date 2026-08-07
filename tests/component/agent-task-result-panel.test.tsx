@@ -62,6 +62,21 @@ const roundPairedArtifacts: PlatformTaskArtifactRef[] = [
   },
 ];
 
+const anonymousRoundPairedArtifacts: PlatformTaskArtifactRef[] = [
+  {
+    artifact_id: "11111111-1111-4111-8111-111111111111",
+    artifact_type: "csv",
+    original_name: "csv-1-11111111-1111-4111-8111-111111111111.csv",
+    download_api: "/api/chat/rounds/round-1/artifacts/11111111-1111-4111-8111-111111111111",
+  },
+  {
+    artifact_id: "22222222-2222-4222-8222-222222222222",
+    artifact_type: "json",
+    original_name: "json-2-22222222-2222-4222-8222-222222222222.json",
+    download_api: "/api/chat/rounds/round-1/artifacts/22222222-2222-4222-8222-222222222222",
+  },
+];
+
 function renderPanel(token = "real-token") {
   return render(
     <AgentTaskResultPanel
@@ -144,6 +159,113 @@ describe("agent task result panel favorite feedback", () => {
     });
     expect(withFreshToken).toHaveBeenCalled();
     expect(apiMocks.downloadAuthorizedFile.mock.calls.flat().join(" ")).not.toContain("/api/tasks/");
+  });
+
+  it("pairs anonymous Round CSV/JSON artifacts and restores the table/code toggle", async () => {
+    const resultLabel = "在亚马逊美国站搜索关键词 cup，获取排名前三的爆品信息";
+    render(
+      <AgentTaskResultPanel
+        onClose={vi.fn()}
+        artifacts={anonymousRoundPairedArtifacts}
+        resultLabel={resultLabel}
+        withFreshToken={async (run) => {
+          await run("round-token");
+        }}
+      />,
+    );
+
+    const panel = screen.getByTestId("agent-preview-panel");
+    expect(within(panel).getByRole("button", { name: "表格" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "代码" })).toBeInTheDocument();
+
+    fireEvent.click(within(panel).getByRole("button", { name: "下载当前结果" }));
+    await waitFor(() => {
+      expect(apiMocks.downloadAuthorizedFile).toHaveBeenLastCalledWith(
+        "round-token",
+        anonymousRoundPairedArtifacts[0]!.download_api,
+        `${resultLabel}.csv`,
+      );
+    });
+
+    fireEvent.click(within(panel).getByRole("button", { name: "代码" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "下载当前结果" }));
+    await waitFor(() => {
+      expect(apiMocks.downloadAuthorizedFile).toHaveBeenLastCalledWith(
+        "round-token",
+        anonymousRoundPairedArtifacts[1]!.download_api,
+        `${resultLabel}.json`,
+      );
+    });
+    expect(within(panel).queryByRole("tab")).not.toBeInTheDocument();
+  });
+
+  it("shows one bottom tab per result-bearing step while keeping CSV/JSON paired", async () => {
+    const groups = [
+      {
+        id: "step-data",
+        label: "閲囬泦鏁版嵁",
+        artifacts: [
+          {
+            artifact_id: "11111111-1111-4111-8111-111111111111",
+            artifact_type: "csv",
+            original_name: "csv-1-11111111-1111-4111-8111-111111111111.csv",
+            download_api: "/csv-step-data",
+          },
+          {
+            artifact_id: "22222222-2222-4222-8222-222222222222",
+            artifact_type: "json",
+            original_name: "json-2-22222222-2222-4222-8222-222222222222.json",
+            download_api: "/json-step-data",
+          },
+        ],
+      },
+      {
+        id: "step-report",
+        label: "鐢熸垚鎶ュ憡",
+        artifacts: [
+          {
+            artifact_id: "33333333-3333-4333-8333-333333333333",
+            artifact_type: "csv",
+            original_name: "csv-1-33333333-3333-4333-8333-333333333333.csv",
+            download_api: "/csv-step-report",
+          },
+          {
+            artifact_id: "44444444-4444-4444-8444-444444444444",
+            artifact_type: "json",
+            original_name: "json-2-44444444-4444-4444-8444-444444444444.json",
+            download_api: "/json-step-report",
+          },
+        ],
+      },
+    ] as const;
+
+    const view = render(
+      <AgentTaskResultPanel
+        onClose={vi.fn()}
+        resultGroups={groups.map((group) => ({ ...group, artifacts: [...group.artifacts] }))}
+        activeResultGroupId="step-report"
+        withFreshToken={async (run) => {
+          await run("round-token");
+        }}
+      />,
+    );
+
+    const panel = screen.getByTestId("agent-preview-panel");
+    const tabs = await within(panel).findAllByRole("tab");
+    expect(tabs).toHaveLength(2);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["鐢熸垚鎶ュ憡", "閲囬泦鏁版嵁"]);
+    expect(within(panel).getByRole("tab", { name: "鐢熸垚鎶ュ憡", selected: true })).toBeInTheDocument();
+    view.rerender(
+      <AgentTaskResultPanel
+        onClose={vi.fn()}
+        resultGroups={groups.map((group) => ({ ...group, artifacts: [...group.artifacts] }))}
+        activeResultGroupId="step-data"
+        withFreshToken={async (run) => {
+          await run("round-token");
+        }}
+      />,
+    );
+    expect(within(panel).getByRole("tab", { name: "閲囬泦鏁版嵁", selected: true })).toBeInTheDocument();
   });
 
   it("downloads a single result only through its owner-scoped artifact URL", async () => {

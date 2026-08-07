@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { AgentTaskResultPanel } from "@/components/agent-task-result-panel";
+import {
+  AgentTaskResultPanel,
+  type AgentTaskResultGroup,
+} from "@/components/agent-task-result-panel";
 import { AssistantLoadingRow } from "@/components/assistant-loading-row";
 import { AliceShell, useAliceShellState } from "@/components/alice-shell";
 import { compactText } from "@/lib/compact-text";
@@ -79,6 +82,10 @@ type DisplayMessage = {
 
 function isTerminal(status: ChatRoundStatus): boolean {
   return TERMINAL_ROUND_STATUSES.has(status);
+}
+
+function hasExecutionCard(round: ChatRoundSnapshot | null): boolean {
+  return Boolean(round && (round.steps.length > 0 || round.status === "EXECUTING"));
 }
 
 function messageMeta(message: SessionMessageItem): Record<string, unknown> | undefined {
@@ -579,6 +586,23 @@ export function PlatformSessionAgentWorkspace({
     );
   }, [selectedResult, snapshots]);
 
+  const selectedRound = useMemo<ChatRoundSnapshot | null>(() => {
+    if (!selectedResult) return null;
+    return snapshots.get(selectedResult.roundId) ?? null;
+  }, [selectedResult, snapshots]);
+
+  const resultGroups = useMemo<AgentTaskResultGroup[]>(() => {
+    if (!selectedRound) return [];
+    return [...selectedRound.steps]
+      .filter((step) => step.artifacts.length > 0)
+      .sort((left, right) => left.step_index - right.step_index)
+      .map((step) => ({
+        id: step.step_id,
+        label: step.label,
+        artifacts: step.artifacts,
+      }));
+  }, [selectedRound]);
+
   useEffect(() => {
     if (selectedResult && (!selectedStep || selectedStep.artifacts.length === 0)) {
       setSelectedResult(null);
@@ -736,9 +760,12 @@ export function PlatformSessionAgentWorkspace({
           selectedStep && selectedStep.artifacts.length > 0 ? (
             <AgentTaskResultPanel
               artifacts={selectedStep.artifacts}
+              resultGroups={resultGroups}
+              activeResultGroupId={selectedResult?.stepId ?? null}
+              resultLabel={selectedStep.label}
               favoriteSourceTaskId={selectedStep.task_id}
               withFreshToken={withFreshToken}
-              taskStatus={selectedStep.status}
+              taskStatus={selectedRound?.status ?? selectedStep.status}
               onClose={() => setSelectedResult(null)}
             />
           ) : undefined
@@ -776,21 +803,37 @@ export function PlatformSessionAgentWorkspace({
                         />
                       ) : (
                         <>
-                          <SimpleAssistantBubble
-                            body={message.content}
-                            datetime={message.created_at}
-                            streaming={Boolean(round && !isTerminal(round.status))}
-                          />
-                          {round ? (
+                          {round && hasExecutionCard(round) ? (
                             <ChatRoundProgress
                               status={round.status}
                               steps={round.steps}
+                              startedAt={message.created_at}
                               onOpenStepResult={(step) =>
                                 setSelectedResult({
                                   roundId: round.round_id,
                                   stepId: step.step_id,
                                 })
                               }
+                              onCloseStepResult={() => setSelectedResult(null)}
+                              openedStepId={
+                                selectedResult?.roundId === round.round_id
+                                  ? selectedResult.stepId
+                                  : null
+                              }
+                            />
+                          ) : null}
+                          {message.content.trim() || !hasExecutionCard(round) ? (
+                            <SimpleAssistantBubble
+                              body={message.content}
+                              datetime={message.created_at}
+                              streaming={Boolean(round && !isTerminal(round.status))}
+                            />
+                          ) : null}
+                          {round && !hasExecutionCard(round) && round.steps.length === 0 ? (
+                            <ChatRoundProgress
+                              status={round.status}
+                              steps={round.steps}
+                              startedAt={message.created_at}
                             />
                           ) : null}
                         </>

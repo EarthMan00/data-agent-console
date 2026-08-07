@@ -139,6 +139,9 @@ vi.mock("@/components/task-composer", () => ({
 vi.mock("@/components/agent-workspace/chat-bubbles", () => ({
   SIMPLE_CHAT_COLUMN_MAX: "max-w-test",
   SimpleUserBubble: ({ text }: { text: string }) => <div data-testid="user-bubble">{text}</div>,
+  AssistantOutputFrame: ({ children }: { children: ReactNode }) => (
+    <div data-testid="assistant-frame">{children}</div>
+  ),
   SimpleAssistantBubble: ({ body, after }: { body: string; after?: ReactNode }) => (
     <div data-testid="assistant-bubble">
       <span>{body}</span>
@@ -148,9 +151,17 @@ vi.mock("@/components/agent-workspace/chat-bubbles", () => ({
 }));
 
 vi.mock("@/components/agent-task-result-panel", () => ({
-  AgentTaskResultPanel: ({ artifacts }: { artifacts?: Array<{ original_name: string }> }) => (
+  AgentTaskResultPanel: ({
+    artifacts,
+    resultGroups,
+  }: {
+    artifacts?: Array<{ original_name: string }>;
+    resultGroups?: Array<{ label: string; artifacts: Array<{ original_name: string }> }>;
+  }) => (
     <div data-testid="agent-task-result-panel">
-      {(artifacts ?? []).map((artifact) => artifact.original_name).join(",")}
+      {(resultGroups ?? [{ label: "", artifacts: artifacts ?? [] }])
+        .map((group) => `${group.label}:${group.artifacts.map((artifact) => artifact.original_name).join(",")}`)
+        .join("|")}
     </div>
   ),
 }));
@@ -245,11 +256,27 @@ describe("PlatformSessionAgentWorkspace durable Round presentation", () => {
     expect(screen.getByTestId("assistant-bubble")).not.toContainElement(
       screen.getByTestId("chat-round-progress"),
     );
+    expect(
+      screen.getByTestId("assistant-frame").compareDocumentPosition(screen.getByTestId("assistant-bubble")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
 
     installSnapshot(snapshot({ content: "complete delta replacement", last_event_seq: 9 }));
     view.rerender(<PlatformSessionAgentWorkspace sessionId={SESSION_A} />);
     expect(screen.getByTestId("assistant-bubble")).toHaveTextContent("complete delta replacement");
     expect(screen.queryByText("snapshot replacement")).not.toBeInTheDocument();
+  });
+
+  it("shows the execution card immediately when EXECUTING has not received plan rows yet", async () => {
+    installSnapshot(snapshot({ steps: [], content: "" }));
+
+    render(<PlatformSessionAgentWorkspace sessionId={SESSION_A} />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("platform-task-execution-panel")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("execution-steps-pending")).toBeInTheDocument();
+    expect(screen.queryByTestId("assistant-bubble")).not.toBeInTheDocument();
   });
 
   it("shows partial success boundaries and retains earlier data artifacts for the result panel", async () => {
@@ -295,13 +322,74 @@ describe("PlatformSessionAgentWorkspace durable Round presentation", () => {
     );
     render(<PlatformSessionAgentWorkspace sessionId={SESSION_A} />);
 
-    await waitFor(() => expect(screen.getByText("已完成部分结果")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("chat-round-progress")).toHaveAttribute(
+        "data-round-status",
+        "PARTIAL_SUCCESS",
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /展开任务/ }));
     expect(screen.getByText("采集数据")).toBeInTheDocument();
     expect(screen.getByText("生成报告")).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent("已创建");
 
-    fireEvent.click(screen.getByRole("button", { name: "查看结果" }));
+    fireEvent.click(screen.getByRole("button", { name: /采集数据.*查看结果/ }));
     expect(screen.getByTestId("agent-task-result-panel")).toHaveTextContent("公开结果.csv");
+  });
+
+  it("passes every result-bearing step to the side panel and keeps the clicked step active", async () => {
+    installSnapshot(
+      snapshot({
+        status: "SUCCEEDED",
+        steps: [
+          {
+            step_id: "data",
+            step_index: 0,
+            label: "閲囬泦鏁版嵁",
+            status: "SUCCESS",
+            task_id: "task-data",
+            artifacts: [
+              {
+                artifact_id: "result-data",
+                artifact_type: "csv",
+                original_name: "data.csv",
+                download_api: "/api/artifacts/result-data/download",
+              },
+            ],
+            evidence: null,
+            error_code: null,
+            error_message: null,
+          },
+          {
+            step_id: "report",
+            step_index: 1,
+            label: "鐢熸垚鎶ュ憡",
+            status: "SUCCESS",
+            task_id: "task-report",
+            artifacts: [
+              {
+                artifact_id: "result-report",
+                artifact_type: "csv",
+                original_name: "report.csv",
+                download_api: "/api/artifacts/result-report/download",
+              },
+            ],
+            evidence: null,
+            error_code: null,
+            error_message: null,
+          },
+        ],
+      }),
+    );
+
+    render(<PlatformSessionAgentWorkspace sessionId={SESSION_A} />);
+
+    await waitFor(() => expect(screen.getByTestId("chat-round-progress")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("platform-task-execution-panel").querySelector("button")!);
+    fireEvent.click(screen.getAllByTestId("chat-round-step")[1]!);
+    const panel = await screen.findByTestId("agent-task-result-panel");
+    expect(panel).toHaveTextContent("閲囬泦鏁版嵁:data.csv");
+    expect(panel).toHaveTextContent("鐢熸垚鎶ュ憡:report.csv");
   });
 
   it("re-enters history through the Round controller and switching only closes display ownership", async () => {

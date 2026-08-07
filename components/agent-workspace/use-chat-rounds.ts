@@ -19,6 +19,7 @@ import type {
 import { roundIdsFromMessages } from "@/lib/session-rounds";
 
 const RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000] as const;
+const PLAN_SNAPSHOT_SYNC_DELAY_MS = 500;
 const TERMINAL_STATUSES = new Set<ChatRoundStatus>([
   "SUCCEEDED",
   "PARTIAL_SUCCESS",
@@ -90,9 +91,10 @@ export function useChatRounds({
   const snapshotsRef = useRef<Map<string, ChatRoundSnapshot>>(new Map());
   const subscriptionsRef = useRef<Map<string, AbortController>>(new Map());
   const timerCleanupsRef = useRef<Set<() => void>>(new Set());
+  const planSyncingRef = useRef<Set<string>>(new Set());
   const generationRef = useRef(0);
   const startSubscriptionRef = useRef<
-    (roundId: string, generation: number, retryIndex?: number) => void
+    (roundId: string, generation: number, retryIndex?: number, reconcilePlan?: boolean) => void
   >(() => undefined);
   const cancellationRef = useRef<Map<string, Promise<ChatRoundSnapshot>>>(new Map());
 
@@ -169,13 +171,81 @@ export function useChatRounds({
     [withFreshToken],
   );
 
+  const startPlanSnapshotSync = useCallback(
+    (roundId: string, generation: number) => {
+      if (planSyncingRef.current.has(roundId)) return;
+      planSyncingRef.current.add(roundId);
+
+      let stopped = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const cleanup = () => {
+        if (stopped) return;
+        stopped = true;
+        if (timer !== null) clearTimeout(timer);
+        timerCleanupsRef.current.delete(cleanup);
+        planSyncingRef.current.delete(roundId);
+      };
+      timerCleanupsRef.current.add(cleanup);
+
+      const sync = async () => {
+        if (stopped || generation !== generationRef.current) {
+          cleanup();
+          return;
+        }
+        const current = snapshotsRef.current.get(roundId);
+        if (
+          !current ||
+          isTerminal(current.status) ||
+          current.steps.length > 0 ||
+          !["QUEUED", "PLANNING", "EXECUTING"].includes(current.status)
+        ) {
+          cleanup();
+          return;
+        }
+
+        try {
+          const authoritative = await loadRoundSnapshot(roundId);
+          if (stopped || generation !== generationRef.current) {
+            cleanup();
+            return;
+          }
+          const published = publishSnapshot(authoritative);
+          if (
+            isTerminal(published.status) ||
+            published.steps.length > 0 ||
+            !["QUEUED", "PLANNING", "EXECUTING"].includes(published.status)
+          ) {
+            cleanup();
+            return;
+          }
+        } catch {
+          // The SSE channel remains authoritative; a transient GET failure
+          // should not surface a duplicate error or stop the subscription.
+        }
+
+        if (!stopped) {
+          timer = setTimeout(sync, PLAN_SNAPSHOT_SYNC_DELAY_MS);
+        }
+      };
+
+      // Let the accepted shell publish first. The next event-loop turn then
+      // reconciles the authoritative status/steps without delaying send().
+      timer = setTimeout(sync, 0);
+    },
+    [loadRoundSnapshot, publishSnapshot],
+  );
+
   const startSubscription = useCallback(
-    (roundId: string, generation: number, retryIndex = 0) => {
+    (roundId: string, generation: number, retryIndex = 0, reconcilePlan = false) => {
       if (generation !== generationRef.current) return;
       const initial = snapshotsRef.current.get(roundId);
       if (!initial || isTerminal(initial.status)) {
         stopSubscription(roundId);
         return;
+      }
+
+      if (reconcilePlan && initial.steps.length === 0) {
+        startPlanSnapshotSync(roundId, generation);
       }
 
       stopSubscription(roundId);
@@ -238,7 +308,12 @@ export function useChatRounds({
           }
           subscriptionsRef.current.delete(roundId);
           setError("");
-          startSubscriptionRef.current(roundId, generation, currentRetryIndex + 1);
+          startSubscriptionRef.current(
+            roundId,
+            generation,
+            currentRetryIndex + 1,
+            reconcilePlan,
+          );
         };
 
         try {
@@ -287,6 +362,7 @@ export function useChatRounds({
       loadRoundSnapshot,
       publishSnapshot,
       stopSubscription,
+      startPlanSnapshotSync,
       waitForDelay,
       withFreshToken,
     ],
@@ -358,7 +434,7 @@ export function useChatRounds({
       if (generation === generationRef.current) {
         const shell = publishSnapshot(acceptedShell(accepted), { newest: true });
         if (!isTerminal(shell.status)) {
-          startSubscriptionRef.current(shell.round_id, generation, 0);
+          startSubscriptionRef.current(shell.round_id, generation, 0, true);
         }
       }
       return accepted;

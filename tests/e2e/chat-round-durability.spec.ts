@@ -125,17 +125,11 @@ const TERMINAL_STATUSES = new Set<ChatRoundTerminal>([
   "FAILED",
   "CANCELLED",
 ]);
-const LIVE_STATUS_TEXT = new Set([
-  "正在理解需求并制定执行计划",
-  "正在生成回答",
-  "正在执行任务",
+const LIVE_ROUND_STATUSES = new Set([
+  "PLANNING",
+  "GENERATING",
+  "EXECUTING",
 ]);
-const TERMINAL_STATUS_TEXT: Readonly<Record<ChatRoundTerminal, string>> = {
-  SUCCEEDED: "已完成",
-  PARTIAL_SUCCESS: "已完成部分结果",
-  FAILED: "未完成",
-  CANCELLED: "已停止",
-};
 const ROUND_CREATE_PATH = "/agent-platform/api/chat/rounds";
 const ROUND_EVENT_ROUTE = "**/agent-platform/api/chat/rounds/*/events?*";
 const E2E_IO_TIMEOUT_MS = 60_000;
@@ -625,8 +619,10 @@ async function submitThroughRenderedComposer(
 
 async function waitForLiveStatus(item: ChatRoundE2ECase, identity: AcceptedRound): Promise<void> {
   await waitForPageCondition(item, "live_status_not_rendered", identity, async () => {
-    const statuses = await page.locator('[data-testid="chat-round-status"]').allInnerTexts();
-    return statuses.some((value) => LIVE_STATUS_TEXT.has(value.trim()));
+    const statuses = await page.locator('[data-testid="chat-round-progress"]').evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("data-round-status") ?? ""),
+    );
+    return statuses.some((value) => LIVE_ROUND_STATUSES.has(value));
   }, 60_000);
 }
 
@@ -700,8 +696,10 @@ async function applyLifecycle(
       }),
     );
     await waitForPageCondition(item, "stopped_state_not_rendered", accepted, async () => {
-      const statuses = await page.locator('[data-testid="chat-round-status"]').allInnerTexts();
-      return statuses.some((value) => value.trim() === "已停止");
+      const statuses = await page.locator('[data-testid="chat-round-progress"]').evaluateAll((elements) =>
+        elements.map((element) => element.getAttribute("data-round-status") ?? ""),
+      );
+      return statuses.some((value) => value === "CANCELLED");
     }, roundTimeoutMs);
   }
 }
@@ -795,8 +793,10 @@ async function reconnectAndAssertPrivacy(
     return text.includes(item.marker);
   }, 60_000);
   await waitForPageCondition(item, "terminal_status_not_rendered", identity, async () => {
-    const statuses = await page.locator('[data-testid="chat-round-status"]').allInnerTexts();
-    return statuses.some((value) => value.trim() === TERMINAL_STATUS_TEXT[observedTerminal]);
+    const statuses = await page.locator('[data-testid="chat-round-progress"]').evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("data-round-status") ?? ""),
+    );
+    return statuses.some((value) => value === observedTerminal);
   }, 60_000);
   const rendered = await page.evaluate(() => {
     const values: string[] = [document.body.innerText];

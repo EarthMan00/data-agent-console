@@ -76,6 +76,47 @@ export function SimpleUserBubble({
   );
 }
 
+/**
+ * 与旧任务执行卡片保持一致的 Alice 助手输出容器。
+ * Durable Round 的任务执行卡片和最终总结都复用这个容器，保证头像、名称和时间线归属一致。
+ */
+export function AssistantOutputFrame({
+  datetime,
+  children,
+  className,
+  wide = false,
+}: {
+  datetime?: string;
+  children: ReactNode;
+  className?: string;
+  wide?: boolean;
+}) {
+  return (
+    <div className="flex w-full justify-start">
+      <div
+        className={cn(
+          "group flex items-start gap-3",
+          wide ? cn("w-full", SIMPLE_CHAT_ROW_MAX) : SIMPLE_CHAT_BUBBLE_MAX,
+          className,
+        )}
+      >
+        <AliceAvatar />
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex items-center gap-3">
+            <div className="text-body font-semibold text-foreground">Alice</div>
+          </div>
+          {children}
+          {datetime ? (
+            <div className="mt-1 text-left text-caption text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+              {formatTimeForBubble(datetime)}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SimpleAssistantBubble({
   body,
   datetime,

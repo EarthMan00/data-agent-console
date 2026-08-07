@@ -5,10 +5,94 @@ import {
   artifactDisplayLabelForUi,
   artifactDownloadNameForUi,
   projectTaskArtifactForUi,
+  projectTaskArtifactsForUi,
 } from "@/lib/platform-task-artifacts";
 import { buildTaskResultSheets } from "@/lib/task-result-sheets";
 
 describe("buildTaskResultSheets public labels", () => {
+  it("pairs anonymous Durable Round CSV/JSON artifacts and names them from the step label", () => {
+    const csvId = "11111111-1111-4111-8111-111111111111";
+    const jsonId = "22222222-2222-4222-8222-222222222222";
+    const displayLabel = "在亚马逊美国站搜索关键词 cup，获取排名前三的爆品信息";
+    const projected = projectTaskArtifactsForUi(
+      [
+        {
+          artifact_id: csvId,
+          artifact_type: "csv",
+          original_name: `csv-1-${csvId}.csv`,
+          download_api: `/api/chat/rounds/round-1/artifacts/${csvId}`,
+        },
+        {
+          artifact_id: jsonId,
+          artifact_type: "json",
+          original_name: `json-2-${jsonId}.json`,
+          download_api: `/api/chat/rounds/round-1/artifacts/${jsonId}`,
+        },
+      ],
+      { displayLabel },
+    );
+
+    expect(projected.map((artifact) => artifact.original_name)).toEqual([
+      `${displayLabel}.csv`,
+      `${displayLabel}.json`,
+    ]);
+    const [sheet] = buildTaskResultSheets(projected);
+    expect(sheet).toMatchObject({
+      label: displayLabel,
+      csv: { artifact_id: csvId },
+      json: { artifact_id: jsonId },
+    });
+  });
+
+  it("keeps separate names for multiple anonymous result pairs", () => {
+    const ids = [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "33333333-3333-4333-8333-333333333333",
+      "44444444-4444-4444-8444-444444444444",
+    ];
+    const projected = projectTaskArtifactsForUi(
+      [
+        {
+          artifact_id: ids[0]!,
+          artifact_type: "csv",
+          original_name: `csv-1-${ids[0]}.csv`,
+          download_api: "/csv-1",
+        },
+        {
+          artifact_id: ids[1]!,
+          artifact_type: "json",
+          original_name: `json-2-${ids[1]}.json`,
+          download_api: "/json-1",
+        },
+        {
+          artifact_id: ids[2]!,
+          artifact_type: "csv",
+          original_name: `csv-3-${ids[2]}.csv`,
+          download_api: "/csv-2",
+        },
+        {
+          artifact_id: ids[3]!,
+          artifact_type: "json",
+          original_name: `json-4-${ids[3]}.json`,
+          download_api: "/json-2",
+        },
+      ],
+      { displayLabel: "亚马逊商品结果" },
+    );
+
+    expect(projected.map((artifact) => artifact.original_name)).toEqual([
+      "亚马逊商品结果 (1).csv",
+      "亚马逊商品结果 (1).json",
+      "亚马逊商品结果 (2).csv",
+      "亚马逊商品结果 (2).json",
+    ]);
+    expect(buildTaskResultSheets(projected).map((sheet) => sheet.label)).toEqual([
+      "亚马逊商品结果 (2)",
+      "亚马逊商品结果 (1)",
+    ]);
+  });
+
   it("sanitizes a fuzzy CSV/JSON pair stem before using it as a tab label", () => {
     const artifacts: PlatformTaskArtifactRef[] = [
       {
