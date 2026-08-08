@@ -110,3 +110,17 @@ export async function revokeExternalApiKey(
   );
   await requireOk<unknown>(response, "撤销 API 密钥失败");
 }
+
+export async function restoreExternalApiKey(
+  accessToken: string,
+  keyId: string,
+): Promise<void> {
+  const response = await fetch(
+    apiUrl(`/api/user/api-keys/${encodeURIComponent(keyId)}/restore`),
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  await requireOk<unknown>(response, "恢复 API 密钥失败");
+}

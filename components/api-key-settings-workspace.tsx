@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
+  ArrowBackUp,
   Copy,
   Loader2,
   Plus,
@@ -32,6 +33,7 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 import {
   createExternalApiKey,
   listExternalApiKeys,
+  restoreExternalApiKey,
   revokeExternalApiKey,
   type ExternalApiKeyCreated,
   type ExternalApiKeyItem,
@@ -73,6 +75,8 @@ export function ApiKeySettingsWorkspace() {
   const [createdKey, setCreatedKey] = useState<ExternalApiKeyCreated | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<ExternalApiKeyItem | null>(null);
   const [revoking, setRevoking] = useState(false);
+  const [restoreTarget, setRestoreTarget] = useState<ExternalApiKeyItem | null>(null);
+  const [restoring, setRestoring] = useState(false);
   const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null);
 
   const activeCount = useMemo(
@@ -132,6 +136,23 @@ export function ApiKeySettingsWorkspace() {
       setRevoking(false);
     }
   }, [platformAgent, refresh, revokeTarget, revoking]);
+
+  const confirmRestore = useCallback(async () => {
+    if (!platformAgent || !restoreTarget || restoring) return;
+    setRestoring(true);
+    try {
+      await platformAgent.withFreshToken((token) =>
+        restoreExternalApiKey(token, restoreTarget.key_id),
+      );
+      setRestoreTarget(null);
+      setToast({ message: "API 密钥已恢复" });
+      await refresh();
+    } catch (error) {
+      setToast({ message: displayError(error, "恢复 API 密钥失败"), error: true });
+    } finally {
+      setRestoring(false);
+    }
+  }, [platformAgent, refresh, restoreTarget, restoring]);
 
   const copyCreatedKey = useCallback(async () => {
     if (!createdKey) return;
@@ -232,7 +253,19 @@ export function ApiKeySettingsWorkspace() {
                             >
                               <Trash2 className="h-4 w-4" aria-hidden />
                             </Button>
-                          ) : null}
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="iconSm"
+                              className="text-text-secondary hover:text-success"
+                              title="恢复密钥"
+                              aria-label={`恢复密钥 ${item.name}`}
+                              onClick={() => setRestoreTarget(item)}
+                            >
+                              <ArrowBackUp className="h-4 w-4" aria-hidden />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -318,7 +351,7 @@ export function ApiKeySettingsWorkspace() {
         <DialogContent className="max-w-md rounded-card" aria-describedby="revoke-api-key-description">
           <DialogTitle className="text-title-1">撤销 API 密钥</DialogTitle>
           <DialogDescription id="revoke-api-key-description" className="text-body leading-6 text-text-secondary">
-            撤销后，使用“{revokeTarget?.name}”的外部调用会立即失效，此操作不可恢复。
+            撤销后，使用{'"'}{revokeTarget?.name}{'"'}的外部调用会立即失效，此操作不可恢复。
           </DialogDescription>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" disabled={revoking} onClick={() => setRevokeTarget(null)}>
@@ -327,6 +360,29 @@ export function ApiKeySettingsWorkspace() {
             <Button type="button" variant="destructive" disabled={revoking} onClick={() => void confirmRevoke()}>
               {revoking ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Trash2 className="h-4 w-4" aria-hidden />}
               {revoking ? "撤销中…" : "确认撤销"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(restoreTarget)}
+        onOpenChange={(open) => {
+          if (!open && !restoring) setRestoreTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md rounded-card" aria-describedby="restore-api-key-description">
+          <DialogTitle className="text-title-1">恢复 API 密钥</DialogTitle>
+          <DialogDescription id="restore-api-key-description" className="text-body leading-6 text-text-secondary">
+            恢复后，使用{'"'}{restoreTarget?.name}{'"'}的外部调用将重新生效，原密钥串继续有效，无需更换。
+          </DialogDescription>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" disabled={restoring} onClick={() => setRestoreTarget(null)}>
+              取消
+            </Button>
+            <Button type="button" disabled={restoring} onClick={() => void confirmRestore()}>
+              {restoring ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <ArrowBackUp className="h-4 w-4" aria-hidden />}
+              {restoring ? "恢复中…" : "确认恢复"}
             </Button>
           </div>
         </DialogContent>
