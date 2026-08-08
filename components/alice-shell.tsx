@@ -23,6 +23,7 @@ import {
   FolderHeart,
   HelpCircle,
   InfoCircle,
+  Key,
   LogOut,
   Menu,
   MessageCircleMore,
@@ -1388,6 +1389,13 @@ function AliceShellComponent({
                               <UserRound className="h-5 w-5 text-text-secondary" strokeWidth={1.8} />
                               我的账号
                             </div>
+                            <Link
+                              href="/settings/api-keys"
+                              className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-body font-medium leading-5 text-foreground transition hover:bg-fill-hover"
+                            >
+                              <Key className="h-5 w-5 text-text-secondary" strokeWidth={1.8} />
+                              API 密钥
+                            </Link>
                             <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-body font-medium leading-5 text-foreground">
                               <BookOpen className="h-5 w-5 text-text-secondary" strokeWidth={1.8} />
                               帮助文档

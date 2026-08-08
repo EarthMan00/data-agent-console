@@ -30,6 +30,7 @@ export {
   IconArrowsMaximize as Expand,
   IconEye as Eye,
   IconJson as FileJson,
+  IconKey as Key,
   IconFileSpreadsheet as FileSpreadsheet,
   IconFileText as FileText,
   IconFolderHeart as FolderHeart,

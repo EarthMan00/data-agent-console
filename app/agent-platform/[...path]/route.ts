@@ -47,6 +47,8 @@ function forwardRequestHeaders(request: NextRequest): Headers {
   headers.delete("host");
   headers.delete("connection");
   headers.delete("content-length");
+  // Node fetch cannot forward the client-side 100-continue handshake.
+  headers.delete("expect");
   return headers;
 }
 
@@ -66,7 +68,7 @@ async function proxy(request: NextRequest, pathSegments: string[]) {
   const method = request.method.toUpperCase();
   const mayHaveBody = method !== "GET" && method !== "HEAD";
 
-  const init: RequestInit = {
+  const init: RequestInit & { duplex?: "half" } = {
     method,
     headers: forwardRequestHeaders(request),
     cache: "no-store",
@@ -79,6 +81,9 @@ async function proxy(request: NextRequest, pathSegments: string[]) {
     const buf = await request.arrayBuffer();
     if (buf.byteLength > 0) {
       init.body = buf;
+      // Node's undici fetch requires an explicit duplex mode when a
+      // NextRequest body is forwarded through a Route Handler.
+      init.duplex = "half";
     }
   }
 
