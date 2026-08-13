@@ -1,0 +1,865 @@
+{
+  "name": "Alice cross-border agent evaluation set v4",
+  "version": "2026-07-20",
+  "language": "zh-CN",
+  "purpose": "Measure whether Alice can turn cross-border ecommerce user problems into usable decisions, artifacts, or persisted actions while separating agent capability from toolchain reliability.",
+  "scoring": {
+    "success": "The requested business closure is delivered with visible evidence: final decision, usable artifact, generated report, data table, or persisted action.",
+    "partial": "Alice correctly identifies a blocker, asks for necessary missing input, or gives a bounded fallback, but the original business task is not completed.",
+    "fail": "No usable result, wrong task, hallucinated data, empty session, unhandled tool error, or no evidence of the requested closure."
+  },
+  "failure_taxonomy": [
+    "input_missing_or_ambiguous",
+    "agent_understanding_or_planning",
+    "reasoning_or_synthesis",
+    "external_data_auth_or_quota",
+    "external_data_no_result",
+    "tool_orchestration",
+    "report_generation",
+    "persistent_action_not_created",
+    "unsupported_or_risky_request_boundary",
+    "empty_or_unobservable_session"
+  ],
+  "cases": [
+    {
+      "id": "CAP-001",
+      "layer": "capability_fixed_input",
+      "user_pain": "选品进入判断",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集，先只基于下面 Amazon US 样本判断 foldable laundry basket 是否值得进入。样本：A1 价格 19.99 月销 1800 评分 4.6 评论 4200 品牌强；A2 价格 24.99 月销 960 评分 4.3 评论 980 折叠结构差评多；A3 价格 16.99 月销 1300 评分 4.1 评论 620 把手断裂多；A4 价格 29.99 月销 520 评分 4.7 评论 2100 高端款；A5 价格 21.99 月销 760 评分 4.4 评论 360 新品；A6 价格 13.99 月销 450 评分 3.9 评论 180 薄布差评。请给出做不做、最优价格带、3 个切入方向、主要风险和下一步验证。",
+      "expected_closure": "A go/no-go decision with price band, opportunity angles, risks, and next validation steps based only on the sample.",
+      "success_evidence": [
+        "明确做/不做/谨慎做",
+        "引用样本中的价格、销量、评分、评论门槛",
+        "不声称已经实时采集"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-002",
+      "layer": "capability_fixed_input",
+      "user_pain": "多关键词优先级判断",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集，只基于下面数据帮我从 4 个 Amazon US 关键词里选一个优先验证。under sink organizer：月搜索 90000，Top10 均评 18000，均价 24.99，头部品牌 7 个；travel jewelry organizer：月搜索 42000，Top10 均评 3200，均价 16.99，头部品牌 3 个；drawer divider organizer：月搜索 55000，Top10 均评 11000，均价 21.99，头部品牌 6 个；desktop cable tray：月搜索 24000，Top10 均评 900，均价 19.99，头部品牌 2 个。请输出排序、选择理由、放弃理由和验证动作。",
+      "expected_closure": "A ranked keyword choice with tradeoffs and validation steps.",
+      "success_evidence": [
+        "给出 1 到 4 名排序",
+        "区分需求规模和竞争门槛",
+        "解释为什么优先验证第一名"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-003",
+      "layer": "capability_fixed_input",
+      "user_pain": "高销低评机会筛选",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。请按规则筛选高销低评候选：月销大于 1000、评论数小于 600、评分大于等于 4.2、月销售额大于 20000。数据：B1 价格 18.99 月销 1500 评论 420 评分 4.4；B2 价格 12.99 月销 2300 评论 3200 评分 4.6；B3 价格 27.99 月销 900 评论 260 评分 4.5；B4 价格 21.99 月销 1200 评论 510 评分 4.2；B5 价格 15.99 月销 1800 评论 740 评分 4.3。请输出入选 ASIN、淘汰原因、机会大小和风险。",
+      "expected_closure": "Filtered candidate list with explicit inclusion and exclusion reasons.",
+      "success_evidence": [
+        "按规则正确筛选",
+        "对每个未入选项给出淘汰原因",
+        "没有改变筛选门槛"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-004",
+      "layer": "capability_fixed_input",
+      "user_pain": "价格带策略",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。下面是某收纳品类价格带表现：9.99 以下：样本 12，均月销 260，均评分 4.0，差评集中在质量；10 到 15.99：样本 25，均月销 940，均评分 4.2，广告竞争高；16 到 22.99：样本 31，均月销 1180，均评分 4.5，新品占 30%；23 到 29.99：样本 18，均月销 610，均评分 4.6，品牌集中；30 以上：样本 8，均月销 210，均评分 4.7。请建议新品首发价格带、不能选的价格带、理由和测试方案。",
+      "expected_closure": "Launch price recommendation with test plan.",
+      "success_evidence": [
+        "明确首发价格带",
+        "解释需求、竞争和质量风险",
+        "给出 A/B 或阶段测试方案"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-005",
+      "layer": "capability_fixed_input",
+      "user_pain": "评论痛点提炼",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。请从下面 12 条差评提炼 foldable laundry basket 的高频痛点和产品改进方向：把手用了两周就断；折起来倒是省空间但撑开后会塌；布料味道很重；容量标 90L 实际装不下；底部没有支撑，装衣服后拖地；颜色和图片不一致；金属框生锈；洗衣房地面潮湿时底部发霉；把手勒手；收到时有折痕；退货很麻烦；包装太薄导致变形。请输出痛点簇、证据条数、严重程度、改进优先级和可以写进 Listing 的卖点。",
+      "expected_closure": "Painpoint clustering and improvement priorities grounded in the comments.",
+      "success_evidence": [
+        "将相近差评归簇",
+        "每簇给出证据数量或引用",
+        "把痛点转成可执行产品/Listing 改进"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-006",
+      "layer": "capability_fixed_input",
+      "user_pain": "退货风险判断",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。下面是候选商品的评论结构：总评 4.2，评论 380，1 星 11%，2 星 7%，近 30 天 1 星 18%。差评关键词：尺寸虚标 34 次、拉链坏 21 次、异味 19 次、颜色不符 11 次、配送破损 9 次。请判断这个商品是否适合跟进，哪些问题会造成退货，应该先改产品还是改页面。",
+      "expected_closure": "Risk decision and product-vs-listing remediation recommendation.",
+      "success_evidence": [
+        "区分产品质量、预期管理和物流问题",
+        "明确是否跟进",
+        "给出优先修复顺序"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-007",
+      "layer": "capability_fixed_input",
+      "user_pain": "竞品弱点定位",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。比较 3 个 under sink organizer 竞品：C1 双层金属，24.99，月销 3000，差评是安装复杂和螺丝少；C2 塑料抽屉，18.99，月销 2100，差评是承重差和滑轨卡；C3 加宽金属款，29.99，月销 900，差评是水槽管道不兼容。请找出最值得攻击的弱点、我们的产品差异化方向和页面主卖点。",
+      "expected_closure": "Competitor weakness map and differentiation strategy.",
+      "success_evidence": [
+        "逐竞品提炼弱点",
+        "找到共同未满足需求",
+        "输出差异化产品和页面卖点"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-008",
+      "layer": "capability_fixed_input",
+      "user_pain": "标题版本选择",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。请比较两个 Amazon 标题版本。标题 A：Under Sink Organizer 2 Tier Pull Out Cabinet Organizer, Metal Bathroom Kitchen Storage。展示 12000，CTR 0.72%，CVR 8.1%，广告 CPC 0.86。标题 B：2 Pack Under Sink Organizer with Sliding Drawer, Heavy Duty Metal Cabinet Storage for Kitchen Bathroom。展示 9800，CTR 1.05%，CVR 7.4%，广告 CPC 0.91。请判断哪个更适合作为首发标题，并给出优化版。",
+      "expected_closure": "Title choice and improved launch title.",
+      "success_evidence": [
+        "计算或比较点击与转化 tradeoff",
+        "给出选择理由",
+        "输出合规、可用的新标题"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-009",
+      "layer": "capability_fixed_input",
+      "user_pain": "Listing 卖点改写",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。产品是 travel jewelry organizer，功能：防缠绕项链扣、耳钉板、戒指槽、防水 PU、尺寸 6.3 x 4.3 x 1.8 英寸。差评痛点：项链还是会打结、拉链卡、容量不够、旅行时被压变形。请写 5 条英文 bullet points，并说明每条解决哪个用户痛点，避免夸大和医疗安全类表述。",
+      "expected_closure": "Usable English bullets mapped to painpoints.",
+      "success_evidence": [
+        "输出 5 条 bullet",
+        "每条对应痛点或功能",
+        "避免无证据夸大"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-010",
+      "layer": "capability_fixed_input",
+      "user_pain": "本地化文案",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。请把桌面理线盒产品做 Amazon DE 本地化。产品点：under desk cable management tray, no drill clamp, holds power strip, black metal, 43 cm length。竞品德语词：Kabelwanne Schreibtisch、Kabelmanagement ohne Bohren、Kabelhalter unter Tisch。请输出德语标题、5 条德语 bullet 和需要避免的翻译问题。",
+      "expected_closure": "German localized listing copy with terminology fit.",
+      "success_evidence": [
+        "使用给定德语关键词",
+        "标题和 bullet 可直接用于 Listing 初稿",
+        "说明本地化注意事项"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-011",
+      "layer": "capability_fixed_input",
+      "user_pain": "图片合规风险初筛",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。以下是 1688 货源图描述：图 1 有中文水印和工厂 logo；图 2 展示儿童坐在收纳篮里；图 3 直接使用竞品 Amazon 主图同款背景；图 4 只有白底产品，无文字；图 5 展示容量 120L 但供应商参数是 90L。请判断哪些图不能直接上 Amazon US，原因、风险等级和整改建议。",
+      "expected_closure": "No-go image list and remediation plan.",
+      "success_evidence": [
+        "逐图判断",
+        "区分版权、误导、安全、平台规范风险",
+        "给出整改优先级"
+      ],
+      "primary_failure_attribution": "unsupported_or_risky_request_boundary"
+    },
+    {
+      "id": "CAP-012",
+      "layer": "capability_fixed_input",
+      "user_pain": "专利风险初筛",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集，也不要给法律保证。产品结构：可抽拉双层水槽收纳架，U 型避管设计，免工具卡扣安装。候选专利摘要：P1 保护双层可抽拉篮架滑轨；P2 保护 U 型避开水管的可调宽支架；P3 保护免螺丝卡扣连接件。请做专利风险初筛，输出高风险点、需要法务进一步确认的问题和设计规避方向。",
+      "expected_closure": "Bounded patent-risk triage without legal overclaiming.",
+      "success_evidence": [
+        "明确不能给法律保证",
+        "把结构点映射到专利摘要",
+        "输出法务确认问题和规避方向"
+      ],
+      "primary_failure_attribution": "unsupported_or_risky_request_boundary"
+    },
+    {
+      "id": "CAP-013",
+      "layer": "capability_fixed_input",
+      "user_pain": "产品路线优先级",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。我们想改进 foldable laundry basket。候选改进：加厚布料成本加 1.2 美元，解决异味和塌陷部分问题；加金属框成本加 2.8 美元，解决塌陷但增加重量；硅胶把手成本加 0.6 美元，解决勒手和断裂；防霉底布成本加 0.9 美元，解决潮湿发霉；升级包装成本加 0.4 美元，解决运输变形。请按影响、成本、差评频次给优先级。",
+      "expected_closure": "Prioritized product roadmap with rationale.",
+      "success_evidence": [
+        "建立排序逻辑",
+        "考虑成本和用户影响",
+        "输出第一批必做和暂缓项"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-014",
+      "layer": "capability_fixed_input",
+      "user_pain": "利润可行性判断",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。候选 under sink organizer 成本 6.8 美元，头程 1.4，FBA 5.2，平台佣金售价的 15%，广告 ACOS 预计 22%，退货损耗售价的 3%，目标售价 24.99。请估算单件利润、利润率、盈亏平衡 ACOS，并判断这个价格是否可做。",
+      "expected_closure": "Profit calculation and viability decision.",
+      "success_evidence": [
+        "展示关键计算过程",
+        "给出利润率和盈亏平衡 ACOS",
+        "明确是否可做"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-015",
+      "layer": "capability_fixed_input",
+      "user_pain": "上市验证计划",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。我们准备测试 travel jewelry organizer，新品首批 500 件，目标售价 17.99，广告预算 1500 美元，目标 45 天内判断是否追加订单。请制定上市验证计划，包括核心假设、前 2 周动作、要看的指标、停止条件和追加订单条件。",
+      "expected_closure": "Launch validation plan with measurable gates.",
+      "success_evidence": [
+        "把任务拆成假设和指标",
+        "包含停止条件",
+        "包含追加订单条件"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-016",
+      "layer": "capability_fixed_input",
+      "user_pain": "季节趋势判断",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。关键词 silicone baby bib 近 12 个月搜索指数：76、78、81、79、83、88、91、94、89、85、82、80。竞品均价稳定在 12.99 到 15.99，评论门槛上升。请判断需求趋势、季节性是否明显、现在进入的时间风险和建议动作。",
+      "expected_closure": "Trend interpretation and timing recommendation.",
+      "success_evidence": [
+        "识别趋势和季节性强弱",
+        "结合评论门槛判断时间风险",
+        "输出行动建议"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-017",
+      "layer": "capability_fixed_input",
+      "user_pain": "广告关键词优先级",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。请给新品 under sink organizer 选择首批广告关键词。数据：under sink organizer 搜索量 90000 CPC 1.25 相关性高 转化预估中；under sink storage 搜索量 42000 CPC 0.96 相关性中；bathroom cabinet organizer 搜索量 28000 CPC 0.72 相关性高 转化预估高；kitchen sink organizer 搜索量 33000 CPC 1.05 相关性低；2 tier under sink organizer 搜索量 15000 CPC 0.88 相关性高 转化预估高。请给出投放优先级、匹配方式和否定词建议。",
+      "expected_closure": "Ad keyword launch plan.",
+      "success_evidence": [
+        "排序考虑相关性、CPC、意图和规模",
+        "给出匹配方式",
+        "给出否定词或排除方向"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-018",
+      "layer": "capability_fixed_input",
+      "user_pain": "套装策略",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。drawer divider organizer 竞品：单件装 12.99 月销 1600 差评是数量不够；4 件装 18.99 月销 2400 差评是尺寸不统一；8 件装 29.99 月销 700 差评是太贵；可裁剪款 21.99 月销 1100 差评是裁剪麻烦。请判断我们应该做几件装、定价区间、差异化和页面表达。",
+      "expected_closure": "Bundle and pricing strategy.",
+      "success_evidence": [
+        "选择明确套装规格",
+        "说明价格带和差异化",
+        "回应差评痛点"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-019",
+      "layer": "capability_fixed_input",
+      "user_pain": "评论真实性风险",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。某竞品 60 天内评论从 120 到 980，评分从 4.1 升到 4.8；评论中 35% 使用相似短语 easy to install and sturdy；带图评论比例 2%；近 10 天出现 300 条 5 星。请判断它的数据是否可信、对我们评估市场有什么影响、还需要看哪些证据。",
+      "expected_closure": "Review-quality risk assessment.",
+      "success_evidence": [
+        "识别异常信号",
+        "说明不能直接下结论",
+        "列出后续验证证据"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "CAP-020",
+      "layer": "capability_fixed_input",
+      "user_pain": "反证式 No-Go 判断",
+      "dependency": "provided_input_only",
+      "input_query": "不要调用外部采集。候选品是大型宠物楼梯，售价 39.99，成本 18，头程 9，FBA 12，退货率同类约 12%，Top10 评论均值 15000，头部品牌 8 个，差评集中在不稳和尺寸不符。请从反证角度判断为什么不该做，以及除非满足哪些条件才可以继续验证。",
+      "expected_closure": "No-go decision with explicit conditions for reversal.",
+      "success_evidence": [
+        "能主动得出不做或暂缓",
+        "解释经济性和竞争门槛",
+        "给出继续验证的必要条件"
+      ],
+      "primary_failure_attribution": "reasoning_or_synthesis"
+    },
+    {
+      "id": "TOOL-001",
+      "layer": "toolchain_isolation",
+      "user_pain": "关键词采集链路",
+      "dependency": "external_amazon_data",
+      "input_query": "使用 Amazon US 可用数据源，搜索关键词「foldable laundry basket」，输出样本范围、Top 商品、价格带、销量或销售额信号、评分评论门槛和是否值得继续分析。不要虚构数据；如果数据源不可用，请明确说明不可用原因。",
+      "expected_closure": "Amazon keyword data collection result or explicit source-level blocker.",
+      "success_evidence": [
+        "结果区有采集数据或清晰错误",
+        "包含样本范围",
+        "没有编造销量和 ASIN"
+      ],
+      "primary_failure_attribution": "external_data_auth_or_quota"
+    },
+    {
+      "id": "TOOL-002",
+      "layer": "toolchain_isolation",
+      "user_pain": "ASIN 详情采集链路",
+      "dependency": "external_amazon_data",
+      "input_query": "使用 Amazon US 可用数据源，查询 ASIN B0DNTQ2YNT 的商品详情。请输出标题、价格、评分、评论数、品牌或卖家信号、类目、变体信息、可见风险；如果查不到，请说明是无结果、无权限还是额度问题。",
+      "expected_closure": "ASIN detail retrieval with field completeness or explicit source blocker.",
+      "success_evidence": [
+        "返回指定 ASIN 的详情字段",
+        "字段来源可解释",
+        "失败时区分无结果和权限额度"
+      ],
+      "primary_failure_attribution": "external_data_auth_or_quota"
+    },
+    {
+      "id": "TOOL-003",
+      "layer": "toolchain_isolation",
+      "user_pain": "评论采集链路",
+      "dependency": "external_amazon_review_data",
+      "input_query": "使用 Amazon US 可用数据源，抓取 ASIN B0DNTQ2YNT 的近期差评样本，至少按质量、尺寸、物流、使用体验归类。请输出评论样本范围、痛点簇、证据和不能判断的部分；如果评论抓取失败，请说明具体失败原因。",
+      "expected_closure": "Review collection and painpoint clustering or explicit review-source blocker.",
+      "success_evidence": [
+        "说明评论样本范围",
+        "痛点有证据",
+        "失败原因具体到评论链路"
+      ],
+      "primary_failure_attribution": "external_data_auth_or_quota"
+    },
+    {
+      "id": "TOOL-004",
+      "layer": "toolchain_isolation",
+      "user_pain": "多关键词采集编排",
+      "dependency": "external_amazon_data",
+      "input_query": "使用 Amazon US 可用数据源，对比 under sink organizer、travel jewelry organizer、drawer divider organizer 三个关键词。请输出每个关键词的样本范围、价格带、评论门槛、竞争强度和优先级；如果某个关键词失败，不要中断全部任务，要标出失败关键词和原因。",
+      "expected_closure": "Multi-keyword comparison with per-keyword status.",
+      "success_evidence": [
+        "三个关键词分别有状态",
+        "成功和失败不混在一起",
+        "能给出优先级或说明无法排序"
+      ],
+      "primary_failure_attribution": "tool_orchestration"
+    },
+    {
+      "id": "TOOL-005",
+      "layer": "toolchain_isolation",
+      "user_pain": "TikTok 数据链路",
+      "dependency": "external_tiktok_data",
+      "input_query": "使用可用 TikTok 或内容电商数据源，寻找玩具收纳类增长较快、客单价适中、评分稳定的机会款。请输出候选款、增长信号、价格或客单价、内容带货风险和下一步验证。不要只用 Amazon 数据替代。",
+      "expected_closure": "TikTok/content-commerce sourced opportunity scan or explicit source blocker.",
+      "success_evidence": [
+        "明确使用 TikTok 或内容电商数据",
+        "不把 Amazon 结果伪装成 TikTok",
+        "失败时说明 TikTok 数据源问题"
+      ],
+      "primary_failure_attribution": "external_data_auth_or_quota"
+    },
+    {
+      "id": "TOOL-006",
+      "layer": "toolchain_isolation",
+      "user_pain": "德国站采集链路",
+      "dependency": "external_amazon_de_data",
+      "input_query": "使用 Amazon DE 可用数据源，搜索关键词「Kabelmanagement Schreibtisch」，输出 Top 商品、价格带、评论门槛、常见卖点和德国站本地化注意事项；如果只能访问美国站，请明确说明不能替代。",
+      "expected_closure": "Amazon DE keyword data or explicit market-source blocker.",
+      "success_evidence": [
+        "数据市场是 DE",
+        "不拿 US 数据冒充 DE",
+        "失败时说明市场或数据源限制"
+      ],
+      "primary_failure_attribution": "external_data_auth_or_quota"
+    },
+    {
+      "id": "TOOL-007",
+      "layer": "toolchain_isolation",
+      "user_pain": "跨平台价格对比",
+      "dependency": "external_multi_platform_data",
+      "input_query": "对比 Amazon US、Walmart、eBay 上 under sink organizer 的价格和商品形态。请输出每个平台样本范围、价格带、主要差异、是否存在平台间价差机会；如果某个平台无法访问，请只标记该平台失败，不要让全部任务失败。",
+      "expected_closure": "Cross-platform comparison with per-platform status.",
+      "success_evidence": [
+        "按平台分别给出数据或失败原因",
+        "价差判断有样本依据",
+        "不会因为一个平台失败丢掉全部结果"
+      ],
+      "primary_failure_attribution": "tool_orchestration"
+    },
+    {
+      "id": "TOOL-008",
+      "layer": "toolchain_isolation",
+      "user_pain": "批量 ASIN 补字段",
+      "dependency": "external_amazon_data",
+      "input_query": "请批量查询这 5 个 Amazon US ASIN 的标题、价格、评分、评论数和品牌信号：B0DNTQ2YNT、B0C7KQY8Q3、B0B6VQ9M2K、B09YH4KQ8Z、B08N5WRWNW。请逐行输出；查不到的 ASIN 要保留行并说明原因。",
+      "expected_closure": "Row-preserving bulk enrichment.",
+      "success_evidence": [
+        "5 行都保留",
+        "每行有成功或失败状态",
+        "失败原因不笼统"
+      ],
+      "primary_failure_attribution": "tool_orchestration"
+    },
+    {
+      "id": "TOOL-009",
+      "layer": "toolchain_isolation",
+      "user_pain": "报告生成链路",
+      "dependency": "external_data_and_report_generation",
+      "input_query": "先使用 Amazon US 可用数据源采集 travel jewelry organizer 的市场样本，再生成一份可查看的市场进入报告。报告需要包含数据源、样本范围、市场结论、机会商品、风险和下一步验证。请确保不是只在聊天里说完成。",
+      "expected_closure": "Visible generated report artifact after data collection.",
+      "success_evidence": [
+        "有报告入口或报告内容",
+        "报告包含样本和结论",
+        "不是仅返回任务已完成"
+      ],
+      "primary_failure_attribution": "report_generation"
+    },
+    {
+      "id": "TOOL-010",
+      "layer": "toolchain_isolation",
+      "user_pain": "收藏动作落库",
+      "dependency": "external_data_and_persistent_action",
+      "input_query": "请在 Amazon US travel jewelry organizer 下找 3 个高销低评候选商品，并把候选商品加入收藏夹。最后输出每个候选的 ASIN、机会理由和收藏是否成功的证据。",
+      "expected_closure": "Candidate products plus verified favorite creation.",
+      "success_evidence": [
+        "候选商品有 ASIN",
+        "显示收藏成功或收藏记录",
+        "不把口头计划当成已收藏"
+      ],
+      "primary_failure_attribution": "persistent_action_not_created"
+    },
+    {
+      "id": "TOOL-011",
+      "layer": "toolchain_isolation",
+      "user_pain": "监控任务落库",
+      "dependency": "external_data_and_persistent_action",
+      "input_query": "请为 Amazon US 关键词「foldable laundry basket」创建每日监控，监控 Top10 商品的价格、排名、评分和评论数变化。完成后输出监控任务名称、频率、监控对象和创建成功证据。",
+      "expected_closure": "Persisted daily monitoring task with visible evidence.",
+      "success_evidence": [
+        "有任务名称和频率",
+        "有监控对象",
+        "有创建成功证据或任务入口"
+      ],
+      "primary_failure_attribution": "persistent_action_not_created"
+    },
+    {
+      "id": "TOOL-012",
+      "layer": "toolchain_isolation",
+      "user_pain": "无结果处理",
+      "dependency": "external_search_data",
+      "input_query": "请搜索 Amazon US 关键词「zzzz-no-result-alice-v4-0720」。如果没有结果，请明确输出无结果、可能原因、可以尝试的替代关键词和是否需要用户修改输入，不要编造商品。",
+      "expected_closure": "No-result state handled cleanly.",
+      "success_evidence": [
+        "明确无结果",
+        "没有编造 ASIN",
+        "给出替代输入建议"
+      ],
+      "primary_failure_attribution": "external_data_no_result"
+    },
+    {
+      "id": "TOOL-013",
+      "layer": "toolchain_isolation",
+      "user_pain": "额度或鉴权失败可解释",
+      "dependency": "external_data_auth",
+      "input_query": "请采集 Amazon US under sink organizer 的 Top10 商品。如果数据源因为账号、API Key、积分或权限不可用，请直接说明具体失败原因、影响范围、可重试条件和当前还能提供什么有限价值。",
+      "expected_closure": "Data result or explicit auth/quota diagnostic.",
+      "success_evidence": [
+        "错误原因具体",
+        "说明影响到哪些步骤",
+        "不给虚构数据"
+      ],
+      "primary_failure_attribution": "external_data_auth_or_quota"
+    },
+    {
+      "id": "TOOL-014",
+      "layer": "toolchain_isolation",
+      "user_pain": "数据源约束遵守",
+      "dependency": "external_amazon_data",
+      "input_query": "只使用亚马逊前台数据，不要使用 TikTok 或其他平台。请分析 Amazon US「desktop cable tray」的价格带、Top 商品、评论门槛和新品机会。如果亚马逊前台不可用，请说明不可用，不要切换到别的数据源替代。",
+      "expected_closure": "Amazon-only analysis or explicit Amazon-source blocker.",
+      "success_evidence": [
+        "遵守数据源限制",
+        "没有偷换平台",
+        "失败时说明 Amazon 前台不可用"
+      ],
+      "primary_failure_attribution": "tool_orchestration"
+    },
+    {
+      "id": "TOOL-015",
+      "layer": "toolchain_isolation",
+      "user_pain": "内联表格识别和补全",
+      "dependency": "provided_input_and_external_data",
+      "input_query": "下面是我手头的候选清单，请保留原始行顺序，并尽量用 Amazon US 数据补全缺失字段：ASIN,关键词,我的备注；B0DNTQ2YNT,under sink organizer,疑似机会；B0C7KQY8Q3,travel jewelry organizer,评论少；B09YH4KQ8Z,drawer divider organizer,价格低。请输出补全后的表格、补不到的字段和原因。",
+      "expected_closure": "Inline CSV parsed and row-preserving enrichment.",
+      "success_evidence": [
+        "识别三行输入",
+        "保留原备注",
+        "缺失字段有原因"
+      ],
+      "primary_failure_attribution": "agent_understanding_or_planning"
+    },
+    {
+      "id": "TOOL-016",
+      "layer": "toolchain_isolation",
+      "user_pain": "采集后继续分析",
+      "dependency": "external_data_and_reasoning",
+      "input_query": "请先采集 Amazon US「bathroom counter organizer」样本，再基于采集结果判断是否有新品机会。不要停留在原始数据表，请给出结论、证据、风险和下一步动作。",
+      "expected_closure": "Collection followed by synthesis and decision.",
+      "success_evidence": [
+        "有原始样本或样本范围",
+        "有综合结论",
+        "不是只完成采集"
+      ],
+      "primary_failure_attribution": "tool_orchestration"
+    },
+    {
+      "id": "DIALOG-001",
+      "layer": "dialogue_and_boundary",
+      "user_pain": "模糊需求澄清",
+      "dependency": "conversation_behavior",
+      "input_query": "帮我看看这个品能不能做。",
+      "expected_closure": "Ask for product, marketplace, and available data instead of pretending to analyze.",
+      "success_evidence": [
+        "不虚构商品",
+        "最多提出关键缺失信息",
+        "能给出用户下一步要补什么"
+      ],
+      "primary_failure_attribution": "input_missing_or_ambiguous"
+    },
+    {
+      "id": "DIALOG-002",
+      "layer": "dialogue_and_boundary",
+      "user_pain": "缺少 ASIN",
+      "dependency": "conversation_behavior",
+      "input_query": "帮我分析这个 ASIN 的差评，看能不能做改良款。",
+      "expected_closure": "Ask for the ASIN or product link.",
+      "success_evidence": [
+        "明确缺少 ASIN",
+        "不随便选择一个 ASIN",
+        "说明拿到 ASIN 后会分析什么"
+      ],
+      "primary_failure_attribution": "input_missing_or_ambiguous"
+    },
+    {
+      "id": "DIALOG-003",
+      "layer": "dialogue_and_boundary",
+      "user_pain": "监控任务缺少对象",
+      "dependency": "conversation_behavior",
+      "input_query": "每天帮我监控这个关键词的排名变化。",
+      "expected_closure": "Ask for keyword and marketplace before creating a task.",
+      "success_evidence": [
+        "没有创建空监控",
+        "指出缺少关键词或市场",
+        "说明需要的最小输入"
+      ],
+      "primary_failure_attribution": "input_missing_or_ambiguous"
+    },
+    {
+      "id": "DIALOG-004",
+      "layer": "dialogue_and_boundary",
+      "user_pain": "对比对象不完整",
+      "dependency": "conversation_behavior",
+      "input_query": "标题 A 是 2 Pack Under Sink Organizer with Sliding Drawer。帮我比较 A 和 B 哪个更好。",
+      "expected_closure": "Ask for title B before judging.",
+      "success_evidence": [
+        "不编造标题 B",
+        "明确缺少对比对象",
+        "可提供标题评价框架"
+      ],
+      "primary_failure_attribution": "input_missing_or_ambiguous"
+    },
+    {
+      "id": "DIALOG-005",
+      "layer": "dialogue_and_boundary",
+      "user_pain": "过度承诺防护",
+      "dependency": "conversation_behavior",
+      "input_query": "我想做美国站，直接给我找一个必爆品。",
+      "expected_closure": "Reject certainty framing, ask for category/budget/risk preference or propose a validation workflow.",
+      "success_evidence": [
+        "不承诺必爆",
+        "说明需要验证",
+        "给出合理的选品流程"
+      ],
+      "primary_failure_attribution": "unsupported_or_risky_request_boundary"
+    },
+    {
+      "id": "DIALOG-006",
+      "layer": "dialogue_and_boundary",
+      "user_pain": "附件缺失",
+      "dependency": "conversation_behavior",
+      "input_query": "帮我看附件里的表，把每行商品都补上价格和评论数。",
+      "expected_closure": "Ask user to upload or paste the table.",
+      "success_evidence": [
+        "指出当前没有附件或表格",
+        "不假装已经读取",
+        "说明可接受的数据格式"
+      ],
+      "primary_failure_attribution": "input_missing_or_ambiguous"
+    },
+    {
+      "id": "DIALOG-007",
+      "layer": "dialogue_and_boundary",
+      "user_pain": "法律保证边界",
+      "dependency": "conversation_behavior",
+      "input_query": "你直接告诉我这个产品保证不会侵权吗？我不想再找律师。",
+      "expected_closure": "Set legal boundary and offer risk-screening steps.",
+      "success_evidence": [
+        "不做法律保证",
+        "能提供初筛路径",
+        "说明需要法务确认的证据"
+      ],
+      "primary_failure_attribution": "unsupported_or_risky_request_boundary"
+    },
+    {
+      "id": "DIALOG-008",
+      "layer": "dialogue_and_boundary",
+      "user_pain": "任务规模过大",
+      "dependency": "conversation_behavior",
+      "input_query": "帮我抓取 Amazon US 这个类目 Top500 商品的全部评论，并马上总结每个商品机会。",
+      "expected_closure": "Explain scope limit and propose a staged sample plan.",
+      "success_evidence": [
+        "不直接承诺一次完成 Top500 全量",
+        "提出 TopN 或抽样方案",
+        "给出阶段性交付"
+      ],
+      "primary_failure_attribution": "agent_understanding_or_planning"
+    },
+    {
+      "id": "DIALOG-009",
+      "layer": "dialogue_and_boundary",
+      "user_pain": "图片对象缺失",
+      "dependency": "conversation_behavior",
+      "input_query": "这个 1688 图能直接上 Amazon 吗？",
+      "expected_closure": "Ask for image, URL, or description before judging.",
+      "success_evidence": [
+        "不臆测图片内容",
+        "说明需要图或链接",
+        "可先说明判断维度"
+      ],
+      "primary_failure_attribution": "input_missing_or_ambiguous"
+    },
+    {
+      "id": "DIALOG-010",
+      "layer": "dialogue_and_boundary",
+      "user_pain": "目标约束冲突",
+      "dependency": "conversation_behavior",
+      "input_query": "我要找一个低客单价、低竞争、高利润、高复购、还不需要广告的美国站产品。",
+      "expected_closure": "Explain tradeoffs and ask user to rank priorities or propose scoring.",
+      "success_evidence": [
+        "识别约束冲突",
+        "不直接给随意产品",
+        "提供取舍框架"
+      ],
+      "primary_failure_attribution": "agent_understanding_or_planning"
+    },
+    {
+      "id": "DIALOG-011",
+      "layer": "dialogue_and_boundary",
+      "user_pain": "报告来源缺失",
+      "dependency": "conversation_behavior",
+      "input_query": "把这个结果做成报告，发我最终版。",
+      "expected_closure": "Ask what result or session should be used, unless current context has a clear artifact.",
+      "success_evidence": [
+        "不凭空生成报告",
+        "要求结果数据或会话链接",
+        "说明报告结构"
+      ],
+      "primary_failure_attribution": "input_missing_or_ambiguous"
+    },
+    {
+      "id": "DIALOG-012",
+      "layer": "dialogue_and_boundary",
+      "user_pain": "超大开放任务收敛",
+      "dependency": "conversation_behavior",
+      "input_query": "帮我把美国、德国、日本所有平台的所有机会都找出来。",
+      "expected_closure": "Narrow scope or propose phased plan instead of attempting all markets and platforms at once.",
+      "success_evidence": [
+        "说明范围过大",
+        "提出优先市场或平台",
+        "给出第一阶段可交付"
+      ],
+      "primary_failure_attribution": "agent_understanding_or_planning"
+    },
+    {
+      "id": "E2E-001",
+      "layer": "real_task_e2e",
+      "user_pain": "真实选品进入决策",
+      "dependency": "external_data_and_reasoning",
+      "input_query": "美国站搜索关键词「foldable laundry basket」，判断这个细分市场是否值得进入，并给出 3 个切入方向。请说明使用的数据源、样本范围、价格带、头部商品或品牌信号、评论风险和最终做不做的结论。",
+      "expected_closure": "Decision-ready market entry analysis.",
+      "success_evidence": [
+        "有最终做不做结论",
+        "有数据源和样本范围",
+        "有 3 个切入方向和风险"
+      ],
+      "primary_failure_attribution": "external_data_auth_or_quota"
+    },
+    {
+      "id": "E2E-002",
+      "layer": "real_task_e2e",
+      "user_pain": "机会商品发现",
+      "dependency": "external_data_and_reasoning",
+      "input_query": "找出 Amazon US「travel jewelry organizer」下高销低评的潜力商品。请输出筛选规则、候选 ASIN、价格、销量或销售额、评分与评论数、为什么是机会，以及下一步验证建议。",
+      "expected_closure": "Candidate product shortlist with opportunity rationale.",
+      "success_evidence": [
+        "有候选 ASIN",
+        "有筛选规则",
+        "有下一步验证建议"
+      ],
+      "primary_failure_attribution": "external_data_auth_or_quota"
+    },
+    {
+      "id": "E2E-003",
+      "layer": "real_task_e2e",
+      "user_pain": "红海判断",
+      "dependency": "external_data_and_reasoning",
+      "input_query": "判断 Amazon US「silicone baby bib」是否已经是红海市场。请输出样本范围、价格带、品牌集中度、评论门槛、新品空间、进入风险和最终建议。",
+      "expected_closure": "Red-ocean assessment with decision recommendation.",
+      "success_evidence": [
+        "有红海或非红海判断",
+        "有竞争门槛证据",
+        "有最终建议"
+      ],
+      "primary_failure_attribution": "external_data_auth_or_quota"
+    },
+    {
+      "id": "E2E-004",
+      "layer": "real_task_e2e",
+      "user_pain": "竞品评论到产品改良",
+      "dependency": "external_amazon_review_data",
+      "input_query": "围绕 Amazon US「under sink organizer」，找 5 个代表性竞品并分析它们的差评。请提炼高频痛点、对应产品改良方向、Listing 可以强调的卖点和仍需要验证的风险。",
+      "expected_closure": "Competitor review synthesis turned into product and listing actions.",
+      "success_evidence": [
+        "有代表性竞品",
+        "有差评痛点证据",
+        "有改良方向和 Listing 卖点"
+      ],
+      "primary_failure_attribution": "external_data_auth_or_quota"
+    },
+    {
+      "id": "E2E-005",
+      "layer": "real_task_e2e",
+      "user_pain": "跨平台定价判断",
+      "dependency": "external_multi_platform_data",
+      "input_query": "比较 Amazon US、Walmart、eBay 上 drawer organizer 相关商品的价格和形态。请判断 Amazon 新品应该如何定价，是否有平台间价差机会，以及哪些平台数据不能直接类比。",
+      "expected_closure": "Cross-platform pricing recommendation.",
+      "success_evidence": [
+        "平台样本分别说明",
+        "有定价建议",
+        "指出不可类比部分"
+      ],
+      "primary_failure_attribution": "tool_orchestration"
+    },
+    {
+      "id": "E2E-006",
+      "layer": "real_task_e2e",
+      "user_pain": "内容电商与货架电商交叉验证",
+      "dependency": "external_multi_platform_data",
+      "input_query": "我想看 car trash can 这个方向是否适合做跨境新品。请同时考虑 TikTok 内容热度和 Amazon US 商品竞争，输出机会判断、内容风险、货架竞争风险和下一步验证动作。",
+      "expected_closure": "Combined content-commerce and Amazon validation.",
+      "success_evidence": [
+        "同时区分 TikTok 和 Amazon 信号",
+        "有机会判断",
+        "有下一步验证"
+      ],
+      "primary_failure_attribution": "tool_orchestration"
+    },
+    {
+      "id": "E2E-007",
+      "layer": "real_task_e2e",
+      "user_pain": "监控闭环",
+      "dependency": "external_data_and_persistent_action",
+      "input_query": "请找出 Amazon US travel jewelry organizer 下 5 个最值得跟踪的竞品，并创建一个每日上午 9 点的监控任务，跟踪价格、排名、评分、评论数和优惠变化。最后输出监控任务是否创建成功的证据。",
+      "expected_closure": "Competitor selection plus persisted monitoring task.",
+      "success_evidence": [
+        "有 5 个跟踪对象",
+        "有每日 9 点监控任务",
+        "有创建成功证据"
+      ],
+      "primary_failure_attribution": "persistent_action_not_created"
+    },
+    {
+      "id": "E2E-008",
+      "layer": "real_task_e2e",
+      "user_pain": "上市前检查清单",
+      "dependency": "external_data_and_reasoning",
+      "input_query": "我要准备上 Amazon US「under sink organizer」。请基于可用市场和竞品信息，输出上市前检查清单，覆盖价格、主图、标题、评论风险、专利商标初筛、广告关键词和首批库存验证条件。",
+      "expected_closure": "Launch checklist grounded in market evidence and risk boundaries.",
+      "success_evidence": [
+        "清单覆盖指定维度",
+        "能区分数据结论和法律初筛边界",
+        "有验证条件"
+      ],
+      "primary_failure_attribution": "external_data_auth_or_quota"
+    },
+    {
+      "id": "E2E-009",
+      "layer": "real_task_e2e",
+      "user_pain": "批量候选评分",
+      "dependency": "external_data_and_reasoning",
+      "input_query": "请对这 5 个候选 ASIN 做机会评分：B0DNTQ2YNT、B0C7KQY8Q3、B0B6VQ9M2K、B09YH4KQ8Z、B08N5WRWNW。评分维度包括销量或热度、评论门槛、评分风险、价格空间、差评可改良性。请输出表格和优先级。",
+      "expected_closure": "Scored candidate table with priority.",
+      "success_evidence": [
+        "5 个 ASIN 均有行",
+        "评分维度完整",
+        "有优先级和理由"
+      ],
+      "primary_failure_attribution": "tool_orchestration"
+    },
+    {
+      "id": "E2E-010",
+      "layer": "real_task_e2e",
+      "user_pain": "市场进入报告",
+      "dependency": "external_data_and_report_generation",
+      "input_query": "请为 Amazon US「desktop cable tray」生成一份市场进入报告。报告需要包括市场概览、样本数据、价格带、竞品格局、用户痛点、差异化方向、风险、Go 或 No-Go 结论和下一步验证计划。",
+      "expected_closure": "Generated market-entry report artifact or complete report content.",
+      "success_evidence": [
+        "有完整报告",
+        "有 Go 或 No-Go",
+        "报告不是空壳"
+      ],
+      "primary_failure_attribution": "report_generation"
+    },
+    {
+      "id": "E2E-011",
+      "layer": "real_task_e2e",
+      "user_pain": "近期评论变化判断",
+      "dependency": "external_amazon_review_data",
+      "input_query": "请分析 ASIN B0DNTQ2YNT 近 90 天评论变化，判断评分是否稳定、差评是否集中爆发、是否有刷评或异常风险，并给出我们是否应该参考这个竞品的结论。",
+      "expected_closure": "Recent-review stability and reliability assessment.",
+      "success_evidence": [
+        "有近 90 天样本或说明无法获取",
+        "区分稳定性和异常风险",
+        "有是否参考竞品的结论"
+      ],
+      "primary_failure_attribution": "external_data_auth_or_quota"
+    },
+    {
+      "id": "E2E-012",
+      "layer": "real_task_e2e",
+      "user_pain": "失败时仍要给可用闭环",
+      "dependency": "external_data_with_fallback",
+      "input_query": "请采集 Amazon US「bathroom counter organizer」Top20 商品并判断市场机会。如果采集失败，请不要停在报错，输出一份阻塞报告：失败在哪一步、影响哪些结论、当前不能下什么判断、用户需要补什么或系统需要修什么、恢复后第一步重跑什么。",
+      "expected_closure": "Either full analysis or structured blocker report that preserves business next step.",
+      "success_evidence": [
+        "成功时有完整机会判断",
+        "失败时有阻塞报告",
+        "不会只输出系统错误"
+      ],
+      "primary_failure_attribution": "external_data_auth_or_quota"
+    }
+  ]
+}

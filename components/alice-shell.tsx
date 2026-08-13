@@ -18,18 +18,24 @@ import {
 } from "react";
 import {
   Bell,
+  AiGateway,
+  ArrowLeft,
   BookOpen,
+  Check,
+  ChevronRight,
   Clock3,
+  Copy,
+  CreditCard,
   FolderHeart,
-  HelpCircle,
   InfoCircle,
-  Key,
   LogOut,
   Menu,
   MessageCircleMore,
   PanelLeft,
   PanelLeftExpand,
+  Pencil,
   Plus,
+  Qrcode,
   Search,
   SparkleHighlight,
   Trash2,
@@ -61,6 +67,7 @@ const navItems = [
   { href: "/", label: "新的对话", icon: SparkleHighlight },
   { href: "/schedules", label: "定时任务", icon: Clock3 },
   { href: "/artifacts", label: "收藏夹", icon: FolderHeart },
+  { href: "/settings/api-keys", label: "API&Skills", icon: AiGateway },
 ];
 
 type AliceShellProps = {
@@ -124,6 +131,33 @@ const RESULT_RAIL_MAX_WIDTH = 1040;
 const RESULT_RAIL_MIN_MAIN_WIDTH = 360;
 const RESULT_RAIL_DIVIDER_WIDTH = 8;
 const ACCOUNT_AVATAR_CLASSES = ["bg-avatar-1", "bg-avatar-2", "bg-avatar-3", "bg-avatar-4", "bg-avatar-5", "bg-avatar-6", "bg-avatar-7", "bg-avatar-8"];
+type PlanEntitlements = {
+  dataQueries: number;
+  researchReports: number;
+};
+
+const BILLING_PLANS = {
+  basic: { name: "基础版", prices: { weekly: 59, monthly: 159, yearly: 1910 }, originalPrices: { weekly: null, monthly: 199, yearly: 2388 }, entitlements: { weekly: { dataQueries: 20, researchReports: 2 }, monthly: { dataQueries: 80, researchReports: 8 }, yearly: { dataQueries: 960, researchReports: 96 } }, description: "为日常选品、竞品分析与运营查询准备。" },
+  advanced: { name: "高级版", prices: { weekly: 159, monthly: 549, yearly: 5270 }, originalPrices: { weekly: null, monthly: null, yearly: 6588 }, entitlements: { weekly: { dataQueries: 55, researchReports: 5 }, monthly: { dataQueries: 220, researchReports: 22 }, yearly: { dataQueries: 2640, researchReports: 264 } }, description: "为高频调研与持续运营工作流准备。" },
+} as const;
+const BILLING_BENEFITS = ["单账号单设备同时在线", "Alice Skills", "导出报告", "上传附件", "定时任务"];
+const BILLING_LEDGER = [
+  ["2026-08-13", "数据查询", "标准数据查询", "消耗", "-1", "65"],
+  ["2026-08-12", "调研报告", "竞品调研报告", "消耗", "-1", "7"],
+  ["2026-08-10", "数据查询", "查询执行失败", "返还", "+1", "66"],
+  ["2026-08-08", "数据查询", "批量数据导出", "消耗", "-1", "65"],
+  ["2026-08-06", "调研报告", "品类调研报告", "消耗", "-1", "6"],
+  ["2026-08-05", "数据查询", "活动奖励赠送", "发放", "+10", "66"],
+  ["2026-08-03", "数据查询", "数据源刷新", "消耗", "-1", "56"],
+  ["2026-08-02", "调研报告", "系统补偿返还", "返还", "+1", "7"],
+  ["2026-08-01", "数据查询", "基础版开通", "发放", "+80", "80"],
+  ["2026-08-01", "调研报告", "基础版开通", "发放", "+8", "8"],
+] as const;
+const BILLING_ORDERS = [
+  ["AL202608130001", "新购", "基础版", "¥159", "支付宝", "已开通", "2026-08-13 14:30"],
+  ["AL202607120031", "升级", "高级版", "¥286.40", "微信支付", "已开通", "2026-07-12 10:12"],
+  ["AL202606110018", "续订", "基础版", "¥199", "支付宝", "待生效", "2026-06-11 09:45"],
+] as const;
 type HistoryDropPosition = "before" | "after";
 type HistoryDragTarget = { sessionId: string; position: HistoryDropPosition };
 
@@ -649,6 +683,21 @@ function AliceShellComponent({
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [accountDialog, setAccountDialog] = useState<"profile" | "feedback" | null>(null);
+  const [settingsPanel, setSettingsPanel] = useState<"profile" | "billing">("profile");
+  const [avatarColor, setAvatarColor] = useState("#3b82f6");
+  const [profileName, setProfileName] = useState<string | null>(null);
+  const [editingProfileName, setEditingProfileName] = useState(false);
+  const [profileNameDraft, setProfileNameDraft] = useState("");
+  const [uuidCopied, setUuidCopied] = useState(false);
+  const [selectedPlanCode, setSelectedPlanCode] = useState<"basic" | "advanced">("basic");
+  const [billingCycle, setBillingCycle] = useState<"weekly" | "monthly" | "yearly">("monthly");
+  const [billingView, setBillingView] = useState<"overview" | "orders" | "select">("overview");
+  const [billingPaymentOpen, setBillingPaymentOpen] = useState(false);
+  const [billingPaymentMethod, setBillingPaymentMethod] = useState<"alipay" | "wechat">("alipay");
+  const [billingResult, setBillingResult] = useState<"success" | "closed" | null>(null);
+  const [feedbackContent, setFeedbackContent] = useState("");
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isResultRailDrawerViewport, setIsResultRailDrawerViewport] = useState(false);
@@ -827,8 +876,14 @@ function AliceShellComponent({
   /** 账户区：mount 前固定为「登录」，避免 token 仅在客户端存在时 hydration 不一致 */
   const headerAuth = platformAgent?.auth;
   const showHeaderUserMenu = clientMounted && Boolean(headerAuth);
-  const accountDisplayName = headerAuth?.displayName || headerAuth?.userId || "账号与设置";
+  const accountDisplayName = profileName ?? headerAuth?.displayName ?? headerAuth?.userId ?? "账号与设置";
   const accountAvatar = useMemo(() => getAccountAvatarMeta(accountDisplayName), [accountDisplayName]);
+  const accountUuid = headerAuth?.userId || "暂未获取";
+  const accountEmail = "sensen@example.com";
+  const selectedBillingPlan = BILLING_PLANS[selectedPlanCode];
+  const selectedBillingPrice = selectedBillingPlan.prices[billingCycle];
+  const selectedBillingOriginalPrice = selectedBillingPlan.originalPrices[billingCycle];
+  const selectedBillingDiscount = selectedBillingOriginalPrice ? selectedBillingOriginalPrice - selectedBillingPrice : 0;
   const openNotifications = useCallback(() => {
     if (!headerAuth) {
       platformAgent?.openLogin("请先登录后再查看通知。");
@@ -841,6 +896,7 @@ function AliceShellComponent({
     if (!showHeaderUserMenu) {
       setNotificationOpen(false);
       setLogoutConfirmOpen(false);
+      setAccountDialog(null);
     }
   }, [showHeaderUserMenu]);
 
@@ -1383,34 +1439,94 @@ function AliceShellComponent({
                         sideOffset={8}
                         className="w-panel-sm rounded-composer border border-border-strong bg-bg-surface p-0 text-foreground shadow-popover"
                       >
-                        <div className="flex flex-col gap-3 px-3 pb-3 pt-3">
-                          <div className="flex flex-col gap-0.5">
-                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-body font-medium leading-5 text-foreground">
-                              <UserRound className="h-5 w-5 text-text-secondary" strokeWidth={1.8} />
-                              我的账号
-                            </div>
-                            <Link
-                              href="/settings/api-keys"
-                              className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-body font-medium leading-5 text-foreground transition hover:bg-fill-hover"
+                        <div className="px-3 pb-3 pt-4">
+                          <div className="flex items-center gap-3 px-2 pb-3">
+                            <span
+                              aria-hidden="true"
+                              className={cn(
+                                "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-body font-semibold text-primary-foreground",
+                                accountAvatar.colorClass,
+                              )}
                             >
-                              <Key className="h-5 w-5 text-text-secondary" strokeWidth={1.8} />
-                              API 密钥
-                            </Link>
-                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-body font-medium leading-5 text-foreground">
-                              <BookOpen className="h-5 w-5 text-text-secondary" strokeWidth={1.8} />
-                              帮助文档
+                              {accountAvatar.initial}
+                            </span>
+                            <p className="min-w-0 flex-1 truncate text-body font-semibold leading-5 text-foreground">{accountDisplayName}</p>
+                          </div>
+
+                          <section aria-label="当前套餐与可用次数" className="rounded-xl bg-bg-subtle p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-caption leading-5 text-text-secondary">当前套餐</p>
+                                <p className="mt-0.5 text-body font-semibold leading-5 text-foreground">基础版</p>
+                              </div>
+                              <button
+                                type="button"
+                                className="shrink-0 rounded-control px-3 py-1.5 text-caption font-medium transition-colors hover:bg-fill-hover"
+                                style={{ backgroundColor: "var(--color-text-1)", color: "var(--color-bg-1)" }}
+                                onClick={() => {
+                                  setSettingsPanel("billing");
+                                  setAccountDialog("profile");
+                                }}
+                              >
+                                升级套餐
+                              </button>
                             </div>
-                            <div className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-body font-medium leading-5 text-foreground">
-                              <HelpCircle className="h-5 w-5 text-text-secondary" strokeWidth={1.8} />
-                              联系我们
+                            <div className="mt-3 grid grid-cols-2 divide-x divide-border border-t border-border pt-3">
+                              <div className="pr-3">
+                                <p className="text-caption leading-5 text-text-secondary">数据查询</p>
+                                <p className="mt-1 text-body font-semibold leading-5 text-foreground">65 <span className="font-normal text-text-secondary">/ 80 次</span></p>
+                              </div>
+                              <div className="pl-3">
+                                <p className="text-caption leading-5 text-text-secondary">调研报告</p>
+                                <p className="mt-1 text-body font-semibold leading-5 text-foreground">7 <span className="font-normal text-text-secondary">/ 8 次</span></p>
+                              </div>
                             </div>
-                            <div className="my-1 h-px bg-fill-active" />
+                          </section>
+
+                          <div className="mt-2 flex flex-col gap-0.5">
+                              <button
+                                type="button"
+                                className="flex h-10 w-full items-center gap-3 rounded-lg px-2 text-left text-body font-medium leading-5 text-foreground transition hover:bg-fill-hover"
+                                onClick={() => {
+                                  setSettingsPanel("profile");
+                                  setUuidCopied(false);
+                                  setAccountDialog("profile");
+                                }}
+                              >
+                                <UserRound className="h-5 w-5 shrink-0 text-text-secondary" strokeWidth={1.8} />
+                                <span className="flex-1">个人中心</span>
+                                <ChevronRight className="h-4 w-4 text-text-tertiary" strokeWidth={2} />
+                              </button>
+                              <Link
+                                href="/help"
+                                className="flex h-10 w-full items-center gap-3 rounded-lg px-2 text-left text-body font-medium leading-5 text-foreground transition hover:bg-fill-hover"
+                              >
+                                <BookOpen className="h-5 w-5 shrink-0 text-text-secondary" strokeWidth={1.8} />
+                                <span className="flex-1">帮助文档</span>
+                                <ChevronRight className="h-4 w-4 text-text-tertiary" strokeWidth={2} />
+                              </Link>
+                              <button
+                                type="button"
+                                className="flex h-10 w-full items-center gap-3 rounded-lg px-2 text-left text-body font-medium leading-5 text-foreground transition hover:bg-fill-hover"
+                                onClick={() => {
+                                  setFeedbackContent("");
+                                  setFeedbackSubmitted(false);
+                                  setAccountDialog("feedback");
+                                }}
+                              >
+                                <MessageCircleMore className="h-5 w-5 shrink-0 text-text-secondary" strokeWidth={1.8} />
+                                <span className="flex-1">问题反馈</span>
+                                <ChevronRight className="h-4 w-4 text-text-tertiary" strokeWidth={2} />
+                              </button>
+                          </div>
+
+                          <div className="mt-3 border-t border-border pt-3">
                             <button
                               type="button"
-                              className="flex h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-body font-medium leading-5 text-foreground transition hover:bg-fill-hover"
+                              className="flex h-10 w-full items-center gap-3 rounded-lg px-2 text-left text-body font-medium leading-5 text-foreground transition hover:bg-fill-hover"
                               onClick={() => setLogoutConfirmOpen(true)}
                             >
-                              <LogOut className="h-5 w-5 text-text-secondary" strokeWidth={1.8} />
+                              <LogOut className="h-5 w-5 shrink-0 text-text-secondary" strokeWidth={1.8} />
                               退出登录
                             </button>
                           </div>
@@ -1649,6 +1765,333 @@ function AliceShellComponent({
                 >
                   确定
                 </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={accountDialog === "profile"} onOpenChange={(open) => !open && setAccountDialog(null)}>
+          <DialogContent
+            aria-describedby={undefined}
+            className="h-[720px] max-h-[calc(100dvh-2rem)] w-[min(960px,calc(100vw-2rem))] max-w-none overflow-hidden rounded-panel border-border bg-bg-surface p-0 shadow-dialog"
+          >
+            <div className="flex h-full min-h-0">
+              {accountDialog === "profile" ? (
+                <>
+                  <aside className="w-48 shrink-0 border-r border-border bg-bg-subtle px-3 py-6">
+                    <p className="px-2 text-title-1 font-semibold text-foreground">设置</p>
+                    <div className="mt-6 flex flex-col gap-1">
+                      <button
+                        type="button"
+                        aria-pressed={settingsPanel === "profile"}
+                        className={cn(
+                          "flex h-10 w-full items-center gap-3 rounded-lg px-2 text-left text-body font-medium transition",
+                          settingsPanel === "profile" ? "bg-fill-active text-foreground" : "text-text-secondary hover:bg-fill-hover hover:text-foreground",
+                        )}
+                        onClick={() => setSettingsPanel("profile")}
+                      >
+                        <UserRound className="h-5 w-5" strokeWidth={1.8} />
+                        个人资料
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={settingsPanel === "billing"}
+                        className={cn(
+                          "flex h-10 w-full items-center gap-3 rounded-lg px-2 text-left text-body font-medium transition",
+                          settingsPanel === "billing" ? "bg-fill-active text-foreground" : "text-text-secondary hover:bg-fill-hover hover:text-foreground",
+                        )}
+                        onClick={() => setSettingsPanel("billing")}
+                      >
+                        <CreditCard className="h-5 w-5" strokeWidth={1.8} />
+                        费用
+                      </button>
+                    </div>
+                  </aside>
+
+                  <div className="min-w-0 flex min-h-0 flex-1 flex-col">
+                    <div className="shrink-0 px-8 pt-6">
+                      <DialogTitle className="text-title-2 font-semibold leading-7 text-foreground">
+                        {settingsPanel === "profile" ? "个人资料" : "费用"}
+                      </DialogTitle>
+                    </div>
+
+                    {settingsPanel === "profile" ? (
+                      <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-8 pt-5">
+                        <section className="overflow-hidden rounded-xl border border-border bg-bg-surface">
+                          <div className="flex items-center gap-3 px-5 py-4">
+                            <span
+                              aria-hidden="true"
+                              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-base font-semibold text-white"
+                              style={{ backgroundColor: avatarColor }}
+                            >
+                              {accountAvatar.initial}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              {editingProfileName ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    aria-label="名称"
+                                    autoFocus
+                                    value={profileNameDraft}
+                                    onChange={(event) => setProfileNameDraft(event.target.value)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        const nextName = profileNameDraft.trim();
+                                        if (nextName) setProfileName(nextName);
+                                        setEditingProfileName(false);
+                                      }
+                                      if (event.key === "Escape") setEditingProfileName(false);
+                                    }}
+                                    className="h-8 min-w-0 flex-1 rounded-control border border-border bg-bg-surface px-2 text-body font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded-control px-2 py-1 text-caption font-medium text-foreground hover:bg-fill-hover"
+                                    onClick={() => {
+                                      const nextName = profileNameDraft.trim();
+                                      if (nextName) setProfileName(nextName);
+                                      setEditingProfileName(false);
+                                    }}
+                                  >
+                                    完成
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  <p className="truncate text-body font-semibold text-foreground">{accountDisplayName}</p>
+                                  <button
+                                    type="button"
+                                    aria-label="编辑名称"
+                                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-control text-text-tertiary transition hover:bg-fill-hover hover:text-foreground"
+                                    onClick={() => {
+                                      setProfileNameDraft(accountDisplayName);
+                                      setEditingProfileName(true);
+                                    }}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
+                                  </button>
+                                </div>
+                              )}
+                              <p className="mt-0.5 truncate text-caption text-text-secondary">{accountEmail}</p>
+                            </div>
+                          </div>
+
+                          <div className="border-t border-border px-5 py-4">
+                            <p className="text-body font-medium text-foreground">头像背景色</p>
+                            <div className="mt-3 flex flex-wrap gap-3">
+                            {["#3b82f6", "#a855f7", "#6366f1", "#f59e0b", "#f97316", "#06b6d4", "#22c55e", "#94a3b8", "#ec4899"].map((color) => (
+                              <button
+                                key={color}
+                                type="button"
+                                aria-label={`选择头像背景色 ${color}`}
+                                aria-pressed={avatarColor === color}
+                                className="h-8 w-8 rounded-full border-2 border-white ring-2 transition focus:outline-none focus:ring-primary/40"
+                                style={{ backgroundColor: color, boxShadow: avatarColor === color ? `0 0 0 2px ${color}` : "none" }}
+                                onClick={() => setAvatarColor(color)}
+                              />
+                            ))}
+                            </div>
+                          </div>
+                        </section>
+
+                        <section className="mt-5 rounded-xl border border-border px-4 py-4">
+                          <div className="flex items-center justify-between gap-5">
+                            <div className="min-w-0">
+                              <p className="text-body font-medium text-foreground">账号 UUID</p>
+                              <p className="mt-1 text-caption leading-5 text-text-secondary">你的专属用户标识，可用于问题反馈与技术支持时快速定位账号</p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <span className="max-w-40 truncate text-body font-medium text-foreground">{accountUuid}</span>
+                              <span className="relative inline-flex">
+                                <button
+                                  type="button"
+                                  aria-label="复制账号 UUID"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-control text-text-secondary transition hover:bg-fill-hover hover:text-foreground"
+                                  onClick={() => {
+                                    void navigator.clipboard?.writeText(accountUuid);
+                                    setUuidCopied(true);
+                                    window.setTimeout(() => setUuidCopied(false), 1600);
+                                  }}
+                                >
+                                  <Copy className="h-4 w-4" strokeWidth={1.8} />
+                                </button>
+                                {uuidCopied ? (
+                                  <span
+                                    role="status"
+                                    className="absolute right-0 top-9 z-10 whitespace-nowrap rounded-control px-2 py-1 text-caption shadow-popover"
+                                    style={{ backgroundColor: "var(--color-text-1)", color: "var(--color-bg-1)" }}
+                                  >
+                                    已复制
+                                  </span>
+                                ) : null}
+                              </span>
+                            </div>
+                          </div>
+                        </section>
+
+                        <section className="mt-5 flex items-center justify-between rounded-xl border border-border px-4 py-4">
+                          <div>
+                            <p className="text-body font-medium text-foreground">退出登录</p>
+                            <p className="mt-1 text-caption text-text-secondary">在此设备退出登录，可随时重新登录。</p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-9 border-danger-border bg-bg-surface text-caption font-medium text-danger hover:bg-danger-bg hover:text-danger"
+                            onClick={() => {
+                              setAccountDialog(null);
+                              setLogoutConfirmOpen(true);
+                            }}
+                          >
+                            <LogOut className="mr-1 h-4 w-4" strokeWidth={1.8} />
+                            退出登录
+                          </Button>
+                        </section>
+                      </div>
+                    ) : (
+                      <div className="flex min-h-0 flex-1 flex-col">
+                        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-8 pb-5 pt-5">
+                          {billingView === "overview" ? (
+                            <>
+                              <div className="flex items-start justify-between border-b border-border pb-5">
+                                <div><p className="text-title-2 font-semibold text-foreground">套餐与账单</p><p className="mt-3 text-body font-medium text-foreground">基础版 <span className="ml-2 text-success">· 生效中</span></p></div>
+                                <button type="button" className="inline-flex items-center gap-2 text-body text-text-secondary hover:text-foreground" onClick={() => setBillingView("orders")}><CreditCard className="h-4 w-4" />订单记录</button>
+                              </div>
+                              <div className="grid grid-cols-2 gap-10 border-b border-border py-5">
+                                <div className="grid grid-cols-2 gap-4">
+                                  <section className="rounded-xl bg-bg-subtle p-4">
+                                    <p className="text-caption text-text-secondary">数据查询剩余</p>
+                                    <p className="mt-2 text-title-1 font-semibold leading-none text-foreground">65 次</p>
+                                    <p className="mt-4 text-caption text-text-secondary">已用 15 / 80</p>
+                                  </section>
+                                  <section className="rounded-xl bg-bg-subtle p-4">
+                                    <p className="text-caption text-text-secondary">调研报告剩余</p>
+                                    <p className="mt-2 text-title-1 font-semibold leading-none text-foreground">7 次</p>
+                                    <p className="mt-4 text-caption text-text-secondary">已用 1 / 8</p>
+                                  </section>
+                                </div>
+                                <div className="border-l border-border pl-10"><p className="text-caption text-text-secondary">到期时间</p><p className="mt-3 text-title-3 font-medium text-foreground">2026年9月11日 14:30</p><div className="mt-8 flex gap-3"><Button variant="outline" type="button" onClick={() => setBillingView("select")}>续订</Button><Button type="button" onClick={() => { setSelectedPlanCode("advanced"); setBillingView("select"); }}>升级至高级版</Button></div></div>
+                              </div>
+                              <div className="flex min-h-0 flex-1 flex-col pt-5"><p className="text-title-3 font-semibold text-foreground">额度明细</p><div className="mt-3 min-h-0 flex-1 overflow-y-auto"><table className="w-full text-left text-body"><thead className="sticky top-0 bg-bg-surface text-caption text-text-secondary"><tr><th className="py-3 font-medium">时间</th><th className="font-medium">权益</th><th className="font-medium">事项</th><th className="font-medium">类型</th><th className="font-medium">变动</th><th className="text-right font-medium">该权益余额</th></tr></thead><tbody>{BILLING_LEDGER.map(([date, entitlement, item, type, delta, balance]) => <tr key={`${date}-${entitlement}-${item}`} className="border-t border-border"><td className="py-3">{date}</td><td>{entitlement}</td><td>{item}</td><td>{type}</td><td className={delta.startsWith("+") ? "text-success" : ""}>{delta}</td><td className="text-right">{balance}</td></tr>)}</tbody></table></div></div>
+                            </>
+                          ) : billingView === "orders" ? (
+                            <><div className="flex items-center justify-between"><button type="button" className="inline-flex items-center gap-2 text-title-2 font-semibold text-foreground" onClick={() => setBillingView("overview")}>← 订单记录</button><input aria-label="搜索订单号" placeholder="搜索订单号" className="h-9 w-44 rounded-control border border-border px-3 text-caption outline-none focus:border-primary" /></div><div className="mt-6 overflow-y-auto"><table className="w-full text-left text-caption"><thead className="border-b border-border text-text-secondary"><tr>{["订单号", "类型", "套餐", "金额", "支付方式", "状态", "创建时间"].map((column) => <th key={column} className="px-2 py-3 font-medium">{column}</th>)}</tr></thead><tbody>{BILLING_ORDERS.map((order) => <tr key={order[0]} className="border-b border-border"><td className="px-2 py-4 font-mono text-text-secondary">{order[0]}</td><td className="px-2">{order[1]}</td><td className="px-2">{order[2]}</td><td className="px-2">{order[3]}</td><td className="px-2">{order[4]}</td><td className="px-2"><span className={order[5] === "已开通" ? "text-success" : "text-text-secondary"}>{order[5]}</span></td><td className="px-2 text-text-secondary">{order[6]}</td></tr>)}</tbody></table></div></>
+                          ) : (
+                            <>
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="inline-flex items-center gap-2 text-title-2 font-semibold text-foreground">
+                                  <button type="button" aria-label="返回套餐与账单" className="inline-flex h-8 w-8 items-center justify-center rounded-control transition-colors hover:bg-fill-hover hover:text-primary" onClick={() => setBillingView("overview")}><ArrowLeft className="h-5 w-5" strokeWidth={1.8} /></button>
+                                  <span>选择套餐</span>
+                                </div>
+                                <div className="inline-flex items-center gap-2" role="group" aria-label="付费周期">
+                                  <div className="inline-flex rounded-control bg-bg-subtle p-1">
+                                  {[{ code: "weekly" as const, label: "周付" }, { code: "monthly" as const, label: "月付" }, { code: "yearly" as const, label: "年付" }].map((cycle) => (
+                                    <button key={cycle.code} type="button" aria-pressed={billingCycle === cycle.code} className={cn("h-8 rounded-control px-4 text-caption font-medium transition-colors", billingCycle === cycle.code ? "bg-bg-surface text-foreground shadow-sm" : "text-text-secondary hover:bg-fill-hover hover:text-foreground")} onClick={() => setBillingCycle(cycle.code)}>
+                                      <span>{cycle.label}</span>
+                                    </button>
+                                  ))}
+                                  </div>
+                                  <span className="rounded-control bg-[#fff3e8] px-2 py-1 text-caption font-medium text-[#e85d04]">省 20%</span>
+                                </div>
+                              </div>
+                              <div className="mt-5 grid min-h-0 flex-1 grid-cols-2 gap-4 overflow-y-auto pb-3">
+                                {(Object.entries(BILLING_PLANS) as ["basic" | "advanced", (typeof BILLING_PLANS)["basic"]][]).map(([code, plan]) => {
+                                  const price = plan.prices[billingCycle];
+                                  const originalPrice = plan.originalPrices[billingCycle];
+                                  const entitlements: PlanEntitlements = plan.entitlements[billingCycle];
+                                  const cycleUnit = billingCycle === "weekly" ? "周" : billingCycle === "monthly" ? "月" : "年";
+                                  const discountRate = originalPrice ? Math.round((price / originalPrice) * 10) : null;
+                                  return <button key={code} type="button" aria-pressed={selectedPlanCode === code} onClick={() => setSelectedPlanCode(code)} className={cn("relative rounded-card border bg-bg-surface p-5 text-left transition-colors", selectedPlanCode === code ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-fill-hover")}>
+                                    <p className="text-title-2 font-semibold text-foreground">{plan.name}</p><p className="mt-2 min-h-10 text-caption text-text-secondary">{plan.description}</p>
+                                    <div className="mt-6 flex items-end gap-2"><span className="text-[34px] font-semibold leading-none">¥{price}</span><span className="mb-0.5 text-body text-text-secondary">/ {cycleUnit}</span>{originalPrice ? <><span className="mb-0.5 text-body text-text-tertiary line-through">¥{originalPrice}</span><span className="mb-0.5 rounded-control bg-[#fff3e8] px-1.5 py-0.5 text-caption text-[#e85d04]">{discountRate}折</span></> : null}</div>
+                                    <div className="mt-5 border-t border-border pt-4"><p className="text-caption text-text-secondary">包含</p><p className="mt-1 text-body font-semibold">{entitlements.dataQueries} 次数据查询</p><p className="mt-1 text-body font-semibold">{entitlements.researchReports} 次调研报告</p></div>
+                                    <ul className="mt-4 space-y-2">{BILLING_BENEFITS.map((benefit) => <li key={benefit} className="flex items-center gap-2 text-caption text-text-secondary"><Check className="h-4 w-4 text-foreground" />{benefit}</li>)}</ul>
+                                  </button>;
+                                })}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        {billingView === "select" ? <footer className="flex shrink-0 items-center justify-between border-t border-border bg-bg-surface px-8 py-4 shadow-[0_-8px_20px_rgba(15,23,42,0.04)]"><div><div className="flex items-baseline gap-3"><p className="text-caption text-text-secondary">应付</p><p className="text-[32px] font-semibold leading-none">¥{selectedBillingPrice}.00</p></div><p className="mt-2 text-caption text-text-secondary">点击继续支付即同意《Alice 服务协议》</p></div><Button type="button" className="h-12 min-w-48 rounded-full bg-foreground px-7 text-body font-semibold text-primary-foreground hover:bg-foreground" onClick={() => { setBillingPaymentMethod("alipay"); setBillingPaymentOpen(true); }}>继续支付</Button></footer> : null}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : null}
+
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={billingPaymentOpen} onOpenChange={setBillingPaymentOpen}>
+          <DialogContent aria-describedby={undefined} className="w-[min(520px,calc(100vw-2rem))] rounded-card border-border bg-bg-surface p-6 shadow-dialog">
+            <DialogTitle>支付订单</DialogTitle>
+            <div className="mt-5 grid grid-cols-2 gap-3" role="group" aria-label="支付方式">
+              {(["alipay", "wechat"] as const).map((method) => (
+                <button key={method} type="button" aria-pressed={billingPaymentMethod === method} onClick={() => setBillingPaymentMethod(method)} className={cn("flex h-12 items-center justify-center gap-2 rounded-control border text-body font-medium", billingPaymentMethod === method ? "border-primary text-primary" : "border-border text-foreground")}>
+                  <Qrcode className="h-5 w-5" />{method === "alipay" ? "支付宝" : "微信支付"}
+                </button>
+              ))}
+            </div>
+            <div className="mt-6 flex justify-center"><img src="/assets/payment-qr.png" alt={`${billingPaymentMethod === "alipay" ? "支付宝" : "微信支付"}支付二维码`} className="h-72 w-72 rounded-xl border border-border object-contain p-2" /></div>
+            <p className="mt-5 text-center text-body text-text-secondary">请使用{billingPaymentMethod === "alipay" ? "支付宝" : "微信"}扫码支付</p>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={billingResult !== null} onOpenChange={(open) => !open && setBillingResult(null)}>
+          <DialogContent aria-describedby={undefined} className="w-[min(480px,calc(100vw-2rem))] rounded-card border-border bg-bg-surface p-6 text-center shadow-dialog">
+            {billingResult ? <><div className={cn("mx-auto flex h-12 w-12 items-center justify-center rounded-full text-2xl text-primary-foreground", billingResult === "success" ? "bg-success" : "bg-fill-active text-text-secondary")}><Check className="h-7 w-7" /></div><DialogTitle className="mt-5 text-title-2">{billingResult === "success" ? "支付成功" : "支付未完成"}</DialogTitle><p className="mt-3 text-body text-text-secondary">{billingResult === "success" ? `${BILLING_PLANS[selectedPlanCode].name}已开通` : "订单已关闭，请重新发起购买。"}</p><Button type="button" className="mt-7 min-w-36" onClick={() => { if (billingResult === "success") { setBillingResult(null); setBillingView("overview"); } else { setBillingResult(null); setBillingPaymentOpen(true); } }}>{billingResult === "success" ? "完成" : "重新支付"}</Button></> : null}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={accountDialog === "feedback"} onOpenChange={(open) => !open && setAccountDialog(null)}>
+          <DialogContent aria-describedby={undefined} className="w-[min(640px,calc(100vw-2rem))] rounded-panel border-border bg-bg-surface p-0 shadow-dialog">
+            <div className="p-6 sm:p-7">
+              <DialogTitle className="flex items-center gap-3 text-title-2 font-semibold leading-7 text-foreground">
+                <MessageCircleMore className="h-6 w-6" strokeWidth={1.8} />
+                问题反馈
+              </DialogTitle>
+              <p className="mt-3 max-w-xl text-body leading-6 text-text-secondary">告诉我们你遇到的问题或建议，帮助 Alice 持续改进。</p>
+
+              {feedbackSubmitted ? (
+                <div className="mt-6 rounded-xl border border-success-border bg-success-bg px-4 py-5">
+                  <p className="text-body font-medium text-foreground">感谢你的反馈</p>
+                  <p className="mt-1 text-caption leading-5 text-text-secondary">我们已记录，将尽快查看。</p>
+                </div>
+              ) : (
+                <>
+                  <section className="mt-5">
+                    <textarea
+                      id="feedback-content"
+                      aria-label="问题反馈内容"
+                      value={feedbackContent}
+                      placeholder="请详细描述您遇到的问题或提出的建议…"
+                      onChange={(event) => setFeedbackContent(event.target.value)}
+                      className="min-h-36 w-full resize-none rounded-xl border border-border bg-bg-surface px-3 py-2.5 text-body leading-6 text-foreground outline-none placeholder:text-text-disabled focus:border-primary focus:ring-2 focus:ring-primary/15"
+                    />
+                  </section>
+                </>
+              )}
+
+              <div className="mt-5 flex justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 rounded-control border-border bg-bg-surface text-body font-medium text-text-secondary hover:bg-bg-surface hover:text-foreground"
+                  onClick={() => setAccountDialog(null)}
+                >
+                  {feedbackSubmitted ? "关闭" : "取消"}
+                </Button>
+                {!feedbackSubmitted ? (
+                  <Button
+                    type="button"
+                    className="h-10 rounded-control bg-primary text-body font-medium text-primary-foreground hover:bg-primary"
+                    disabled={!feedbackContent.trim()}
+                    onClick={() => setFeedbackSubmitted(true)}
+                  >
+                    提交反馈
+                  </Button>
+                ) : null}
               </div>
             </div>
           </DialogContent>

@@ -220,6 +220,83 @@ describe("AliceShell right rail layout", () => {
     expect(runHeader).toHaveClass("after:bg-[linear-gradient(180deg,#0f172a12,#0f172a00)]");
   });
 
+  it("groups account, plan and support actions while moving API&Skills into the sidebar", async () => {
+    mockMatchMedia({
+      "(max-width: 767px)": false,
+      "(max-width: 1023px)": false,
+    });
+    platformAgentMock.current = {
+      auth: { accessToken: "token", displayName: "sensen", userId: "sensen" },
+      platformSessionId: null,
+      withFreshToken: vi.fn(async (callback: (token: string) => Promise<unknown> | unknown) => callback("token")),
+      setActivePlatformSession: vi.fn(),
+      clearActivePlatformSession: vi.fn(),
+      openLogin: vi.fn(),
+    };
+    agentApiMocks.listSessions.mockResolvedValue({ sessions: [], total: 0, page: 1, page_size: 20 });
+
+    renderShellWithResultPanel();
+
+    expect(await screen.findByRole("link", { name: "API&Skills" })).toHaveAttribute("href", "/settings/api-keys");
+    fireEvent.click(screen.getByRole("button", { name: "用户中心" }));
+
+    expect(screen.getByText("基础版")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "当前套餐与可用次数" })).toHaveTextContent("数据查询65 / 80 次");
+    expect(screen.getByRole("region", { name: "当前套餐与可用次数" })).toHaveTextContent("调研报告7 / 8 次");
+    expect(screen.getByRole("link", { name: "帮助文档" })).toHaveAttribute("href", "/help");
+    expect(screen.queryByText("暂未开通额度")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "升级套餐" }));
+    expect(await screen.findByRole("heading", { name: "费用" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "费用" }), { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "用户中心" }));
+    fireEvent.click(screen.getByRole("button", { name: "个人中心" }));
+    expect(await screen.findByRole("dialog", { name: "个人资料" })).toBeInTheDocument();
+    expect(screen.getByText("sensen@example.com")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "编辑名称" }));
+    const nameInput = screen.getByRole("textbox", { name: "名称" });
+    fireEvent.change(nameInput, { target: { value: "Alice 用户" } });
+    fireEvent.keyDown(nameInput, { key: "Enter" });
+    expect(screen.getAllByText("Alice 用户")).toHaveLength(2);
+    expect(screen.getByText("账号 UUID")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "费用" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "费用" }));
+    expect(await screen.findByRole("heading", { name: "费用" })).toBeInTheDocument();
+    expect(screen.getByText("套餐与账单")).toBeInTheDocument();
+    expect(screen.getByText("额度明细")).toBeInTheDocument();
+    expect(screen.getByText("标准数据查询")).toBeInTheDocument();
+    expect(screen.getByText("数据查询剩余")).toBeInTheDocument();
+    expect(screen.getByText("调研报告剩余")).toBeInTheDocument();
+    expect(screen.getByText("已用 15 / 80")).toBeInTheDocument();
+    expect(screen.getByText("已用 1 / 8")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "权益" })).toBeInTheDocument();
+    expect(screen.getAllByText("数据查询").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("调研报告").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "订单记录" }));
+    expect(screen.getByText("AL202608130001")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /订单记录/ }));
+    expect(screen.getByText("基础版")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "续订" }));
+    expect(screen.getByText("¥159.00")).toBeInTheDocument();
+    expect(screen.getByText("8折")).toBeInTheDocument();
+    expect(screen.queryByText("套餐价 ¥199 · 优惠 ¥40")).not.toBeInTheDocument();
+    expect(screen.getByText("省 20%")).toBeInTheDocument();
+    expect(screen.getByText("80 次数据查询")).toBeInTheDocument();
+    expect(screen.getByText("8 次调研报告")).toBeInTheDocument();
+    expect(screen.getByText("220 次数据查询")).toBeInTheDocument();
+    expect(screen.getByText("22 次调研报告")).toBeInTheDocument();
+    expect(screen.queryByText(/Alice 任务额度/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "继续支付" }));
+    expect(await screen.findByRole("heading", { name: "支付订单" })).toBeInTheDocument();
+    expect(screen.getByText("请使用支付宝扫码支付")).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "支付订单" }), { key: "Escape" });
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "费用" }), { key: "Escape" });
+
+    fireEvent.click(screen.getByRole("button", { name: "用户中心" }));
+    expect(screen.getByText("退出登录")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "问题反馈" }));
+    expect(await screen.findByRole("dialog", { name: "问题反馈" })).toBeInTheDocument();
+  });
+
   it("supports drag sorting history tasks in the sidebar", async () => {
     vi.useFakeTimers();
     mockMatchMedia({
