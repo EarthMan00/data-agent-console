@@ -422,3 +422,20 @@ export type AdminAlicePersonaTemplate = {
   created_at: string | null;
   updated_at: string | null;
 };
+
+export type AdminOrder = {
+  id: string;
+  user_id: string;
+  order_no: string;
+  order_type: string;
+  plan_snapshot: Record<string, unknown>;
+  prev_plan_snapshot: Record<string, unknown> | null;
+  amount_cents: number;
+  original_amount_cents: number | null;
+  billing_cycle: string;
+  status: string;
+  payment_method: string | null;
+  paid_at: string | null;
+  fulfilled_at: string | null;
+  created_at: string;
+};

@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import {
   BookOpen,
   Cpu,
+  CreditCard,
   LogOut,
   MessageCircleMore,
   Package,
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/admin/prompts", label: "Prompt 管理", icon: BookOpen },
   { href: "/admin/personas", label: "Persona 管理", icon: BookOpen },
   { href: "/admin/feedback", label: "反馈管理", icon: MessageCircleMore },
+  { href: "/admin/orders", label: "订单管理", icon: CreditCard },
   { href: "/admin/models", label: "模型管理", icon: Cpu },
 ];
 

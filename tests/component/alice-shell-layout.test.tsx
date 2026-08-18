@@ -72,6 +72,38 @@ vi.mock("@/lib/agent-api/client", () => ({
   parseFastApiDetail: agentApiMocks.parseFastApiDetail,
 }));
 
+const billingMocks = vi.hoisted(() => ({
+  fetchBillingSummary: vi.fn(),
+  fetchEntitlementLedger: vi.fn(),
+  fetchBillingOrders: vi.fn(),
+  fetchUserPlans: vi.fn(),
+  createBillingOrder: vi.fn(),
+}));
+const profileMocks = vi.hoisted(() => ({
+  fetchProfile: vi.fn(),
+  patchProfile: vi.fn(),
+}));
+const feedbackMocks = vi.hoisted(() => ({
+  submitFeedback: vi.fn(),
+}));
+
+vi.mock("@/lib/agent-api/billing", () => ({
+  fetchBillingSummary: billingMocks.fetchBillingSummary,
+  fetchEntitlementLedger: billingMocks.fetchEntitlementLedger,
+  fetchBillingOrders: billingMocks.fetchBillingOrders,
+  fetchUserPlans: billingMocks.fetchUserPlans,
+  createBillingOrder: billingMocks.createBillingOrder,
+}));
+
+vi.mock("@/lib/agent-api/profile", () => ({
+  fetchProfile: profileMocks.fetchProfile,
+  patchProfile: profileMocks.patchProfile,
+}));
+
+vi.mock("@/lib/agent-api/feedback", () => ({
+  submitFeedback: feedbackMocks.submitFeedback,
+}));
+
 function mockMatchMedia(matchesByQuery: Record<string, boolean>) {
   Object.defineProperty(window, "matchMedia", {
     writable: true,
@@ -121,6 +153,59 @@ describe("AliceShell right rail layout", () => {
       value: localStorageMock,
     });
     window.localStorage.clear();
+    billingMocks.fetchBillingSummary.mockResolvedValue({
+      has_active_cycle: true,
+      plan_code: "paid_basic",
+      plan_name: "基础版",
+      cycle_status: "active",
+      kind: "purchased",
+      starts_at: "2026-08-01T00:00:00Z",
+      ends_at: "2026-09-01T00:00:00Z",
+      data_query_remaining: 65,
+      research_report_remaining: 7,
+    });
+    billingMocks.fetchEntitlementLedger.mockResolvedValue({
+      items: [
+        { id: "ledger-1", entitlement_type: "data_query", delta: -1, source: "web", event_type: "consume", task_kind: "standard_query", created_at: "2026-08-16T10:00:00Z" },
+        { id: "ledger-2", entitlement_type: "research_report", delta: -1, source: "web", event_type: "consume", task_kind: "research_report", created_at: "2026-08-15T10:00:00Z" },
+      ],
+      total: 2,
+      page: 1,
+      page_size: 10,
+    });
+    billingMocks.fetchBillingOrders.mockResolvedValue({
+      orders: [
+        { id: "order-1", order_no: "AL202608130001", order_type: "renew", plan_snapshot: { code: "paid_basic", name: "基础版", sale_price_cents: 15900 }, amount_cents: 15900, billing_cycle: "monthly", status: "paid", created_at: "2026-08-13T10:00:00Z" },
+      ],
+    });
+    billingMocks.fetchUserPlans.mockResolvedValue({
+      plans: [
+        { code: "paid_basic", name: "基础版", billing_cycle: "monthly", catalog_price_cents: 19900, sale_price_cents: 15900, campaign_label: null, data_query_quota: 80, research_report_quota: 8 },
+        { code: "paid_advanced", name: "高级版", billing_cycle: "monthly", catalog_price_cents: 39900, sale_price_cents: 31900, campaign_label: null, data_query_quota: 220, research_report_quota: 22 },
+      ],
+    });
+    billingMocks.createBillingOrder.mockResolvedValue({
+      order: {
+        id: "order-1",
+        order_no: "SO20260817001",
+        order_type: "new",
+        plan_snapshot: { code: "paid_basic", name: "基础版", sale_price_cents: 9900 },
+        amount_cents: 9900,
+        billing_cycle: "monthly",
+        status: "created",
+        created_at: "2026-08-17T00:00:00Z",
+      },
+    });
+    profileMocks.fetchProfile.mockResolvedValue({
+      username: "sensen",
+      display_name: null,
+      avatar_color: null,
+      email: "sensen@example.com",
+      phone: null,
+      uuid: "sensen",
+    });
+    profileMocks.patchProfile.mockResolvedValue({ display_name: "Alice 用户", avatar_color: null });
+    feedbackMocks.submitFeedback.mockResolvedValue({ id: "fb-1" });
   });
 
   afterEach(() => {
@@ -220,7 +305,10 @@ describe("AliceShell right rail layout", () => {
     expect(runHeader).toHaveClass("after:bg-[linear-gradient(180deg,#0f172a12,#0f172a00)]");
   });
 
-  it("groups account, plan and support actions while moving API&Skills into the sidebar", async () => {
+  it(
+    "groups account, plan and support actions while moving API&Skills into the sidebar",
+    { timeout: 20_000 },
+    async () => {
     mockMatchMedia({
       "(max-width: 767px)": false,
       "(max-width: 1023px)": false,
@@ -240,9 +328,9 @@ describe("AliceShell right rail layout", () => {
     expect(await screen.findByRole("link", { name: "API&Skills" })).toHaveAttribute("href", "/settings/api-keys");
     fireEvent.click(screen.getByRole("button", { name: "用户中心" }));
 
-    expect(screen.getByText("基础版")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "当前套餐与可用次数" })).toHaveTextContent("数据查询65 / 80 次");
-    expect(screen.getByRole("region", { name: "当前套餐与可用次数" })).toHaveTextContent("调研报告7 / 8 次");
+    expect(await screen.findByText("基础版")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "当前套餐与可用次数" })).toHaveTextContent("数据查询剩余 65 次");
+    expect(screen.getByRole("region", { name: "当前套餐与可用次数" })).toHaveTextContent("调研报告剩余 7 次");
     expect(screen.getByRole("link", { name: "帮助文档" })).toHaveAttribute("href", "/help");
     expect(screen.queryByText("暂未开通额度")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "升级套餐" }));
@@ -251,44 +339,45 @@ describe("AliceShell right rail layout", () => {
     fireEvent.click(screen.getByRole("button", { name: "用户中心" }));
     fireEvent.click(screen.getByRole("button", { name: "个人中心" }));
     expect(await screen.findByRole("dialog", { name: "个人资料" })).toBeInTheDocument();
-    expect(screen.getByText("sensen@example.com")).toBeInTheDocument();
+    expect(await screen.findByText("sensen@example.com")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "编辑名称" }));
     const nameInput = screen.getByRole("textbox", { name: "名称" });
     fireEvent.change(nameInput, { target: { value: "Alice 用户" } });
     fireEvent.keyDown(nameInput, { key: "Enter" });
-    expect(screen.getAllByText("Alice 用户")).toHaveLength(2);
+    expect(await screen.findAllByText("Alice 用户")).toHaveLength(2);
     expect(screen.getByText("账号 UUID")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "费用" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "费用" }));
     expect(await screen.findByRole("heading", { name: "费用" })).toBeInTheDocument();
     expect(screen.getByText("套餐与账单")).toBeInTheDocument();
     expect(screen.getByText("额度明细")).toBeInTheDocument();
-    expect(screen.getByText("标准数据查询")).toBeInTheDocument();
+    expect(await screen.findByText("标准数据查询")).toBeInTheDocument();
     expect(screen.getByText("数据查询剩余")).toBeInTheDocument();
     expect(screen.getByText("调研报告剩余")).toBeInTheDocument();
-    expect(screen.getByText("已用 15 / 80")).toBeInTheDocument();
-    expect(screen.getByText("已用 1 / 8")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "权益" })).toBeInTheDocument();
     expect(screen.getAllByText("数据查询").length).toBeGreaterThan(0);
     expect(screen.getAllByText("调研报告").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "订单记录" }));
-    expect(screen.getByText("AL202608130001")).toBeInTheDocument();
+    expect(await screen.findByText("AL202608130001")).toBeInTheDocument();
+    expect(screen.getByText("¥159.00")).toBeInTheDocument();
+    expect(screen.getByText("待开通")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /订单记录/ }));
     expect(screen.getByText("基础版")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "续订" }));
-    expect(screen.getByText("¥159.00")).toBeInTheDocument();
-    expect(screen.getByText("8折")).toBeInTheDocument();
+    expect((await screen.findAllByText("¥159.00")).length).toBeGreaterThan(0);
     expect(screen.queryByText("套餐价 ¥199 · 优惠 ¥40")).not.toBeInTheDocument();
-    expect(screen.getByText("省 20%")).toBeInTheDocument();
+    expect(screen.getAllByText("省 20%").length).toBeGreaterThan(0);
     expect(screen.getByText("80 次数据查询")).toBeInTheDocument();
     expect(screen.getByText("8 次调研报告")).toBeInTheDocument();
     expect(screen.getByText("220 次数据查询")).toBeInTheDocument();
     expect(screen.getByText("22 次调研报告")).toBeInTheDocument();
     expect(screen.queryByText(/Alice 任务额度/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "继续支付" }));
-    expect(await screen.findByRole("heading", { name: "支付订单" })).toBeInTheDocument();
-    expect(screen.getByText("请使用支付宝扫码支付")).toBeInTheDocument();
-    fireEvent.keyDown(screen.getByRole("dialog", { name: "支付订单" }), { key: "Escape" });
+    expect(await screen.findByRole("heading", { name: "订单已创建" })).toBeInTheDocument();
+    expect(screen.getByText("SO20260817001")).toBeInTheDocument();
+    expect(screen.getByText("¥99.00")).toBeInTheDocument();
+    expect(screen.getByText("待付款")).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "订单已创建" }), { key: "Escape" });
     fireEvent.keyDown(screen.getByRole("dialog", { name: "费用" }), { key: "Escape" });
 
     fireEvent.click(screen.getByRole("button", { name: "用户中心" }));

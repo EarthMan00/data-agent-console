@@ -39,7 +39,7 @@ function renderComposer(showSubmitButton = true) {
       value=""
       onValueChange={vi.fn()}
       placeholder="输入任务"
-      mode="深度模式"
+      mode="普通模式"
       onModeChange={vi.fn()}
       selectedSourceIds={[]}
       onToolSelect={vi.fn()}
@@ -57,7 +57,7 @@ function renderEmbeddedScheduleComposer() {
       value=""
       onValueChange={vi.fn()}
       placeholder="输入任务"
-      mode="深度模式"
+      mode="普通模式"
       onModeChange={vi.fn()}
       selectedSourceIds={[]}
       onToolSelect={vi.fn()}
@@ -76,7 +76,7 @@ function renderProductDetailComposerWithSelectedSource() {
       value=""
       onValueChange={vi.fn()}
       placeholder="输入任务"
-      mode="深度模式"
+      mode="普通模式"
       onModeChange={vi.fn()}
       selectedSourceIds={["keepa-product-detail"]}
       onToolSelect={vi.fn()}
@@ -98,7 +98,7 @@ function PromptLibraryFallbackHarness() {
       value={value}
       onValueChange={setValue}
       placeholder="输入任务"
-      mode="深度模式"
+      mode="普通模式"
       onModeChange={vi.fn()}
       selectedSourceIds={selectedSourceIds}
       onToolSelect={(capabilityId) => {
@@ -197,7 +197,7 @@ describe("NewConversationTaskComposer", () => {
         value=""
         onValueChange={vi.fn()}
         placeholder="输入任务"
-        mode="深度模式"
+        mode="普通模式"
         onModeChange={vi.fn()}
         selectedSourceIds={[]}
         onToolSelect={vi.fn()}

@@ -168,6 +168,7 @@ describe("schedule trial durable Round launch", () => {
         "更新后的试跑提示词",
         CLIENT_MESSAGE_ID,
         [attachment],
+        "normal",
       );
     });
     expect(mocks.createInitialChatRound).toHaveBeenCalledTimes(1);

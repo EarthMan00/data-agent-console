@@ -45,6 +45,7 @@ type UseChatRoundsResult = {
     message: string,
     clientMessageId: string,
     files: File[],
+    executionMode?: "normal" | "report",
   ) => Promise<RoundAccepted>;
   resume: (
     roundId: string,
@@ -423,10 +424,15 @@ export function useChatRounds({
   }, [closeDisplayChannels, reload]);
 
   const send = useCallback(
-    async (message: string, clientMessageId: string, files: File[]) => {
+    async (
+      message: string,
+      clientMessageId: string,
+      files: File[],
+      executionMode: "normal" | "report" = "normal",
+    ) => {
       const generation = generationRef.current;
       const accepted = await withFreshToken((token) =>
-        createChatRound(token, sessionId, message, clientMessageId, files),
+        createChatRound(token, sessionId, message, clientMessageId, files, executionMode),
       );
       if (accepted.session_id !== sessionId) {
         throw new Error("created Round does not belong to the active Session");

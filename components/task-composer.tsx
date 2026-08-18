@@ -32,7 +32,12 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-type ComposerMode = "普通模式" | "深度模式";
+type ComposerMode = "普通模式" | "报告模式";
+
+const composerModeLabel: Record<ComposerMode, string> = {
+  普通模式: "普通模式",
+  报告模式: "报告模式",
+};
 
 type TaskComposerProps = {
   value: string;
@@ -838,6 +843,8 @@ export function TaskComposer({
   value,
   onValueChange,
   placeholder,
+  mode,
+  onModeChange,
   selectedSourceIds = [],
   dataSourceGroups = homeCapabilityGroups,
   dataSourceItems = homeDataSourceItems,
@@ -910,7 +917,7 @@ export function TaskComposer({
     width: 340,
     maxHeight: 240,
   });
-  const [, setModeOpen] = useState(false);
+  const [modeOpen, setModeOpen] = useState(false);
   const [highlightedToolIndex, setHighlightedToolIndex] = useState(-1);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [optimisticSourceIds, setOptimisticSourceIds] = useState<string[]>([]);
@@ -3274,7 +3281,7 @@ export function TaskComposer({
             </div>
 
             <div className="flex items-center gap-2.5">
-              {/* <Popover open={modeOpen} onOpenChange={setModeOpen}>
+              <Popover open={modeOpen} onOpenChange={setModeOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
@@ -3286,10 +3293,12 @@ export function TaskComposer({
                         : "border-border text-text-secondary hover:bg-bg-page",
                     )}
                     type="button"
-	                    onClick={() => {
-	                      closeSourceButtonMenu();
-	                      closeMentionMenu();
-	                    }}
+                    onClick={() => {
+                      closeSourceButtonMenu();
+                      closeMentionMenu();
+                    }}
+                    aria-label="选择任务模式"
+                    data-testid="task-composer-mode-trigger"
                   >
                     {composerModeLabel[mode]}
                     <ChevronDown className="h-3 w-3" />
@@ -3302,7 +3311,7 @@ export function TaskComposer({
                   className="w-44 rounded-popover border-border p-2 shadow-popover"
                 >
                   <div className="grid gap-1">
-                    {(["普通模式", "深度模式"] as const).map((option) => (
+                    {(["普通模式", "报告模式"] as const).map((option) => (
                       <button
                         key={option}
                         type="button"
@@ -3320,7 +3329,7 @@ export function TaskComposer({
                     ))}
                   </div>
                 </PopoverContent>
-              </Popover> */}
+              </Popover>
 
               {showSubmitButton ? (
                 <Button

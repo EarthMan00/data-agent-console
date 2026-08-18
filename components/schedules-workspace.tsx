@@ -300,7 +300,7 @@ export function SchedulesWorkspace() {
   const [scheduleSourceIds, setScheduleSourceIds] = useState<string[]>([]);
   const [scheduleSourcePlacements, setScheduleSourcePlacements] = useState<ComposerSourcePlacement[]>([]);
   const [schedulePendingFiles, setSchedulePendingFiles] = useState<File[]>([]);
-  const [scheduleComposerMode, setScheduleComposerMode] = useState<"普通模式" | "深度模式">("深度模式");
+  const [scheduleComposerMode, setScheduleComposerMode] = useState<"普通模式" | "报告模式">("普通模式");
   const [scheduleSuppressTemplateCompletion, setScheduleSuppressTemplateCompletion] = useState(false);
   const [runImmediately, setRunImmediately] = useState(true);
   /** 定时任务所在分组，null 为「默认」；与 `UserScheduledTaskItemApi.group_id` 一致 */
@@ -410,7 +410,7 @@ export function SchedulesWorkspace() {
     setScheduleSourceIds([]);
     setScheduleSourcePlacements([]);
     setSchedulePendingFiles([]);
-    setScheduleComposerMode("深度模式");
+    setScheduleComposerMode("普通模式");
     setScheduleSuppressTemplateCompletion(false);
     setRunImmediately(true);
     setFormGroupId(null);
@@ -789,7 +789,13 @@ export function SchedulesWorkspace() {
         clientMessageId,
       );
       const accepted = await platformAgent.withFreshToken((token) =>
-        createInitialChatRound(token, serializedPrompt, clientMessageId, schedulePendingFiles),
+        createInitialChatRound(
+          token,
+          serializedPrompt,
+          clientMessageId,
+          schedulePendingFiles,
+          scheduleComposerMode === "报告模式" ? "report" : "normal",
+        ),
       );
       pendingScheduleTrialRoundRef.current = null;
       saveScheduleTrialMeta({
@@ -822,6 +828,7 @@ export function SchedulesWorkspace() {
     hasValidNextExecution,
     router,
     editId,
+    scheduleComposerMode,
   ]);
 
   const createSchedule = useCallback(async () => {

@@ -21,7 +21,6 @@ import {
   AiGateway,
   ArrowLeft,
   BookOpen,
-  Check,
   ChevronRight,
   Clock3,
   Copy,
@@ -35,7 +34,6 @@ import {
   PanelLeftExpand,
   Pencil,
   Plus,
-  Qrcode,
   Search,
   SparkleHighlight,
   Trash2,
@@ -60,6 +58,19 @@ import {
   purgeSessionData,
 } from "@/lib/agent-api/client";
 import type { SessionListItem, SessionMessageItem } from "@/lib/agent-api/types";
+import {
+  createBillingOrder,
+  fetchBillingOrders,
+  fetchBillingSummary,
+  fetchEntitlementLedger,
+  fetchUserPlans,
+  type BillingOrder,
+  type BillingSummary,
+  type LedgerItem,
+  type UserPlanSpec,
+} from "@/lib/agent-api/billing";
+import { fetchProfile, patchProfile, type UserProfile } from "@/lib/agent-api/profile";
+import { submitFeedback } from "@/lib/agent-api/feedback";
 import { cn } from "@/lib/utils";
 import { workspaceActions, useWorkspaceState } from "@/lib/workspace-store";
 
@@ -131,33 +142,73 @@ const RESULT_RAIL_MAX_WIDTH = 1040;
 const RESULT_RAIL_MIN_MAIN_WIDTH = 360;
 const RESULT_RAIL_DIVIDER_WIDTH = 8;
 const ACCOUNT_AVATAR_CLASSES = ["bg-avatar-1", "bg-avatar-2", "bg-avatar-3", "bg-avatar-4", "bg-avatar-5", "bg-avatar-6", "bg-avatar-7", "bg-avatar-8"];
-type PlanEntitlements = {
-  dataQueries: number;
-  researchReports: number;
+const LEDGER_EVENT_LABELS: Record<string, string> = {
+  grant: "发放",
+  reserve: "消耗",
+  consume: "消耗",
+  release: "返还",
+  expire: "过期",
+  adjust: "调整",
 };
+const LEDGER_TASK_LABELS: Record<string, string> = {
+  standard_query: "标准数据查询",
+  research_report: "调研报告",
+  cycle_expiry: "周期到期",
+  plan_grant: "套餐发放",
+  product_adjudication: "产物判定",
+};
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  created: "待付款",
+  paid: "待开通",
+  fulfilled: "已开通",
+  closed: "已关闭",
+};
+const ORDER_TYPE_LABELS: Record<string, string> = {
+  new: "新购",
+  renew: "续费",
+  upgrade: "升级",
+};
+function fmtBillingDate(iso: string | null): string {
+  if (!iso) return "-";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+function formatMoney(cents: number): string {
+  return `¥${(cents / 100).toFixed(2)}`;
+}
+function ledgerTaskLabel(taskKind: string | null): string {
+  if (!taskKind) return "-";
+  return LEDGER_TASK_LABELS[taskKind] ?? taskKind;
+}
+function computeLedgerBalances(
+  items: LedgerItem[],
+  dataQueryRemaining: number,
+  reportRemaining: number,
+): Array<LedgerItem & { balance: number }> {
+  let dqBalance = dataQueryRemaining;
+  let rrBalance = reportRemaining;
+  return items.map((item) => {
+    if (item.entitlement_type === "data_query") {
+      const balance = dqBalance;
+      dqBalance -= item.delta;
+      return { ...item, balance };
+    }
+    const balance = rrBalance;
+    rrBalance -= item.delta;
+    return { ...item, balance };
+  });
+}
 
-const BILLING_PLANS = {
-  basic: { name: "基础版", prices: { weekly: 59, monthly: 159, yearly: 1910 }, originalPrices: { weekly: null, monthly: 199, yearly: 2388 }, entitlements: { weekly: { dataQueries: 20, researchReports: 2 }, monthly: { dataQueries: 80, researchReports: 8 }, yearly: { dataQueries: 960, researchReports: 96 } }, description: "为日常选品、竞品分析与运营查询准备。" },
-  advanced: { name: "高级版", prices: { weekly: 159, monthly: 549, yearly: 5270 }, originalPrices: { weekly: null, monthly: null, yearly: 6588 }, entitlements: { weekly: { dataQueries: 55, researchReports: 5 }, monthly: { dataQueries: 220, researchReports: 22 }, yearly: { dataQueries: 2640, researchReports: 264 } }, description: "为高频调研与持续运营工作流准备。" },
-} as const;
-const BILLING_BENEFITS = ["单账号单设备同时在线", "Alice Skills", "导出报告", "上传附件", "定时任务"];
-const BILLING_LEDGER = [
-  ["2026-08-13", "数据查询", "标准数据查询", "消耗", "-1", "65"],
-  ["2026-08-12", "调研报告", "竞品调研报告", "消耗", "-1", "7"],
-  ["2026-08-10", "数据查询", "查询执行失败", "返还", "+1", "66"],
-  ["2026-08-08", "数据查询", "批量数据导出", "消耗", "-1", "65"],
-  ["2026-08-06", "调研报告", "品类调研报告", "消耗", "-1", "6"],
-  ["2026-08-05", "数据查询", "活动奖励赠送", "发放", "+10", "66"],
-  ["2026-08-03", "数据查询", "数据源刷新", "消耗", "-1", "56"],
-  ["2026-08-02", "调研报告", "系统补偿返还", "返还", "+1", "7"],
-  ["2026-08-01", "数据查询", "基础版开通", "发放", "+80", "80"],
-  ["2026-08-01", "调研报告", "基础版开通", "发放", "+8", "8"],
-] as const;
-const BILLING_ORDERS = [
-  ["AL202608130001", "新购", "基础版", "¥159", "支付宝", "已开通", "2026-08-13 14:30"],
-  ["AL202607120031", "升级", "高级版", "¥286.40", "微信支付", "已开通", "2026-07-12 10:12"],
-  ["AL202606110018", "续订", "基础版", "¥199", "支付宝", "待生效", "2026-06-11 09:45"],
-] as const;
 type HistoryDropPosition = "before" | "after";
 type HistoryDragTarget = { sessionId: string; position: HistoryDropPosition };
 
@@ -690,14 +741,24 @@ function AliceShellComponent({
   const [editingProfileName, setEditingProfileName] = useState(false);
   const [profileNameDraft, setProfileNameDraft] = useState("");
   const [uuidCopied, setUuidCopied] = useState(false);
-  const [selectedPlanCode, setSelectedPlanCode] = useState<"basic" | "advanced">("basic");
+  const [selectedPlanCode, setSelectedPlanCode] = useState<string>("");
   const [billingCycle, setBillingCycle] = useState<"weekly" | "monthly" | "yearly">("monthly");
   const [billingView, setBillingView] = useState<"overview" | "orders" | "select">("overview");
   const [billingPaymentOpen, setBillingPaymentOpen] = useState(false);
-  const [billingPaymentMethod, setBillingPaymentMethod] = useState<"alipay" | "wechat">("alipay");
-  const [billingResult, setBillingResult] = useState<"success" | "closed" | null>(null);
   const [feedbackContent, setFeedbackContent] = useState("");
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [feedbackError, setFeedbackError] = useState(false);
+  const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
+  const [ledgerItems, setLedgerItems] = useState<LedgerItem[]>([]);
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const [ledgerTotal, setLedgerTotal] = useState(0);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [billingOrders, setBillingOrders] = useState<BillingOrder[]>([]);
+  const [planSpecs, setPlanSpecs] = useState<UserPlanSpec[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [creatingOrder, setCreatingOrder] = useState(false);
+  const [createdOrder, setCreatedOrder] = useState<BillingOrder | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isResultRailDrawerViewport, setIsResultRailDrawerViewport] = useState(false);
@@ -879,11 +940,183 @@ function AliceShellComponent({
   const accountDisplayName = profileName ?? headerAuth?.displayName ?? headerAuth?.userId ?? "账号与设置";
   const accountAvatar = useMemo(() => getAccountAvatarMeta(accountDisplayName), [accountDisplayName]);
   const accountUuid = headerAuth?.userId || "暂未获取";
-  const accountEmail = "sensen@example.com";
-  const selectedBillingPlan = BILLING_PLANS[selectedPlanCode];
-  const selectedBillingPrice = selectedBillingPlan.prices[billingCycle];
-  const selectedBillingOriginalPrice = selectedBillingPlan.originalPrices[billingCycle];
-  const selectedBillingDiscount = selectedBillingOriginalPrice ? selectedBillingOriginalPrice - selectedBillingPrice : 0;
+
+  const loadBillingData = useCallback(async () => {
+    if (!headerAuth) return;
+    try {
+      await platformAgent?.withFreshToken(async (token) => {
+        const [summary, orderRes, planRes] = await Promise.all([
+          fetchBillingSummary(token),
+          fetchBillingOrders(token),
+          fetchUserPlans(token),
+        ]);
+        setBillingSummary(summary);
+        setBillingOrders(orderRes.orders ?? []);
+        setPlanSpecs(planRes.plans ?? []);
+      });
+    } catch {
+      // 忽略加载失败，界面保持空态
+    }
+  }, [headerAuth, platformAgent]);
+
+  const loadLedgerPage = useCallback(
+    async (page: number) => {
+      if (!headerAuth) return;
+      setLedgerLoading(true);
+      try {
+        await platformAgent?.withFreshToken(async (token) => {
+          const res = await fetchEntitlementLedger(token, { page, page_size: 10 });
+          setLedgerTotal(res.total);
+          setLedgerPage(res.page);
+          setLedgerItems((prev) => (res.page === 1 ? res.items : [...prev, ...res.items]));
+        });
+      } catch {
+        // 忽略加载失败
+      } finally {
+        setLedgerLoading(false);
+      }
+    },
+    [headerAuth, platformAgent],
+  );
+
+  useEffect(() => {
+    if (accountDialog !== "profile") return;
+    if (settingsPanel === "billing") {
+      setLedgerItems([]);
+      void loadLedgerPage(1);
+    }
+    void loadBillingData();
+  }, [accountDialog, settingsPanel, loadLedgerPage, loadBillingData]);
+
+  useEffect(() => {
+    if (accountDialog !== "profile" || !headerAuth) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await platformAgent?.withFreshToken(async (token) => {
+          const next = await fetchProfile(token);
+          if (cancelled) return;
+          setProfile(next);
+          if (next.display_name) setProfileName(next.display_name);
+          if (next.avatar_color) setAvatarColor(next.avatar_color);
+        });
+      } catch {
+        // 保留本地值
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountDialog, headerAuth, platformAgent]);
+
+  useEffect(() => {
+    if (searchParams.get("billing") !== "1") return;
+    if (!showHeaderUserMenu) return;
+    setSettingsPanel("billing");
+    setAccountDialog("profile");
+  }, [searchParams, showHeaderUserMenu]);
+
+  const deriveOrderType = useCallback((): "new" | "renew" | "upgrade" => {
+    if (!billingSummary?.has_active_cycle) return "new";
+    const spec = planSpecs.find((p) => p.code === selectedPlanCode);
+    if (spec && spec.code !== billingSummary.plan_code) return "upgrade";
+    return "renew";
+  }, [billingSummary, planSpecs, selectedPlanCode]);
+
+  const handleCreateOrder = useCallback(async () => {
+    const spec = planSpecs.find((p) => p.code === selectedPlanCode) ?? null;
+    if (!headerAuth || !spec) return;
+    setCreatingOrder(true);
+    try {
+      await platformAgent?.withFreshToken(async (token) => {
+        const { order } = await createBillingOrder(token, {
+          order_type: deriveOrderType(),
+          plan_code: spec.code,
+          billing_cycle: billingCycle,
+          idempotency_key: crypto.randomUUID(),
+        });
+        setCreatedOrder(order);
+        setBillingPaymentOpen(true);
+      });
+    } catch {
+      // 创建失败保持弹窗关闭
+    } finally {
+      setCreatingOrder(false);
+    }
+  }, [headerAuth, planSpecs, selectedPlanCode, billingCycle, deriveOrderType, platformAgent]);
+
+  useEffect(() => {
+    if (!createdOrder || !headerAuth) return;
+    void platformAgent?.withFreshToken(async (token) => {
+      try {
+        const res = await fetchBillingOrders(token);
+        setBillingOrders(res.orders ?? []);
+      } catch {
+        // 忽略刷新失败
+      }
+    });
+  }, [createdOrder, headerAuth, platformAgent]);
+
+  useEffect(() => {
+    if (planSpecs.length === 0) return;
+    const available = planSpecs.filter((plan) => plan.billing_cycle === billingCycle);
+    if (!available.some((plan) => plan.code === selectedPlanCode)) {
+      setSelectedPlanCode(available[0]?.code ?? planSpecs[0]?.code ?? "");
+    }
+  }, [planSpecs, billingCycle, selectedPlanCode]);
+
+  const handleSubmitFeedback = useCallback(async () => {
+    if (!headerAuth) return;
+    setSubmittingFeedback(true);
+    setFeedbackError(false);
+    try {
+      await platformAgent?.withFreshToken(async (token) => {
+        await submitFeedback(token, {
+          message: feedbackContent,
+          page_path: pathname ?? "/",
+          client_version: process.env.NEXT_PUBLIC_APP_VERSION ?? "dev",
+        });
+      });
+      setFeedbackSubmitted(true);
+    } catch {
+      setFeedbackError(true);
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  }, [headerAuth, platformAgent, feedbackContent, pathname]);
+
+  const handleProfileNameSave = useCallback(
+    async (name: string) => {
+      if (!headerAuth) return;
+      try {
+        await platformAgent?.withFreshToken(async (token) => {
+          const res = await patchProfile(token, { display_name: name });
+          setProfileName(res.display_name);
+        });
+      } catch {
+        // 保存失败保持原值
+      }
+    },
+    [headerAuth, platformAgent],
+  );
+
+  const handleAvatarColorSave = useCallback(
+    async (color: string) => {
+      if (!headerAuth) return;
+      try {
+        await platformAgent?.withFreshToken(async (token) => {
+          await patchProfile(token, { avatar_color: color });
+        });
+      } catch {
+        // 保存失败保持原色
+      }
+    },
+    [headerAuth, platformAgent],
+  );
+  const accountEmail = profile?.email ?? "-";
+  const accountPhone = profile?.phone ?? null;
+  const selectedPlanSpec = planSpecs.find((p) => p.code === selectedPlanCode) ?? null;
+  const selectedBillingPrice = selectedPlanSpec?.sale_price_cents ?? 0;
   const openNotifications = useCallback(() => {
     if (!headerAuth) {
       platformAgent?.openLogin("请先登录后再查看通知。");
@@ -1411,7 +1644,7 @@ function AliceShellComponent({
                 <div className="mx-2 mb-3 h-px bg-border" />
                 <div className="flex h-9 w-full items-center gap-1">
                   {showHeaderUserMenu && headerAuth ? (
-                    <Popover>
+                    <Popover onOpenChange={(open) => { if (open) void loadBillingData(); }}>
                       <PopoverTrigger asChild>
                         <button
                           type="button"
@@ -1457,7 +1690,7 @@ function AliceShellComponent({
                             <div className="flex items-center justify-between gap-3">
                               <div>
                                 <p className="text-caption leading-5 text-text-secondary">当前套餐</p>
-                                <p className="mt-0.5 text-body font-semibold leading-5 text-foreground">基础版</p>
+                                <p className="mt-0.5 text-body font-semibold leading-5 text-foreground">{billingSummary?.plan_name ?? "未开通"}</p>
                               </div>
                               <button
                                 type="button"
@@ -1474,11 +1707,11 @@ function AliceShellComponent({
                             <div className="mt-3 grid grid-cols-2 divide-x divide-border border-t border-border pt-3">
                               <div className="pr-3">
                                 <p className="text-caption leading-5 text-text-secondary">数据查询</p>
-                                <p className="mt-1 text-body font-semibold leading-5 text-foreground">65 <span className="font-normal text-text-secondary">/ 80 次</span></p>
+                                <p className="mt-1 text-body font-semibold leading-5 text-foreground">剩余 {billingSummary?.data_query_remaining ?? "-"} 次</p>
                               </div>
                               <div className="pl-3">
                                 <p className="text-caption leading-5 text-text-secondary">调研报告</p>
-                                <p className="mt-1 text-body font-semibold leading-5 text-foreground">7 <span className="font-normal text-text-secondary">/ 8 次</span></p>
+                                <p className="mt-1 text-body font-semibold leading-5 text-foreground">剩余 {billingSummary?.research_report_remaining ?? "-"} 次</p>
                               </div>
                             </div>
                           </section>
@@ -1837,7 +2070,7 @@ function AliceShellComponent({
                                     onKeyDown={(event) => {
                                       if (event.key === "Enter") {
                                         const nextName = profileNameDraft.trim();
-                                        if (nextName) setProfileName(nextName);
+                                        if (nextName) void handleProfileNameSave(nextName);
                                         setEditingProfileName(false);
                                       }
                                       if (event.key === "Escape") setEditingProfileName(false);
@@ -1849,7 +2082,7 @@ function AliceShellComponent({
                                     className="shrink-0 rounded-control px-2 py-1 text-caption font-medium text-foreground hover:bg-fill-hover"
                                     onClick={() => {
                                       const nextName = profileNameDraft.trim();
-                                      if (nextName) setProfileName(nextName);
+                                      if (nextName) void handleProfileNameSave(nextName);
                                       setEditingProfileName(false);
                                     }}
                                   >
@@ -1873,6 +2106,7 @@ function AliceShellComponent({
                                 </div>
                               )}
                               <p className="mt-0.5 truncate text-caption text-text-secondary">{accountEmail}</p>
+                              <p className="mt-0.5 truncate text-caption text-text-secondary">{accountPhone ? `手机号 ${accountPhone}` : "手机号 未绑定"}</p>
                             </div>
                           </div>
 
@@ -1887,7 +2121,7 @@ function AliceShellComponent({
                                 aria-pressed={avatarColor === color}
                                 className="h-8 w-8 rounded-full border-2 border-white ring-2 transition focus:outline-none focus:ring-primary/40"
                                 style={{ backgroundColor: color, boxShadow: avatarColor === color ? `0 0 0 2px ${color}` : "none" }}
-                                onClick={() => setAvatarColor(color)}
+                                onClick={() => { setAvatarColor(color); void handleAvatarColorSave(color); }}
                               />
                             ))}
                             </div>
@@ -1954,28 +2188,26 @@ function AliceShellComponent({
                           {billingView === "overview" ? (
                             <>
                               <div className="flex items-start justify-between border-b border-border pb-5">
-                                <div><p className="text-title-2 font-semibold text-foreground">套餐与账单</p><p className="mt-3 text-body font-medium text-foreground">基础版 <span className="ml-2 text-success">· 生效中</span></p></div>
+                                <div><p className="text-title-2 font-semibold text-foreground">套餐与账单</p><p className="mt-3 text-body font-medium text-foreground">{billingSummary?.plan_name ?? "未开通"}{billingSummary?.has_active_cycle ? <span className="ml-2 text-success">· 生效中</span> : null}</p></div>
                                 <button type="button" className="inline-flex items-center gap-2 text-body text-text-secondary hover:text-foreground" onClick={() => setBillingView("orders")}><CreditCard className="h-4 w-4" />订单记录</button>
                               </div>
                               <div className="grid grid-cols-2 gap-10 border-b border-border py-5">
                                 <div className="grid grid-cols-2 gap-4">
                                   <section className="rounded-xl bg-bg-subtle p-4">
                                     <p className="text-caption text-text-secondary">数据查询剩余</p>
-                                    <p className="mt-2 text-title-1 font-semibold leading-none text-foreground">65 次</p>
-                                    <p className="mt-4 text-caption text-text-secondary">已用 15 / 80</p>
+                                    <p className="mt-2 text-title-1 font-semibold leading-none text-foreground">{billingSummary?.data_query_remaining ?? "-"} 次</p>
                                   </section>
                                   <section className="rounded-xl bg-bg-subtle p-4">
                                     <p className="text-caption text-text-secondary">调研报告剩余</p>
-                                    <p className="mt-2 text-title-1 font-semibold leading-none text-foreground">7 次</p>
-                                    <p className="mt-4 text-caption text-text-secondary">已用 1 / 8</p>
+                                    <p className="mt-2 text-title-1 font-semibold leading-none text-foreground">{billingSummary?.research_report_remaining ?? "-"} 次</p>
                                   </section>
                                 </div>
-                                <div className="border-l border-border pl-10"><p className="text-caption text-text-secondary">到期时间</p><p className="mt-3 text-title-3 font-medium text-foreground">2026年9月11日 14:30</p><div className="mt-8 flex gap-3"><Button variant="outline" type="button" onClick={() => setBillingView("select")}>续订</Button><Button type="button" onClick={() => { setSelectedPlanCode("advanced"); setBillingView("select"); }}>升级至高级版</Button></div></div>
+                                <div className="border-l border-border pl-10"><p className="text-caption text-text-secondary">到期时间</p><p className="mt-3 text-title-3 font-medium text-foreground">{fmtBillingDate(billingSummary?.ends_at ?? null)}</p><div className="mt-8 flex gap-3"><Button variant="outline" type="button" onClick={() => setBillingView("select")}>续订</Button><Button type="button" onClick={() => { setSelectedPlanCode(planSpecs.find((p) => p.code === "paid_advanced")?.code ?? planSpecs[0]?.code ?? ""); setBillingView("select"); }}>升级套餐</Button></div></div>
                               </div>
-                              <div className="flex min-h-0 flex-1 flex-col pt-5"><p className="text-title-3 font-semibold text-foreground">额度明细</p><div className="mt-3 min-h-0 flex-1 overflow-y-auto"><table className="w-full text-left text-body"><thead className="sticky top-0 bg-bg-surface text-caption text-text-secondary"><tr><th className="py-3 font-medium">时间</th><th className="font-medium">权益</th><th className="font-medium">事项</th><th className="font-medium">类型</th><th className="font-medium">变动</th><th className="text-right font-medium">该权益余额</th></tr></thead><tbody>{BILLING_LEDGER.map(([date, entitlement, item, type, delta, balance]) => <tr key={`${date}-${entitlement}-${item}`} className="border-t border-border"><td className="py-3">{date}</td><td>{entitlement}</td><td>{item}</td><td>{type}</td><td className={delta.startsWith("+") ? "text-success" : ""}>{delta}</td><td className="text-right">{balance}</td></tr>)}</tbody></table></div></div>
+                              <div className="flex min-h-0 flex-1 flex-col pt-5"><p className="text-title-3 font-semibold text-foreground">额度明细</p><div className="mt-3 min-h-0 flex-1 overflow-y-auto"><table className="w-full text-left text-body"><thead className="sticky top-0 bg-bg-surface text-caption text-text-secondary"><tr><th className="py-3 font-medium">时间</th><th className="font-medium">权益</th><th className="font-medium">事项</th><th className="font-medium">类型</th><th className="font-medium">变动</th><th className="text-right font-medium">该权益余额</th></tr></thead><tbody>{computeLedgerBalances(ledgerItems, billingSummary?.data_query_remaining ?? 0, billingSummary?.research_report_remaining ?? 0).map((item) => <tr key={item.id} className="border-t border-border"><td className="py-3">{fmtBillingDate(item.created_at)}</td><td>{item.entitlement_type === "data_query" ? "数据查询" : "调研报告"}</td><td>{ledgerTaskLabel(item.task_kind)}</td><td>{LEDGER_EVENT_LABELS[item.event_type] ?? item.event_type}</td><td className={item.delta > 0 ? "text-success" : ""}>{item.delta > 0 ? `+${item.delta}` : item.delta}</td><td className="text-right">{item.balance}</td></tr>)}</tbody></table>{ledgerLoading ? <p className="py-4 text-center text-caption text-text-secondary">加载中…</p> : ledgerItems.length < ledgerTotal ? <div className="pt-4 text-center"><Button variant="outline" size="sm" type="button" onClick={() => void loadLedgerPage(ledgerPage + 1)}>加载更多</Button></div> : null}</div></div>
                             </>
                           ) : billingView === "orders" ? (
-                            <><div className="flex items-center justify-between"><button type="button" className="inline-flex items-center gap-2 text-title-2 font-semibold text-foreground" onClick={() => setBillingView("overview")}>← 订单记录</button><input aria-label="搜索订单号" placeholder="搜索订单号" className="h-9 w-44 rounded-control border border-border px-3 text-caption outline-none focus:border-primary" /></div><div className="mt-6 overflow-y-auto"><table className="w-full text-left text-caption"><thead className="border-b border-border text-text-secondary"><tr>{["订单号", "类型", "套餐", "金额", "支付方式", "状态", "创建时间"].map((column) => <th key={column} className="px-2 py-3 font-medium">{column}</th>)}</tr></thead><tbody>{BILLING_ORDERS.map((order) => <tr key={order[0]} className="border-b border-border"><td className="px-2 py-4 font-mono text-text-secondary">{order[0]}</td><td className="px-2">{order[1]}</td><td className="px-2">{order[2]}</td><td className="px-2">{order[3]}</td><td className="px-2">{order[4]}</td><td className="px-2"><span className={order[5] === "已开通" ? "text-success" : "text-text-secondary"}>{order[5]}</span></td><td className="px-2 text-text-secondary">{order[6]}</td></tr>)}</tbody></table></div></>
+                            <><div className="flex items-center justify-between"><button type="button" className="inline-flex items-center gap-2 text-title-2 font-semibold text-foreground" onClick={() => setBillingView("overview")}>← 订单记录</button><input aria-label="搜索订单号" placeholder="搜索订单号" className="h-9 w-44 rounded-control border border-border px-3 text-caption outline-none focus:border-primary" /></div><div className="mt-6 overflow-y-auto"><table className="w-full text-left text-caption"><thead className="border-b border-border text-text-secondary"><tr>{["订单号", "类型", "套餐", "金额", "状态", "创建时间"].map((column) => <th key={column} className="px-2 py-3 font-medium">{column}</th>)}</tr></thead><tbody>{billingOrders.map((order) => <tr key={order.id} className="border-b border-border"><td className="px-2 py-4 font-mono text-text-secondary">{order.order_no}</td><td className="px-2">{ORDER_TYPE_LABELS[order.order_type] ?? order.order_type}</td><td className="px-2">{order.plan_snapshot.name}</td><td className="px-2">{formatMoney(order.amount_cents)}</td><td className="px-2"><span className={order.status === "fulfilled" ? "text-success" : order.status === "created" ? "text-warning" : "text-text-secondary"}>{ORDER_STATUS_LABELS[order.status] ?? order.status}</span></td><td className="px-2 text-text-secondary">{fmtBillingDate(order.created_at)}</td></tr>)}</tbody></table>{billingOrders.length === 0 ? <p className="py-8 text-center text-caption text-text-secondary">暂无订单</p> : null}</div></>
                           ) : (
                             <>
                               <div className="flex items-center justify-between gap-4">
@@ -1991,28 +2223,25 @@ function AliceShellComponent({
                                     </button>
                                   ))}
                                   </div>
-                                  <span className="rounded-control bg-[#fff3e8] px-2 py-1 text-caption font-medium text-[#e85d04]">省 20%</span>
+                                  {planSpecs.some((plan) => plan.campaign_label) ? <span className="rounded-control bg-[#fff3e8] px-2 py-1 text-caption font-medium text-[#e85d04]">限时优惠</span> : null}
                                 </div>
                               </div>
                               <div className="mt-5 grid min-h-0 flex-1 grid-cols-2 gap-4 overflow-y-auto pb-3">
-                                {(Object.entries(BILLING_PLANS) as ["basic" | "advanced", (typeof BILLING_PLANS)["basic"]][]).map(([code, plan]) => {
-                                  const price = plan.prices[billingCycle];
-                                  const originalPrice = plan.originalPrices[billingCycle];
-                                  const entitlements: PlanEntitlements = plan.entitlements[billingCycle];
+                                {planSpecs.filter((plan) => plan.billing_cycle === billingCycle).length === 0 ? <p className="col-span-2 py-16 text-center text-caption text-text-secondary">暂无可售套餐</p> : null}
+                                {planSpecs.filter((plan) => plan.billing_cycle === billingCycle).map((plan) => {
                                   const cycleUnit = billingCycle === "weekly" ? "周" : billingCycle === "monthly" ? "月" : "年";
-                                  const discountRate = originalPrice ? Math.round((price / originalPrice) * 10) : null;
-                                  return <button key={code} type="button" aria-pressed={selectedPlanCode === code} onClick={() => setSelectedPlanCode(code)} className={cn("relative rounded-card border bg-bg-surface p-5 text-left transition-colors", selectedPlanCode === code ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-fill-hover")}>
-                                    <p className="text-title-2 font-semibold text-foreground">{plan.name}</p><p className="mt-2 min-h-10 text-caption text-text-secondary">{plan.description}</p>
-                                    <div className="mt-6 flex items-end gap-2"><span className="text-[34px] font-semibold leading-none">¥{price}</span><span className="mb-0.5 text-body text-text-secondary">/ {cycleUnit}</span>{originalPrice ? <><span className="mb-0.5 text-body text-text-tertiary line-through">¥{originalPrice}</span><span className="mb-0.5 rounded-control bg-[#fff3e8] px-1.5 py-0.5 text-caption text-[#e85d04]">{discountRate}折</span></> : null}</div>
-                                    <div className="mt-5 border-t border-border pt-4"><p className="text-caption text-text-secondary">包含</p><p className="mt-1 text-body font-semibold">{entitlements.dataQueries} 次数据查询</p><p className="mt-1 text-body font-semibold">{entitlements.researchReports} 次调研报告</p></div>
-                                    <ul className="mt-4 space-y-2">{BILLING_BENEFITS.map((benefit) => <li key={benefit} className="flex items-center gap-2 text-caption text-text-secondary"><Check className="h-4 w-4 text-foreground" />{benefit}</li>)}</ul>
+                                  const discountRate = plan.catalog_price_cents > plan.sale_price_cents ? Math.round(((plan.catalog_price_cents - plan.sale_price_cents) / plan.catalog_price_cents) * 100) : null;
+                                  return <button key={plan.code} type="button" aria-pressed={selectedPlanCode === plan.code} onClick={() => setSelectedPlanCode(plan.code)} className={cn("relative rounded-card border bg-bg-surface p-5 text-left transition-colors", selectedPlanCode === plan.code ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-fill-hover")}>
+                                    <p className="text-title-2 font-semibold text-foreground">{plan.name}</p><p className="mt-2 min-h-10 text-caption text-text-secondary">{plan.campaign_label ?? "按周期计费"}</p>
+                                    <div className="mt-6 flex items-end gap-2"><span className="text-[34px] font-semibold leading-none">{formatMoney(plan.sale_price_cents)}</span><span className="mb-0.5 text-body text-text-secondary">/ {cycleUnit}</span>{discountRate ? <><span className="mb-0.5 text-body text-text-tertiary line-through">{formatMoney(plan.catalog_price_cents)}</span><span className="mb-0.5 rounded-control bg-[#fff3e8] px-1.5 py-0.5 text-caption text-[#e85d04]">省 {discountRate}%</span></> : null}</div>
+                                    <div className="mt-5 border-t border-border pt-4"><p className="text-caption text-text-secondary">包含</p><p className="mt-1 text-body font-semibold">{plan.data_query_quota} 次数据查询</p><p className="mt-1 text-body font-semibold">{plan.research_report_quota} 次调研报告</p></div>
                                   </button>;
                                 })}
                               </div>
                             </>
                           )}
                         </div>
-                        {billingView === "select" ? <footer className="flex shrink-0 items-center justify-between border-t border-border bg-bg-surface px-8 py-4 shadow-[0_-8px_20px_rgba(15,23,42,0.04)]"><div><div className="flex items-baseline gap-3"><p className="text-caption text-text-secondary">应付</p><p className="text-[32px] font-semibold leading-none">¥{selectedBillingPrice}.00</p></div><p className="mt-2 text-caption text-text-secondary">点击继续支付即同意《Alice 服务协议》</p></div><Button type="button" className="h-12 min-w-48 rounded-full bg-foreground px-7 text-body font-semibold text-primary-foreground hover:bg-foreground" onClick={() => { setBillingPaymentMethod("alipay"); setBillingPaymentOpen(true); }}>继续支付</Button></footer> : null}
+                        {billingView === "select" ? <footer className="flex shrink-0 items-center justify-between border-t border-border bg-bg-surface px-8 py-4 shadow-[0_-8px_20px_rgba(15,23,42,0.04)]"><div><div className="flex items-baseline gap-3"><p className="text-caption text-text-secondary">应付</p><p className="text-[32px] font-semibold leading-none">{formatMoney(selectedBillingPrice)}</p></div><p className="mt-2 text-caption text-text-secondary">点击继续支付即同意《Alice 服务协议》</p></div><Button type="button" className="h-12 min-w-48 rounded-full bg-foreground px-7 text-body font-semibold text-primary-foreground hover:bg-foreground" disabled={creatingOrder || !selectedPlanSpec} onClick={() => void handleCreateOrder()}>{creatingOrder ? "创建中…" : "继续支付"}</Button></footer> : null}
                       </div>
                     )}
                   </div>
@@ -2023,24 +2252,29 @@ function AliceShellComponent({
           </DialogContent>
         </Dialog>
 
-        <Dialog open={billingPaymentOpen} onOpenChange={setBillingPaymentOpen}>
+        <Dialog open={billingPaymentOpen} onOpenChange={(open) => { if (!open) setBillingPaymentOpen(false); }}>
           <DialogContent aria-describedby={undefined} className="w-[min(520px,calc(100vw-2rem))] rounded-card border-border bg-bg-surface p-6 shadow-dialog">
-            <DialogTitle>支付订单</DialogTitle>
-            <div className="mt-5 grid grid-cols-2 gap-3" role="group" aria-label="支付方式">
-              {(["alipay", "wechat"] as const).map((method) => (
-                <button key={method} type="button" aria-pressed={billingPaymentMethod === method} onClick={() => setBillingPaymentMethod(method)} className={cn("flex h-12 items-center justify-center gap-2 rounded-control border text-body font-medium", billingPaymentMethod === method ? "border-primary text-primary" : "border-border text-foreground")}>
-                  <Qrcode className="h-5 w-5" />{method === "alipay" ? "支付宝" : "微信支付"}
-                </button>
-              ))}
+            <DialogTitle>订单已创建</DialogTitle>
+            {createdOrder ? (
+              <div className="mt-5 rounded-xl border border-border bg-bg-subtle p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-caption text-text-secondary">订单号</p>
+                  <p className="font-mono text-body font-medium text-foreground">{createdOrder.order_no}</p>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <p className="text-caption text-text-secondary">应付金额</p>
+                  <p className="text-title-2 font-semibold text-foreground">{formatMoney(createdOrder.amount_cents)}</p>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <p className="text-caption text-text-secondary">状态</p>
+                  <p className="text-body font-medium text-foreground">{ORDER_STATUS_LABELS[createdOrder.status] ?? createdOrder.status}</p>
+                </div>
+              </div>
+            ) : null}
+            <p className="mt-5 text-body leading-6 text-text-secondary">请按以上金额完成线下转账，付款后联系客服或等待运营确认开通。订单记录中可随时查看状态。</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <Button type="button" variant="outline" className="h-10 rounded-control" onClick={() => setBillingPaymentOpen(false)}>知道了</Button>
             </div>
-            <div className="mt-6 flex justify-center"><img src="/assets/payment-qr.png" alt={`${billingPaymentMethod === "alipay" ? "支付宝" : "微信支付"}支付二维码`} className="h-72 w-72 rounded-xl border border-border object-contain p-2" /></div>
-            <p className="mt-5 text-center text-body text-text-secondary">请使用{billingPaymentMethod === "alipay" ? "支付宝" : "微信"}扫码支付</p>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={billingResult !== null} onOpenChange={(open) => !open && setBillingResult(null)}>
-          <DialogContent aria-describedby={undefined} className="w-[min(480px,calc(100vw-2rem))] rounded-card border-border bg-bg-surface p-6 text-center shadow-dialog">
-            {billingResult ? <><div className={cn("mx-auto flex h-12 w-12 items-center justify-center rounded-full text-2xl text-primary-foreground", billingResult === "success" ? "bg-success" : "bg-fill-active text-text-secondary")}><Check className="h-7 w-7" /></div><DialogTitle className="mt-5 text-title-2">{billingResult === "success" ? "支付成功" : "支付未完成"}</DialogTitle><p className="mt-3 text-body text-text-secondary">{billingResult === "success" ? `${BILLING_PLANS[selectedPlanCode].name}已开通` : "订单已关闭，请重新发起购买。"}</p><Button type="button" className="mt-7 min-w-36" onClick={() => { if (billingResult === "success") { setBillingResult(null); setBillingView("overview"); } else { setBillingResult(null); setBillingPaymentOpen(true); } }}>{billingResult === "success" ? "完成" : "重新支付"}</Button></> : null}
           </DialogContent>
         </Dialog>
 
@@ -2070,6 +2304,9 @@ function AliceShellComponent({
                       className="min-h-36 w-full resize-none rounded-xl border border-border bg-bg-surface px-3 py-2.5 text-body leading-6 text-foreground outline-none placeholder:text-text-disabled focus:border-primary focus:ring-2 focus:ring-primary/15"
                     />
                   </section>
+                  {feedbackError ? (
+                    <p className="mt-2 text-caption text-destructive">提交失败，请稍后重试。你的输入内容已保留。</p>
+                  ) : null}
                 </>
               )}
 
@@ -2086,10 +2323,10 @@ function AliceShellComponent({
                   <Button
                     type="button"
                     className="h-10 rounded-control bg-primary text-body font-medium text-primary-foreground hover:bg-primary"
-                    disabled={!feedbackContent.trim()}
-                    onClick={() => setFeedbackSubmitted(true)}
+                    disabled={!feedbackContent.trim() || submittingFeedback}
+                    onClick={() => void handleSubmitFeedback()}
                   >
-                    提交反馈
+                    {submittingFeedback ? "提交中…" : "提交反馈"}
                   </Button>
                 ) : null}
               </div>

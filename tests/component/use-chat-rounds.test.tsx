@@ -395,6 +395,7 @@ describe("useChatRounds", () => {
       "analyse",
       CLIENT_MESSAGE_ID,
       [file],
+      "normal",
     );
     expect(result.current.snapshots.get(ROUND_A)).toMatchObject({
       round_id: ROUND_A,

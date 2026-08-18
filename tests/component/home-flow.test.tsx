@@ -352,6 +352,7 @@ describe("home flow", () => {
         "分析 cup 的前三爆品",
         "a62430bc-1417-4b95-9432-937b331a7d7a",
         [],
+        "normal",
       );
     });
     expect(mockCreateInitialChatRound).toHaveBeenCalledTimes(1);
@@ -410,6 +411,7 @@ describe("home flow", () => {
       "登录后分析库存",
       "a62430bc-1417-4b95-9432-937b331a7d7a",
       [],
+      "normal",
     );
     await waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
   });
@@ -440,6 +442,7 @@ describe("home flow", () => {
       "request B",
       "a62430bc-1417-4b95-9432-937b331a7d7a",
       [],
+      "normal",
     );
   });
 

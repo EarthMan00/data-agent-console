@@ -216,10 +216,12 @@ export async function createInitialChatRound(
   message: string,
   clientMessageId: string,
   files: File[] = [],
+  executionMode: "normal" | "report" = "normal",
 ): Promise<RoundAccepted> {
   const form = new FormData();
   form.append("message", message);
   form.append("client_message_id", clientMessageId);
+  form.append("execution_mode", executionMode);
   for (const file of files) form.append("files", file, file.name);
 
   const response = await fetch(apiUrl("/api/chat/rounds"), {
@@ -239,6 +241,7 @@ export async function createChatRound(
   message: string,
   clientMessageId: string,
   files: File[] = [],
+  executionMode: "normal" | "report" = "normal",
 ): Promise<RoundAccepted> {
   const attachments = await uploadSessionAttachments(accessToken, sessionId, files);
   const response = await fetch(apiUrl(`/api/chat/${encodeURIComponent(sessionId)}/rounds`), {
@@ -252,6 +255,7 @@ export async function createChatRound(
       message,
       client_message_id: clientMessageId,
       attachment_ids: attachments.map((attachment) => attachment.attachment_id),
+      execution_mode: executionMode,
     }),
   });
   return acceptedResponse(response, "create chat round");

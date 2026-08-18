@@ -297,6 +297,8 @@ export function ApiKeySettingsWorkspace() {
   const [keyName, setKeyName] = useState("");
   const [creating, setCreating] = useState(false);
   const [createdKey, setCreatedKey] = useState<ExternalApiKeyCreated | null>(null);
+  const [testingConnectivity, setTestingConnectivity] = useState(false);
+  const [testResult, setTestResult] = useState<null | "ok" | "fail">(null);
   const [revokeTarget, setRevokeTarget] = useState<ExternalApiKeyItem | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState<ExternalApiKeyItem | null>(null);
@@ -367,6 +369,22 @@ export function ApiKeySettingsWorkspace() {
     if (!createdKey) return;
     await copyText(createdKey.api_key, "API 密钥已复制");
   }, [copyText, createdKey]);
+
+  const runConnectivityTest = useCallback(async () => {
+    if (!createdKey || testingConnectivity) return;
+    setTestingConnectivity(true);
+    setTestResult(null);
+    try {
+      const response = await fetch(`${OPEN_API_BASE_URL}/v1/whoami`, {
+        headers: { "X-API-Key": createdKey.api_key },
+      });
+      setTestResult(response.ok ? "ok" : "fail");
+    } catch {
+      setTestResult("fail");
+    } finally {
+      setTestingConnectivity(false);
+    }
+  }, [createdKey, testingConnectivity]);
 
   const confirmRevoke = useCallback(async () => {
     if (!platformAgent || !revokeTarget || revoking) return;
@@ -619,7 +637,10 @@ export function ApiKeySettingsWorkspace() {
       <Dialog
         open={Boolean(createdKey)}
         onOpenChange={(open) => {
-          if (!open) setCreatedKey(null);
+          if (!open) {
+            setCreatedKey(null);
+            setTestResult(null);
+          }
         }}
       >
         <DialogContent className="max-w-xl rounded-card" aria-describedby="created-api-key-description">
@@ -635,7 +656,19 @@ export function ApiKeySettingsWorkspace() {
               <Copy className="h-4 w-4" aria-hidden />
             </Button>
           </div>
-          <div className="flex justify-end">
+          <div className="mt-2 flex items-center justify-between gap-3 rounded-control border border-border bg-bg-subtle px-3 py-2.5">
+            <p className="text-caption leading-5 text-text-secondary">密钥仅在创建时展示一次，可先发起连通测试确认可用。</p>
+            <Button type="button" variant="outline" size="sm" disabled={testingConnectivity} onClick={() => void runConnectivityTest()}>
+              {testingConnectivity ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+              {testingConnectivity ? "测试中…" : "测试连通"}
+            </Button>
+          </div>
+          {testResult ? (
+            <p role="status" className={cn("mt-2 text-caption", testResult === "ok" ? "text-success" : "text-danger")}>
+              {testResult === "ok" ? "连通正常，可安全关闭弹窗并保存密钥。" : "连通失败，请确认密钥无误后重试。"}
+            </p>
+          ) : null}
+          <div className="mt-4 flex justify-end">
             <Button type="button" onClick={() => setCreatedKey(null)}>完成</Button>
           </div>
         </DialogContent>

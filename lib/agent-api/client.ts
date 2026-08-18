@@ -19,6 +19,7 @@ import type {
   AdminFeedbackEntry,
   AdminModelConfig,
   AdminAlicePersonaTemplate,
+  AdminOrder,
 } from "@/lib/agent-api/types";
 
 function apiUrl(path: string): string {
@@ -917,6 +918,56 @@ export async function adminPatchFeedback(
   const data = await safeJson(res);
   if (!res.ok) throw new AgentApiError("patch feedback failed", res.status, data);
   return data as { entry: AdminFeedbackEntry };
+}
+
+// --- Admin: orders ---
+
+export async function adminListOrders(
+  accessToken: string,
+): Promise<{ orders: AdminOrder[] }> {
+  const res = await fetch(apiUrl("/admin/orders"), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("list orders failed", res.status, data);
+  return data as { orders: AdminOrder[] };
+}
+
+export async function adminConfirmOrderPayment(
+  accessToken: string,
+  orderId: string,
+  paymentMethod = "bank",
+): Promise<{ order: AdminOrder }> {
+  const res = await fetch(
+    apiUrl(`/admin/orders/${encodeURIComponent(orderId)}/confirm-payment`),
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ payment_method: paymentMethod }),
+    },
+  );
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("confirm order payment failed", res.status, data);
+  return data as { order: AdminOrder };
+}
+
+export async function adminFulfillOrder(
+  accessToken: string,
+  orderId: string,
+): Promise<{ order: AdminOrder }> {
+  const res = await fetch(
+    apiUrl(`/admin/orders/${encodeURIComponent(orderId)}/fulfill`),
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  const data = await safeJson(res);
+  if (!res.ok) throw new AgentApiError("fulfill order failed", res.status, data);
+  return data as { order: AdminOrder };
 }
 
 // --- Admin: model configs ---

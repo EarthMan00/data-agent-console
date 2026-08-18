@@ -272,6 +272,7 @@ export function PlatformSessionAgentWorkspace({
   const [sending, setSending] = useState(false);
   const [localError, setLocalError] = useState("");
   const [draft, setDraft] = useState("");
+  const [composerMode, setComposerMode] = useState<"普通模式" | "报告模式">("普通模式");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [sourcePlacements, setSourcePlacements] = useState<ComposerSourcePlacement[]>([]);
@@ -499,7 +500,12 @@ export function PlatformSessionAgentWorkspace({
             files,
           );
         } else {
-          const accepted = await roundController.send(message, clientMessageId, files);
+          const accepted = await roundController.send(
+            message,
+            clientMessageId,
+            files,
+            composerMode === "报告模式" ? "report" : "normal",
+          );
           if (generation !== generationRef.current) return true;
           setMessages((current) =>
             current.map((item) =>
@@ -534,6 +540,7 @@ export function PlatformSessionAgentWorkspace({
     },
     [
       activeRound,
+      composerMode,
       composerDataSourceItems,
       platformAgent,
       refreshHistoryNow,
@@ -671,6 +678,13 @@ export function PlatformSessionAgentWorkspace({
   const trialSaveReady = scheduleTrial && scheduleTrialCanSave(scheduleTrialRound) && !saveBusy;
   const combinedError = sanitizeAssistantContent(localError || roundController.error);
 
+  const entitlementInsufficient = useMemo(() => {
+    for (const snapshot of roundController.snapshots.values()) {
+      if (snapshot.error_code === "entitlement_insufficient") return true;
+    }
+    return false;
+  }, [roundController.snapshots]);
+
   const composer = (
     <TaskComposer
       value={draft}
@@ -682,8 +696,8 @@ export function PlatformSessionAgentWorkspace({
         }
       }}
       placeholder={waitingForInput ? "请补充所需信息" : "您可以继续追问或者让我做其他工作哦～"}
-      mode="普通模式"
-      onModeChange={() => undefined}
+      mode={composerMode}
+      onModeChange={setComposerMode}
       selectedSourceIds={selectedSourceIds}
       sourcePlacements={sourcePlacements}
       onSourcePlacementsChange={setSourcePlacements}
@@ -779,6 +793,13 @@ export function PlatformSessionAgentWorkspace({
           >
             <div ref={messagesInnerRef} className={cn("mx-auto w-full", SIMPLE_CHAT_COLUMN_MAX)}>
               <div className="space-y-5">
+                {entitlementInsufficient ? (
+                  <div className="mb-4 rounded-xl border border-warning-border bg-warning-bg px-4 py-3">
+                    <p className="text-body font-medium text-foreground">当前套餐权益不足</p>
+                    <p className="mt-1 text-caption leading-5 text-text-secondary">本次任务因套餐额度不足未能执行，请购买或升级套餐后重试。</p>
+                    <Button type="button" className="mt-3 h-9" onClick={() => router.push("/plans")}>购买或升级套餐</Button>
+                  </div>
+                ) : null}
                 {combinedError ? (
                   <p className="text-sm text-danger">加载/发送失败：{combinedError}</p>
                 ) : null}

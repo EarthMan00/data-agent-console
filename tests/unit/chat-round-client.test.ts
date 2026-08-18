@@ -69,6 +69,7 @@ describe("durable chat Round API client", () => {
       ]);
       expect([...form.keys()].sort()).toEqual([
         "client_message_id",
+        "execution_mode",
         "files",
         "files",
         "message",
@@ -77,6 +78,35 @@ describe("durable chat Round API client", () => {
       expect(form.has("operation")).toBe(false);
       expect(form.has("tool")).toBe(false);
     }
+  });
+
+  it("passes report execution_mode through initial and existing-session round creation", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({ url, init: init ?? {} });
+        if (url.endsWith(`/api/chat/${SESSION_ID}/attachments`)) {
+          return new Response(
+            JSON.stringify({ attachments: [] }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify(accepted()), {
+          status: 202,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    await createInitialChatRound(TOKEN, "report request", CLIENT_MESSAGE_ID, [], "report");
+    await createChatRound(TOKEN, SESSION_ID, "report request", CLIENT_MESSAGE_ID, [], "report");
+
+    const initial = calls[0].init.body as FormData;
+    expect(initial.get("execution_mode")).toBe("report");
+    const existing = JSON.parse(String(calls[1].init.body));
+    expect(existing.execution_mode).toBe("report");
   });
 
   it("uploads existing-session files before submitting only their attachment ids", async () => {
@@ -129,6 +159,7 @@ describe("durable chat Round API client", () => {
       message: "use the upload",
       client_message_id: CLIENT_MESSAGE_ID,
       attachment_ids: ["55555555-5555-4555-8555-555555555555"],
+      execution_mode: "normal",
     });
   });
 

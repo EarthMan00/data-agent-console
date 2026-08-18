@@ -130,6 +130,7 @@ describe("home attachments", () => {
       "analyze attachments",
       "a62430bc-1417-4b95-9432-937b331a7d7a",
       [third],
+      "normal",
     );
     expect(replace).toHaveBeenCalledWith(
       "/agent?sessionId=f4159ee9-c863-41c8-9c1b-ffbfa193917f",

@@ -76,7 +76,7 @@ const HOME_TIME_GREETINGS = {
     full: "还在忙？我可以帮你。",
   },
 };
-type HomeComposerMode = "普通模式" | "深度模式";
+type HomeComposerMode = "普通模式" | "报告模式";
 
 type PendingHomeTask = {
   text: string;
@@ -223,7 +223,7 @@ export function AliceHomePage() {
   const cachedPromptCards = homePromptCacheKey ? getCachedHomePromptCards(homePromptCacheKey) : null;
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [sourcePlacements, setSourcePlacements] = useState<ComposerSourcePlacement[]>([]);
-  const [composerMode, setComposerMode] = useState<HomeComposerMode>("深度模式");
+  const [composerMode, setComposerMode] = useState<HomeComposerMode>("普通模式");
   const [pendingHomeFiles, setPendingHomeFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
   const [launching, setLaunching] = useState(false);
@@ -413,7 +413,13 @@ export function AliceHomePage() {
         clientMessageId,
       );
       const accepted = await platformAgent.withFreshToken((token) =>
-        createInitialChatRound(token, message, clientMessageId, files),
+        createInitialChatRound(
+          token,
+          message,
+          clientMessageId,
+          files,
+          effectiveComposerMode === "报告模式" ? "report" : "normal",
+        ),
       );
       pendingInitialRoundRef.current = null;
       upsertOptimisticHistorySession(accepted.session_id);
