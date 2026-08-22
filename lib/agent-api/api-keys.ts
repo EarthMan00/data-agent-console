@@ -15,10 +15,8 @@ export type ExternalApiKeyItem = {
   key_prefix: string;
   key_last4: string;
   scopes: ExternalApiKeyScope[];
-  status: "active" | "revoked" | string;
   created_at: string | null;
   last_used_at: string | null;
-  revoked_at: string | null;
 };
 
 export type ExternalApiKeyCreated = ExternalApiKeyItem & {
@@ -97,7 +95,7 @@ export async function createExternalApiKey(
   return requireOk<ExternalApiKeyCreated>(response, "创建 API 密钥失败");
 }
 
-export async function revokeExternalApiKey(
+export async function deleteExternalApiKey(
   accessToken: string,
   keyId: string,
 ): Promise<void> {
@@ -108,19 +106,5 @@ export async function revokeExternalApiKey(
       headers: { Authorization: `Bearer ${accessToken}` },
     },
   );
-  await requireOk<unknown>(response, "撤销 API 密钥失败");
-}
-
-export async function restoreExternalApiKey(
-  accessToken: string,
-  keyId: string,
-): Promise<void> {
-  const response = await fetch(
-    apiUrl(`/api/user/api-keys/${encodeURIComponent(keyId)}/restore`),
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}` },
-    },
-  );
-  await requireOk<unknown>(response, "恢复 API 密钥失败");
+  await requireOk<unknown>(response, "删除 API 密钥失败");
 }

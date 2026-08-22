@@ -189,7 +189,7 @@ test.describe("Alice 一期验收", () => {
     }
   });
 
-  test("API&Skills：创建 Key 一次性展示并连通测试成功", async ({ browser, baseURL }) => {
+  test("API&Skills：创建 Key 一次性展示明文密钥", async ({ browser, baseURL }) => {
     const auth = await registerEmailUser(baseURL!, "apikey");
     const { context, baselinePage, appPage } = await createUserSession(
       browser,
@@ -206,11 +206,10 @@ test.describe("Alice 一期验收", () => {
       // 明文 Key 一次性展示
       await expect(appPage.getByText(/da_live_/)).toBeVisible();
 
-      await appPage.getByRole("button", { name: "测试连通" }).click();
-      // 连通测试请求组件内硬编码的 OPEN_API_BASE_URL；该域名须解析到当前后端
-      await expect(appPage.getByRole("status")).toContainText("连通正常", {
-        timeout: 20000,
-      });
+      // 确认弹窗不再提供连通测试入口，点击完成关闭
+      await expect(appPage.getByRole("button", { name: "测试连通" })).toHaveCount(0);
+      await appPage.getByRole("button", { name: "完成" }).click();
+      await expect(appPage.getByText("API 密钥已创建")).toHaveCount(0);
     } finally {
       await closeSingleWindowSession(context, baselinePage, appPage);
     }

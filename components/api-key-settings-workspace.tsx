@@ -21,34 +21,34 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
-  ArrowBackUp,
   Copy,
-  ExternalLink,
+  Download,
+  HelpCircle,
   Loader2,
   Plus,
   Trash2,
 } from "@/components/ui/tabler-icons";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
+import { downloadAuthorizedFile } from "@/lib/agent-api/client";
 import {
   createExternalApiKey,
+  deleteExternalApiKey,
   listExternalApiKeys,
-  restoreExternalApiKey,
-  revokeExternalApiKey,
   type ExternalApiKeyCreated,
   type ExternalApiKeyItem,
 } from "@/lib/agent-api/api-keys";
+import { SkillHelpDialog } from "@/components/skill-help-dialog";
 
 type LogoSpec = {
   src: string;
   imageClassName?: string;
 };
 
-const OPEN_API_BASE_URL = "http://www.mdata.xin/agent-platform";
-const OPEN_API_DOCS_URL = `${OPEN_API_BASE_URL}/docs`;
-const OPEN_API_SCHEMA_URL = `${OPEN_API_BASE_URL}/openapi.json`;
-const MCP_PACKAGE = "@alice/data-fetcher";
-const SKILL_COMMAND = `npx skills add ${MCP_PACKAGE}`;
+const SKILL_PACKAGE = "@alice/data-fetcher";
+const SKILL_COMMAND = `npx skills add ${SKILL_PACKAGE}`;
+const SKILL_DOWNLOAD_PATH = "/api/user/skills/dataagent-platform/download";
+const SKILL_DOWNLOAD_FILENAME = "dataagent-platform-latest.zip";
 
 const INTEGRATION_LOGOS = {
   claudeCode: {
@@ -69,48 +69,6 @@ const INTEGRATION_LOGOS = {
     imageClassName: "rounded-full",
   },
 } satisfies Record<string, LogoSpec>;
-
-const MCP_PLATFORMS = [
-  {
-    id: "claude-code",
-    name: "Claude Code",
-    logo: INTEGRATION_LOGOS.claudeCode,
-    command: `claude mcp add alice-data-fetcher -- npx -y ${MCP_PACKAGE} mcp --api-key YOUR_API_KEY`,
-  },
-  {
-    id: "codex",
-    name: "Codex",
-    logo: INTEGRATION_LOGOS.codex,
-    command: `codex mcp add alice-data-fetcher -- npx -y ${MCP_PACKAGE} mcp --api-key YOUR_API_KEY`,
-  },
-  {
-    id: "cursor",
-    name: "Cursor",
-    logo: INTEGRATION_LOGOS.cursor,
-    command: [
-      "{",
-      '  "mcpServers": {',
-      '    "alice-data-fetcher": {',
-      '      "command": "npx",',
-      `      "args": ["-y", "${MCP_PACKAGE}", "mcp", "--api-key", "YOUR_API_KEY"]`,
-      "    }",
-      "  }",
-      "}",
-    ].join("\n"),
-  },
-  {
-    id: "opencode",
-    name: "OpenCode",
-    logo: INTEGRATION_LOGOS.opencode,
-    command: `opencode mcp add alice-data-fetcher -- npx -y ${MCP_PACKAGE} mcp --api-key YOUR_API_KEY`,
-  },
-  {
-    id: "workbuddy",
-    name: "WorkBuddy",
-    logo: INTEGRATION_LOGOS.workbuddy,
-    command: `npx -y ${MCP_PACKAGE} mcp --api-key YOUR_API_KEY`,
-  },
-] as const;
 
 const SKILL_TARGETS = [
   {
@@ -140,8 +98,6 @@ const SKILL_TARGETS = [
   },
 ] as const;
 
-type McpPlatformId = (typeof MCP_PLATFORMS)[number]["id"];
-
 function formatDateTime(value: string | null): string {
   if (!value) return "从未";
   const date = new Date(value);
@@ -165,12 +121,6 @@ function formatKeyPreview(item: ExternalApiKeyItem): string {
   return `${item.key_prefix}…${item.key_last4}`;
 }
 
-function keyStatusLabel(status: ExternalApiKeyItem["status"]): string {
-  if (status === "active") return "有效";
-  if (status === "revoked") return "已撤销";
-  return status || "-";
-}
-
 function SectionHeader({
   id,
   title,
@@ -186,34 +136,6 @@ function SectionHeader({
         {title}
       </h2>
       {children}
-    </div>
-  );
-}
-
-function CodeBlock({
-  value,
-  copyLabel,
-  onCopy,
-}: {
-  value: string;
-  copyLabel: string;
-  onCopy: () => void;
-}) {
-  return (
-    <div className="relative min-w-0 overflow-hidden rounded-control border border-border bg-bg-subtle">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="absolute right-2 top-2 z-10 h-7 shrink-0 rounded-control bg-bg-surface"
-        onClick={onCopy}
-      >
-        <Copy className="h-4 w-4" aria-hidden />
-        {copyLabel}
-      </Button>
-      <pre className="max-h-48 min-h-[68px] overflow-auto whitespace-pre py-3 pl-3 pr-20 font-mono text-caption leading-6 text-text-secondary">
-        <code>{value}</code>
-      </pre>
     </div>
   );
 }
@@ -262,33 +184,6 @@ function PlatformInlineLogo({ logo }: { logo: LogoSpec }) {
   );
 }
 
-function PlatformCard({
-  platform,
-  selected,
-  onSelect,
-}: {
-  platform: (typeof MCP_PLATFORMS)[number];
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        "inline-flex h-10 shrink-0 items-center gap-2 rounded-control px-3 text-body font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/15",
-        selected
-          ? "bg-bg-surface text-foreground shadow-sm"
-          : "text-text-secondary hover:bg-fill-hover hover:text-foreground",
-      )}
-      aria-pressed={selected}
-      onClick={onSelect}
-    >
-      <PlatformInlineLogo logo={platform.logo} />
-      <span>{platform.name}</span>
-    </button>
-  );
-}
-
 export function ApiKeySettingsWorkspace() {
   const platformAgent = useOptionalPlatformAgent();
   const [items, setItems] = useState<ExternalApiKeyItem[]>([]);
@@ -297,29 +192,21 @@ export function ApiKeySettingsWorkspace() {
   const [keyName, setKeyName] = useState("");
   const [creating, setCreating] = useState(false);
   const [createdKey, setCreatedKey] = useState<ExternalApiKeyCreated | null>(null);
-  const [testingConnectivity, setTestingConnectivity] = useState(false);
-  const [testResult, setTestResult] = useState<null | "ok" | "fail">(null);
-  const [revokeTarget, setRevokeTarget] = useState<ExternalApiKeyItem | null>(null);
-  const [revoking, setRevoking] = useState(false);
-  const [restoreTarget, setRestoreTarget] = useState<ExternalApiKeyItem | null>(null);
-  const [restoring, setRestoring] = useState(false);
-  const [selectedMcpPlatform, setSelectedMcpPlatform] = useState<McpPlatformId>("claude-code");
+  const [downloadingSkill, setDownloadingSkill] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ExternalApiKeyItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null);
 
   const sortedApiKeys = useMemo(
     () =>
       [...items]
         .sort(
-          (left, right) => {
-            if (left.status === "active" && right.status !== "active") return -1;
-            if (left.status !== "active" && right.status === "active") return 1;
-            return Date.parse(right.created_at ?? "") - Date.parse(left.created_at ?? "");
-          },
+          (left, right) =>
+            Date.parse(right.created_at ?? "") - Date.parse(left.created_at ?? ""),
         ),
     [items],
   );
-
-  const selectedMcp = MCP_PLATFORMS.find((item) => item.id === selectedMcpPlatform) ?? MCP_PLATFORMS[0];
 
   const refresh = useCallback(async () => {
     if (!platformAgent) return;
@@ -370,55 +257,37 @@ export function ApiKeySettingsWorkspace() {
     await copyText(createdKey.api_key, "API 密钥已复制");
   }, [copyText, createdKey]);
 
-  const runConnectivityTest = useCallback(async () => {
-    if (!createdKey || testingConnectivity) return;
-    setTestingConnectivity(true);
-    setTestResult(null);
-    try {
-      const response = await fetch(`${OPEN_API_BASE_URL}/v1/whoami`, {
-        headers: { "X-API-Key": createdKey.api_key },
-      });
-      setTestResult(response.ok ? "ok" : "fail");
-    } catch {
-      setTestResult("fail");
-    } finally {
-      setTestingConnectivity(false);
-    }
-  }, [createdKey, testingConnectivity]);
-
-  const confirmRevoke = useCallback(async () => {
-    if (!platformAgent || !revokeTarget || revoking) return;
-    setRevoking(true);
+  const downloadSkill = useCallback(async () => {
+    if (!platformAgent || downloadingSkill) return;
+    setDownloadingSkill(true);
     try {
       await platformAgent.withFreshToken((token) =>
-        revokeExternalApiKey(token, revokeTarget.key_id),
+        downloadAuthorizedFile(token, SKILL_DOWNLOAD_PATH, SKILL_DOWNLOAD_FILENAME),
       );
-      setRevokeTarget(null);
-      setToast({ message: "API Key 已撤销" });
-      await refresh();
+      setToast({ message: "Skill 包已开始下载" });
     } catch (error) {
-      setToast({ message: displayError(error, "撤销 API Key 失败"), error: true });
+      setToast({ message: displayError(error, "Skill 包下载失败"), error: true });
     } finally {
-      setRevoking(false);
+      setDownloadingSkill(false);
     }
-  }, [platformAgent, refresh, revokeTarget, revoking]);
+  }, [downloadingSkill, platformAgent]);
 
-  const confirmRestore = useCallback(async () => {
-    if (!platformAgent || !restoreTarget || restoring) return;
-    setRestoring(true);
+  const confirmDelete = useCallback(async () => {
+    if (!platformAgent || !deleteTarget || deleting) return;
+    setDeleting(true);
     try {
       await platformAgent.withFreshToken((token) =>
-        restoreExternalApiKey(token, restoreTarget.key_id),
+        deleteExternalApiKey(token, deleteTarget.key_id),
       );
-      setRestoreTarget(null);
-      setToast({ message: "API Key 已恢复" });
+      setDeleteTarget(null);
+      setToast({ message: "API Key 已删除" });
       await refresh();
     } catch (error) {
-      setToast({ message: displayError(error, "恢复 API Key 失败"), error: true });
+      setToast({ message: displayError(error, "删除 API Key 失败"), error: true });
     } finally {
-      setRestoring(false);
+      setDeleting(false);
     }
-  }, [platformAgent, refresh, restoreTarget, restoring]);
+  }, [deleteTarget, deleting, platformAgent, refresh]);
 
   return (
     <AliceShell currentPath="/settings/api-keys" showTopHeader={false}>
@@ -437,13 +306,43 @@ export function ApiKeySettingsWorkspace() {
 
           <div className="mt-4 space-y-5">
             <section id="skill" className="scroll-mt-6" aria-labelledby="skill-title">
-              <SectionHeader id="skill-title" title="Skill" />
+              <SectionHeader id="skill-title" title="Skill">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-control"
+                  onClick={() => setHelpOpen(true)}
+                >
+                  <HelpCircle className="h-4 w-4" aria-hidden />
+                  使用帮助
+                </Button>
+              </SectionHeader>
               <div className="mt-3 rounded-card border border-border bg-bg-surface p-4 shadow-surface">
-                <CommandLine
-                  value={SKILL_COMMAND}
-                  copyLabel="复制"
-                  onCopy={() => void copyText(SKILL_COMMAND, "Skill 安装命令已复制")}
-                />
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="min-w-0 flex-1">
+                    <CommandLine
+                      value={SKILL_COMMAND}
+                      copyLabel="复制"
+                      onCopy={() => void copyText(SKILL_COMMAND, "Skill 安装命令已复制")}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 shrink-0 rounded-control sm:h-8"
+                    disabled={downloadingSkill}
+                    onClick={() => void downloadSkill()}
+                  >
+                    {downloadingSkill ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Download className="h-4 w-4" aria-hidden />
+                    )}
+                    {downloadingSkill ? "下载中…" : "下载 Skill 包"}
+                  </Button>
+                </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <span className="text-caption text-text-secondary">适用于：</span>
                   {SKILL_TARGETS.map((target) => (
@@ -460,44 +359,9 @@ export function ApiKeySettingsWorkspace() {
               </div>
             </section>
 
-            <section id="mcp" className="scroll-mt-6" aria-labelledby="mcp-title">
-              <SectionHeader id="mcp-title" title="MCP" />
-              <div className="mt-3 overflow-hidden rounded-card border border-border bg-bg-surface shadow-surface">
-                <div className="flex min-w-0 gap-1 overflow-x-auto border-b border-border-subtle bg-bg-subtle p-2">
-                  {MCP_PLATFORMS.map((platform) => (
-                    <PlatformCard
-                      key={platform.id}
-                      platform={platform}
-                      selected={selectedMcpPlatform === platform.id}
-                      onSelect={() => setSelectedMcpPlatform(platform.id)}
-                    />
-                  ))}
-                </div>
-                <div className="p-4">
-                  <CodeBlock
-                    value={selectedMcp.command}
-                    copyLabel="复制"
-                    onCopy={() => void copyText(selectedMcp.command, "配置已复制")}
-                  />
-                </div>
-              </div>
-            </section>
-
             <section id="api-key" className="scroll-mt-6" aria-labelledby="api-key-title">
               <SectionHeader id="api-key-title" title="API Key">
                 <div className="flex flex-wrap gap-2">
-                  <Button asChild variant="outline" size="sm" className="h-8 rounded-control">
-                    <a href={OPEN_API_DOCS_URL} target="_blank" rel="noreferrer">
-                      查看文档
-                      <ExternalLink className="h-4 w-4" aria-hidden />
-                    </a>
-                  </Button>
-                  <Button asChild variant="outline" size="sm" className="h-8 rounded-control">
-                    <a href={OPEN_API_SCHEMA_URL} target="_blank" rel="noreferrer">
-                      OpenAPI JSON
-                      <ExternalLink className="h-4 w-4" aria-hidden />
-                    </a>
-                  </Button>
                   <Button
                     type="button"
                     variant="outline"
@@ -528,7 +392,6 @@ export function ApiKeySettingsWorkspace() {
                         <tr className="border-b border-border-subtle">
                           <th className="px-4 py-3 font-medium">名称</th>
                           <th className="px-4 py-3 font-medium">API Key</th>
-                          <th className="px-4 py-3 font-medium">状态</th>
                           <th className="px-4 py-3 font-medium">最近调用</th>
                           <th className="w-16 px-4 py-3 text-right font-medium">操作</th>
                         </tr>
@@ -547,40 +410,21 @@ export function ApiKeySettingsWorkspace() {
                                 {formatKeyPreview(item)}
                               </code>
                             </td>
-                            <td className="px-4 py-3">
-                              <span className={item.status === "active" ? "text-success" : "text-text-tertiary"}>
-                                {keyStatusLabel(item.status)}
-                              </span>
-                            </td>
                             <td className="px-4 py-3 text-text-secondary">
                               {formatDateTime(item.last_used_at)}
                             </td>
                             <td className="px-4 py-3 text-right">
-                              {item.status === "active" ? (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="iconSm"
-                                  className="text-text-secondary hover:text-danger"
-                                  title="撤销 Key"
-                                  aria-label={`撤销 Key ${item.name || formatKeyPreview(item)}`}
-                                  onClick={() => setRevokeTarget(item)}
-                                >
-                                  <Trash2 className="h-4 w-4" aria-hidden />
-                                </Button>
-                              ) : (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="iconSm"
-                                  className="text-text-secondary hover:text-success"
-                                  title="恢复 Key"
-                                  aria-label={`恢复 Key ${item.name || formatKeyPreview(item)}`}
-                                  onClick={() => setRestoreTarget(item)}
-                                >
-                                  <ArrowBackUp className="h-4 w-4" aria-hidden />
-                                </Button>
-                              )}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="iconSm"
+                                className="text-text-secondary hover:text-danger"
+                                title="删除 Key"
+                                aria-label={`删除 Key ${item.name || formatKeyPreview(item)}`}
+                                onClick={() => setDeleteTarget(item)}
+                              >
+                                <Trash2 className="h-4 w-4" aria-hidden />
+                              </Button>
                             </td>
                           </tr>
                         ))}
@@ -603,9 +447,9 @@ export function ApiKeySettingsWorkspace() {
           }
         }}
       >
-        <DialogContent className="max-w-md rounded-card" aria-describedby="create-api-key-description">
+        <DialogContent className="max-w-md rounded-card">
           <DialogTitle className="text-title-1">新建 API 密钥</DialogTitle>
-          <DialogDescription id="create-api-key-description" className="text-body leading-6 text-text-secondary">
+          <DialogDescription className="text-body leading-6 text-text-secondary">
             使用一个便于识别的名称区分调用方。
           </DialogDescription>
           <label className="space-y-2 text-body font-medium text-foreground">
@@ -639,13 +483,12 @@ export function ApiKeySettingsWorkspace() {
         onOpenChange={(open) => {
           if (!open) {
             setCreatedKey(null);
-            setTestResult(null);
           }
         }}
       >
-        <DialogContent className="max-w-xl rounded-card" aria-describedby="created-api-key-description">
+        <DialogContent className="max-w-xl rounded-card">
           <DialogTitle className="text-title-1">API 密钥已创建</DialogTitle>
-          <DialogDescription id="created-api-key-description" className="text-body leading-6 text-text-secondary">
+          <DialogDescription className="text-body leading-6 text-text-secondary">
             关闭后无法再次查看，请立即存放在安全位置。
           </DialogDescription>
           <div className="flex min-w-0 items-center gap-2 rounded-control border border-border bg-bg-subtle p-2">
@@ -656,18 +499,6 @@ export function ApiKeySettingsWorkspace() {
               <Copy className="h-4 w-4" aria-hidden />
             </Button>
           </div>
-          <div className="mt-2 flex items-center justify-between gap-3 rounded-control border border-border bg-bg-subtle px-3 py-2.5">
-            <p className="text-caption leading-5 text-text-secondary">密钥仅在创建时展示一次，可先发起连通测试确认可用。</p>
-            <Button type="button" variant="outline" size="sm" disabled={testingConnectivity} onClick={() => void runConnectivityTest()}>
-              {testingConnectivity ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-              {testingConnectivity ? "测试中…" : "测试连通"}
-            </Button>
-          </div>
-          {testResult ? (
-            <p role="status" className={cn("mt-2 text-caption", testResult === "ok" ? "text-success" : "text-danger")}>
-              {testResult === "ok" ? "连通正常，可安全关闭弹窗并保存密钥。" : "连通失败，请确认密钥无误后重试。"}
-            </p>
-          ) : null}
           <div className="mt-4 flex justify-end">
             <Button type="button" onClick={() => setCreatedKey(null)}>完成</Button>
           </div>
@@ -675,50 +506,29 @@ export function ApiKeySettingsWorkspace() {
       </Dialog>
 
       <Dialog
-        open={Boolean(revokeTarget)}
+        open={Boolean(deleteTarget)}
         onOpenChange={(open) => {
-          if (!open && !revoking) setRevokeTarget(null);
+          if (!open && !deleting) setDeleteTarget(null);
         }}
       >
-        <DialogContent className="max-w-md rounded-card" aria-describedby="revoke-api-key-description">
-          <DialogTitle className="text-title-1">撤销 API Key</DialogTitle>
-          <DialogDescription id="revoke-api-key-description" className="text-body leading-6 text-text-secondary">
-            撤销后，使用“{revokeTarget?.name || "未命名 Key"}”的外部调用会立即失效。
+        <DialogContent className="max-w-md rounded-card">
+          <DialogTitle className="text-title-1">删除 API Key</DialogTitle>
+          <DialogDescription className="text-body leading-6 text-text-secondary">
+            删除后，使用“{deleteTarget?.name || "未命名 Key"}”的外部调用会立即失效，且无法恢复；历史消费记录将保留。
           </DialogDescription>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" disabled={revoking} onClick={() => setRevokeTarget(null)}>
+            <Button type="button" variant="outline" disabled={deleting} onClick={() => setDeleteTarget(null)}>
               取消
             </Button>
-            <Button type="button" variant="destructive" disabled={revoking} onClick={() => void confirmRevoke()}>
-              {revoking ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Trash2 className="h-4 w-4" aria-hidden />}
-              {revoking ? "撤销中…" : "确认撤销"}
+            <Button type="button" variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Trash2 className="h-4 w-4" aria-hidden />}
+              {deleting ? "删除中…" : "确认删除"}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={Boolean(restoreTarget)}
-        onOpenChange={(open) => {
-          if (!open && !restoring) setRestoreTarget(null);
-        }}
-      >
-        <DialogContent className="max-w-md rounded-card" aria-describedby="restore-api-key-description">
-          <DialogTitle className="text-title-1">恢复 API Key</DialogTitle>
-          <DialogDescription id="restore-api-key-description" className="text-body leading-6 text-text-secondary">
-            恢复后，使用“{restoreTarget?.name || "未命名 Key"}”的外部调用将重新生效。
-          </DialogDescription>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" disabled={restoring} onClick={() => setRestoreTarget(null)}>
-              取消
-            </Button>
-            <Button type="button" disabled={restoring} onClick={() => void confirmRestore()}>
-              {restoring ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <ArrowBackUp className="h-4 w-4" aria-hidden />}
-              {restoring ? "恢复中…" : "确认恢复"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <SkillHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
 
     </AliceShell>
   );
