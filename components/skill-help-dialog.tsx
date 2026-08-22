@@ -109,7 +109,7 @@ export function SkillHelpDialog({
           <Paragraph>
             调用前需要配置服务地址和 API Key（通过环境变量或密钥库注入，不要写进提示词、源码或日志）：
           </Paragraph>
-          <CodeLine>{`DATA_AGENT_BASE_URL=https://agent.example.com`}</CodeLine>
+          <CodeLine>{`DATA_AGENT_BASE_URL=http://www.mdata.xin/agent-platform`}</CodeLine>
           <CodeLine>{`DATA_AGENT_API_KEY=da_live_...`}</CodeLine>
           <Paragraph>
             API Key 在本页「生成 Key」创建，完整 Key 仅在创建成功时展示一次，默认权限为

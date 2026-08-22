@@ -71,6 +71,7 @@ import {
 } from "@/lib/agent-api/billing";
 import { fetchProfile, patchProfile, type UserProfile } from "@/lib/agent-api/profile";
 import { submitFeedback } from "@/lib/agent-api/feedback";
+import { safeRandomUUID } from "@/lib/random-uuid";
 import { cn } from "@/lib/utils";
 import { workspaceActions, useWorkspaceState } from "@/lib/workspace-store";
 
@@ -1033,7 +1034,7 @@ function AliceShellComponent({
           order_type: deriveOrderType(),
           plan_code: spec.code,
           billing_cycle: billingCycle,
-          idempotency_key: crypto.randomUUID(),
+          idempotency_key: safeRandomUUID(),
         });
         setCreatedOrder(order);
         setBillingPaymentOpen(true);
