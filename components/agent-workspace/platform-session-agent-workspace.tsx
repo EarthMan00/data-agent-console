@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatAgentApiErrorForUser, listSessionMessages } from "@/lib/agent-api/client";
 import { getChatMessageMaxChars } from "@/lib/agent-api/config";
+import { publicRoundContent, sanitizeAssistantContent } from "@/lib/agent-api/round-content";
 import { AGENT_COMPOSER_PREFILL_STORAGE_KEY } from "@/lib/agent-api/session";
 import type {
   ChatRoundSnapshot,
@@ -45,7 +46,6 @@ import {
 } from "@/lib/schedule-trial-execution-presentation";
 import { saveScheduleTasksWithDraft } from "@/lib/save-schedule-from-draft";
 import { roundCanStop } from "@/lib/session-execution-stop";
-import { stripInternalToolNamesForUi } from "@/lib/strip-internal-tool-names";
 import { cn } from "@/lib/utils";
 import { useChatStickToBottom } from "@/lib/use-chat-stick-to-bottom";
 import { useHomeDataSourceMenu } from "@/lib/use-home-data-source-menu";
@@ -140,37 +140,6 @@ function submissionSignature(
 function publicRequestError(error: unknown, fallback: string): string {
   const formatted = formatAgentApiErrorForUser(error).trim();
   return formatted ? sanitizeAssistantContent(formatted) || fallback : fallback;
-}
-
-const INTERNAL_ASSIGNMENT_RE =
-  /["']?(?:capability|tool_name|operation|raw_args|managed_path|provider|credential|api[_-]?key|access[_-]?token|password)["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;}\n]+)/gi;
-const INTERNAL_TERM_RE =
-  /run_(?:linkfox|chatexcel)_task|commerce_data\.collect|scheduled_task\.create|favorite_snapshot\.create|\b(?:capability|tool_name|operation|raw_args|managed_path|provider|credential)\b/gi;
-const SECRET_VALUE_RE = /\b(?:Bearer\s+\S+|sk-[A-Za-z0-9_-]{8,}|atk_[A-Za-z0-9_-]+)\b/gi;
-const MANAGED_WINDOWS_PATH_RE = /(?:[A-Za-z]:\\|%LOCALAPPDATA%\\)[^\s<>"'`]+/gi;
-
-function sanitizeAssistantContent(content: string): string {
-  return stripInternalToolNamesForUi(content)
-    .replace(INTERNAL_ASSIGNMENT_RE, "")
-    .replace(INTERNAL_TERM_RE, "")
-    .replace(SECRET_VALUE_RE, "[受保护信息]")
-    .replace(MANAGED_WINDOWS_PATH_RE, "[受保护路径]")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
-}
-
-function publicRoundContent(snapshot: ChatRoundSnapshot): string {
-  const content = sanitizeAssistantContent(snapshot.content);
-  const businessFailure =
-    snapshot.error_code === "BUSINESS_ACTION_FAILED" ||
-    snapshot.error_code === "BUSINESS_VERIFICATION_FAILED" ||
-    snapshot.steps.some(
-      (step) =>
-        step.status === "FAILED" &&
-        (step.error_code === "BUSINESS_ACTION_FAILED" ||
-          step.error_code === "BUSINESS_VERIFICATION_FAILED"),
-    );
-  return businessFailure ? content.replace(/已创建/g, "未能创建") : content;
 }
 
 function buildDisplayMessages(
