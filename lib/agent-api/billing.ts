@@ -20,6 +20,8 @@ export type LedgerItem = {
   event_type: "grant" | "reserve" | "consume" | "release" | "expire" | "adjust";
   task_kind: string | null;
   created_at: string;
+  /** 服务端计算的该行发生后的权益余额（明细已过滤预留冲销流水） */
+  balance: number;
 };
 
 export type BillingOrder = {

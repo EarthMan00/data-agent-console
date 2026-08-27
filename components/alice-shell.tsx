@@ -191,24 +191,6 @@ function ledgerTaskLabel(taskKind: string | null): string {
   if (!taskKind) return "-";
   return LEDGER_TASK_LABELS[taskKind] ?? taskKind;
 }
-function computeLedgerBalances(
-  items: LedgerItem[],
-  dataQueryRemaining: number,
-  reportRemaining: number,
-): Array<LedgerItem & { balance: number }> {
-  let dqBalance = dataQueryRemaining;
-  let rrBalance = reportRemaining;
-  return items.map((item) => {
-    if (item.entitlement_type === "data_query") {
-      const balance = dqBalance;
-      dqBalance -= item.delta;
-      return { ...item, balance };
-    }
-    const balance = rrBalance;
-    rrBalance -= item.delta;
-    return { ...item, balance };
-  });
-}
 
 type HistoryDropPosition = "before" | "after";
 type HistoryDragTarget = { sessionId: string; position: HistoryDropPosition };
@@ -2205,7 +2187,7 @@ function AliceShellComponent({
                                 </div>
                                 <div className="border-l border-border pl-10"><p className="text-caption text-text-secondary">到期时间</p><p className="mt-3 text-title-3 font-medium text-foreground">{fmtBillingDate(billingSummary?.ends_at ?? null)}</p><div className="mt-8 flex gap-3"><Button variant="outline" type="button" onClick={() => setBillingView("select")}>续订</Button><Button type="button" onClick={() => { setSelectedPlanCode(planSpecs.find((p) => p.code === "paid_advanced")?.code ?? planSpecs[0]?.code ?? ""); setBillingView("select"); }}>升级套餐</Button></div></div>
                               </div>
-                              <div className="flex min-h-0 flex-1 flex-col pt-5"><p className="text-title-3 font-semibold text-foreground">额度明细</p><div className="mt-3 min-h-0 flex-1 overflow-y-auto"><table className="w-full text-left text-body"><thead className="sticky top-0 bg-bg-surface text-caption text-text-secondary"><tr><th className="py-3 font-medium">时间</th><th className="font-medium">权益</th><th className="font-medium">事项</th><th className="font-medium">类型</th><th className="font-medium">变动</th><th className="text-right font-medium">该权益余额</th></tr></thead><tbody>{computeLedgerBalances(ledgerItems, billingSummary?.data_query_remaining ?? 0, billingSummary?.research_report_remaining ?? 0).map((item) => <tr key={item.id} className="border-t border-border"><td className="py-3">{fmtBillingDate(item.created_at)}</td><td>{item.entitlement_type === "data_query" ? "数据查询" : "调研报告"}</td><td>{ledgerTaskLabel(item.task_kind)}</td><td>{LEDGER_EVENT_LABELS[item.event_type] ?? item.event_type}</td><td className={item.delta > 0 ? "text-success" : ""}>{item.delta > 0 ? `+${item.delta}` : item.delta}</td><td className="text-right">{item.balance}</td></tr>)}</tbody></table>{ledgerLoading ? <p className="py-4 text-center text-caption text-text-secondary">加载中…</p> : ledgerItems.length < ledgerTotal ? <div className="pt-4 text-center"><Button variant="outline" size="sm" type="button" onClick={() => void loadLedgerPage(ledgerPage + 1)}>加载更多</Button></div> : null}</div></div>
+                              <div className="flex min-h-0 flex-1 flex-col pt-5"><p className="text-title-3 font-semibold text-foreground">额度明细</p><div className="mt-3 min-h-0 flex-1 overflow-y-auto"><table className="w-full text-left text-body"><thead className="sticky top-0 bg-bg-surface text-caption text-text-secondary"><tr><th className="py-3 font-medium">时间</th><th className="font-medium">权益</th><th className="font-medium">事项</th><th className="font-medium">类型</th><th className="font-medium">变动</th><th className="text-right font-medium">该权益余额</th></tr></thead><tbody>{ledgerItems.map((item) => <tr key={item.id} className="border-t border-border"><td className="py-3">{fmtBillingDate(item.created_at)}</td><td>{item.entitlement_type === "data_query" ? "数据查询" : "调研报告"}</td><td>{ledgerTaskLabel(item.task_kind)}</td><td>{LEDGER_EVENT_LABELS[item.event_type] ?? item.event_type}</td><td className={item.delta > 0 ? "text-success" : ""}>{item.delta > 0 ? `+${item.delta}` : item.delta}</td><td className="text-right">{item.balance}</td></tr>)}</tbody></table>{ledgerLoading ? <p className="py-4 text-center text-caption text-text-secondary">加载中…</p> : ledgerItems.length < ledgerTotal ? <div className="pt-4 text-center"><Button variant="outline" size="sm" type="button" onClick={() => void loadLedgerPage(ledgerPage + 1)}>加载更多</Button></div> : null}</div></div>
                             </>
                           ) : billingView === "orders" ? (
                             <><div className="flex items-center justify-between"><button type="button" className="inline-flex items-center gap-2 text-title-2 font-semibold text-foreground" onClick={() => setBillingView("overview")}>← 订单记录</button><input aria-label="搜索订单号" placeholder="搜索订单号" className="h-9 w-44 rounded-control border border-border px-3 text-caption outline-none focus:border-primary" /></div><div className="mt-6 overflow-y-auto"><table className="w-full text-left text-caption"><thead className="border-b border-border text-text-secondary"><tr>{["订单号", "类型", "套餐", "金额", "状态", "创建时间"].map((column) => <th key={column} className="px-2 py-3 font-medium">{column}</th>)}</tr></thead><tbody>{billingOrders.map((order) => <tr key={order.id} className="border-b border-border"><td className="px-2 py-4 font-mono text-text-secondary">{order.order_no}</td><td className="px-2">{ORDER_TYPE_LABELS[order.order_type] ?? order.order_type}</td><td className="px-2">{order.plan_snapshot.name}</td><td className="px-2">{formatMoney(order.amount_cents)}</td><td className="px-2"><span className={order.status === "fulfilled" ? "text-success" : order.status === "created" ? "text-warning" : "text-text-secondary"}>{ORDER_STATUS_LABELS[order.status] ?? order.status}</span></td><td className="px-2 text-text-secondary">{fmtBillingDate(order.created_at)}</td></tr>)}</tbody></table>{billingOrders.length === 0 ? <p className="py-8 text-center text-caption text-text-secondary">暂无订单</p> : null}</div></>

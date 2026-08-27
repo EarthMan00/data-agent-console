@@ -159,8 +159,8 @@ export function installDefaultApiMocks() {
   });
   billingMocks.fetchEntitlementLedger.mockResolvedValue({
     items: [
-      { id: "ledger-1", entitlement_type: "data_query", delta: -1, source: "web", event_type: "consume", task_kind: "standard_query", created_at: "2026-08-16T10:00:00Z" },
-      { id: "ledger-2", entitlement_type: "research_report", delta: -1, source: "web", event_type: "consume", task_kind: "research_report", created_at: "2026-08-15T10:00:00Z" },
+      { id: "ledger-1", entitlement_type: "data_query", delta: -1, source: "web", event_type: "consume", task_kind: "standard_query", created_at: "2026-08-16T10:00:00Z", balance: 65 },
+      { id: "ledger-2", entitlement_type: "research_report", delta: -1, source: "web", event_type: "consume", task_kind: "research_report", created_at: "2026-08-15T10:00:00Z", balance: 7 },
     ],
     total: 2,
     page: 1,

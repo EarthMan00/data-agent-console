@@ -52,13 +52,14 @@ describe("AliceShell 费用视图（真实数据）", () => {
       event_type: "consume" as const,
       task_kind: "standard_query" as const,
       created_at: `2026-08-${String(16 - index).padStart(2, "0")}T10:00:00Z`,
+      balance: 65 - index,
     }));
     getBillingMocks().fetchEntitlementLedger
       .mockResolvedValueOnce({ items: pageOne, total: 12, page: 1, page_size: 10 })
       .mockResolvedValueOnce({
         items: [
-          { id: "ledger-10", entitlement_type: "research_report", delta: -1, source: "web", event_type: "consume", task_kind: "research_report", created_at: "2026-08-05T10:00:00Z" },
-          { id: "ledger-11", entitlement_type: "data_query", delta: 5, source: "web", event_type: "grant", task_kind: "plan_grant", created_at: "2026-08-04T10:00:00Z" },
+          { id: "ledger-10", entitlement_type: "research_report", delta: -1, source: "web", event_type: "consume", task_kind: "research_report", created_at: "2026-08-05T10:00:00Z", balance: 7 },
+          { id: "ledger-11", entitlement_type: "data_query", delta: 5, source: "web", event_type: "grant", task_kind: "plan_grant", created_at: "2026-08-04T10:00:00Z", balance: 55 },
         ],
         total: 12,
         page: 2,
