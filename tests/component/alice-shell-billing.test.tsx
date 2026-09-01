@@ -40,7 +40,7 @@ describe("AliceShell 费用视图（真实数据）", () => {
     expect(await within(dialog).findByText("AL202608130001")).toBeInTheDocument();
     expect(within(dialog).getByText("¥159.00")).toBeInTheDocument();
     expect(within(dialog).getByText("待开通")).toBeInTheDocument();
-    expect(within(dialog).getByText("续费")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("续费").length).toBeGreaterThan(0);
   });
 
   it("账本超过一页时展示加载更多并追加下一页", async () => {
@@ -92,5 +92,86 @@ describe("AliceShell 费用视图（真实数据）", () => {
     expect(within(orderDialog).getByText("SO20260817001")).toBeInTheDocument();
     expect(within(orderDialog).getByText("¥99.00")).toBeInTheDocument();
     expect(within(orderDialog).getByText("待付款")).toBeInTheDocument();
+  });
+
+  it("存在待生效续费时续订意图被阻止（提示并禁用提交）", async () => {
+    getBillingMocks().fetchBillingSummary.mockResolvedValue({
+      has_active_cycle: true,
+      has_pending_renewal: true,
+      pending_renewal_source: "order",
+      pending_renewal_order_no: "AL202608310001",
+      pending_renewal_starts_at: null,
+      pending_renewal_ends_at: null,
+      plan_code: "paid_basic",
+      plan_name: "基础版",
+      cycle_status: "active",
+      kind: "purchased",
+      starts_at: "2026-08-01T00:00:00Z",
+      ends_at: "2026-09-01T00:00:00Z",
+      data_query_remaining: 65,
+      research_report_remaining: 7,
+    });
+
+    renderAliceShell({ searchParams: "billing=1" });
+    const dialog = await screen.findByRole("dialog", { name: "费用" });
+
+    fireEvent.click(await within(dialog).findByRole("button", { name: "续订" }));
+    expect(await within(dialog).findByText(/已有一笔续费订单 AL202608310001 待生效/)).toBeInTheDocument();
+    const submit = within(dialog).getByRole("button", { name: "暂不可提交" });
+    expect(submit).toBeDisabled();
+    expect(getBillingMocks().createBillingOrder).not.toHaveBeenCalled();
+  });
+
+  it("存在待生效续费时升级意图不受影响，仍可创建升级订单", async () => {
+    getBillingMocks().fetchBillingSummary.mockResolvedValue({
+      has_active_cycle: true,
+      has_pending_renewal: true,
+      pending_renewal_source: "order",
+      pending_renewal_order_no: "AL202608310001",
+      pending_renewal_starts_at: null,
+      pending_renewal_ends_at: null,
+      plan_code: "paid_basic",
+      plan_name: "基础版",
+      cycle_status: "active",
+      kind: "purchased",
+      starts_at: "2026-08-01T00:00:00Z",
+      ends_at: "2026-09-01T00:00:00Z",
+      data_query_remaining: 65,
+      research_report_remaining: 7,
+    });
+
+    renderAliceShell({ searchParams: "billing=1" });
+    const dialog = await screen.findByRole("dialog", { name: "费用" });
+
+    fireEvent.click(await within(dialog).findByRole("button", { name: "升级套餐" }));
+    expect(await within(dialog).findByText("220 次数据查询")).toBeInTheDocument();
+    const submit = within(dialog).getByRole("button", { name: "继续支付" });
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    const orderDialog = await screen.findByRole("dialog", { name: "订单已创建" });
+    expect(getBillingMocks().createBillingOrder).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ order_type: "upgrade", plan_code: "paid_advanced", billing_cycle: "monthly" }),
+    );
+    expect(within(orderDialog).getByText("SO20260817001")).toBeInTheDocument();
+  });
+
+  it("订单记录中待付款订单可取消，取消后刷新列表", async () => {
+    renderAliceShell({ searchParams: "billing=1" });
+    const dialog = await screen.findByRole("dialog", { name: "费用" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "订单记录" }));
+    const rows = await within(dialog).findAllByText("取消订单");
+    expect(rows.length).toBe(1);
+
+    fireEvent.click(rows[0]);
+    await waitFor(() =>
+      expect(getBillingMocks().cancelBillingOrder).toHaveBeenCalledWith("token", "order-2"),
+    );
+    // 取消成功后重新拉取订单与汇总
+    await waitFor(() =>
+      expect(getBillingMocks().fetchBillingOrders).toHaveBeenCalledTimes(2),
+    );
   });
 });

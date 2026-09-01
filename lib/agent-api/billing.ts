@@ -1,7 +1,14 @@
 import { getAgentHttpApiBase } from "@/lib/agent-api/config";
+import { AgentApiError, formatHttpErrorMessage, readErrorResponseBody } from "@/lib/agent-api/client";
 
 export type BillingSummary = {
   has_active_cycle: boolean;
+  // 服务端 billing_summary 恒定返回全部 pending_* 键（契约是全量）
+  has_pending_renewal: boolean;
+  pending_renewal_source: "order" | "cycle" | null;
+  pending_renewal_order_no: string | null;
+  pending_renewal_starts_at: string | null;
+  pending_renewal_ends_at: string | null;
   plan_code: string | null;
   plan_name: string | null;
   cycle_status: string | null;
@@ -65,8 +72,12 @@ async function billingFetch<T>(
     },
   });
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`billing ${path} failed: ${response.status} ${body}`);
+    const body = await readErrorResponseBody(response);
+    throw new AgentApiError(
+      formatHttpErrorMessage(response, body, `billing ${path} failed`),
+      response.status,
+      body,
+    );
   }
   return response.json() as Promise<T>;
 }
@@ -122,5 +133,14 @@ export function createBillingOrder(
   return billingFetch(accessToken, "/api/billing/orders", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export function cancelBillingOrder(
+  accessToken: string,
+  orderId: string,
+): Promise<{ order: BillingOrder }> {
+  return billingFetch(accessToken, `/api/billing/orders/${orderId}/cancel`, {
+    method: "POST",
   });
 }

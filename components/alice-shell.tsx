@@ -52,6 +52,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { isPlatformBackendEnabled } from "@/lib/agent-runtime";
 import {
   AgentApiError,
+  formatAgentApiErrorForUser,
   listSessions,
   listSessionMessages,
   parseFastApiDetail,
@@ -59,6 +60,7 @@ import {
 } from "@/lib/agent-api/client";
 import type { SessionListItem, SessionMessageItem } from "@/lib/agent-api/types";
 import {
+  cancelBillingOrder,
   createBillingOrder,
   fetchBillingOrders,
   fetchBillingSummary,
@@ -741,6 +743,8 @@ function AliceShellComponent({
   const [planSpecs, setPlanSpecs] = useState<UserPlanSpec[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [creatingOrder, setCreatingOrder] = useState(false);
+  const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null);
+  const [billingOrderError, setBillingOrderError] = useState("");
   const [createdOrder, setCreatedOrder] = useState<BillingOrder | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
@@ -1006,9 +1010,34 @@ function AliceShellComponent({
     return "renew";
   }, [billingSummary, planSpecs, selectedPlanCode]);
 
+  const hasPendingRenewal = Boolean(billingSummary?.has_pending_renewal);
+  // 待生效续费只与续订意图冲突（new/upgrade 不产生 scheduled 周期），按钮按意图禁用
+  const blockingRenewal = hasPendingRenewal && deriveOrderType() === "renew";
+  const pendingRenewalNotice = hasPendingRenewal
+    ? billingSummary?.pending_renewal_order_no
+      ? `已有一笔续费订单 ${billingSummary.pending_renewal_order_no} 待生效，暂时无法提交新的订单。`
+      : "已有一笔续费订单待生效，暂时无法提交新的订单。"
+    : "";
+  const billingCreateNotice = blockingRenewal
+    ? pendingRenewalNotice
+    : billingOrderError;
+
+  const refreshBillingData = useCallback(async () => {
+    if (!headerAuth) return;
+    await platformAgent?.withFreshToken(async (token) => {
+      const [summary, orderRes] = await Promise.all([
+        fetchBillingSummary(token),
+        fetchBillingOrders(token),
+      ]);
+      setBillingSummary(summary);
+      setBillingOrders(orderRes.orders ?? []);
+    });
+  }, [headerAuth, platformAgent]);
+
   const handleCreateOrder = useCallback(async () => {
     const spec = planSpecs.find((p) => p.code === selectedPlanCode) ?? null;
     if (!headerAuth || !spec) return;
+    setBillingOrderError("");
     setCreatingOrder(true);
     try {
       await platformAgent?.withFreshToken(async (token) => {
@@ -1021,24 +1050,43 @@ function AliceShellComponent({
         setCreatedOrder(order);
         setBillingPaymentOpen(true);
       });
-    } catch {
-      // 创建失败保持弹窗关闭
+    } catch (e) {
+      // 业务拒绝（409 detail）直接展示；其余走统一用户文案（网络/鉴权不露内部英文）
+      const detail = e instanceof AgentApiError ? parseFastApiDetail(e.body) : null;
+      const fallback = formatAgentApiErrorForUser(e);
+      setBillingOrderError(
+        detail ||
+          (fallback.includes("refresh failed") || fallback === "Failed to fetch"
+            ? "登录状态已过期或网络异常，请稍后重试"
+            : fallback) ||
+          "订单创建失败，请稍后再试",
+      );
     } finally {
       setCreatingOrder(false);
     }
   }, [headerAuth, planSpecs, selectedPlanCode, billingCycle, deriveOrderType, platformAgent]);
 
+  const handleCancelOrder = useCallback(async (orderId: string) => {
+    if (!headerAuth) return;
+    setBillingOrderError("");
+    setCancelingOrderId(orderId);
+    try {
+      await platformAgent?.withFreshToken(async (token) => {
+        await cancelBillingOrder(token, orderId);
+      });
+      await refreshBillingData();
+    } catch (e) {
+      const detail = e instanceof AgentApiError ? parseFastApiDetail(e.body) : null;
+      setBillingOrderError(detail || formatAgentApiErrorForUser(e) || "取消订单失败，请稍后再试");
+    } finally {
+      setCancelingOrderId(null);
+    }
+  }, [headerAuth, platformAgent, refreshBillingData]);
+
   useEffect(() => {
     if (!createdOrder || !headerAuth) return;
-    void platformAgent?.withFreshToken(async (token) => {
-      try {
-        const res = await fetchBillingOrders(token);
-        setBillingOrders(res.orders ?? []);
-      } catch {
-        // 忽略刷新失败
-      }
-    });
-  }, [createdOrder, headerAuth, platformAgent]);
+    void refreshBillingData();
+  }, [createdOrder, headerAuth, refreshBillingData]);
 
   useEffect(() => {
     if (planSpecs.length === 0) return;
@@ -1986,7 +2034,7 @@ function AliceShellComponent({
           </DialogContent>
         </Dialog>
 
-        <Dialog open={accountDialog === "profile"} onOpenChange={(open) => !open && setAccountDialog(null)}>
+        <Dialog open={accountDialog === "profile"} onOpenChange={(open) => { if (!open) { setAccountDialog(null); setBillingOrderError(""); } }}>
           <DialogContent
             aria-describedby={undefined}
             className="h-[720px] max-h-[calc(100dvh-2rem)] w-[min(960px,calc(100vw-2rem))] max-w-none overflow-hidden rounded-panel border-border bg-bg-surface p-0 shadow-dialog"
@@ -2190,7 +2238,7 @@ function AliceShellComponent({
                               <div className="flex min-h-0 flex-1 flex-col pt-5"><p className="text-title-3 font-semibold text-foreground">额度明细</p><div className="mt-3 min-h-0 flex-1 overflow-y-auto"><table className="w-full text-left text-body"><thead className="sticky top-0 bg-bg-surface text-caption text-text-secondary"><tr><th className="py-3 font-medium">时间</th><th className="font-medium">权益</th><th className="font-medium">事项</th><th className="font-medium">类型</th><th className="font-medium">变动</th><th className="text-right font-medium">该权益余额</th></tr></thead><tbody>{ledgerItems.map((item) => <tr key={item.id} className="border-t border-border"><td className="py-3">{fmtBillingDate(item.created_at)}</td><td>{item.entitlement_type === "data_query" ? "数据查询" : "调研报告"}</td><td>{ledgerTaskLabel(item.task_kind)}</td><td>{LEDGER_EVENT_LABELS[item.event_type] ?? item.event_type}</td><td className={item.delta > 0 ? "text-success" : ""}>{item.delta > 0 ? `+${item.delta}` : item.delta}</td><td className="text-right">{item.balance}</td></tr>)}</tbody></table>{ledgerLoading ? <p className="py-4 text-center text-caption text-text-secondary">加载中…</p> : ledgerItems.length < ledgerTotal ? <div className="pt-4 text-center"><Button variant="outline" size="sm" type="button" onClick={() => void loadLedgerPage(ledgerPage + 1)}>加载更多</Button></div> : null}</div></div>
                             </>
                           ) : billingView === "orders" ? (
-                            <><div className="flex items-center justify-between"><button type="button" className="inline-flex items-center gap-2 text-title-2 font-semibold text-foreground" onClick={() => setBillingView("overview")}>← 订单记录</button><input aria-label="搜索订单号" placeholder="搜索订单号" className="h-9 w-44 rounded-control border border-border px-3 text-caption outline-none focus:border-primary" /></div><div className="mt-6 overflow-y-auto"><table className="w-full text-left text-caption"><thead className="border-b border-border text-text-secondary"><tr>{["订单号", "类型", "套餐", "金额", "状态", "创建时间"].map((column) => <th key={column} className="px-2 py-3 font-medium">{column}</th>)}</tr></thead><tbody>{billingOrders.map((order) => <tr key={order.id} className="border-b border-border"><td className="px-2 py-4 font-mono text-text-secondary">{order.order_no}</td><td className="px-2">{ORDER_TYPE_LABELS[order.order_type] ?? order.order_type}</td><td className="px-2">{order.plan_snapshot.name}</td><td className="px-2">{formatMoney(order.amount_cents)}</td><td className="px-2"><span className={order.status === "fulfilled" ? "text-success" : order.status === "created" ? "text-warning" : "text-text-secondary"}>{ORDER_STATUS_LABELS[order.status] ?? order.status}</span></td><td className="px-2 text-text-secondary">{fmtBillingDate(order.created_at)}</td></tr>)}</tbody></table>{billingOrders.length === 0 ? <p className="py-8 text-center text-caption text-text-secondary">暂无订单</p> : null}</div></>
+                            <><div className="flex items-center justify-between"><button type="button" className="inline-flex items-center gap-2 text-title-2 font-semibold text-foreground" onClick={() => setBillingView("overview")}>← 订单记录</button><input aria-label="搜索订单号" placeholder="搜索订单号" className="h-9 w-44 rounded-control border border-border px-3 text-caption outline-none focus:border-primary" /></div>{billingOrderError ? <p className="mt-3 rounded-control bg-bg-subtle px-3 py-2 text-caption text-warning">{billingOrderError}</p> : null}<div className="mt-6 overflow-y-auto"><table className="w-full text-left text-caption"><thead className="border-b border-border text-text-secondary"><tr>{["订单号", "类型", "套餐", "金额", "状态", "创建时间", "操作"].map((column) => <th key={column} className="px-2 py-3 font-medium">{column}</th>)}</tr></thead><tbody>{billingOrders.map((order) => <tr key={order.id} className="border-b border-border"><td className="px-2 py-4 font-mono text-text-secondary">{order.order_no}</td><td className="px-2">{ORDER_TYPE_LABELS[order.order_type] ?? order.order_type}</td><td className="px-2">{order.plan_snapshot.name}</td><td className="px-2">{formatMoney(order.amount_cents)}</td><td className="px-2"><span className={order.status === "fulfilled" ? "text-success" : order.status === "created" ? "text-warning" : "text-text-secondary"}>{ORDER_STATUS_LABELS[order.status] ?? order.status}</span></td><td className="px-2 text-text-secondary">{fmtBillingDate(order.created_at)}</td><td className="px-2">{order.status === "created" ? <Button variant="outline" size="sm" type="button" disabled={cancelingOrderId === order.id} onClick={() => void handleCancelOrder(order.id)}>{cancelingOrderId === order.id ? "取消中…" : "取消订单"}</Button> : null}</td></tr>)}</tbody></table>{billingOrders.length === 0 ? <p className="py-8 text-center text-caption text-text-secondary">暂无订单</p> : null}</div></>
                           ) : (
                             <>
                               <div className="flex items-center justify-between gap-4">
@@ -2224,7 +2272,7 @@ function AliceShellComponent({
                             </>
                           )}
                         </div>
-                        {billingView === "select" ? <footer className="flex shrink-0 items-center justify-between border-t border-border bg-bg-surface px-8 py-4 shadow-[0_-8px_20px_rgba(15,23,42,0.04)]"><div><div className="flex items-baseline gap-3"><p className="text-caption text-text-secondary">应付</p><p className="text-[32px] font-semibold leading-none">{formatMoney(selectedBillingPrice)}</p></div><p className="mt-2 text-caption text-text-secondary">点击继续支付即同意《Alice 服务协议》</p></div><Button type="button" className="h-12 min-w-48 rounded-full bg-foreground px-7 text-body font-semibold text-primary-foreground hover:bg-foreground" disabled={creatingOrder || !selectedPlanSpec} onClick={() => void handleCreateOrder()}>{creatingOrder ? "创建中…" : "继续支付"}</Button></footer> : null}
+                        {billingView === "select" ? <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-border bg-bg-surface px-8 py-4 shadow-[0_-8px_20px_rgba(15,23,42,0.04)]"><div className="min-w-0"><div className="flex items-baseline gap-3"><p className="text-caption text-text-secondary">应付</p><p className="text-[32px] font-semibold leading-none">{formatMoney(selectedBillingPrice)}</p></div>{billingCreateNotice ? <p className="mt-2 break-words text-caption text-warning">{billingCreateNotice}</p> : null}<p className="mt-2 break-words text-caption text-text-secondary">点击继续支付即同意《Alice 服务协议》</p></div><Button type="button" className="h-12 min-w-48 rounded-full bg-foreground px-7 text-body font-semibold text-primary-foreground hover:bg-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={creatingOrder || !selectedPlanSpec || blockingRenewal} onClick={() => void handleCreateOrder()}>{creatingOrder ? "创建中…" : blockingRenewal ? "暂不可提交" : "继续支付"}</Button></footer> : null}
                       </div>
                     )}
                   </div>

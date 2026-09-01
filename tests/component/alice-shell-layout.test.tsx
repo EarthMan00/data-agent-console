@@ -66,6 +66,7 @@ vi.mock("@/lib/agent-api/client", () => ({
     status = 500;
     body = null;
   },
+  formatAgentApiErrorForUser: (e: unknown) => (e instanceof Error ? e.message : String(e)),
   listSessions: agentApiMocks.listSessions,
   listSessionMessages: agentApiMocks.listSessionMessages,
   purgeSessionData: agentApiMocks.purgeSessionData,
@@ -78,6 +79,7 @@ const billingMocks = vi.hoisted(() => ({
   fetchBillingOrders: vi.fn(),
   fetchUserPlans: vi.fn(),
   createBillingOrder: vi.fn(),
+  cancelBillingOrder: vi.fn(),
 }));
 const profileMocks = vi.hoisted(() => ({
   fetchProfile: vi.fn(),
@@ -93,6 +95,7 @@ vi.mock("@/lib/agent-api/billing", () => ({
   fetchBillingOrders: billingMocks.fetchBillingOrders,
   fetchUserPlans: billingMocks.fetchUserPlans,
   createBillingOrder: billingMocks.createBillingOrder,
+  cancelBillingOrder: billingMocks.cancelBillingOrder,
 }));
 
 vi.mock("@/lib/agent-api/profile", () => ({
@@ -155,6 +158,11 @@ describe("AliceShell right rail layout", () => {
     window.localStorage.clear();
     billingMocks.fetchBillingSummary.mockResolvedValue({
       has_active_cycle: true,
+      has_pending_renewal: false,
+      pending_renewal_source: null,
+      pending_renewal_order_no: null,
+      pending_renewal_starts_at: null,
+      pending_renewal_ends_at: null,
       plan_code: "paid_basic",
       plan_name: "基础版",
       cycle_status: "active",
