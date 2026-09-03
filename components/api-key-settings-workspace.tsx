@@ -38,7 +38,9 @@ import {
   type ExternalApiKeyCreated,
   type ExternalApiKeyItem,
 } from "@/lib/agent-api/api-keys";
+import { getMcpEndpoint } from "@/lib/agent-api/config";
 import { SkillHelpDialog } from "@/components/skill-help-dialog";
+import { McpHelpDialog } from "@/components/mcp-help-dialog";
 
 type LogoSpec = {
   src: string;
@@ -69,6 +71,19 @@ const INTEGRATION_LOGOS = {
     imageClassName: "rounded-full",
   },
 } satisfies Record<string, LogoSpec>;
+
+const MCP_TARGETS = [
+  {
+    id: "codex",
+    name: "Codex",
+    logo: INTEGRATION_LOGOS.codex,
+  },
+  {
+    id: "workbuddy",
+    name: "WorkBuddy",
+    logo: INTEGRATION_LOGOS.workbuddy,
+  },
+] as const;
 
 const SKILL_TARGETS = [
   {
@@ -194,6 +209,8 @@ export function ApiKeySettingsWorkspace() {
   const [createdKey, setCreatedKey] = useState<ExternalApiKeyCreated | null>(null);
   const [downloadingSkill, setDownloadingSkill] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [mcpHelpOpen, setMcpHelpOpen] = useState(false);
+  const [mcpTarget, setMcpTarget] = useState<(typeof MCP_TARGETS)[number]["id"]>("codex");
   const [deleteTarget, setDeleteTarget] = useState<ExternalApiKeyItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null);
@@ -289,6 +306,12 @@ export function ApiKeySettingsWorkspace() {
     }
   }, [deleteTarget, deleting, platformAgent, refresh]);
 
+  const mcpEndpoint = getMcpEndpoint();
+  const mcpConfig =
+    mcpTarget === "codex"
+      ? `[mcp_servers.data-agent]\nurl = "${mcpEndpoint}"\nhttp_headers = { "Authorization" = "Bearer da_live_..." }`
+      : `{\n  "mcpServers": {\n    "data-agent": {\n      "url": "${mcpEndpoint}",\n      "headers": {\n        "Authorization": "Bearer da_live_..."\n      }\n    }\n  }\n}`;
+
   return (
     <AliceShell currentPath="/settings/api-keys" showTopHeader={false}>
       <AutoToast
@@ -355,6 +378,52 @@ export function ApiKeySettingsWorkspace() {
                       <PlatformInlineLogo logo={target.logo} />
                     </span>
                   ))}
+                </div>
+              </div>
+            </section>
+
+            <section id="mcp" className="scroll-mt-6" aria-labelledby="mcp-title">
+              <SectionHeader id="mcp-title" title="MCP">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-control"
+                  onClick={() => setMcpHelpOpen(true)}
+                >
+                  <HelpCircle className="h-4 w-4" aria-hidden />
+                  配置说明
+                </Button>
+              </SectionHeader>
+              <div className="mt-3 rounded-card border border-border bg-bg-surface p-4 shadow-surface">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-caption text-text-secondary">选择平台：</span>
+                  {MCP_TARGETS.map((target) => {
+                    const selected = target.id === mcpTarget;
+                    return (
+                      <button
+                        key={target.id}
+                        type="button"
+                        className={cn(
+                          "inline-flex h-8 items-center gap-2 rounded-control border px-3 text-caption font-medium transition-colors",
+                          selected
+                            ? "border-primary bg-bg-subtle text-foreground"
+                            : "border-border text-text-secondary hover:bg-bg-subtle hover:text-foreground",
+                        )}
+                        onClick={() => setMcpTarget(target.id)}
+                      >
+                        <PlatformInlineLogo logo={target.logo} />
+                        {target.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-3">
+                  <CommandLine
+                    value={mcpConfig}
+                    copyLabel="复制配置"
+                    onCopy={() => void copyText(mcpConfig, "MCP 配置已复制")}
+                  />
                 </div>
               </div>
             </section>
@@ -529,6 +598,7 @@ export function ApiKeySettingsWorkspace() {
       </Dialog>
 
       <SkillHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+      <McpHelpDialog open={mcpHelpOpen} onOpenChange={setMcpHelpOpen} />
 
     </AliceShell>
   );
