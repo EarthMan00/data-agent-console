@@ -7,6 +7,7 @@
  */
 
 const AGENT_PLATFORM_PROXY_PREFIX = "/agent-platform";
+const AGENT_PLATFORM_PUBLIC_ORIGIN = "http://www.mdata.xin/agent-platform";
 
 export function isAgentRealApiEnabled(): boolean {
   return true;
@@ -51,18 +52,9 @@ export function getAgentHttpApiBase(): string {
   return getAgentApiOrigin();
 }
 
-/** MCP Streamable HTTP 入口：后端直连地址 + /mcp。 */
+/** MCP Streamable HTTP 入口。 */
 export function getMcpEndpoint(): string {
-  const explicit = (process.env.NEXT_PUBLIC_AGENT_API_ORIGIN ?? "").trim();
-  if (explicit) {
-    return `${explicit.replace(/\/$/, "")}/mcp`;
-  }
-  const port = (process.env.NEXT_PUBLIC_AGENT_BACKEND_PORT ?? "8000").trim();
-  if (typeof window !== "undefined") {
-    const proto = window.location.protocol === "https:" ? "https" : "http";
-    return `${proto}://${window.location.hostname}:${port}/mcp`;
-  }
-  return `http://127.0.0.1:${port}/mcp`;
+  return `${AGENT_PLATFORM_PUBLIC_ORIGIN}/mcp`;
 }
 
 export function getTaskNameMaxChars(): number {
