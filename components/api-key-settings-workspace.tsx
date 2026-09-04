@@ -79,6 +79,11 @@ const MCP_TARGETS = [
     logo: INTEGRATION_LOGOS.codex,
   },
   {
+    id: "claude",
+    name: "Claude",
+    logo: INTEGRATION_LOGOS.claudeCode,
+  },
+  {
     id: "workbuddy",
     name: "WorkBuddy",
     logo: INTEGRATION_LOGOS.workbuddy,
@@ -310,7 +315,9 @@ export function ApiKeySettingsWorkspace() {
   const mcpConfig =
     mcpTarget === "codex"
       ? `[mcp_servers.data-agent]\nurl = "${mcpEndpoint}"\nhttp_headers = { "Authorization" = "Bearer da_live_..." }`
-      : `{\n  "mcpServers": {\n    "data-agent": {\n      "url": "${mcpEndpoint}",\n      "headers": {\n        "Authorization": "Bearer da_live_..."\n      }\n    }\n  }\n}`;
+      : mcpTarget === "claude"
+        ? `{\n  "mcpServers": {\n    "data-agent": {\n      "type": "http",\n      "url": "${mcpEndpoint}",\n      "headers": {\n        "Authorization": "Bearer da_live_..."\n      }\n    }\n  }\n}`
+        : `{\n  "mcpServers": {\n    "data-agent": {\n      "url": "${mcpEndpoint}",\n      "headers": {\n        "Authorization": "Bearer da_live_..."\n      }\n    }\n  }\n}`;
 
   return (
     <AliceShell currentPath="/settings/api-keys" showTopHeader={false}>

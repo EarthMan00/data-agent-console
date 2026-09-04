@@ -11,7 +11,8 @@ describe("MCP 使用帮助弹窗", () => {
     expect(screen.getByRole("heading", { name: "MCP 使用帮助" })).toBeInTheDocument();
     expect(screen.getByText(/安装 MCP 到 Codex/)).toBeInTheDocument();
     expect(screen.getByText(/安装 MCP 到 WorkBuddy/)).toBeInTheDocument();
+    expect(screen.getByText(/安装 MCP 到 Claude/)).toBeInTheDocument();
     expect(screen.getByText(/\[mcp_servers.data-agent\]/)).toBeInTheDocument();
-    expect(screen.getByText(/"mcpServers"/)).toBeInTheDocument();
+    expect(screen.getAllByText(/"mcpServers"/).length).toBeGreaterThanOrEqual(2);
   });
 });

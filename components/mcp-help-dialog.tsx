@@ -65,13 +65,14 @@ export function McpHelpDialog({
   const endpoint = getMcpEndpoint();
   const codexConfig = `[mcp_servers.data-agent]\nurl = "${endpoint}"\nhttp_headers = { "Authorization" = "Bearer da_live_..." }`;
   const workbuddyConfig = `{\n  "mcpServers": {\n    "data-agent": {\n      "url": "${endpoint}",\n      "headers": {\n        "Authorization": "Bearer da_live_..."\n      }\n    }\n  }\n}`;
+  const claudeConfig = `{\n  "mcpServers": {\n    "data-agent": {\n      "type": "http",\n      "url": "${endpoint}",\n      "headers": {\n        "Authorization": "Bearer da_live_..."\n      }\n    }\n  }\n}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl rounded-card">
         <DialogTitle className="text-title-1">MCP 使用帮助</DialogTitle>
         <DialogDescription className="text-body leading-6 text-text-secondary">
-          Data-Agent 提供 HTTP MCP 接入能力，本期主要支持 Codex 与 WorkBuddy。
+          Data-Agent 提供 HTTP MCP 接入能力，本期主要支持 Codex、WorkBuddy 与 Claude。
         </DialogDescription>
 
         <div className="max-h-[min(68vh,640px)] overflow-y-auto pr-1">
@@ -103,6 +104,17 @@ export function McpHelpDialog({
             ]}
           />
           <CodeLine>{workbuddyConfig}</CodeLine>
+
+          <SectionTitle icon={Settings}>安装 MCP 到 Claude</SectionTitle>
+          <Steps
+            items={[
+              <>Claude Code：打开 <code className="font-mono">.mcp.json</code>，或执行 <code className="font-mono">claude mcp add-json</code>。</>,
+              <>Claude Desktop：打开 <code className="font-mono">%APPDATA%\Claude\claude_desktop_config.json</code>。</>,
+              <>添加以下配置块：</>,
+              <>将 <code className="font-mono">da_live_...</code> 替换为刚生成的 Key，保存后重启 Claude。</>,
+            ]}
+          />
+          <CodeLine>{claudeConfig}</CodeLine>
 
           <SectionTitle icon={Terminal2}>能力说明</SectionTitle>
           <Paragraph>

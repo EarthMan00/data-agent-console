@@ -54,7 +54,7 @@ export function getAgentHttpApiBase(): string {
 
 /** MCP Streamable HTTP 入口。 */
 export function getMcpEndpoint(): string {
-  return `${AGENT_PLATFORM_PUBLIC_ORIGIN}/mcp`;
+  return `${AGENT_PLATFORM_PUBLIC_ORIGIN}/mcp/`;
 }
 
 export function getTaskNameMaxChars(): number {
